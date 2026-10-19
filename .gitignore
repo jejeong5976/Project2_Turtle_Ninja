@@ -1,0 +1,43 @@
+# ROS 2 colcon build artifacts
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# C++
+*.o
+*.so
+*.a
+compile_commands.json
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Recorded data (large files)
+*.bag
+*.db3
+*.mcap
+rosbag2_*/
+
+# Model weights (large files)
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# Claude Code (local only, never commit)
+CLAUDE.md
+.claude/
+
+# Datasets (synthetic / real)
+datasets/
