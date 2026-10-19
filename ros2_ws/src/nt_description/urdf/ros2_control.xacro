@@ -1,0 +1,133 @@
+<?xml version="1.0"?>
+<!--
+  ros2_control.xacro — hardware_map.yaml 을 읽어서 <ros2_control> 블록을 만든다 (+ 관성 · 충돌 상자 매크로)
+  =============================================================================
+  사람이 손으로 고치는 곳은 여기가 아니라 config/hardware_map.yaml.
+  이 파일은 "yaml → URDF 태그" 로 바꿔 주는 번역기.
+
+  hardware 인자로 하드웨어 플러그인(= 모터와 실제로 말하는 부품)을 고른다
+    mock    : 가짜. 받은 명령을 그대로 상태로 돌려줌 → 로봇 없이 노트북에서 전체 실행 (기본값)
+    gazebo  : Gazebo(gz_ros2_control) 용 자리만 (시뮬레이션 월드 · 실행 설정은 아직 없음)
+    opencr  : 플러그인 nt_hardware/OpenCRHardware + OpenCR 펌웨어 firmware/nt_opencr
+              모터 14개 + OpenCR 내장 IMU 를 USB 한 줄로. 패킷 규칙 = docs/hardware.md 4절
+  ★ 이 한 줄만 바뀌고, 컨트롤러 · 스워브 노드 · MoveIt · Nav2 는 전부 그대로다.
+
+  맨 아래 관성 · 충돌 상자 매크로 ⚠ 질량 · 관성은 추정. 실측 물성이 아님
+
+  xacro 에는 for 문이 없어서 "자기 자신을 부르면서 목록을 한 칸씩 줄이는" 방식(재귀)으로 반복한다.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ===== 관절 1개: 컨트롤러가 보는 면 (ROS 단위 rad, rad/s) ===== -->
+  <!-- mode 가 velocity 면 속도 명령, 나머지(position · gripper)는 위치 명령 -->
+  <xacro:macro name="nt_joint_ifaces" params="names hardware">
+    <xacro:if value="${len(names) > 0}">
+      <xacro:property name="jn" value="${names[0]}"/>
+      <xacro:property name="m" value="${hw['motors'][jn]}"/>
+      <joint name="${jn}">
+        <command_interface name="${'velocity' if m['mode'] == 'velocity' else 'position'}"/>
+        <state_interface name="position">
+          <!-- 가짜 하드웨어일 때만: 시작 각도 (팔이 접힌 자세로 보이게) -->
+          <xacro:if value="${hardware in ['mock', 'gazebo'] and 'initial' in m}">
+            <param name="initial_value">${m['initial']}</param>
+          </xacro:if>
+        </state_interface>
+        <state_interface name="velocity"/>
+        <state_interface name="effort"/>   <!-- opencr: 모터 전류 [A] (토크 아님) -->
+        <!-- OpenCR STATE board time + position, 60 ms fit; no synthetic mock value. -->
+        <xacro:if value="${hardware == 'opencr' and jn.startswith('steer_')}">
+          <state_interface name="position_velocity"/>
+        </xacro:if>
+        <!-- 플러그인(nt_hardware)이 읽는 모터 정보. 펌웨어가 켤 때 CONFIG 로 받아 모터에 씀 -->
+        <xacro:if value="${hardware == 'opencr'}">
+          <param name="id">${m['id']}</param>
+          <param name="mode">${m['mode']}</param>
+          <param name="profile_vel">${m.get('profile_vel', 0)}</param>
+          <param name="profile_acc">${m.get('profile_acc', 0)}</param>
+          <param name="goal_current">${m.get('goal_current', 0)}</param>
+          <param name="scale">${m.get('scale', 1.0)}</param>
+          <param name="zero_tick">${m.get('zero_tick', 2048)}</param>   <!-- 관절 0 일 때 모터 눈금 (2026-10-16, 기본 2048) -->
+        </xacro:if>
+      </joint>
+      <xacro:nt_joint_ifaces names="${names[1:]}" hardware="${hardware}"/>
+    </xacro:if>
+  </xacro:macro>
+
+  <!-- ===== 보드 1장 = <ros2_control> 블록 1개 ===== -->
+  <xacro:macro name="nt_bus" params="bus hardware">
+    <ros2_control name="${bus['name']}" type="system">
+      <hardware>
+        <xacro:if value="${hardware == 'mock'}">
+          <plugin>mock_components/GenericSystem</plugin>
+        </xacro:if>
+        <xacro:if value="${hardware == 'gazebo'}">
+          <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+        </xacro:if>
+        <xacro:if value="${hardware == 'opencr'}">
+          <!-- ros2_ws/src/nt_hardware (설명은 opencr_hardware.hpp) -->
+          <plugin>nt_hardware/OpenCRHardware</plugin>
+          <!-- 포트: opencr_ports:=bus_drive=/tmp/a,bus_arm=/tmp/b 로 보드마다 바꿈 (가짜 보드 tools/fw_sim 시험 등)
+               opencr_port:=… (예전 인자) 는 보드가 1장일 때만. 둘 다 auto 면 hardware_map.yaml 의 port -->
+          <param name="port_name">${opencr_ports.get(bus['name'], bus['port'] if ('$(arg opencr_port)' == 'auto' or len(hw['buses']) != 1) else '$(arg opencr_port)')}</param>
+          <param name="baud_rate">${bus['baud']}</param>
+          <param name="bus_watchdog">${hw['watchdog']}</param>   <!-- 모터 경비견 (20 ms 단위) -->
+          <param name="state_timeout_s">0.5</param>             <!-- OpenCR 상태가 이만큼 끊기면 ERROR → 멈춤 -->
+          <param name="motor_fail_timeout_s">0.2</param>        <!-- 모터 하나라도 이만큼 못 읽으면 ERROR → 전체 멈춤 (D20) -->
+          <param name="measure_max_age_s">0.05</param>          <!-- 못 읽은 모터 · 이보다 오래된 STATE 는 NaN 으로 (옛 값에 새 시각 금지, R3) -->
+          <param name="config_timeout_s">8.0</param>            <!-- 켤 때 악수 기다리기 (IMU 영점 5 s 포함) -->
+          <param name="require_all_motors">${'true' if hw.get('require_all_motors', True) else 'false'}</param>
+          <param name="torque_off_on_deactivate">false</param>  <!-- 끌 때 팔이 떨어지지 않게 토크 유지 -->
+          <param name="battery_warn_v">${hw.get('battery_warn_v', 10.8)}</param>   <!-- 배터리 경고 [V] (DIAG, 잠정) -->
+          <param name="battery_stop_v">${hw.get('battery_stop_v', 10.2)}</param>   <!-- 배터리 정지 [V] — 평균이 2 번 연속 아래면 ERROR (잠정) -->
+        </xacro:if>
+      </hardware>
+
+      <xacro:nt_joint_ifaces names="${bus['joints']}" hardware="${hardware}"/>
+      <!-- Gazebo 전용: 오른쪽 손가락은 URDF <mimic> 으로 왼쪽을 따라감. ros2_control 은 "따라가는 관절" 을
+           명령 칸 없이 같은 블록에 적어야 함 (component_parser: mimic 관절 = 명령 칸 금지, 따라갈 관절이 같은 블록에)
+           → 보드를 2장으로 나눠도 gripper_left_joint 가 있는 블록에만 들어가게 -->
+      <xacro:if value="${hardware == 'gazebo' and 'gripper_left_joint' in bus['joints']}">
+        <joint name="gripper_right_joint"><state_interface name="position"/><state_interface name="velocity"/></joint>
+      </xacro:if>
+
+      <!-- OpenCR 내장 IMU (D12 A안): 펌웨어가 STATE 에 같이 실어 보냄 → imu_sensor_broadcaster 가 /imu 로
+           mock 에서는 안 넣음 (가짜 0 값이 자이로로 쓰이면 odom 회전이 0 으로 고정되기 때문) -->
+      <xacro:if value="${hardware == 'opencr' and bus.get('imu', False)}">
+        <sensor name="imu">
+          <state_interface name="orientation.x"/>
+          <state_interface name="orientation.y"/>
+          <state_interface name="orientation.z"/>
+          <state_interface name="orientation.w"/>
+          <state_interface name="angular_velocity.x"/>
+          <state_interface name="angular_velocity.y"/>
+          <state_interface name="angular_velocity.z"/>
+          <state_interface name="linear_acceleration.x"/>
+          <state_interface name="linear_acceleration.y"/>
+          <state_interface name="linear_acceleration.z"/>
+          <param name="frame_id">imu_link</param>
+        </sensor>
+      </xacro:if>
+    </ros2_control>
+  </xacro:macro>
+
+  <!-- ===== 보드 목록 전체 ===== -->
+  <xacro:macro name="nt_buses" params="buses hardware">
+    <xacro:if value="${len(buses) > 0}">
+      <xacro:nt_bus bus="${buses[0]}" hardware="${hardware}"/>
+      <xacro:nt_buses buses="${buses[1:]}" hardware="${hardware}"/>
+    </xacro:if>
+  </xacro:macro>
+
+  <!-- ===================== 관성 · 충돌 상자 매크로 (robot.urdf.xacro 가 씀). 질량 · 관성은 추정값 ===================== -->
+  <xacro:macro name="box_inertia" params="mass sx sy sz xyz:='0 0 0'">
+    <inertial>
+      <origin xyz="${xyz}"/><mass value="${mass}"/>
+      <inertia ixx="${mass*(sy*sy+sz*sz)/12}" ixy="0" ixz="0"
+               iyy="${mass*(sx*sx+sz*sz)/12}" iyz="0" izz="${mass*(sx*sx+sy*sy)/12}"/>
+    </inertial>
+  </xacro:macro>
+  <xacro:macro name="box_physics" params="mass sx sy sz xyz:='0 0 0'">
+    <xacro:box_inertia mass="${mass}" sx="${sx}" sy="${sy}" sz="${sz}" xyz="${xyz}"/>
+    <collision><origin xyz="${xyz}"/><geometry><box size="${sx} ${sy} ${sz}"/></geometry></collision>
+  </xacro:macro>
+</robot>

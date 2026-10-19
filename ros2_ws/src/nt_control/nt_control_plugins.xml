@@ -1,0 +1,10 @@
+<library path="nt_swerve_controller">
+  <class name="nt_control/SwerveController"
+         type="nt_control::SwerveController"
+         base_class_type="controller_interface::ControllerInterface">
+    <description>
+      F팀 닌자터틀 스워브 4모듈 컨트롤러: /cmd_vel → 조향 4 (position) + 바퀴 4 (velocity), /odom + TF.
+      cmd_vel 끊김 · 차례(/control/motion_mode) · 조향 먼저 · 가속 제한을 100 Hz 제어 루프 안에서 처리.
+    </description>
+  </class>
+</library>

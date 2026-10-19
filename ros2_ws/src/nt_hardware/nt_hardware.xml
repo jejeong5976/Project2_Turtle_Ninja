@@ -1,0 +1,10 @@
+<library path="nt_hardware">
+  <class name="nt_hardware/OpenCRHardware"
+         type="nt_hardware::OpenCRHardware"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      F팀 닌자터틀: OpenCR 1장 + 펌웨어(firmware/nt_opencr)로 다이나믹셀 14개 + OpenCR 내장 IMU.
+      패킷 규칙은 firmware/nt_opencr/nt_packet.h (docs/hardware.md 4절).
+    </description>
+  </class>
+</library>

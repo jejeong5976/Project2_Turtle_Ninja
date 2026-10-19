@@ -1,0 +1,83 @@
+# hardware_map.yaml — ★ "어느 관절이 어느 보드·모터에 붙나" 를 적는 유일한 곳
+# =============================================================================
+# 이 파일을 robot.urdf.xacro 가 읽어서 <ros2_control> 블록을 자동으로 만든다.
+#   - 보드(OpenCR / U2D2) 1장 = buses 항목 1개 = <ros2_control> 블록 1개
+#   - OpenCR 1장 → 2장으로 나누려면: buses 에 항목을 하나 더 쓰고 joints 를 옮기면 끝. 코드 수정 없음
+#     (아래 맨 끝에 2장 예시 있음)
+#
+# 근거
+#   - 팔 이름 · ID: OpenManipulator-X + 6축 손목
+#       관절 joint1~4 = ID 11~14 (OpenManipulator-X 그대로), 그리퍼 = 15, 새 손목 회전 joint5 = 16
+#       "6축" = 그리퍼 포함 모터 6개 / 팔 관절은 5개 (몸통 1 + 굽힘 3 + 손목 비틀기 1)
+#   - 스워브 ID 1~8: 아직 가정 (조립하면서 정함)
+#
+# 순서 규칙: 한 bus 안의 joints 순서 = ros2_control 블록 안 joint 순서 = CONFIG 상자의 모터 순서 (docs/hardware.md 패킷)
+
+# 2026-10-16 결정: OpenCR 2장 · 전원 2구역 (와플파이 기본 배터리 2개)
+#   주행 보드 ← 배터리 A : 바퀴 4 + 조향 4   /   팔 보드 ← 배터리 B : 팔 5 + 그리퍼 1   /   Jetson ← 외부 19 V (기둥 따라 배선)
+#   보드마다 ros2_control 하드웨어가 따로 (이름 = name). 한쪽이 고장 나면 control_master 가 전체 STOP (docs/hardware.md)
+#   포트 이름은 udev 로 고정 (docs/hardware.md 5-1) — 시험 때는 launch 인자 opencr_ports:=bus_drive=…,bus_arm=… 로 바꿈
+buses:
+  - name: bus_drive
+    port: /dev/opencr_drive
+    baud: 1000000
+    imu: true                       # IMU 는 주행 보드 것 하나만 (swerve_controller 의 회전 보정, D12)
+    joints: [drive_fl_joint, drive_fr_joint, drive_rl_joint, drive_rr_joint,
+             steer_fl_joint, steer_fr_joint, steer_rl_joint, steer_rr_joint]
+  - name: bus_arm
+    port: /dev/opencr_arm
+    baud: 1000000
+    joints: [joint1, joint2, joint3, joint4, joint5, gripper_left_joint]
+
+# mode: velocity = 속도 모드(바퀴), position = 위치 모드(조향·팔), gripper = 전류기반 위치(그리퍼, 단위 m)
+# scale · zero_tick (2026-10-16): 관절 = (모터 rad − (zero_tick − 2048) × 2π/4096) × scale. 기본 scale 1 · zero_tick 2048 (= 예전과 같음)
+#   조향은 모터 + 가 위에서 시계라 scale −1, zero_tick = 직진 눈금 (공중 시험용 임시 값은 tools/bench_drive_2026-10-16.yaml — 여기엔 아직 안 넣음)
+#   zero_tick 은 위치 모드만 (바퀴 속도 모드는 2048 그대로여야 함 — 플러그인이 거부)
+# initial: 가짜 하드웨어(mock)로 켰을 때의 시작 각도 [rad] — 팔이 접힌 자세로 보이게
+# profile_vel · profile_acc: 모터가 스스로 지키는 속도 · 가속 한계 (D16 "느리게" — 순간 전류를 모터 안에서 한 번 더 줄임)
+#   단위는 다이나믹셀 눈금 그대로: Profile Velocity 1 = 0.229 rpm, Profile Acceleration 1 = 214.577 rev/min²
+#   조향 40 → 약 0.96 rad/s (90° 에 약 1.7 s),  가속 10 → 약 3.7 rad/s²
+#   바퀴 가속 20 → 바퀴 약 7.5 rad/s² = 몸통 약 0.25 m/s² (control.yaml max_linear_accel 0.2 와 맞춤)
+#   팔은 안 씀: joint_trajectory_controller 가 시간표대로(한 동작 4 s) 이미 천천히 보내기 때문 (둘 다 걸면 늦게 따라가 오차)
+motors:
+  drive_fl_joint: {id: 1,  model: XM430-W210, mode: velocity, profile_acc: 20}
+  drive_fr_joint: {id: 2,  model: XM430-W210, mode: velocity, profile_acc: 20}
+  drive_rl_joint: {id: 3,  model: XM430-W210, mode: velocity, profile_acc: 20}
+  drive_rr_joint: {id: 4,  model: XM430-W210, mode: velocity, profile_acc: 20}
+  # 조향 = XM430-W350 (CAD 부품 이름 *_Steer_XM430_W350), 주행 = W210 (CAD *_Drive_XM430_W210)
+  steer_fl_joint: {id: 5,  model: XM430-W350, mode: position, profile_vel: 40, profile_acc: 10}
+  steer_fr_joint: {id: 6,  model: XM430-W350, mode: position, profile_vel: 40, profile_acc: 10}
+  steer_rl_joint: {id: 7,  model: XM430-W350, mode: position, profile_vel: 40, profile_acc: 10}
+  steer_rr_joint: {id: 8,  model: XM430-W350, mode: position, profile_vel: 40, profile_acc: 10}
+  joint1:             {id: 11, model: XM430-W350, mode: position, initial: 0.0}
+  joint2:             {id: 12, model: XM430-W350, mode: position, initial: -1.45}  # 시작 자세 = 주행용 접은 자세(tuck)
+  joint3:             {id: 13, model: XM430-W350, mode: position, initial: 1.35}
+  joint4:             {id: 14, model: XM430-W350, mode: position, initial: 0.9}
+  joint5:             {id: 16, model: XM430-W350, mode: position, initial: 0.0}    # 손목 회전(롤), ±90°
+  # 그리퍼: 모터 rad → 손가락 m 는 scale 배 (ROBOTIS 공식값 0.000017626621790 m/눈금 × 4096/2π = 0.01149 m/rad)
+  #   ⚠ 부호(벌림이 + 인지)는 책상 시험에서 확인. ROBOTIS 설정은 Drive Mode 5(반대 방향) 라서 반대면 -0.01149 로
+  #   goal_current: 쥐는 힘 한계 (눈금 2.69 mA → 200 ≈ 0.54 A), OpenManipulator-X 공식 값
+  gripper_left_joint: {id: 15, model: XM430-W350, mode: gripper,  initial: 0.0, goal_current: 200, scale: 0.01149}
+
+# 모터 경비견 (Bus Watchdog): 단위 20 ms. 15 = 300 ms (펌웨어 경비견과 같은 값)
+# 펌웨어가 켤 때(CONFIG) 모터에 씀 = 안전장치 3겹째 (펌웨어까지 멈춰도 모터가 스스로 섬)
+watchdog: 15
+
+# 배터리 (와플파이 기본 배터리 3셀 리튬폴리머 11.1 V · 1,800 mAh · 5C, 보드마다 1 개) — 2026-10-16
+#   펌웨어가 모터 입력 전압을 1 초 단위로 보고(DIAG). 평균이 stop 아래로 2 번 연속이면 그 보드 ERROR → control_master 전체 STOP
+#   ⚠ 잠정: 셀당 3.6 V(10.8) 경고 · 3.4 V(10.2) 정지. XM430 입력 하한 약 10 V. 실제 부하 중 처짐을 재고 정할 것
+battery_warn_v: 10.8
+battery_stop_v: 10.2
+
+# (a) 전용: 켤 때 모터가 하나라도 대답 안 하면 멈출까 (true). 모터 몇 개만 놓고 책상 시험할 땐 false
+require_all_motors: true
+
+# ---- OpenCR 1장으로 되돌릴 때 (책상 시험 등. 쓰려면 위 buses 를 지우고 주석 해제) ----
+# buses:
+#   - name: bus_main
+#     port: /dev/opencr_main
+#     baud: 1000000
+#     imu: true
+#     joints: [drive_fl_joint, drive_fr_joint, drive_rl_joint, drive_rr_joint,
+#              steer_fl_joint, steer_fr_joint, steer_rl_joint, steer_rr_joint,
+#              joint1, joint2, joint3, joint4, joint5, gripper_left_joint]

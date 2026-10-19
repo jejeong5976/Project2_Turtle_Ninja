@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>nt_control</name>
+  <version>0.1.0</version>
+  <description>F팀 닌자터틀 — control_master(팔 동작 + 차례) + 스워브 컨트롤러 플러그인(바퀴)</description>
+  <maintainer email="team@example.com">F팀 닌자터틀</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>control_msgs</depend>
+  <depend>trajectory_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>controller_manager_msgs</depend>
+  <depend>lifecycle_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>nt_interfaces</depend>
+  <depend>controller_interface</depend>
+  <depend>pluginlib</depend>
+  <depend>rclcpp_lifecycle</depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
