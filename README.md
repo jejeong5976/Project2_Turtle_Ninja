@@ -55,7 +55,9 @@ Project2_Turtle_Ninja/
 │   └── models/              # .pt / .onnx / .engine (git 제외)
 ├── sim/
 │   └── robot_sim/           # Isaac Sim 로봇 주행 시뮬레이션 (ROS 2 연동)
-└── docs/                    # 설치 기록, 설계 문서, 가이드
+├── tools/                   # ROS 밖에서 단독 실행하는 개발 도구
+│   └── camera_calib/        # 카메라 캘리브레이션 사진 수집 (OpenCV)
+└── docs/                    # 설치 기록, 설계 문서, 가이드 (코드 X, 문서·이미지만)
 ```
 
 ## 빌드
@@ -106,7 +108,7 @@ git push -u origin feat/swerve-ik
 ```
 
 3. GitHub에서 PR 생성 (대상: `main`)
-4. 승인 1개 받은 뒤 관리자가 **Squash and merge**
+4. 승인 1개 받은 뒤 관리자가 **Create a merge commit**으로 머지
 
 ### 커밋 금지
 

@@ -1,10 +1,9 @@
-// Arducam 캘리브레이션 사진을 안내에 따라 모으는 프로그램 (레포 밖에서 사용, 커밋 안 함).
-// capture_guided.py 를 C++로 옮긴 것. 동작은 같음.
+// Arducam 캘리브레이션 사진을 안내에 따라 모으는 프로그램.
 //
 // 빌드 (Ubuntu 24.04, 처음 한 번: sudo apt install libopencv-dev):
-//     g++ -O2 -std=c++17 capture_guided.cpp -o capture_guided $(pkg-config --cflags --libs opencv4)
+//     g++ -O2 -std=c++17 tools/camera_calib/cam_calib.cpp -o build/cam_calib $(pkg-config --cflags --libs opencv4)
 // 실행:
-//     ./capture_guided --dev /dev/video8 --out ~/calib_wide2
+//     ./build/cam_calib --dev /dev/video8 --out ~/calib_wide2
 //
 // 화면 보는 법:
 //   - 3x3 칸: 빨강 = 아직 없음, 노랑 = 조금 있음, 초록 = 충분함. 빨강/노랑 칸에 보드를 가져가세요

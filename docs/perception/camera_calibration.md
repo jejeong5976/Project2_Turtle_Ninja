@@ -3,7 +3,7 @@
 광각 카메라(Arducam UC-684)의 내부 파라미터(K)와 왜곡 계수(D)를 구하는 절차와 결과를 정리한 문서. [YOLO26 가이드](yolo26_isaac_sim_guide.md) 11.3절을 실제로 진행하면서 정한 방법이다.
 
 - 결과 파일: [`config/camera_wide.yaml`](../../config/camera_wide.yaml)
-- 체커보드: [`assets/checkerboard_9x6_25mm_A4.pdf`](assets/checkerboard_9x6_25mm_A4.pdf) (인쇄용), [`assets/checkerboard_9x6_25mm.png`](assets/checkerboard_9x6_25mm.png) (300dpi 이미지)
+- 체커보드: [`assets/checkerboard_9x6_25mm.png`](assets/checkerboard_9x6_25mm.png) (300dpi 이미지)
 
 > D435(손목)는 공장 intrinsics를 쓰므로 이 절차가 필요 없다. YOLO26 가이드 11.3절의 `camera_info` 확인만 하면 된다.
 
@@ -61,14 +61,12 @@
 
 ### 2.3 방법 A: 안내형 촬영 프로그램 (권장)
 
-`cam_calib.cpp` (C++/OpenCV, 같은 동작의 `cam_calib.py`도 있음). 화면을 3×3 칸으로 나눠 아직 안 찍은 곳(빨강)과 기울기 체크리스트를 보여 주고, 보드가 다 보이고·멈춰 있고·이전 사진과 다르면 자동으로 저장한다.
-
-> 현재 이 프로그램은 레포 밖(김혜민 노트북 `~/calib_wide/`)에 있다. 팀에서 쓰려면 레포에 추가할 것.
+[`tools/camera_calib/cam_calib.cpp`](../../tools/camera_calib/cam_calib.cpp) (C++/OpenCV). 화면을 3×3 칸으로 나눠 아직 안 찍은 곳(빨강)과 기울기 체크리스트를 보여 주고, 보드가 다 보이고·멈춰 있고·이전 사진과 다르면 자동으로 저장한다.
 
 ```bash
 sudo apt install libopencv-dev          # 처음 한 번
-g++ -O2 -std=c++17 cam_calib.cpp -o cam_calib $(pkg-config --cflags --libs opencv4)
-./cam_calib --dev /dev/video8 --out ~/calib_wide2
+mkdir -p build && g++ -O2 -std=c++17 tools/camera_calib/cam_calib.cpp -o build/cam_calib $(pkg-config --cflags --libs opencv4)
+./build/cam_calib --dev /dev/video8 --out ~/calib_wide2
 ```
 
 - 3×3 칸이 모두 초록, TILT 4개가 모두 `[x]`, 25장 이상이면 `DONE`이 뜬다. `q`로 종료, `s`로 강제 저장.
