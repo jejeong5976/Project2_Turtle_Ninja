@@ -61,14 +61,14 @@
 
 ### 2.3 방법 A: 안내형 촬영 프로그램 (권장)
 
-`capture_guided.cpp` (C++/OpenCV, 같은 동작의 `capture_guided.py`도 있음). 화면을 3×3 칸으로 나눠 아직 안 찍은 곳(빨강)과 기울기 체크리스트를 보여 주고, 보드가 다 보이고·멈춰 있고·이전 사진과 다르면 자동으로 저장한다.
+`cam_calib.cpp` (C++/OpenCV, 같은 동작의 `cam_calib.py`도 있음). 화면을 3×3 칸으로 나눠 아직 안 찍은 곳(빨강)과 기울기 체크리스트를 보여 주고, 보드가 다 보이고·멈춰 있고·이전 사진과 다르면 자동으로 저장한다.
 
 > 현재 이 프로그램은 레포 밖(김혜민 노트북 `~/calib_wide/`)에 있다. 팀에서 쓰려면 레포에 추가할 것.
 
 ```bash
 sudo apt install libopencv-dev          # 처음 한 번
-g++ -O2 -std=c++17 capture_guided.cpp -o capture_guided $(pkg-config --cflags --libs opencv4)
-./capture_guided --dev /dev/video8 --out ~/calib_wide2
+g++ -O2 -std=c++17 cam_calib.cpp -o cam_calib $(pkg-config --cflags --libs opencv4)
+./cam_calib --dev /dev/video8 --out ~/calib_wide2
 ```
 
 - 3×3 칸이 모두 초록, TILT 4개가 모두 `[x]`, 25장 이상이면 `DONE`이 뜬다. `q`로 종료, `s`로 강제 저장.
