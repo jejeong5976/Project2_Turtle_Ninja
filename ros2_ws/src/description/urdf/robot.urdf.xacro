@@ -1,0 +1,346 @@
+<?xml version="1.0"?>
+<!--
+  robot.urdf.xacro — 닌자터틀 로봇 전체 (모양 + 모터 연결)
+  ====================================================================
+  ⚠ 지금 모델은 임시 — 라이다 · 팔 받침 · 층 구조가 정해지면 다시 모델링 (값이 바뀌어도 링크 · 관절 이름은 유지)
+  구성
+    몸통 · 바퀴 : 팀 Swerve CAD (Assembly_1.step) — 와플파이 3층 + 스워브 모듈 4개
+    팔         : OpenManipulator-X 원본 메시 + 손목 회전 관절(joint5) 을 하나 더한 "6축" 손목
+                 손목 판은 wrist_plate_v2.step
+                 → 관절 5개 + 그리퍼 = 모터 6개
+
+  누가 읽나
+    robot_state_publisher → TF (base_link → 바퀴 · 팔 · 센서 위치)
+    ros2_control_node     → <ros2_control> 블록 (어느 관절을 어느 모터로)
+    MoveIt · Isaac Sim    → 나중에 같은 파일을 씀 (모델은 하나만 유지!)
+
+  ⚠ 숫자의 출처
+    - 몸통 · 스워브 모듈 · 바퀴: Assembly_1.step 에서 잰 값 (meshes/swerve_cad/README.md)
+    - OpenManipulator-X 관절 위치: ROBOTIS 공식 URDF 값 그대로
+    - 손목 관절 · 그리퍼 · 손끝 위치: 6축 손목 설계값 (손목 모터 혼 면 +0.064 m, 그리퍼 +44 mm 앞으로)
+    - 팔 받침 · 라이다 · 프로파일 · 카메라 위치: 가정 (CAD 에 없음)
+    이름(링크·관절)은 다른 층과의 약속이라 바꾸면 controllers.yaml · control.yaml · hardware_map.yaml 도 같이
+
+  인자
+    hardware      mock | opencr   (gazebo 는 시뮬레이션용 자리 — ros2_control.xacro 설명)
+    arm_mount_x/y 팔 받침 위치 (미확정)   with_accessories  프로파일 · 카메라 켜기
+    hardware_map  보드·모터 배치 yaml 경로
+-->
+<robot name="ninja_turtle" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="hardware" default="mock"/>
+  <!-- 팔 받침 위치 [m, base_link 기준] — ⚠ 미확정
+       0, 0 = 조립 이미지로 본 "가운데" 추정값. 체결 구멍 실측값이 아님 (팔 자세표 control.yaml 은 앞쪽 0.085 를 가정하고 계산됨)
+       ⚠ 이 값이면 라이다(base_scan, x = -0.045 로 가정)와 팔 받침(link1)의 상자가 겹침 → 둘 중 하나 이상의 위치가 틀렸다는 뜻.
+         실측 전까지 둘 다 "가정" 으로 둠. 확정되면 여기 default 와 scan_joint 를 같이 고칠 것 -->
+  <xacro:arg name="arm_mount_x" default="0.0"/>
+  <xacro:arg name="arm_mount_y" default="0.0"/>
+  <!-- 프로파일 45 cm · 카메라 2개 (위치 가정). 실제 로봇 · RViz 에서는 켬 (인지가 camera_* TF 를 씀).
+       위치 · 질량은 가정 -->
+  <xacro:arg name="with_accessories" default="true"/>
+  <xacro:arg name="hardware_map" default="$(find description)/config/hardware_map.yaml"/>
+  <xacro:arg name="opencr_port" default="auto"/>   <!-- hardware:=opencr 때 포트 바꾸기 — 보드 1장일 때만 (auto = hardware_map.yaml 의 port) -->
+  <xacro:arg name="opencr_ports" default="auto"/>  <!-- 보드마다: bus_drive=/tmp/opencr_drive,bus_arm=/tmp/opencr_arm (auto = hardware_map.yaml) -->
+
+  <xacro:property name="hw" value="${xacro.load_yaml('$(arg hardware_map)')}"/>
+  <xacro:property name="opencr_ports" value="${dict([kv.split('=', 1) for kv in '$(arg opencr_ports)'.split(',') if '=' in kv])}"/>
+  <xacro:property name="mesh" value="package://description/meshes"/>
+
+  <!-- ===================== 치수 (팀 Swerve CAD, Assembly_1.step 에서 잼) ===================== -->
+  <!-- base_link 원점 = 조향축 4개의 한가운데, 바퀴축 높이. 단위 m -->
+  <xacro:property name="wheel_r" value="0.033"/>       <!-- 바퀴 반지름 (CAD 타이어 33.0 mm, 터틀봇3 바퀴와 같음) -->
+  <xacro:property name="module_x" value="0.112"/>      <!-- 조향축 위치 ±x (bringup/config/controllers.yaml 의 swerve_controller 와 같아야 함!) -->
+  <xacro:property name="module_y" value="0.064"/>      <!-- 조향축 위치 ±y -->
+  <xacro:property name="wheel_off" value="0.0269"/>    <!-- 바퀴 중심이 조향축에서 바깥쪽으로 떨어진 거리 (바퀴축 방향) -->
+  <xacro:property name="plate_low" value="0.039"/>     <!-- 1층 판 아랫면 (바닥에서 72 mm) -->
+  <xacro:property name="plate_top" value="0.1306"/>    <!-- 3층(맨 위) 판 윗면 (바닥에서 164 mm) -->
+  <xacro:property name="body_front" value="0.141"/>    <!-- 몸통 앞 끝 -->
+  <xacro:property name="body_back" value="-0.133"/>    <!-- 몸통 뒤 끝 -->
+  <xacro:property name="body_half_w" value="0.133"/>   <!-- 몸통 반폭 -->
+
+  <xacro:include filename="$(find description)/urdf/ros2_control.xacro"/>
+
+  <material name="waffle"><color rgba="0.62 0.55 0.62 1"/></material>  <!-- CAD 그림의 연보라 와플 판 -->
+  <material name="dark"><color rgba="0.15 0.15 0.15 1"/></material>
+  <material name="motor"><color rgba="0.10 0.10 0.10 1"/></material>
+  <material name="metal"><color rgba="0.75 0.75 0.78 1"/></material>
+  <material name="arm"><color rgba="0.30 0.30 0.32 1"/></material>
+  <material name="new_motor"><color rgba="0.13 0.62 0.38 1"/></material>  <!-- 초록 = 새로 더한 손목 모터 -->
+  <material name="plate_v2"><color rgba="0.93 0.55 0.15 1"/></material>   <!-- 주황 = 손목 판 v2 -->
+  <material name="frame_blue"><color rgba="0.20 0.42 0.85 1"/></material> <!-- 파란 프레임 FR12-H104 -->
+  <material name="tire"><color rgba="0.55 0.22 0.12 1"/></material>
+  <material name="camera"><color rgba="0.55 0.55 0.60 1"/></material>
+
+  <!-- ===================== 몸통 (와플파이 3층 + 조향 모터 4개) ===================== -->
+  <link name="base_footprint"/>
+  <link name="base_link">
+    <xacro:box_inertia mass="2.0" sx="0.274" sy="0.267" sz="0.11" xyz="0.004 0 0.08"/>
+    <visual>   <!-- 와플파이 판 3층 · 지지대 · OpenCR 등 -->
+      <geometry><mesh filename="${mesh}/swerve_cad/chassis.stl" scale="0.001 0.001 0.001"/></geometry>
+      <material name="waffle"/>
+    </visual>
+    <visual>   <!-- 조향 모터 XM430-W350 ×4 (몸통에 고정, 혼이 아래 모듈을 돌림) + 고정 나사 -->
+      <geometry><mesh filename="${mesh}/swerve_cad/steer_motors.stl" scale="0.001 0.001 0.001"/></geometry>
+      <material name="motor"/>
+    </visual>
+    <collision>
+      <origin xyz="${(body_front + body_back) / 2} 0 ${(plate_top + plate_low) / 2}"/>
+      <geometry><box size="${body_front - body_back} ${2 * body_half_w} ${plate_top - plate_low}"/></geometry>
+    </collision>
+  </link>
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${wheel_r}"/>   <!-- 바닥 → 바퀴축 높이 -->
+  </joint>
+
+  <!-- 필수 탑재: 2020 알루미늄 프로파일 45 cm (대회 규칙). CAD 에 없음 → 위치 가정: 맨 위 판 뒤쪽 -->
+  <xacro:if value="$(arg with_accessories)">
+  <link name="profile_link">
+    <xacro:box_physics mass="0.23" sx="0.02" sy="0.02" sz="0.45" xyz="0 0 0.225"/>
+    <visual>
+      <origin xyz="0 0 0.225"/>
+      <geometry><box size="0.02 0.02 0.45"/></geometry>
+      <material name="metal"/>
+    </visual>
+  </link>
+  <joint name="profile_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="profile_link"/>
+    <origin xyz="${body_back + 0.018} 0 ${plate_top}"/>
+  </joint>
+  </xacro:if>
+
+  <!-- ===================== 스워브 모듈 4개 (CAD 그대로) ===================== -->
+  <!-- 모듈 1개 = [몸통에 고정] 조향 모터 → (혼) → [돎] FR12-S102K 브래킷 + 주행 모터 XM430-W210 → (혼) → 바퀴
+       ⚠ 바퀴가 조향축 바로 아래가 아니라 바퀴축 방향으로 26.9 mm 바깥에 있음 (주행 모터 옆에 바퀴를 단 구조)
+         → 조향하면 바퀴가 조향축 둘레로 작은 원을 그림. 계산은 swerve_controller 의 module_offset 이 맡음 -->
+  <xacro:macro name="swerve_module" params="name x y off">
+    <link name="steer_${name}_link">
+      <xacro:box_physics mass="0.10" sx="0.029" sy="0.043" sz="0.054" xyz="0 0 0.016"/>
+      <visual>
+        <geometry><mesh filename="${mesh}/swerve_cad/module_${name}.stl" scale="0.001 0.001 0.001"/></geometry>
+        <material name="motor"/>
+      </visual>
+    </link>
+    <joint name="steer_${name}_joint" type="revolute">
+      <parent link="base_link"/>
+      <child link="steer_${name}_link"/>
+      <origin xyz="${x} ${y} 0"/>     <!-- 조향축 (높이는 바퀴축에 맞춤 — 축 위 어디든 같은 뜻) -->
+      <axis xyz="0 0 1"/>
+      <limit lower="${-pi}" upper="${pi}" effort="3.0" velocity="5.0"/>
+    </joint>
+
+    <link name="wheel_${name}_link">
+      <!-- 바퀴 회전축은 y. 원통 관성도 같은 축을 사용한다. -->
+      <inertial><mass value="0.03"/>
+        <inertia ixx="${0.03*(3*wheel_r*wheel_r+0.02*0.02)/12}" ixy="0" ixz="0"
+          iyy="${0.03*wheel_r*wheel_r/2}" iyz="0" izz="${0.03*(3*wheel_r*wheel_r+0.02*0.02)/12}"/>
+      </inertial>
+      <visual>
+        <geometry><mesh filename="${mesh}/swerve_cad/wheel_${name}.stl" scale="0.001 0.001 0.001"/></geometry>
+        <material name="tire"/>
+      </visual>
+      <collision>
+        <origin rpy="${pi / 2} 0 0"/>
+        <geometry><cylinder radius="${wheel_r}" length="0.020"/></geometry>
+      </collision>
+    </link>
+    <joint name="drive_${name}_joint" type="continuous">
+      <parent link="steer_${name}_link"/>
+      <child link="wheel_${name}_link"/>
+      <origin xyz="0 ${off} 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:swerve_module name="fl" x="${module_x}"  y="${module_y}"  off="${wheel_off}"/>
+  <xacro:swerve_module name="fr" x="${module_x}"  y="${-module_y}" off="${-wheel_off}"/>
+  <xacro:swerve_module name="rl" x="${-module_x}" y="${module_y}"  off="${wheel_off}"/>
+  <xacro:swerve_module name="rr" x="${-module_x}" y="${-module_y}" off="${-wheel_off}"/>
+
+  <!-- ===================== IMU (D12) ===================== -->
+  <!-- 기본안: OpenCR 보드 안의 IMU → 위치 = CAD 의 OpenCR(2층 가운데 조금 앞) 판 중심. 보드가 몸통과 같은 방향으로 놓였다고 가정
+       외장 IMU 로 정하면 이 joint 위치만 바꾸면 됨 -->
+  <link name="imu_link"/>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0.066 0 0.100"/>
+  </joint>
+
+  <!-- ===================== 라이다 LDS (CAD 에 없음 → 위치 가정: 맨 위 판, 팔 뒤) =====================
+       ⚠ 이 위치 + 팔 받침 0,0 이면 HOME 자세 팔과 라이다가 겹쳐 앞쪽이 가려짐
+         → 대안 "2층 판 사이에 LDS-03" 포함해서 기구 회의에서 정할 것 -->
+  <link name="base_scan">
+    <xacro:box_physics mass="0.12" sx="0.066" sy="0.069" sz="0.039" xyz="0 0 -0.0106"/>
+    <visual>
+      <geometry><mesh filename="${mesh}/turtlebot3/lds.stl" scale="0.001 0.001 0.001"/></geometry>
+      <material name="dark"/>
+    </visual>
+  </link>
+  <joint name="scan_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="base_scan"/>
+    <origin xyz="-0.045 0 ${plate_top + 0.0302}"/>   <!-- LDS 메시 바닥이 -30.2 mm -->
+  </joint>
+
+  <!-- ===================== 팔: OpenManipulator-X + 손목 회전 ===================== -->
+  <!-- 관절 위치 · 한계는 ROBOTIS open_manipulator_x_arm.urdf.xacro 값 그대로.
+       팔 받침 위치(arm_base_joint)는 arm_mount_x/y 인자 (맨 위 판 위, 미확정 — 위쪽 인자 설명) -->
+  <link name="link1">
+    <xacro:box_physics mass="0.10" sx="0.0464" sy="0.0286" sz="0.0404" xyz="0 0 0.0202"/>
+    <visual><geometry><mesh filename="${mesh}/open_manipulator_x/link1.stl" scale="0.001 0.001 0.001"/></geometry><material name="arm"/></visual>
+  </link>
+  <joint name="arm_base_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="link1"/>
+    <origin xyz="$(arg arm_mount_x) $(arg arm_mount_y) ${plate_top}"/>
+  </joint>
+
+  <link name="link2">
+    <xacro:box_physics mass="0.10" sx="0.047" sy="0.043" sz="0.064" xyz="0 0.002 0.051"/>
+    <visual><origin xyz="0 0 0.019"/><geometry><mesh filename="${mesh}/open_manipulator_x/link2.stl" scale="0.001 0.001 0.001"/></geometry><material name="arm"/></visual>
+  </link>
+  <joint name="joint1" type="revolute">            <!-- 몸통 회전 (ID 11) -->
+    <parent link="link1"/><child link="link2"/>
+    <origin xyz="0.012 0 0"/><axis xyz="0 0 1"/>
+    <limit lower="${-pi}" upper="${pi}" effort="1000" velocity="4.8"/>
+  </joint>
+
+  <link name="link3">
+    <xacro:box_physics mass="0.14" sx="0.0674" sy="0.052" sz="0.1715" xyz="0.0137 0 0.06575"/>
+    <visual><geometry><mesh filename="${mesh}/open_manipulator_x/link3.stl" scale="0.001 0.001 0.001"/></geometry><material name="arm"/></visual>
+  </link>
+  <joint name="joint2" type="revolute">            <!-- 어깨 (ID 12) -->
+    <parent link="link2"/><child link="link3"/>
+    <origin xyz="0 0 0.0595"/><axis xyz="0 1 0"/>
+    <limit lower="-1.5" upper="1.5" effort="1000" velocity="4.8"/>
+  </joint>
+
+  <link name="link4">
+    <xacro:box_physics mass="0.13" sx="0.1673" sy="0.0526" sz="0.047" xyz="0.06365 0 0"/>
+    <visual><geometry><mesh filename="${mesh}/open_manipulator_x/link4.stl" scale="0.001 0.001 0.001"/></geometry><material name="arm"/></visual>
+  </link>
+  <joint name="joint3" type="revolute">            <!-- 팔꿈치 (ID 13) -->
+    <parent link="link3"/><child link="link4"/>
+    <origin xyz="0.024 0 0.128"/><axis xyz="0 1 0"/>
+    <limit lower="-1.5" upper="1.4" effort="1000" velocity="4.8"/>
+  </joint>
+
+  <!-- 6축 손목 구조
+         기존: 4번 관절 → 파란 프레임 → 그리퍼 모터 → 그리퍼
+         6축 : 4번 관절 → 파란 프레임 → [손목 모터 (새 XM430)] → [손목 판 v2] → 그리퍼 모터 → 그리퍼
+       공식 link5 메시(파란 프레임 + 그리퍼가 한 덩어리)를 부품별로 나눠서 (meshes/README.md 2절)
+         link5      = 안 도는 쪽: 파란 프레임 + 손목 모터 몸체 (원래 그리퍼 모터 자리 그대로)
+         wrist_link = 도는 쪽  : 손목 판 v2 + 그리퍼 모터 + 그리퍼 (원래보다 44 mm 앞으로)
+       메시는 전부 link5 좌표(4번 관절 축 = 원점, mm)로 저장돼 있음 -->
+  <link name="link5">
+    <xacro:box_physics mass="0.10" sx="0.0884" sy="0.052" sz="0.0552" xyz="0.0242 0 0.0076"/>
+    <visual>   <!-- 파란 프레임 FR12-H104 (그대로) -->
+      <geometry><mesh filename="${mesh}/omx_6axis/frame.stl" scale="0.001 0.001 0.001"/></geometry>
+      <material name="frame_blue"/>
+    </visual>
+    <visual>   <!-- 손목 모터 XM430-W350 (새로 추가, ID 16) — 원래 그리퍼 모터가 붙던 자리에 같은 방식으로 -->
+      <geometry><mesh filename="${mesh}/omx_6axis/xm430.stl" scale="0.001 0.001 0.001"/></geometry>
+      <material name="new_motor"/>
+    </visual>
+  </link>
+  <joint name="joint4" type="revolute">            <!-- 손목 굽힘 (ID 14) -->
+    <parent link="link4"/><child link="link5"/>
+    <origin xyz="0.124 0 0"/><axis xyz="0 1 0"/>
+    <limit lower="-1.7" upper="1.97" effort="1000" velocity="4.8"/>
+  </joint>
+
+  <!-- ★ 새 관절: 손목 회전
+       revolute, axis 1 0 0, 4번 관절 축에서 x +0.064 m (손목 모터 혼 면), ±1.57 rad (케이블 꼬임 때문) -->
+  <!-- wrist_link 원점 = 손목 모터 혼 면 (link5 x = 64 mm).
+       그리퍼 쪽 부품은 원래 자리에서 +44 mm → wrist_link 기준으로는 44 - 64 = -20 mm 옮겨 놓으면 됨 -->
+  <xacro:property name="grip_shift" value="${0.044 - 0.064}"/>
+  <link name="wrist_link">
+    <xacro:box_physics mass="0.12" sx="0.0484" sy="0.1286" sz="0.0638" xyz="0.0242 0 0.0089"/>
+    <visual>   <!-- 손목 판 v2 (주황, 3D 출력) — wrist_plate_v2.step (x 축으로 180° 돌려 턱이 위로) -->
+      <geometry><mesh filename="${mesh}/omx_6axis/wrist_plate_v2.stl" scale="0.001 0.001 0.001"/></geometry>
+      <material name="plate_v2"/>
+    </visual>
+    <visual>   <!-- 그리퍼 모터 (ID 15, 원래 모터 그대로 44 mm 앞으로) -->
+      <origin xyz="${grip_shift} 0 0"/>
+      <geometry><mesh filename="${mesh}/omx_6axis/xm430.stl" scale="0.001 0.001 0.001"/></geometry>
+      <material name="motor"/>
+    </visual>
+    <visual>   <!-- 그리퍼 레일 브래킷 · 봉 · 나사 (원래 그대로 44 mm 앞으로) -->
+      <origin xyz="${grip_shift} 0 0"/>
+      <geometry><mesh filename="${mesh}/omx_6axis/gripper_frame.stl" scale="0.001 0.001 0.001"/></geometry>
+      <material name="arm"/>
+    </visual>
+  </link>
+  <joint name="joint5" type="revolute">            <!-- 손목 비틀기 (ID 16) -->
+    <parent link="link5"/><child link="wrist_link"/>
+    <origin xyz="0.064 0 0"/><axis xyz="1 0 0"/>
+    <limit lower="-1.5708" upper="1.5708" effort="1000" velocity="4.8"/>
+  </joint>
+
+  <!-- 그리퍼: 원래 4번 관절 기준 0.0817 → 6축 0.1257 m = 손목 관절 기준 0.0617 m -->
+  <link name="gripper_left_link">
+    <xacro:box_physics mass="0.025" sx="0.0881" sy="0.0398" sz="0.058" xyz="0.02095 0.0077 0"/>
+    <visual><geometry><mesh filename="${mesh}/open_manipulator_x/gripper_left_palm.stl" scale="0.001 0.001 0.001"/></geometry><material name="arm"/></visual>
+  </link>
+  <joint name="gripper_left_joint" type="prismatic">   <!-- 그리퍼 (ID 15), 단위 m -->
+    <parent link="wrist_link"/><child link="gripper_left_link"/>
+    <origin xyz="0.0617 0.021 0"/><axis xyz="0 1 0"/>
+    <limit lower="-0.011" upper="0.02" effort="1000" velocity="4.8"/>
+  </joint>
+  <link name="gripper_right_link">
+    <xacro:box_physics mass="0.025" sx="0.0881" sy="0.0398" sz="0.058" xyz="0.02095 -0.0077 0"/>
+    <visual><geometry><mesh filename="${mesh}/open_manipulator_x/gripper_right_palm.stl" scale="0.001 0.001 0.001"/></geometry><material name="arm"/></visual>
+  </link>
+  <joint name="gripper_right_joint" type="prismatic">  <!-- 왼쪽을 따라 움직임 (모터 없음) -->
+    <parent link="wrist_link"/><child link="gripper_right_link"/>
+    <origin xyz="0.0617 -0.021 0"/><axis xyz="0 -1 0"/>
+    <limit lower="-0.011" upper="0.02" effort="1000" velocity="4.8"/>
+    <mimic joint="gripper_left_joint" multiplier="1"/>
+  </joint>
+
+  <!-- 손끝: 원래 0.126 → 6축 0.170 m (4번 관절 기준) = 손목 관절 기준 0.106 m. MoveIt 목표 기준점 -->
+  <link name="end_effector_link"/>
+  <joint name="end_effector_joint" type="fixed">
+    <parent link="wrist_link"/><child link="end_effector_link"/>
+    <origin xyz="0.106 0 0"/>
+  </joint>
+
+  <!-- ===================== 카메라 (위치 가정) ===================== -->
+  <!-- D435: 팀 노드맵 "팔 머리" → link5 위 (손목 비틀기와 같이 돌지 않게 손목 앞에) -->
+  <xacro:if value="$(arg with_accessories)">
+  <link name="camera_link">
+    <xacro:box_physics mass="0.072" sx="0.025" sy="0.09" sz="0.025"/>
+    <visual><geometry><box size="0.025 0.09 0.025"/></geometry><material name="camera"/></visual>
+  </link>
+  <joint name="camera_joint" type="fixed">
+    <parent link="link5"/><child link="camera_link"/>
+    <origin xyz="0.03 0 0.055"/>
+  </joint>
+  <!-- bird-eye (Arducam): 프로파일 꼭대기에서 앞쪽 아래를 내려다봄 -->
+  <link name="birdeye_camera_link">
+    <xacro:box_physics mass="0.03" sx="0.03" sy="0.03" sz="0.02"/>
+    <visual><geometry><box size="0.03 0.03 0.02"/></geometry><material name="camera"/></visual>
+  </link>
+  <joint name="birdeye_camera_joint" type="fixed">
+    <parent link="profile_link"/><child link="birdeye_camera_link"/>
+    <origin xyz="0.02 0 0.44" rpy="0 0.6 0"/>
+  </joint>
+  <link name="camera_optical_frame"/>
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/><child link="camera_optical_frame"/>
+    <origin rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+  <link name="birdeye_camera_optical_frame"/>
+  <joint name="birdeye_camera_optical_joint" type="fixed">
+    <parent link="birdeye_camera_link"/><child link="birdeye_camera_optical_frame"/>
+    <origin rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+  </xacro:if>
+
+  <!-- ===================== 모터 연결 ===================== -->
+  <xacro:nt_buses buses="${hw['buses']}" hardware="$(arg hardware)"/>
+
+</robot>

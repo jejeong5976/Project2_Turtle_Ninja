@@ -36,12 +36,13 @@
 
 ```
 Project2_Turtle_Ninja/
-├── config/                  # 노드 파라미터 yaml (perception, swerve_controller 등)
+├── config/                  # 팀 공용 설정 예약 (현재 노드 설정은 각 패키지 config/)
 ├── firmware/                # OpenCR 펌웨어
 ├── ros2_ws/                 # ROS 2 워크스페이스
 │   └── src/
 │       ├── bringup/             # 전체 실행 launch, 실기/시뮬 전환
 │       ├── description/         # URDF/xacro, 메쉬 (RViz·Isaac Sim 공용)
+│       ├── interfaces/          # 공용 메시지·액션 정의
 │       ├── hardware/            # OpenCR 2대(바퀴/팔) Dynamixel 통신
 │       ├── swerve_controller/   # cmd_vel → 바퀴별 조향각/속도, 휠 오도메트리
 │       ├── manipulation/        # 팔 제어, 밀기·집기·적재함 동작
@@ -65,6 +66,34 @@ cd ros2_ws
 colcon build --symlink-install
 source install/setup.bash
 ```
+
+## 패키지와 설정
+
+ROS 패키지 이름은 `src` 디렉터리 이름과 같다. `navigation`은 아직 예약 폴더다.
+`swerve_controller`는 바퀴 계산·제어 플러그인, `manipulation`은 팔 계산과
+`control_master`, `mission`은 `planning_master` 미션 상태머신을 제공한다.
+실행 노드 이름과 토픽·액션 주소는 유지한다.
+
+설정은 각 패키지의 `config/`에 유지하며 설치 후 `share/<package>/config/`에서 읽는다.
+`firmware/nt_opencr`와 통신 프로토콜은 그대로 유지한다.
+
+패키지 이름이 바뀐 checkout은 기존 설치본을 재사용하지 말고 별도로 빌드한다.
+공용 타입은 `interfaces/msg/*`, `interfaces/action/ArmTask`이므로 외부 소비자도
+이 타입 이름으로 함께 빌드해야 한다. 주행·팔 실물 실행은 별도 하드웨어 검증이 필요하다.
+
+하드웨어 없는 시험:
+
+```bash
+source /opt/ros/lyrical/setup.bash
+cd ros2_ws
+CMAKE_BUILD_PARALLEL_LEVEL=1 colcon build --executor sequential
+source install/setup.bash
+ROS_DOMAIN_ID=181 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST colcon test --executor sequential \
+  --packages-select hardware manipulation mission swerve_controller
+colcon test-result --verbose
+```
+
+`perception`에는 아직 자동 시험이 없다. 위 명령은 기존 시험이 있는 패키지만 실행한다.
 
 ## Git 규칙
 
