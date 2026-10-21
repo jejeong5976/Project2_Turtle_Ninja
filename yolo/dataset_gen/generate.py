@@ -17,7 +17,13 @@
     bounding_box_2d_tight_XXXX.npy / _labels_XXXX.json / _prim_paths_XXXX.json
     meta_XXXX.json   ← 이 스크립트가 따로 기록 (퍽 색, 신호등 상태 등 후처리 검증용 정답)
 
-카메라 내부 파라미터는 실측 전 임시값이다. 캘리브레이션(가이드 11.3) 후 CAMERA_PROFILES를 교체한다.
+카메라 내부 파라미터는 실측값(config/camera_wide.yaml, config/camera_wrist.yaml)을 읽어 쓴다.
+    - wide : Arducam 광각, OpenCV fisheye (docs/perception/camera_calibration.md)
+    - wrist: D435 컬러, 공장 intrinsics (pinhole)
+
+fisheye 모서리 잘림 우회: Isaac Sim RTX는 fisheye 결과를 주점 중심, 반지름 imageSize 폭/2인 원으로
+잘라 버린다 (https://github.com/isaac-sim/IsaacSim/issues/838, 6.1.0-rc.26에서 확인).
+그래서 좌우로 넓혀 렌더링한 뒤 원래 크기로 잘라내고, bbox도 같은 만큼 옮긴다 (crop_outputs).
 """
 
 import argparse
@@ -25,6 +31,8 @@ import json
 import math
 import sys
 from pathlib import Path
+
+import yaml
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--camera", choices=["wide", "wrist"], default="wide")
@@ -39,23 +47,67 @@ args, _ = parser.parse_known_args()
 
 from isaacsim import SimulationApp  # noqa: E402
 
+CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
+
 CAMERA_PROFILES = {
-    # [확인 필요] 광각: 해상도·FOV·장착 높이·기울기 실측 후 교체. 현재 pinhole 근사 (fisheye는 캘리브레이션 후)
-    "wide": dict(resolution=(1280, 720), hfov_deg=100.0,
-                 height=(0.30, 0.50), pitch_deg=(20.0, 45.0), target_dist=(0.4, 1.8)),
-    # D435 컬러 640x480 (HFOV 약 69°). 선반 위 퍽을 0.15~0.45m 거리에서 봄
-    "wrist": dict(resolution=(640, 480), hfov_deg=69.0,
+    # Arducam 광각: 바닥에서 렌즈까지 614mm (±1cm 조립 오차). 앞쪽 아래로 기울여 장착
+    # [확인 필요] 기울기 각도는 장착 후 측정 (가이드 11.4)
+    "wide": dict(calib="camera_wide.yaml",
+                 height=(0.604, 0.624), pitch_deg=(20.0, 45.0), target_dist=(0.4, 1.8)),
+    # D435 컬러: 선반 위 퍽을 0.15~0.45m 거리에서 봄
+    "wrist": dict(calib="camera_wrist.yaml",
                   distance=(0.15, 0.45), elevation_deg=(10.0, 75.0)),
 }
-profile = CAMERA_PROFILES[args.camera]
-W, H = profile["resolution"]
 
-simulation_app = SimulationApp({"headless": True, "width": W, "height": H})
+
+def load_calib(name: str) -> dict:
+    """ROS camera_info yaml → 해상도, K(fx, fy, cx, cy), 왜곡 모델·계수."""
+    info = yaml.safe_load((CONFIG_DIR / name).read_text())
+    k = info["camera_matrix"]["data"]
+    return dict(width=info["image_width"], height=info["image_height"],
+                fx=k[0], fy=k[4], cx=k[2], cy=k[5],
+                model=info["distortion_model"], dist=info["distortion_coefficients"]["data"])
+
+
+def horizontal_fov(c: dict) -> float:
+    """수평 화각 [rad]. 영상 좌우 끝 픽셀이 광축과 이루는 각의 합."""
+    def edge_angle(r_px):
+        x = r_px / c["fx"]
+        if c["model"] != "equidistant":
+            return math.atan(x)
+        # fisheye: θd = θ(1 + k1θ² + k2θ⁴ + k3θ⁶ + k4θ⁸) = x 를 θ에 대해 풂 (뉴턴법)
+        k1, k2, k3, k4 = c["dist"]
+        t = x
+        for _ in range(20):
+            t2 = t * t
+            f = t * (1 + k1 * t2 + k2 * t2**2 + k3 * t2**3 + k4 * t2**4) - x
+            df = 1 + 3 * k1 * t2 + 5 * k2 * t2**2 + 7 * k3 * t2**3 + 9 * k4 * t2**4
+            t -= f / df
+        return t
+    return edge_angle(c["cx"]) + edge_angle(c["width"] - c["cx"])
+
+
+def fisheye_pad(c: dict) -> int:
+    """잘림 원(반지름 = 렌더 폭/2)이 네 모서리를 덮도록 좌우에 더할 폭 [px]. pinhole이면 0."""
+    if c["model"] != "equidistant":
+        return 0
+    r_max = max(math.hypot(x - c["cx"], y - c["cy"]) for x in (0, c["width"]) for y in (0, c["height"]))
+    return 8 * math.ceil((r_max - c["width"] / 2) / 8)
+
+
+profile = CAMERA_PROFILES[args.camera]
+calib = load_calib(profile["calib"])
+W, H = calib["width"], calib["height"]                     # 저장되는 영상 크기 (실제 카메라와 같음)
+hfov = horizontal_fov(calib)
+PAD = fisheye_pad(calib)                                    # wide: 136px → 1552x720으로 렌더링
+render_calib = dict(calib, width=W + 2 * PAD, cx=calib["cx"] + PAD)
+
+simulation_app = SimulationApp({"headless": True, "width": render_calib["width"], "height": H})
 
 import numpy as np  # noqa: E402
 import omni.replicator.core as rep  # noqa: E402
 import omni.usd  # noqa: E402
-from pxr import Gf, UsdGeom, UsdLux, Vt  # noqa: E402
+from pxr import Gf, Sdf, UsdGeom, UsdLux, Vt  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from assets import (  # noqa: E402
@@ -174,17 +226,32 @@ for light in ceiling:
     light.CreateRadiusAttr(0.15)
     UsdGeom.Xformable(light).AddTranslateOp(UsdGeom.XformOp.PrecisionDouble)
 
-# 카메라
-hfov = math.radians(profile["hfov_deg"])
-cam = UsdGeom.Camera.Define(stage, "/World/Camera")
-h_ap = 20.955
-cam.CreateHorizontalApertureAttr(h_ap)
-cam.CreateVerticalApertureAttr(h_ap * H / W)
-cam.CreateFocalLengthAttr(h_ap / (2.0 * math.tan(hfov / 2.0)))
-cam.CreateClippingRangeAttr(Gf.Vec2f(0.01, 50.0))
+# 카메라: 실측 K로 pinhole 값을 맞추고, fisheye면 OpenCV fisheye 렌즈 왜곡을 적용
+def make_camera(path: str, c: dict):
+    cam = UsdGeom.Camera.Define(stage, path)
+    px = 20.955 / c["width"]                          # 센서 픽셀 크기 [mm] (가로 aperture 20.955mm 기준)
+    cam.CreateFocalLengthAttr(c["fx"] * px)
+    cam.CreateHorizontalApertureAttr(c["width"] * px)
+    cam.CreateVerticalApertureAttr(c["height"] * px * c["fx"] / c["fy"])
+    cam.CreateHorizontalApertureOffsetAttr((c["width"] / 2 - c["cx"]) * px)
+    cam.CreateVerticalApertureOffsetAttr((c["cy"] - c["height"] / 2) * px)
+    cam.CreateClippingRangeAttr(Gf.Vec2f(0.01, 50.0))
+    if c["model"] == "equidistant":
+        prim = cam.GetPrim()
+        prim.AddAppliedSchema("OmniLensDistortionOpenCvFisheyeAPI")
+        ns = "omni:lensdistortion:opencvFisheye:"
+        for key in ("fx", "fy", "cx", "cy"):
+            prim.CreateAttribute(ns + key, Sdf.ValueTypeNames.Float).Set(float(c[key]))
+        for i, k in enumerate(c["dist"], start=1):
+            prim.CreateAttribute(f"{ns}k{i}", Sdf.ValueTypeNames.Float).Set(float(k))
+        prim.CreateAttribute(ns + "imageSize", Sdf.ValueTypeNames.Int2).Set(Gf.Vec2i(c["width"], c["height"]))
+    return cam
+
+
+cam = make_camera("/World/Camera", render_calib)
 cam_op = UsdGeom.Xformable(cam).AddTransformOp()
 
-rp = rep.create.render_product(str(cam.GetPath()), (W, H))
+rp = rep.create.render_product(str(cam.GetPath()), (render_calib["width"], H))
 backend = rep.backends.get("DiskBackend")
 backend.initialize(output_dir=str(out_dir))
 writer = rep.writers.get("BasicWriter")
@@ -443,6 +510,26 @@ def randomize_frame():
                 pucks=puck_meta, tower=tower_meta)
 
 
+def crop_outputs(out_dir: Path, pad: int, width: int):
+    """넓혀 렌더링한 결과를 가운데 width만 남기고, bbox x좌표를 pad만큼 옮김. 다 잘려 나간 bbox는 버림."""
+    from PIL import Image
+
+    for name in ("rgb", "instance_segmentation"):
+        for png in out_dir.glob(f"{name}_*.png"):
+            with Image.open(png) as im:
+                im.crop((pad, 0, pad + width, im.height)).save(png)
+    for npy in out_dir.glob("bounding_box_2d_tight_[0-9]*.npy"):
+        boxes = np.load(npy)
+        boxes["x_min"] = np.clip(boxes["x_min"] - pad, 0, width - 1)
+        boxes["x_max"] = np.clip(boxes["x_max"] - pad, 0, width - 1)
+        keep = boxes["x_max"] > boxes["x_min"]
+        np.save(npy, boxes[keep])
+        paths = npy.with_name(npy.stem.replace("tight_", "tight_prim_paths_") + ".json")
+        if paths.exists():
+            prims = json.loads(paths.read_text())
+            paths.write_text(json.dumps([p for p, k in zip(prims, keep) if k]))
+
+
 # ---------------------------------------------------------------------------
 # 캡처 루프
 # ---------------------------------------------------------------------------
@@ -465,6 +552,8 @@ try:
         if i % 10 == 0:
             print(f"[generate] {i}/{args.frames}", flush=True)
     rep.orchestrator.wait_until_complete()
+    if PAD:
+        crop_outputs(out_dir, PAD, W)
 finally:
     writer.detach()
     rp.destroy()
