@@ -44,6 +44,7 @@ Project2_Turtle_Ninja/
 │   └── src/
 │       ├── bringup/             # 전체 실행 launch, 실기/시뮬 전환
 │       ├── description/         # URDF/xacro, 메쉬 (RViz·Isaac Sim 공용)
+│       ├── interfaces/          # 공용 메시지·액션 정의
 │       ├── hardware/            # OpenCR 2대(바퀴/팔) Dynamixel 통신
 │       ├── swerve_controller/   # cmd_vel → 바퀴별 조향각/속도, 휠 오도메트리
 │       ├── manipulation/        # 팔 제어, 밀기·집기·적재함 동작
@@ -67,6 +68,30 @@ Project2_Turtle_Ninja/
 cd ros2_ws
 colcon build --symlink-install
 source install/setup.bash
+```
+
+## 제어 패키지 검증
+
+`swerve_controller`는 바퀴 제어 플러그인, `manipulation`은 팔 계산과 `control_master`를 제공합니다.
+이 PR에는 `mission`과 `perception` 구현을 포함하지 않습니다. 두 폴더는 담당자용 자리로 유지합니다.
+공용 타입은 `interfaces/msg/MotionMode`, `interfaces/msg/MissionStatus`, `interfaces/action/ArmTask`입니다.
+패키지 이름이 바뀐 checkout은 이전 설치본을 재사용하지 말고 새 build/install 경로에서 빌드하세요.
+실물 주행·팔 실행은 별도 하드웨어 검증이 필요합니다.
+아래 검증은 6개 패키지 전체 설치 기준입니다.
+`description`만 단독 설치한 환경의 기본 표시 실행은 지원하지 않습니다.
+
+하드웨어 없는 단위시험:
+
+```bash
+source /opt/ros/lyrical/setup.bash
+cd ros2_ws
+CMAKE_BUILD_PARALLEL_LEVEL=1 colcon build --executor sequential \
+  --build-base build/pr2-review --install-base install/pr2-review
+source install/pr2-review/setup.bash
+ROS_DOMAIN_ID=181 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST colcon test --executor sequential \
+  --build-base build/pr2-review --install-base install/pr2-review \
+  --packages-select hardware manipulation swerve_controller
+colcon test-result --test-result-base build/pr2-review --verbose
 ```
 
 ## Git 규칙

@@ -1,0 +1,64 @@
+# control.yaml — control_master 설정표 (팔 · 차례)
+# 바퀴 설정은 config/controllers.yaml 의 swerve_controller 에 (바퀴 계산이 ros2_control 컨트롤러 안이라서, D8).
+
+control_master:
+  ros__parameters:
+    rate_hz: 50.0                  # 차례 · 팔 진행 확인 주기
+
+    # =========================== 팔 ===========================
+    # 관절: joint1(몸통 회전) joint2(어깨) joint3(팔꿈치) joint4(손목 굽힘) joint5(손목 비틀기). 단위 rad
+    # 그리퍼: gripper_left_joint, 단위 m (손가락 이동 거리, OpenManipulator-X 와 같음)
+    arm_joints: [joint1, joint2, joint3, joint4, joint5]
+    gripper_joint: gripper_left_joint
+    move_time_s: 4.0               # 동작 하나에 걸리는 시간 (느리게 = 전류 작음, D16)
+    accept_timeout_s: 2.0          # 재생기(JTC)가 동작을 받아 주기까지 기다리는 최대 시간
+    motion_margin_s: 3.0           # move_time_s 보다 이만큼 더 걸리면 시간 초과 → 취소 + 실패
+    cancel_timeout_s: 2.0          # 취소를 보내고 재생기가 "멈췄다" 고 답하기를 기다리는 최대 시간 (취소 요청 ≠ 실제 정지)
+    # ---- 접힘 실측 확인 (2026-10-16 R1) — 바퀴를 푸는 조건 ----
+    #   마지막 home 동작 뒤, 측정 시각이 새로운 /joint_states 의 joint1~5 가 poses.home ± fold_tolerance 안에
+    #   fold_hold_s 동안 머물러야 DRIVE. verify_timeout_s 안에 안 되면 팔 작업 실패 → STOP
+    #   ⚠ 값은 잠정 — 실물 HOME 의 처짐 · 분해능을 재고 정할 것 (너무 작으면 정상인데도 실패, 너무 크면 덜 접혀도 통과)
+    verify_timeout_s: 2.0
+    fold_tolerance: [0.05]         # [rad] 하나만 주면 모든 관절 같은 값. 관절마다 다르게: [j1, j2, j3, j4, j5]
+    fold_hold_s: 0.3               # [s]
+    fold_max_age_s: 0.2            # [s] 이보다 오래된 측정으로는 확인 안 함
+    # 하드웨어 이상 → STOP + HOME 확인 무효 (2026-10-16 재검증 R6, arm.cpp HardwareWatch)
+    #   팔 관절 측정이 hw_state_timeout_s 넘게 안 오거나, NaN(못 읽음)이 hw_bad_hold_s 넘게 이어지면
+    #   ⚠ 잠정값 — 너무 작으면 측정 한두 번 빠질 때마다 HOME 을 다시 해야 하고, 너무 크면 고장 뒤 잠금이 늦어짐
+    hw_state_timeout_s: 0.3        # [s] joint_state_broadcaster 는 100 Hz
+    hw_bad_hold_s: 0.1             # [s] 하드웨어는 0.05 s 넘게 못 읽은 모터를 NaN 으로 냄 (measure_max_age_s)
+    # 보드 2장 (2026-10-16): 보드 상태를 controller_manager 에 직접 물음 — 하나라도 active 가 아니면 STOP
+    hw_component_hz: 5.0           # [Hz] 묻는 빈도 (응답 대기 중인 요청은 하나만)
+    hw_component_timeout_s: 1.0    # [s] 이만큼 답이 없으면 "모름" = 이상 (0 이하 = 보드 상태 안 봄)
+    # 측정을 볼 관절. 기본 = 주행 8 + 팔 6 전부. 책상 시험에서 모터 일부만 쓰면 그 관절만 남길 것
+    hw_watch_joints: [drive_fl_joint, drive_fr_joint, drive_rl_joint, drive_rr_joint,
+                      steer_fl_joint, steer_fr_joint, steer_rl_joint, steer_rr_joint,
+                      joint1, joint2, joint3, joint4, joint5, gripper_left_joint]
+    gripper_open: 0.019            # [m] OpenManipulator-X 한계 0.02 바로 안쪽
+    gripper_close: -0.005          # [m] 퍽 폭 3 cm 에 맞게 실측 필요 (다 닫힘 = 못 잡은 것)
+
+    # 고정 자세표
+    #   - 팔을 수평으로 쭉 뻗지 않는다 (손목 모터 82 g + 판 + 그리퍼 44 mm 전진 → 어깨 부담 ↑)
+    #     → 전부 "팔을 굽혀 위에서 내려 잡는" 모양
+    #   - 손목 비틀기(joint5)는 ±90° 안 (케이블 꼬임). 원기둥은 0, 직육면체는 ±45° 면 충분
+    # 아래 값: 팔 받침 = 맨 위 판(바닥에서 16.4 cm), 앞쪽 x = +0.085 를 가정하고 손끝이 바로 아래를 보도록 계산
+    #   목표: 손끝이 몸 중심 앞 0.25 m (몸 앞 끝에서 약 11 cm), 선반 8 cm + 퍽 6 cm 기준
+    #         위 = 바닥에서 20 cm, 집기 = 11 cm (퍽 윗부분을 쥠), 놓기 = 11.5 cm
+    # ⚠ 실물 선반 거리 · 팔 받침 위치가 정해지면 다시 잡을 것
+    #    (팔을 손으로 원하는 자세에 두고 /joint_states 를 읽어 적는 게 가장 빠름)
+    poses:
+      home:        [0.0, -1.45,  1.35,  0.9,   0.0]   # 주행용 접은 자세 (hardware_map 의 시작 자세와 같음)
+      pick_above:  [0.0,  0.037, -0.199, 1.721, 0.0]  # 앞쪽 퍽 위 (손끝 높이 0.20 m)
+      pick_down:   [0.0,  0.197,  0.345, 1.040, 0.0]  # 퍽 높이로 내려가기 (0.11 m)
+      place_above: [0.0,  0.037, -0.199, 1.721, 0.0]  # 놓을 선반 위 (0.20 m)
+      place_down:  [0.0,  0.177,  0.328, 1.077, 0.0]  # 내려놓기 (0.115 m)
+
+    # =========================== 차례 (한 번에 한 무리, D15) ===========================
+    start_locked: true             # 켤 때 바퀴 잠금 (팔 자세를 모름). 첫 HOME 작업이 끝나야 DRIVE
+                                   #   planning 없이 몸만 시험할 땐: ros2 action send_goal /arm_task interfaces/action/ArmTask "{task: 0}"
+    turn_publish_hz: 10.0          # 차례를 계속 보내는 주기 (swerve_controller 는 0.5 s 안 오면 잠금)
+    settle_s: 0.5                  # 팔 작업이 오면 바퀴를 세우고, 몸통이 이만큼 계속 멈춰 있어야 팔 시작 [s]
+                                   #   (센 시간은 swerve_controller 의 "잠갔음" 답을 받은 뒤부터)
+    still_linear: 0.01             # [m/s] /odom 이 이보다 느리면 "멈춤"
+    still_angular: 0.05            # [rad/s]
+    odom_timeout_s: 0.5            # /odom 의 측정 시각이 이만큼 오래되면 "멈췄는지 모름" → 팔 시작 안 함
