@@ -11,12 +11,12 @@
 #       "6축" = 그리퍼 포함 모터 6개 / 팔 관절은 5개 (몸통 1 + 굽힘 3 + 손목 비틀기 1)
 #   - 스워브 ID 1~8: 아직 가정 (조립하면서 정함)
 #
-# 순서 규칙: 한 bus 안의 joints 순서 = ros2_control 블록 안 joint 순서 = CONFIG 상자의 모터 순서 (docs/hardware.md 패킷)
+# 순서 규칙: 한 bus 안의 joints 순서 = ros2_control 블록 안 joint 순서 = CONFIG 상자의 모터 순서 (firmware/nt_opencr/nt_packet.h)
 
 # 2026-10-16 결정: OpenCR 2장 · 전원 2구역 (와플파이 기본 배터리 2개)
 #   주행 보드 ← 배터리 A : 바퀴 4 + 조향 4   /   팔 보드 ← 배터리 B : 팔 5 + 그리퍼 1   /   Jetson ← 외부 19 V (기둥 따라 배선)
-#   보드마다 ros2_control 하드웨어가 따로 (이름 = name). 한쪽이 고장 나면 control_master 가 전체 STOP (docs/hardware.md)
-#   포트 이름은 udev 로 고정 (docs/hardware.md 5-1) — 시험 때는 launch 인자 opencr_ports:=bus_drive=…,bus_arm=… 로 바꿈
+#   보드마다 ros2_control 하드웨어가 따로 (이름 = name). 한쪽이 고장 나면 control_master 가 전체 STOP
+#   포트 이름은 udev 로 고정 — 시험 때는 launch 인자 opencr_ports:=bus_drive=…,bus_arm=… 로 바꿈
 buses:
   - name: bus_drive
     port: /dev/opencr_drive

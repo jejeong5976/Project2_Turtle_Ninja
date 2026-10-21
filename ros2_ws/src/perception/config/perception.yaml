@@ -1,8 +1,0 @@
-# perception.yaml — perception_master 설정표
-# 카메라 토픽 이름은 카메라 드라이버를 띄운 뒤 `ros2 topic list` 로 확인해서 고치기
-
-perception_master:
-  ros__parameters:
-    d435_color_topic: /camera/camera/color/image_raw   # D435 (realsense2_camera 기본 이름)
-    birdeye_topic: /bird_camera/image_raw              # Arducam (팀 노드맵 이름) — 드라이버 정해지면 확인
-    min_confidence: 0.5                                # 0.5 로 시작해서 실측으로 조정

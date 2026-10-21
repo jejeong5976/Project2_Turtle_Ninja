@@ -1,8 +1,5 @@
-# Printed objects: cuboid 30x30x60mm and cylinder diameter30 x height60mm.
-# Canonical spec: docs/puck_spec.json. 50g simulation mass is ASSUMED.
-# Existing hardware poses below retain their 80mm shelf assumption; corrected125mm-support trial uses isolated IK poses.
 # control.yaml — control_master 설정표 (팔 · 차례)
-# 바퀴 설정은 bringup/config/controllers.yaml 의 swerve_controller 에 (바퀴 계산이 ros2_control 컨트롤러 안이라서, D8).
+# 바퀴 설정은 config/controllers.yaml 의 swerve_controller 에 (바퀴 계산이 ros2_control 컨트롤러 안이라서, D8).
 
 control_master:
   ros__parameters:

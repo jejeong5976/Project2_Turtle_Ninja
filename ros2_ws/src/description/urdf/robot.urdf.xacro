@@ -38,7 +38,7 @@
   <!-- 프로파일 45 cm · 카메라 2개 (위치 가정). 실제 로봇 · RViz 에서는 켬 (인지가 camera_* TF 를 씀).
        위치 · 질량은 가정 -->
   <xacro:arg name="with_accessories" default="true"/>
-  <xacro:arg name="hardware_map" default="$(find description)/config/hardware_map.yaml"/>
+  <xacro:arg name="hardware_map" default="$(find bringup)/config/hardware_map.yaml"/>
   <xacro:arg name="opencr_port" default="auto"/>   <!-- hardware:=opencr 때 포트 바꾸기 — 보드 1장일 때만 (auto = hardware_map.yaml 의 port) -->
   <xacro:arg name="opencr_ports" default="auto"/>  <!-- 보드마다: bus_drive=/tmp/opencr_drive,bus_arm=/tmp/opencr_arm (auto = hardware_map.yaml) -->
 
@@ -49,7 +49,7 @@
   <!-- ===================== 치수 (팀 Swerve CAD, Assembly_1.step 에서 잼) ===================== -->
   <!-- base_link 원점 = 조향축 4개의 한가운데, 바퀴축 높이. 단위 m -->
   <xacro:property name="wheel_r" value="0.033"/>       <!-- 바퀴 반지름 (CAD 타이어 33.0 mm, 터틀봇3 바퀴와 같음) -->
-  <xacro:property name="module_x" value="0.112"/>      <!-- 조향축 위치 ±x (bringup/config/controllers.yaml 의 swerve_controller 와 같아야 함!) -->
+  <xacro:property name="module_x" value="0.112"/>      <!-- 조향축 위치 ±x (config/controllers.yaml 의 swerve_controller 와 같아야 함!) -->
   <xacro:property name="module_y" value="0.064"/>      <!-- 조향축 위치 ±y -->
   <xacro:property name="wheel_off" value="0.0269"/>    <!-- 바퀴 중심이 조향축에서 바깥쪽으로 떨어진 거리 (바퀴축 방향) -->
   <xacro:property name="plate_low" value="0.039"/>     <!-- 1층 판 아랫면 (바닥에서 72 mm) -->

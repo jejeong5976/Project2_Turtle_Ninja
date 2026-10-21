@@ -46,7 +46,7 @@ uint16_t bus_hw_error_mask();
 //     ② 하나라도 확인 못 하면 버스 침묵 (bus_is_silent) → 마지막 패킷부터 Bus Watchdog(0.3 s) 이 모든 모터를 세움
 //   잠금 중에는 통신이 돌아와도 목표 · 토크를 바꾸지 않음 (예전: 회복되면 원래 속도로 재출발했음)
 //   잠금은 CONFIG(bus_configure) 로만 풀림 — 펌웨어가 스스로 풀지 않음
-//   ⚠ "3 번" 은 판정 횟수일 뿐 정지 시간 보장이 아님. 정지 시간은 실제 버스에서 따로 잼 (docs/hardware.md)
+//   ⚠ "3 번" 은 판정 횟수일 뿐 정지 시간 보장이 아님. 정지 시간은 실제 버스에서 따로 잼
 bool bus_write_targets(const ntp::Cmd &c, bool host_ok);
 bool bus_fault_latched();      // → STATE 의 ST_FAULT_LATCHED
 bool bus_is_silent();

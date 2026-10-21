@@ -1,0 +1,37 @@
+# Arducam 광각 (상단) 내부 파라미터 — ROS camera_info 형식
+# 가이드: docs/perception/yolo26_isaac_sim_guide.md 11.3
+#
+# 측정: 2026-10-20, 개발 노트북, MJPG 1280x720
+# 모델: OpenCV fisheye (ROS distortion_model "equidistant", D = k1..k4)
+# 보드: 9x6 내부 코너, 칸 25mm (모니터 표시)
+# 사진: 41장 (1차 19 + 2차 22), 재투영 오차 RMS 0.45px
+# 화각: 수평 약 94°, 수직 약 50°
+# 렌즈를 돌리거나 해상도를 바꾸면 다시 측정해야 함
+# 노출·화이트밸런스 고정값(11.2)은 아직 미정이라 이 파일에 넣지 않음
+
+image_width: 1280
+image_height: 720
+camera_name: wide_cam
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [853.374030, 0.000000, 675.548425,
+         0.000000, 852.156716, 371.440164,
+         0.000000, 0.000000, 1.000000]
+distortion_model: equidistant
+distortion_coefficients:
+  rows: 1
+  cols: 4
+  data: [-0.128704, 0.012667, -0.039807, 0.022852]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.000000, 0.000000, 0.000000,
+         0.000000, 1.000000, 0.000000,
+         0.000000, 0.000000, 1.000000]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [853.374030, 0.000000, 675.548425, 0.000000,
+         0.000000, 852.156716, 371.440164, 0.000000,
+         0.000000, 0.000000, 1.000000, 0.000000]

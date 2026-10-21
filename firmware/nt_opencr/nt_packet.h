@@ -11,7 +11,7 @@
 //   숫자는 전부 리틀 엔디언, float = 4바이트
 //   길이 칸이 있는 이유: 모터 수가 hardware_map.yaml 에 따라 바뀌어서 상자 크기가 고정이 아님
 //
-// 종류 5개 (자세한 바이트 지도는 docs/hardware.md 4절)
+// 종류 5개 (바이트 정의는 아래 구조체와 encode/decode 함수 참고)
 //   0x03 CONFIG     Jetson → OpenCR  켤 때 한 번: "모터 n개, 각각 ID · 모드 · 속도/가속 한계"
 //   0x04 CONFIG_ACK OpenCR → Jetson  "몇 번 모터가 대답했나" (ping 결과)
 //   0x01 CMD        Jetson → OpenCR  100 Hz: 토크 켜기 + 모터별 목표 (rad 또는 rad/s)

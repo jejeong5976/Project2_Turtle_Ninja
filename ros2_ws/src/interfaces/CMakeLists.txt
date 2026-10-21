@@ -8,9 +8,6 @@ find_package(geometry_msgs REQUIRED)
 
 # .msg / .action 파일 → C++ · Python 코드 자동 생성
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/Detection.msg"
-  "msg/DetectionArray.msg"
-  "msg/QrInstruction.msg"
   "msg/MissionStatus.msg"
   "msg/MotionMode.msg"
   "action/ArmTask.action"

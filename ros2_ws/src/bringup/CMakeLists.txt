@@ -3,9 +3,12 @@ project(bringup)
 
 find_package(ament_cmake REQUIRED)
 
-# 코드 없음. 로봇을 띄우는 launch 와 컨트롤러 설정(controllers.yaml)만
-install(DIRECTORY config launch
-  DESTINATION share/${PROJECT_NAME}
+# 저장소 공용 설정은 설치 후 share/bringup/config 에서 읽는다.
+set(REPOSITORY_CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../config")
+install(DIRECTORY "${REPOSITORY_CONFIG_DIR}/"
+  DESTINATION share/${PROJECT_NAME}/config
+  FILES_MATCHING PATTERN "*.yaml"
 )
+install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 
 ament_package()

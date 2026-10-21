@@ -1,29 +1,8 @@
 """
-robot.launch.py — 로봇(Jetson) 쪽 전부: 모델 + ros2_control + 컨트롤러 + control_master (+ 인지 · 판단 마스터)
-=========================================================================================
-노드 배치 (D17): 이 파일 = Jetson. Nav2 · SLAM · RViz 는 노트북 (설정은 TODO)
-(노트북 한 대로 시험할 땐 둘 다 같은 노트북에서 띄워도 됨 — 토픽은 똑같음)
-
-  # 몸만, 가짜 하드웨어 (기본) — cmd_vel 로 바퀴, /arm_task 로 팔 시험
-  ros2 launch bringup robot.launch.py
-  # 미션 흐름까지 (마스터 3개, planning dry_run)
-  ros2 launch bringup robot.launch.py mission:=true use_rviz:=true
-  # 실제 로봇 (Jetson) — OpenCR 2장(주행 · 팔, 2026-10-16) + 펌웨어(nt_opencr) + 플러그인(hardware)
-  ros2 launch bringup robot.launch.py hardware:=opencr mission:=true      # 포트 = /dev/opencr_drive · /dev/opencr_arm (udev)
-  # 로봇 없이 펌웨어까지: 가짜 보드(tools/fw_sim) 를 보드마다 먼저 띄우고
-  ./tools/fw_sim/fw_sim --link /tmp/opencr_drive &  ./tools/fw_sim/fw_sim --link /tmp/opencr_arm &
-  ros2 launch bringup robot.launch.py hardware:=opencr opencr_ports:=bus_drive=/tmp/opencr_drive,bus_arm=/tmp/opencr_arm
-
-띄우는 것
-  robot_state_publisher : URDF → TF, /robot_description
-  ros2_control_node     : 하드웨어 플러그인 + 컨트롤러를 100 Hz 로 돌리는 지휘자 (기성품)
-  spawner × 4 (+1)      : controllers.yaml 의 컨트롤러 켜기 (+ opencr 이면 imu_sensor_broadcaster)
-                          ⚠ spawner 마다 --param-file 로 controllers.yaml 을 줌 (Jazzy 부터 필수)
-                          swerve_controller : /cmd_vel → 바퀴 · 조향, /odom + TF (swerve_controller 의 컨트롤러, 100 Hz 루프 안)
-  control_master        : 팔(/arm_task) + 차례(/control/motion_mode) (manipulation)
-  mission:=true 일 때    : perception_master (인지) · planning_master (판단, 기본 dry_run) — 마스터 3개 (D18)
-
-카메라 · 라이다 드라이버는 아직 여기 없음 (TODO): 장비가 정해지면 Node / IncludeLaunchDescription 으로 추가
+로봇 모델·ros2_control·바퀴/팔 컨트롤러·control_master 실행.
+기본 hardware:=mock. 인지·미션 노드와 카메라·라이다 드라이버는 별도 담당 패키지에서 구성한다.
+설정은 bringup이 설치한 share/bringup/config에서 읽는다.
+실물 OpenCR 실행은 보드·펌웨어·포트·기계 안전 조건의 별도 확인이 필요하다.
 """
 
 from launch import LaunchDescription
@@ -43,8 +22,8 @@ CONTROLLERS = [
 ]
 
 
-def cfg(pkg, name):
-    return PathJoinSubstitution([FindPackageShare(pkg), "config", name])
+def cfg(name):
+    return PathJoinSubstitution([FindPackageShare("bringup"), "config", name])
 
 
 def generate_launch_description():
@@ -53,21 +32,17 @@ def generate_launch_description():
 
     args = [
         DeclareLaunchArgument("hardware", default_value="mock", description="mock | opencr"),
-        DeclareLaunchArgument("hardware_map", default_value=cfg("description", "hardware_map.yaml")),
+        DeclareLaunchArgument("hardware_map", default_value=cfg("hardware_map.yaml")),
         DeclareLaunchArgument("opencr_port", default_value="auto",
                               description="hardware:=opencr 일 때 포트 — 보드 1장일 때만 (auto = hardware_map.yaml)"),
         DeclareLaunchArgument("opencr_ports", default_value="auto",
                               description="보드마다 포트: bus_drive=/tmp/opencr_drive,bus_arm=/tmp/opencr_arm (auto = hardware_map.yaml)"),
-        DeclareLaunchArgument("mission", default_value="false",
-                              description="true = perception_master · planning_master 도 (미션 흐름)"),
-        DeclareLaunchArgument("with_perception", default_value="true", description="mission 때 인지 마스터 켜기"),
         DeclareLaunchArgument("use_rviz", default_value="false"),
         # 팔 받침 위치 — 미확정 (robot.urdf.xacro 주석). 실측값이 나오면 여기서 바로 바꿔 볼 수 있게
         DeclareLaunchArgument("arm_mount_x", default_value="0.0"),
         DeclareLaunchArgument("arm_mount_y", default_value="0.0"),
     ]
     is_opencr = PythonExpression(["'", arg("hardware"), "' == 'opencr'"])
-    with_perception = PythonExpression(["'", arg("mission"), "' == 'true' and '", arg("with_perception"), "' == 'true'"])
 
     robot_description = ParameterValue(
         Command([
@@ -82,7 +57,7 @@ def generate_launch_description():
         ]),
         value_type=str,
     )
-    ctrl_yaml = cfg("bringup", "controllers.yaml")
+    ctrl_yaml = cfg("controllers.yaml")
 
     nodes = [
         Node(package="robot_state_publisher", executable="robot_state_publisher",
@@ -93,14 +68,7 @@ def generate_launch_description():
              parameters=[ctrl_yaml], remappings=[("~/robot_description", "/robot_description")], output="both"),
 
         Node(package="manipulation", executable="control_master",
-             parameters=[cfg("manipulation", "control.yaml")], output="both"),
-
-        Node(package="perception", executable="perception_master",
-             parameters=[cfg("perception", "perception.yaml")], condition=IfCondition(with_perception),
-             output="both"),
-        Node(package="mission", executable="planning_master",
-             parameters=[cfg("mission", "planning.yaml")], condition=IfCondition(arg("mission")),
-             output="both"),
+             parameters=[cfg("control.yaml")], output="both"),
 
         Node(package="rviz2", executable="rviz2", condition=IfCondition(arg("use_rviz")),
              arguments=["-d", PathJoinSubstitution([desc, "rviz", "navigation.rviz"]), "-f", "odom"]),

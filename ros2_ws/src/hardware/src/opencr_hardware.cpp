@@ -28,7 +28,7 @@
 //
 // 복구 (2026-10-16 재검증 R6): ERROR 뒤에는 자동으로 다시 켜지 않음. 사람이 원인을 확인하고
 //   팔을 받친 뒤(CONFIG 가 모든 모터 토크를 끔 → 팔 처짐) 하드웨어를 다시 configure · activate → CONFIG 가 펌웨어 잠금을 풂
-//   → control_master 는 그동안 STOP 이고, HOME + 접힘 실측이 다시 성공해야 DRIVE (docs/hardware.md 복구 순서)
+//   → control_master 는 그동안 STOP 이고, HOME + 접힘 실측이 다시 성공해야 DRIVE
 //
 // 실제 일(바이트 주고받기 · 단위 변환)은 opencr_link.hpp (ROS 없는 클래스, 가짜 OpenCR 로 시험됨).
 // 여기는 ros2_control 과 이어 붙이는 껍데기만.

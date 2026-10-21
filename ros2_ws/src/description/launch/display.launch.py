@@ -22,6 +22,7 @@ def generate_launch_description():
             PathJoinSubstitution([FindExecutable(name="xacro")]), " ",
             PathJoinSubstitution([FindPackageShare("description"), "urdf", "robot.urdf.xacro"]),
             " hardware:=mock",
+            " hardware_map:=", LaunchConfiguration("hardware_map"),
             " arm_mount_x:=", LaunchConfiguration("arm_mount_x"),
             " arm_mount_y:=", LaunchConfiguration("arm_mount_y"),
             " with_accessories:=", LaunchConfiguration("with_accessories"),
@@ -29,6 +30,8 @@ def generate_launch_description():
         value_type=str,
     )
     return LaunchDescription([
+        DeclareLaunchArgument("hardware_map", default_value=PathJoinSubstitution([
+            FindPackageShare("bringup"), "config", "hardware_map.yaml"])),
         DeclareLaunchArgument("arm_mount_x", default_value="0.0", description="팔 받침 x [m] — 미확정"),
         DeclareLaunchArgument("arm_mount_y", default_value="0.0", description="팔 받침 y [m] — 미확정"),
         DeclareLaunchArgument("with_accessories", default_value="true"),

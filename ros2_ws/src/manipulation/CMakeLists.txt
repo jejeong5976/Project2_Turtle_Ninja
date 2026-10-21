@@ -23,7 +23,6 @@ target_link_libraries(control_master manipulation_core rclcpp::rclcpp rclcpp_act
   ${controller_manager_msgs_TARGETS} ${lifecycle_msgs_TARGETS} ${interfaces_TARGETS})
 install(TARGETS manipulation_core control_master ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
-install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_arm test/test_arm.cpp)

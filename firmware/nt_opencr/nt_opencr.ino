@@ -19,7 +19,7 @@
 //   3. 모터 Bus Watchdog: 이 펌웨어가 멈춰 명령이 끊김 → 모터 스스로 정지
 //
 // 올리는 법: Arduino IDE + OpenCR 보드 패키지, 라이브러리 Dynamixel2Arduino. 보드 = OpenCR, 포트 = /dev/ttyACM0
-//   OpenCR 코어 1.5.3 으로 컴파일됨. ⚠ 실제 보드에서 실행은 아직 → 책상 시험 순서는 docs/hardware.md
+//   OpenCR 코어 1.5.3 으로 컴파일됨. ⚠ 실제 보드 시험 절차는 별도 검토 필요
 // 파일: 이 .ino (한 바퀴 + IMU) · motor_bus.h/.cpp (모터 14개 Sync 읽기/쓰기) · nt_packet.h (편지 규칙, 플러그인과 공용)
 
 #include <IMU.h>

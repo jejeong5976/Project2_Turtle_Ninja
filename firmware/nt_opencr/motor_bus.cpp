@@ -189,7 +189,7 @@ uint16_t bus_configure(const ntp::Config &c)
   hw_err_ = 0;
   write_fail_streak_ = 0;
   // 고장 잠금을 푸는 유일한 길 = CONFIG (사람이 원인 확인 후 하드웨어를 다시 설정할 때). 자동으로 다시 보내는 곳은 없음
-  //   ⚠ 위에서 모든 모터 토크를 끔 → 팔이 들려 있으면 처짐. 복구 전에 팔을 받치거나 안정 자세에 둘 것 (docs/hardware.md)
+  //   ⚠ 위에서 모든 모터 토크를 끔 → 팔이 들려 있으면 처짐. 복구 전에 팔을 받치거나 안정 자세에 둘 것
   latched_ = false;
   silent_ = false;
   stop_attempt_ms_ = 0;

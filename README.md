@@ -1,11 +1,13 @@
 # Project2_Turtle_Ninja
 
-미로 맵에서 벽에 붙은 QR 문제를 읽고, 색 퍽을 구분해 밀어 넘어뜨리거나 옮기는 로봇 (Physical AI 과제 2)
+미로 벽의 바코드로 task를 읽고, AprilTag가 붙은 퍽을 찾아 옮기거나 밀어 넘어뜨리는 로봇 (Physical AI 과제 2)
 
 ## 미션
 
-- 주행 중 벽의 QR(JSON)을 찾아 판독하고 해당 task 수행
-- 색 퍽을 구분해 밀어서 넘어뜨리거나 지정 위치로 이동
+- 주행 중 벽의 1D 바코드를 찾아 판독하고 해당 task 수행
+- task가 지정한 퍽을 AprilTag ID로 찾아 지정 위치로 옮기는 등의 mission을 수행
+- 퍽 색: 빨강 · 초록 · 베이지
+- 신호등 인식 후 정지 · 진행 판단
 - 인식 모델 Yolo 이용
 - SLAM 기반 자율주행. 맵은 시연 1주 전 공개, 출발 지점 고정
 
@@ -36,7 +38,7 @@
 
 ```
 Project2_Turtle_Ninja/
-├── config/                  # 팀 공용 설정 예약 (현재 노드 설정은 각 패키지 config/)
+├── config/                  # 노드 파라미터, 카메라 보정값 yaml
 ├── firmware/                # OpenCR 펌웨어
 ├── ros2_ws/                 # ROS 2 워크스페이스
 │   └── src/
@@ -47,16 +49,17 @@ Project2_Turtle_Ninja/
 │       ├── swerve_controller/   # cmd_vel → 바퀴별 조향각/속도, 휠 오도메트리
 │       ├── manipulation/        # 팔 제어, 밀기·집기·적재함 동작
 │       ├── navigation/          # SLAM, Nav2 설정, 맵
-│       ├── perception/          # YOLO 추론, QR 디코딩, 퍽 색, 신호등
-│       └── mission/             # QR JSON → task 변환, 미션 순서 관리
+│       ├── perception/          # YOLO 추론, 바코드 판독, 퍽 AprilTag · 색, 신호등
+│       └── mission/             # 바코드 → task 변환, 미션 순서 관리
 ├── yolo/
-│   ├── dataset_gen/         # Isaac Sim 합성 데이터 생성 코드
 │   ├── datasets/            # 생성·수집한 데이터셋 (git 제외)
 │   ├── train/               # 학습·평가·.onnx 변환
 │   └── models/              # .pt / .onnx / .engine (git 제외)
 ├── sim/
 │   └── robot_sim/           # Isaac Sim 로봇 주행 시뮬레이션 (ROS 2 연동)
-└── docs/                    # 설치 기록, 설계 문서, 가이드
+├── tools/                   # ROS 밖에서 단독 실행하는 개발 도구
+│   └── camera_calib/        # 카메라 캘리브레이션 사진 수집 (OpenCV)
+└── docs/                    # 설치 기록, 설계 문서, 가이드 (코드 X, 문서·이미지만)
 ```
 
 ## 빌드
@@ -67,33 +70,29 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-## 패키지와 설정
+## 제어 패키지 검증
 
-ROS 패키지 이름은 `src` 디렉터리 이름과 같다. `navigation`은 아직 예약 폴더다.
-`swerve_controller`는 바퀴 계산·제어 플러그인, `manipulation`은 팔 계산과
-`control_master`, `mission`은 `planning_master` 미션 상태머신을 제공한다.
-실행 노드 이름과 토픽·액션 주소는 유지한다.
+`swerve_controller`는 바퀴 제어 플러그인, `manipulation`은 팔 계산과 `control_master`를 제공합니다.
+이 PR에는 `mission`과 `perception` 구현을 포함하지 않습니다. 두 폴더는 담당자용 자리로 유지합니다.
+공용 타입은 `interfaces/msg/MotionMode`, `interfaces/msg/MissionStatus`, `interfaces/action/ArmTask`입니다.
+패키지 이름이 바뀐 checkout은 이전 설치본을 재사용하지 말고 새 build/install 경로에서 빌드하세요.
+실물 주행·팔 실행은 별도 하드웨어 검증이 필요합니다.
+아래 검증은 6개 패키지 전체 설치 기준입니다.
+`description`만 단독 설치한 환경의 기본 표시 실행은 지원하지 않습니다.
 
-설정은 각 패키지의 `config/`에 유지하며 설치 후 `share/<package>/config/`에서 읽는다.
-`firmware/nt_opencr`와 통신 프로토콜은 그대로 유지한다.
-
-패키지 이름이 바뀐 checkout은 기존 설치본을 재사용하지 말고 별도로 빌드한다.
-공용 타입은 `interfaces/msg/*`, `interfaces/action/ArmTask`이므로 외부 소비자도
-이 타입 이름으로 함께 빌드해야 한다. 주행·팔 실물 실행은 별도 하드웨어 검증이 필요하다.
-
-하드웨어 없는 시험:
+하드웨어 없는 단위시험:
 
 ```bash
 source /opt/ros/lyrical/setup.bash
 cd ros2_ws
-CMAKE_BUILD_PARALLEL_LEVEL=1 colcon build --executor sequential
-source install/setup.bash
+CMAKE_BUILD_PARALLEL_LEVEL=1 colcon build --executor sequential \
+  --build-base build/pr2-review --install-base install/pr2-review
+source install/pr2-review/setup.bash
 ROS_DOMAIN_ID=181 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST colcon test --executor sequential \
-  --packages-select hardware manipulation mission swerve_controller
-colcon test-result --verbose
+  --build-base build/pr2-review --install-base install/pr2-review \
+  --packages-select hardware manipulation swerve_controller
+colcon test-result --test-result-base build/pr2-review --verbose
 ```
-
-`perception`에는 아직 자동 시험이 없다. 위 명령은 기존 시험이 있는 패키지만 실행한다.
 
 ## Git 규칙
 
@@ -115,9 +114,25 @@ colcon test-result --verbose
 | 타입 | 용도 | 예시 |
 |---|---|---|
 | `feat/` | 새 기능 | `feat/swerve-ik` |
-| `fix/` | 버그 수정 | `fix/qr-decode` |
+| `fix/` | 버그 수정 | `fix/barcode-decode` |
 | `docs/` | 문서 | `docs/jetson-setup` |
 | `chore/` | 폴더 구조, 설정, 빌드 스크립트 | `chore/init-structure` |
+
+### 커밋 메시지
+
+형식: `type: what you did`
+
+- 영어로 통일, 소문자 이용
+- 동사 원형으로 시작 (`add`, `fix`, `update`, `remove`), 끝에 마침표 없음
+
+| type | 용도 | 예시 |
+|---|---|---|
+| `feat` | 새 기능 | `feat: add swerve inverse kinematics` |
+| `fix` | 버그 수정 | `fix: correct steering zero offset sign` |
+| `docs` | 문서 | `docs: add jetson setup notes` |
+| `chore` | 폴더 구조, 설정, 스크립트 | `chore: add mcap to gitignore` |
+| `build` | 빌드 설정 (CMake, package.xml) | `build: add yaml-cpp dependency` |
+
 
 ### 작업 방법
 
@@ -130,12 +145,12 @@ git checkout -b feat/swerve-ik
 # 2. 작업 후 커밋, push
 git status
 git add <파일>
-git commit -m "feat: swerve 역기구학 추가"
+git commit -m "feat: add swerve inverse kinematics"
 git push -u origin feat/swerve-ik
 ```
 
 3. GitHub에서 PR 생성 (대상: `main`)
-4. 승인 1개 받은 뒤 관리자가 **Squash and merge**
+4. 승인 1개 받은 뒤 관리자가 **Create a merge commit**으로 머지
 
 ### 커밋 금지
 

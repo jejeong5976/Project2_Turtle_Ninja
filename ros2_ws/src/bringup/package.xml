@@ -13,8 +13,6 @@
   <exec_depend>description</exec_depend>
   <exec_depend>manipulation</exec_depend>
   <exec_depend>swerve_controller</exec_depend>
-  <exec_depend>perception</exec_depend>
-  <exec_depend>mission</exec_depend>
 
   <!-- ros2_control (기성품) -->
   <exec_depend>controller_manager</exec_depend>
