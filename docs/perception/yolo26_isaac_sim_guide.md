@@ -256,6 +256,8 @@ YOLO가 안정적으로 잡으려면 대략 8~10px 이상이 필요하다.
 
 > 기준 환경: **Isaac Sim 6.2 (pip 설치, Ubuntu 24.04, venv `~/env_isaacsim62`)**. API 이름은 버전마다 조금씩 다르므로 다른 버전이면 해당 문서를 확인할 것.
 >
+> 2026-10-21 개발 노트북에서는 **Isaac Sim 6.1.0-rc.26 (`~/Documents/IsaacSim/6.1.0/python.sh`)** 으로 실행을 확인했다. 아래 명령의 `~/env_isaacsim62/bin/python` 자리에 그 경로를 넣고, 미로 STL이 기본 경로에 없으면 `--maze-stl`로 지정한다.
+>
 > **VRAM 8GB 주의** (권장 16GB): 장면을 단순하게 유지하고, path tracing 대신 실시간 RTX 모드를 쓰고, `rt_subframes`를 4~8로 둔다. 데이터 생성 중에는 YOLO 학습을 같이 돌리지 않는다 (VRAM 부족).
 
 | 파일 | 역할 | 실행 환경 |
@@ -281,6 +283,8 @@ env -u PYTHONPATH ~/env_isaacsim62/bin/python yolo/dataset_gen/generate.py \
 - 출력 폴더에는 BasicWriter 파일(`rgb_*.png`, `bounding_box_2d_tight_*`)과 함께 `meta_*.json`이 저장된다. 퍽 색과 신호등 상태의 정답이 들어 있어서, 색 판별·점등 판별 후처리를 sim 데이터로 먼저 검증할 수 있다.
 - `--seg`를 주면 instance segmentation도 저장한다 (seg 모델이 필요해질 때).
 - `yolo/datasets/`는 `.gitignore`에 들어 있다.
+- 카메라는 `config/camera_wide.yaml`, `config/camera_wrist.yaml`(실측값)을 읽는다. 광각은 OpenCV fisheye 렌즈 왜곡을 적용한다.
+- **fisheye 모서리 잘림 우회**: Isaac Sim은 fisheye 결과를 반지름 렌더 폭/2인 원으로 잘라 버린다([IsaacSim#838](https://github.com/isaac-sim/IsaacSim/issues/838)). 그래서 광각은 1552×720으로 넓혀 렌더링한 뒤 가운데 1280×720만 잘라 저장하고, bbox도 같이 옮긴다. 시험 생성에서 퍽·신호등 bbox 중심이 실측 투영과 평균 1.3px 안에서 일치했다.
 
 **확인**:
 
@@ -292,8 +296,8 @@ python3 yolo/dataset_gen/viz_labels.py yolo/datasets/sim_raw/wide_000    # → w
 
 | 항목 | 현재 값 | 교체 시점 |
 |---|---|---|
-| 광각 카메라 | pinhole, 1280×720, HFOV 100°, 높이 0.35~0.55m, 아래로 25~50° | 11.1, 11.3, 11.4 측정 후. fisheye 모델로 교체 |
-| 손목 카메라 | pinhole, 640×480, HFOV 69° | D435 `camera_info` 확인 후 |
+| 광각 카메라 | **실측 반영 (10/21)**: fisheye K·D (`config/camera_wide.yaml`, HFOV 약 94°), 1280×720, 높이 0.604~0.624m. **기울기만 임시값** 아래로 20~45° | 장착 후 11.4에서 기울기 측정 |
+| 손목 카메라 | **실측 반영 (10/21)**: D435 공장 intrinsics (`config/camera_wrist.yaml`, 640×480, HFOV 55.65°) | – |
 | 퍽 색 | R/G/B 기준 HSV 주변 ±(H 0.015, S 15%, V 20%) | 11.9 색 측정 후 |
 | 신호등 발광 세기 | emissive 2000~8000 | 실제 카메라 점등 사진과 비교 후 |
 | 신호등 설치 | 70% 바닥, 30% 기둥 위(5~30cm) | 설치 방식 확인 후 |
