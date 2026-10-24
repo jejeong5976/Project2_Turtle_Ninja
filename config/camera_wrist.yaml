@@ -1,0 +1,44 @@
+# RealSense D435 (손목) 컬러 카메라 내부 파라미터 — ROS camera_info 형식
+# 가이드: docs/perception/yolo26_isaac_sim_guide.md 11.3 (D435는 공장값 사용)
+#
+# 측정: 2026-10-21, `rs-enumerate-devices -c` (librealsense), 개발 노트북
+# 개체: 시리얼 261822078400 (ASIC 시리얼 241223120621), 펌웨어 5.17.3.10
+# 스트림: Color 640x480 (30fps 사용 예정)
+# 왜곡: librealsense 표기 "Inverse Brown Conrady", 계수 모두 0 → 왜곡 없는 pinhole로 취급
+# 화각: 수평 55.65°, 수직 43.19°  (주의: 69°는 depth/IR 쪽 값. 컬러는 더 좁음)
+#
+# depth는 color에 정렬(align_depth)해서 쓰므로 정렬된 depth도 이 값을 그대로 씀.
+# 참고용 (정렬 전 raw depth 640x480): fx=fy 386.163, cx 320.899, cy 241.871, 화각 79.29° x 63.72°
+# 참고용 depth → color 외부 파라미터 (m):
+#   R = [[ 0.999961,  0.00871836,  0.00127629],
+#        [-0.00871164, 0.999949,  -0.00518349],
+#        [-0.00132141, 0.00517217,  0.999986 ]]
+#   t = [0.0149308, -0.000292569, 0.000239651]
+# 해상도를 바꾸면 값이 달라지므로 그 해상도로 다시 뽑아야 함
+
+image_width: 640
+image_height: 480
+camera_name: wrist_cam
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [606.320862, 0.000000, 321.425476,
+         0.000000, 606.188171, 248.199982,
+         0.000000, 0.000000, 1.000000]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.0, 0.0, 0.0, 0.0, 0.0]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.000000, 0.000000, 0.000000,
+         0.000000, 1.000000, 0.000000,
+         0.000000, 0.000000, 1.000000]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [606.320862, 0.000000, 321.425476, 0.000000,
+         0.000000, 606.188171, 248.199982, 0.000000,
+         0.000000, 0.000000, 1.000000, 0.000000]
