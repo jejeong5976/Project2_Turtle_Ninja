@@ -32,7 +32,7 @@ struct Scan {
   std::size_t count = 0;
   std::vector<Sample> samples;
 };
-void replay(const std::string& path) {
+void replay(const std::string& path, bool lds03_limits) {
   std::ifstream input(path);
   if (!input) throw std::runtime_error("Cannot read " + path);
   std::string line;
@@ -70,7 +70,9 @@ void replay(const std::string& path) {
   for (const auto& entry : scans) {
     const auto& scan = entry.second;
     if (scan.samples.size()!=scan.count) throw std::runtime_error("Truncated scan");
-    const auto grid = convert(scan.samples);
+    const double range_min = lds03_limits ? 0.05 : 0.10;
+    const double range_max = lds03_limits ? 12.0 : 100.0;
+    const auto grid = convert(scan.samples,400,false,range_min,range_max);
     total += scan.count; rejected += grid.rejected; collisions += grid.collisions;
     std::size_t filled=0;
     for (std::size_t i=0;i<grid.bins.size();++i) {
@@ -82,14 +84,15 @@ void replay(const std::string& path) {
       const double error=std::abs(std::remainder(i*360.0/grid.bins.size()+source.angle_deg,360.0));
       max_error=std::max(max_error,error);
       if (error > 0.45+1e-9 || bin.range != source.distance_mm/1000.0 ||
-          bin.range < 0.1 || bin.range > 100)
+          bin.range < range_min || bin.range > range_max)
         throw std::runtime_error("Replay invariant failed");
     }
     if (filled+grid.collisions+grid.rejected != scan.count)
       throw std::runtime_error("Sample accounting failed");
     occupied+=filled;
   }
-  std::cout << path << '\n' << "scans=" << scans.size() << " raw=" << total
+  std::cout << path << '\n' << "limits=" << (lds03_limits ? "0.05-12" : "0.10-100")
+    << " scans=" << scans.size() << " raw=" << total
     << " rejected=" << rejected << " collision_losers=" << collisions
     << " occupied=" << occupied << " empty=" << scans.size()*400-occupied
     << " index_zero_selected=" << zero_selected << '\n'
@@ -98,8 +101,10 @@ void replay(const std::string& path) {
 }
 int main(int argc,char** argv) {
   try {
-    if (argc<2) throw std::runtime_error("Usage: replay_angles capture.csv [capture.csv ...]");
-    for (int i=1;i<argc;++i) replay(argv[i]);
+    const bool lds03_limits = argc>1 && std::string(argv[1])=="--lds03";
+    const int first = lds03_limits ? 2 : 1;
+    if (argc<=first) throw std::runtime_error("Usage: replay_angles [--lds03] capture.csv [capture.csv ...]");
+    for (int i=first;i<argc;++i) replay(argv[i],lds03_limits);
   } catch (const std::exception& e) {
     std::cerr << "FAIL: " << e.what() << '\n'; return 1;
   }
