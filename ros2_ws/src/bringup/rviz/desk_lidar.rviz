@@ -1,0 +1,100 @@
+# Stationary desk view; merger runs separately. Enable raw scans for overlay checks.
+Panels:
+- Class: rviz_common/Displays
+  Name: Displays
+  Help Height: 0
+- Class: rviz_common/Tool Properties
+  Name: Tool Properties
+- Class: rviz_common/Views
+  Name: Views
+Visualization Manager:
+  Class: ''
+  Displays:
+  - Class: rviz_default_plugins/Grid
+    Name: Grid
+    Enabled: true
+    Cell Size: 0.5
+    Plane Cell Count: 20
+    Reference Frame: <Fixed Frame>
+    Value: true
+  - Class: rviz_default_plugins/LaserScan
+    Name: Front LDS-03
+    Enabled: false
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Best Effort
+      Value: /lidar_front/scan
+    Size (m): 0.02
+    Style: Points
+    Color Transformer: FlatColor
+    Color: 255; 40; 40
+    Value: false
+  - Class: rviz_default_plugins/LaserScan
+    Name: Rear LDS-03
+    Enabled: false
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Best Effort
+      Value: /lidar_rear/scan
+    Size (m): 0.02
+    Style: Points
+    Color Transformer: FlatColor
+    Color: 40; 180; 255
+    Value: false
+  - Class: rviz_default_plugins/PointCloud2
+    Name: Merged stationary cloud
+    Enabled: true
+    Value: true
+    Topic:
+      Depth: 5
+      Durability Policy: Volatile
+      History Policy: Keep Last
+      Reliability Policy: Best Effort
+      Value: /lidar/points_merged
+    Position Transformer: XYZ
+    Color Transformer: Intensity
+    Channel Name: source_id
+    Autocompute Intensity Bounds: false
+    Min Intensity: 0
+    Max Intensity: 1
+    Use rainbow: false
+    Min Color: 255; 40; 40
+    Max Color: 40; 180; 255
+    Style: Points
+    Size (Pixels): 3
+    Decay Time: 0.5
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: lidar_front_link
+    Frame Rate: 30
+  Name: root
+  Tools:
+  - Class: rviz_default_plugins/Interact
+    Hide Inactive Objects: true
+  - Class: rviz_default_plugins/MoveCamera
+  - Class: rviz_default_plugins/Select
+  - Class: rviz_default_plugins/Measure
+    Line color: 128; 128; 0
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Name: Current View
+      Scale: 150
+      X: 0
+      Y: 0
+      Angle: 0
+      Target Frame: <Fixed Frame>
+      Value: TopDownOrtho (rviz_default_plugins)
+    Saved: null
+Window Geometry:
+  Height: 900
+  Width: 1400

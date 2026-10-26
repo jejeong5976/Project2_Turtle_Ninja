@@ -22,7 +22,13 @@
   <exec_depend>hardware</exec_depend>   <!-- hardware:=opencr (D3 A안) -->
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>xacro</exec_depend>
+  <exec_depend>coin_d4_driver</exec_depend>
+  <exec_depend>coin_d4_experimental_driver</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <exec_depend>rviz2</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
 
 
   <export>

@@ -10,5 +10,6 @@ install(DIRECTORY "${REPOSITORY_CONFIG_DIR}/"
   FILES_MATCHING PATTERN "*.yaml"
 )
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY rviz DESTINATION share/${PROJECT_NAME})
 
 ament_package()

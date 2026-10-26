@@ -1,0 +1,21 @@
+# ROBOTIS coin_d4_driver, single_coin_d4_node (one process per sensor).
+# Proposed aliases, not detected paths. Override ports in a host-specific copy
+# via driver_config:=... for desktop tests and Jetson Orin Nano Super deployment.
+/lidar_front/driver:
+  ros__parameters:
+    port: /dev/lidar_front
+    frame_id: lidar_front_link
+    baudrate: 230400
+    version: 4
+    topic_name: scan
+    reverse: false
+    warmup_time: 5
+/lidar_rear/driver:
+  ros__parameters:
+    port: /dev/lidar_rear
+    frame_id: lidar_rear_link
+    baudrate: 230400
+    version: 4
+    topic_name: scan
+    reverse: false
+    warmup_time: 5
