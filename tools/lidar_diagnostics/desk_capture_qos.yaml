@@ -1,0 +1,16 @@
+# Receive sensor-data publishers and the transform published before recording.
+/lidar_front/scan:
+  history: keep_last
+  depth: 100
+  reliability: best_effort
+  durability: volatile
+/lidar_rear/scan:
+  history: keep_last
+  depth: 100
+  reliability: best_effort
+  durability: volatile
+/tf_static:
+  history: keep_last
+  depth: 100
+  reliability: reliable
+  durability: transient_local

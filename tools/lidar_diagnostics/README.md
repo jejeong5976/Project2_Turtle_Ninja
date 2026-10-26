@@ -1,5 +1,9 @@
 # Offline angular conversion experiment
 
+For the separate bounded packet/clock capture build and repeatable offline checks,
+see [TIMING.md](TIMING.md). For the reviewed staging groups, see
+[tooling checkpoint](../../docs/navigation/dual_lidar_tooling_checkpoint.md).
+
 `angle_grid.hpp` is a standalone C++ candidate, not installed into either ROS driver.
 `replay_angles.cpp` reads diagnostic captures without modifying them. It validates
 row counts and raw indices, then checks sample accounting and selected-bin geometry.
