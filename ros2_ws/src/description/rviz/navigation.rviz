@@ -39,18 +39,32 @@ Visualization Manager:
       Marker Scale: 0.3
       Value: false
     - Class: rviz_default_plugins/LaserScan
-      Name: LaserScan
+      Name: Front LDS-03
       Enabled: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: /scan
+        Value: /lidar_front/scan
       Size (m): 0.02
       Style: Points
       Color Transformer: FlatColor
       Color: 255; 40; 40
+      Value: true
+    - Class: rviz_default_plugins/LaserScan
+      Name: Rear LDS-03
+      Enabled: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /lidar_rear/scan
+      Size (m): 0.02
+      Style: Points
+      Color Transformer: FlatColor
+      Color: 40; 180; 255
       Value: true
     - Class: rviz_default_plugins/Map
       Name: Map

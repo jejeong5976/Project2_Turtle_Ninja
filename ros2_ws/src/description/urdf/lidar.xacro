@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- Frames describe scan origins only; no unverified housing/collision mesh. -->
+  <!-- Inspect the YAML mapping directly: scalar macro arguments can coerce strings. -->
+  <xacro:macro name="lidar_number" params="name mounts">
+    <xacro:unless value="${python.isinstance(mounts[name], (int, float)) and not python.isinstance(mounts[name], bool) and math.isfinite(mounts[name])}">
+      ${xacro.fatal('lidar_mounts: supply a finite numeric value for', name)}
+    </xacro:unless>
+  </xacro:macro>
+  <xacro:macro name="dual_lidar" params="mounts base_height">
+    <xacro:property name="m" value="${xacro.load_yaml(mounts)}"/>
+    <xacro:lidar_number name="plate_x" mounts="${m}"/>
+    <xacro:lidar_number name="plate_y" mounts="${m}"/>
+    <xacro:lidar_number name="plate_yaw" mounts="${m}"/>
+    <xacro:lidar_number name="mount_surface_above_ground" mounts="${m}"/>
+    <xacro:lidar_number name="h_scan" mounts="${m}"/>
+    <xacro:lidar_number name="front_x" mounts="${m}"/>
+    <xacro:lidar_number name="rear_x" mounts="${m}"/>
+    <xacro:lidar_number name="sensor_y" mounts="${m}"/>
+    <xacro:lidar_number name="front_yaw" mounts="${m}"/>
+    <xacro:lidar_number name="rear_yaw" mounts="${m}"/>
+    <xacro:if value="${m['h_scan'] &lt; 0}">${xacro.fatal('h_scan must be nonnegative')}</xacro:if>
+    <link name="lidar_plate_link"/>
+    <joint name="lidar_plate_joint" type="fixed">
+      <parent link="base_link"/><child link="lidar_plate_link"/>
+      <origin xyz="${m['plate_x']} ${m['plate_y']} ${m['mount_surface_above_ground'] - base_height}" rpy="0 0 ${m['plate_yaw']}"/>
+    </joint>
+    <link name="lidar_front_link"/>
+    <joint name="lidar_front_joint" type="fixed">
+      <parent link="lidar_plate_link"/><child link="lidar_front_link"/>
+      <origin xyz="${m['front_x']} ${m['sensor_y']} ${m['h_scan']}" rpy="0 0 ${m['front_yaw']}"/>
+    </joint>
+    <link name="lidar_rear_link"/>
+    <joint name="lidar_rear_joint" type="fixed">
+      <parent link="lidar_plate_link"/><child link="lidar_rear_link"/>
+      <origin xyz="${m['rear_x']} ${m['sensor_y']} ${m['h_scan']}" rpy="0 0 ${m['rear_yaw']}"/>
+    </joint>
+  </xacro:macro>
+</robot>

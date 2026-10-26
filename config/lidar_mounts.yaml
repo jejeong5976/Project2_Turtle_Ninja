@@ -1,0 +1,13 @@
+# Metres and radians. null blocks dual-LiDAR TF until explicitly measured/assumed.
+# XY estimates refer to plate assembly center, NOT base_link.
+plate_x: null
+plate_y: null
+plate_yaw: null
+mount_surface_above_ground: 0.028
+# User-supplied provisional offset (2026-10-24); physical validation pending.
+h_scan: 0.0265
+front_x: 0.110
+rear_x: -0.110
+sensor_y: 0.005
+front_yaw: null
+rear_yaw: null

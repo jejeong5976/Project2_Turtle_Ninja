@@ -28,11 +28,14 @@
 -->
 <robot name="ninja_turtle" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
+  <!-- Legacy single sensor is retired. Dual frames require explicit geometry. -->
+  <xacro:arg name="with_lidars" default="false"/>
+  <xacro:arg name="lidar_mounts" default="$(find bringup)/config/lidar_mounts.yaml"/>
+  <xacro:include filename="lidar.xacro"/>
   <xacro:arg name="hardware" default="mock"/>
   <!-- 팔 받침 위치 [m, base_link 기준] — ⚠ 미확정
        0, 0 = 조립 이미지로 본 "가운데" 추정값. 체결 구멍 실측값이 아님 (팔 자세표 control.yaml 은 앞쪽 0.085 를 가정하고 계산됨)
-       ⚠ 이 값이면 라이다(base_scan, x = -0.045 로 가정)와 팔 받침(link1)의 상자가 겹침 → 둘 중 하나 이상의 위치가 틀렸다는 뜻.
-         실측 전까지 둘 다 "가정" 으로 둠. 확정되면 여기 default 와 scan_joint 를 같이 고칠 것 -->
+       팔 받침 위치는 실측 후 갱신할 것 -->
   <xacro:arg name="arm_mount_x" default="0.0"/>
   <xacro:arg name="arm_mount_y" default="0.0"/>
   <!-- 프로파일 45 cm · 카메라 2개 (위치 가정). 실제 로봇 · RViz 에서는 켬 (인지가 camera_* TF 를 씀).
@@ -169,21 +172,9 @@
     <origin xyz="0.066 0 0.100"/>
   </joint>
 
-  <!-- ===================== 라이다 LDS (CAD 에 없음 → 위치 가정: 맨 위 판, 팔 뒤) =====================
-       ⚠ 이 위치 + 팔 받침 0,0 이면 HOME 자세 팔과 라이다가 겹쳐 앞쪽이 가려짐
-         → 대안 "2층 판 사이에 LDS-03" 포함해서 기구 회의에서 정할 것 -->
-  <link name="base_scan">
-    <xacro:box_physics mass="0.12" sx="0.066" sy="0.069" sz="0.039" xyz="0 0 -0.0106"/>
-    <visual>
-      <geometry><mesh filename="${mesh}/turtlebot3/lds.stl" scale="0.001 0.001 0.001"/></geometry>
-      <material name="dark"/>
-    </visual>
-  </link>
-  <joint name="scan_joint" type="fixed">
-    <parent link="base_link"/>
-    <child link="base_scan"/>
-    <origin xyz="-0.045 0 ${plate_top + 0.0302}"/>   <!-- LDS 메시 바닥이 -30.2 mm -->
-  </joint>
+  <xacro:if value="$(arg with_lidars)">
+    <xacro:dual_lidar mounts="$(arg lidar_mounts)" base_height="${wheel_r}"/>
+  </xacro:if>
 
   <!-- ===================== 팔: OpenManipulator-X + 손목 회전 ===================== -->
   <!-- 관절 위치 · 한계는 ROBOTIS open_manipulator_x_arm.urdf.xacro 값 그대로.

@@ -37,6 +37,9 @@ def generate_launch_description():
                               description="hardware:=opencr 일 때 포트 — 보드 1장일 때만 (auto = hardware_map.yaml)"),
         DeclareLaunchArgument("opencr_ports", default_value="auto",
                               description="보드마다 포트: bus_drive=/tmp/opencr_drive,bus_arm=/tmp/opencr_arm (auto = hardware_map.yaml)"),
+        DeclareLaunchArgument("with_lidars", default_value="false", choices=["true", "false"],
+                              description="Publish dual scan frames only with explicit mounting geometry"),
+        DeclareLaunchArgument("lidar_mounts", default_value=cfg("lidar_mounts.yaml")),
         DeclareLaunchArgument("use_rviz", default_value="false"),
         # 팔 받침 위치 — 미확정 (robot.urdf.xacro 주석). 실측값이 나오면 여기서 바로 바꿔 볼 수 있게
         DeclareLaunchArgument("arm_mount_x", default_value="0.0"),
@@ -49,6 +52,8 @@ def generate_launch_description():
             PathJoinSubstitution([FindExecutable(name="xacro")]), " ",
             PathJoinSubstitution([desc, "urdf", "robot.urdf.xacro"]),
             " hardware:=", arg("hardware"),
+            " with_lidars:=", arg("with_lidars"),
+            " lidar_mounts:=", arg("lidar_mounts"),
             " hardware_map:=", arg("hardware_map"),
             " opencr_port:=", arg("opencr_port"),
             " opencr_ports:=", arg("opencr_ports"),
