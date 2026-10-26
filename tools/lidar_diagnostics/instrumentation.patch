@@ -1,0 +1,189 @@
+--- a/include/coin_d4_driver/coin_d4_base_handler.hpp
++++ b/include/coin_d4_driver/coin_d4_base_handler.hpp
+@@ -28,6 +28,7 @@
+ #include "coin_d4_driver/lidar_sdk/mtime.hpp"
+ #include "coin_d4_driver/lidar_sdk/serial_port.hpp"
+
++#include "coin_d4_driver/diagnostic_recorder.hpp"
+ #include "rclcpp/rclcpp.hpp"
+ #include "sensor_msgs/msg/laser_scan.hpp"
+
+@@ -51,6 +52,7 @@
+   void deactivate_publish_thread();
+
+ private:
++  std::unique_ptr<DiagnosticRecorder> diagnostic_;
+   void init_structs();
+   bool init_lidar_port();
+   void flush_serial();
+--- a/src/coin_d4_base_handler.cpp
++++ b/src/coin_d4_base_handler.cpp
+@@ -57,6 +57,9 @@
+
+ void CoinD4BaseHandler::init_structs()
+ {
++  diagnostic_.reset(new DiagnosticRecorder(
++    declare_parameter_once(parameter_prefix_ + "diagnostic_csv", std::string("")),
++    declare_parameter_once(parameter_prefix_ + "diagnostic_scans", 100)));
+   lidar_status_ = std::make_shared<LidarHardwareStatus>();
+   lidar_time_ = std::make_shared<LidarTimeStatus>();
+   lidar_general_info_.port = declare_parameter_once(parameter_prefix_ + "port", "/dev/ttyUSB0");
+@@ -299,7 +302,9 @@
+
+           scan_msg->ranges.resize(scan.points.size());
+           scan_msg->intensities.resize(scan.points.size());
+-          scan_msg->header.stamp = get_node_time();
++          const auto publish_stamp = get_node_time();
++          scan_msg->header.stamp = publish_stamp;
++          diagnostic_->publication(publish_stamp.nanoseconds());
+           scan_msg->header.frame_id = lidar_general_info_.frame_id;
+
+           scan_msg->angle_min = scan.config.min_angle;
+@@ -320,6 +325,14 @@
+           }
+
+           publish_scan(std::move(scan_msg));
++          try {
++            if (diagnostic_->flush_if_complete()) {
++              RCLCPP_INFO(logging_interface_->get_logger(),
++                "DIAGNOSTIC CAPTURE COMPLETE: CSV flushed; stop with Ctrl+C");
++            }
++          } catch (const std::exception& e) {
++            RCLCPP_ERROR(logging_interface_->get_logger(), "DIAGNOSTIC WRITE FAILED: %s", e.what());
++          }
+         }
+       }
+       return;
+@@ -454,10 +467,20 @@
+ void CoinD4BaseHandler::parse_lidar_serial_data(LaserScan & outscan)
+ {
+   lock_.lock();
++  const bool capture = diagnostic_->wants_scan();
++  std::vector<node_info> raw;
++  uint64_t raw_start = 0, raw_end = 0;
++  int64_t snapshot_ns = 0;
+
+   size_t count = scan_node_count_;
+
+   if (count < MAX_SCAN_NODES && count > 0) {
++    if (capture) {
++      raw.assign(scan_node_buf_, scan_node_buf_ + count);
++      raw_start = lidar_time_->scan_start_time;
++      raw_end = lidar_time_->scan_end_time;
++      snapshot_ns = DiagnosticRecorder::steady_ns();
++    }
+     uint64_t scan_time = (lidar_time_->scan_end_time - lidar_time_->scan_start_time);
+
+     outscan.config.angle_increment = 2.0 * M_PI / count;
+@@ -514,6 +537,10 @@
+     }
+   }
+   lock_.unlock();
++  if (capture && !raw.empty()) {
++    diagnostic_->capture(std::move(raw), raw_start, raw_end, snapshot_ns,
++      outscan, lidar_general_info_.reverse);
++  }
+ }
+ }  // namespace coin_d4
+ }  // namespace robotis
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -2,7 +2,7 @@
+ # Set minimum required version of cmake, project name and compile options
+ ################################################################################
+ cmake_minimum_required(VERSION 3.5)
+-project(coin_d4_driver)
++project(coin_d4_diagnostic_driver)
+
+ if(NOT CMAKE_CXX_STANDARD)
+   set(CMAKE_CXX_STANDARD 14)
+@@ -42,8 +42,7 @@
+   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+   $<INSTALL_INTERFACE:include>)
+
+-add_executable(single_coin_d4_node src/single_coin_d4_node.cpp)
+-add_executable(multi_coin_d4_node src/multi_coin_d4_node.cpp)
++add_executable(diagnostic_coin_d4_node src/single_coin_d4_node.cpp)
+
+ target_link_libraries(${PROJECT_NAME}_lib
+   rclcpp::rclcpp
+@@ -53,10 +52,7 @@
+   ${geometry_msgs_TARGETS}
+ )
+
+-target_link_libraries(single_coin_d4_node
+-  ${PROJECT_NAME}_lib
+-)
+-target_link_libraries(multi_coin_d4_node
++target_link_libraries(diagnostic_coin_d4_node
+   ${PROJECT_NAME}_lib
+ )
+
+@@ -67,13 +63,7 @@
+   DESTINATION include
+ )
+
+-install(DIRECTORY launch
+-  DESTINATION share/${PROJECT_NAME}
+-)
+
+-install(DIRECTORY params
+-  DESTINATION share/${PROJECT_NAME}
+-)
+
+ install(
+   TARGETS ${PROJECT_NAME}_lib
+@@ -83,13 +73,10 @@
+   ARCHIVE DESTINATION lib
+ )
+
+-install(TARGETS single_coin_d4_node
++install(TARGETS diagnostic_coin_d4_node
+   DESTINATION lib/${PROJECT_NAME}
+ )
+
+-install(TARGETS multi_coin_d4_node
+-  DESTINATION lib/${PROJECT_NAME}
+-)
+
+ ################################################################################
+ # Macro for ament package
+--- a/package.xml
++++ b/package.xml
+@@ -1,7 +1,7 @@
+ <?xml version="1.0"?>
+ <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+ <package format="3">
+-  <name>coin_d4_driver</name>
++  <name>coin_d4_diagnostic_driver</name>
+   <version>1.0.1</version>
+   <description>ROS package for LDS-03 (COIN-D4) Lidar</description>
+   <maintainer email="pyo@robotis.com">Pyo</maintainer>
+--- a/src/single_coin_d4_node.cpp
++++ b/src/single_coin_d4_node.cpp
+@@ -14,6 +14,8 @@
+ //
+ // Authors: Hyeongjun Jeon
+
++#include <cstdio>
++#include <exception>
+ #include "coin_d4_driver/single_coin_d4_node.hpp"
+
+
+@@ -42,8 +44,14 @@
+ {
+   rclcpp::init(argc, argv);
+   rclcpp::NodeOptions options;
+-  auto node = std::make_shared<robotis::coin_d4::SingleCoinD4Node>(options);
+-  rclcpp::spin(node);
++  try {
++    auto node = std::make_shared<robotis::coin_d4::SingleCoinD4Node>(options);
++    rclcpp::spin(node);
++  } catch (const std::exception& e) {
++    std::fprintf(stderr, "Diagnostic startup/capture error: %s\n", e.what());
++    rclcpp::shutdown();
++    return 1;
++  }
+   rclcpp::shutdown();
+   return 0;
+ }
