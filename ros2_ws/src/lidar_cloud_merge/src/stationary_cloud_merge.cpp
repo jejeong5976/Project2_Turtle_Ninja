@@ -3,6 +3,7 @@
 #include <tf2_ros/buffer.hpp>
 #include <tf2_ros/transform_listener.hpp>
 #include <chrono>
+#include <iostream>
 class Merger : public rclcpp::Node {
   using Scan=sensor_msgs::msg::LaserScan;
   using Steady=std::chrono::steady_clock;
@@ -12,10 +13,23 @@ class Merger : public rclcpp::Node {
   std::unique_ptr<tf2_ros::Buffer> buffer_;
   std::unique_ptr<tf2_ros::TransformListener> listener_;
   std::string frame_;double max_age_,max_skew_;
+  bool self_filter_;lidar_cloud_merge::BodyMask body_;
  public:
   Merger():Node("stationary_cloud_merge") {
     if(!declare_parameter("stationary_test",false))throw std::runtime_error("Requires stationary_test:=true; no motion compensation");
     frame_=declare_parameter<std::string>("target_frame","lidar_front_link");
+    self_filter_=declare_parameter("self_filter_enabled",false);
+    body_.center_x=declare_parameter("body_center_x",0.110);
+    body_.center_y=declare_parameter("body_center_y",0.005);
+    body_.length=declare_parameter("body_length",0.256);
+    body_.width=declare_parameter("body_width",0.256);
+    body_.margin=declare_parameter("body_margin",0.010);
+    body_.validate();
+    if(self_filter_ && frame_!="lidar_front_link")
+      throw std::runtime_error("Body filter currently requires target_frame=lidar_front_link");
+    if(self_filter_)RCLCPP_INFO(get_logger(),"Body filter: X [%.3f, %.3f], Y [%.3f, %.3f] m; all Z; frame %s",
+      body_.center_x-body_.length/2-body_.margin,body_.center_x+body_.length/2+body_.margin,
+      body_.center_y-body_.width/2-body_.margin,body_.center_y+body_.width/2+body_.margin,frame_.c_str());
     max_age_=declare_parameter("max_age",0.3);max_skew_=declare_parameter("max_skew",0.075);
     if(frame_.empty()||!std::isfinite(max_age_)||!std::isfinite(max_skew_)||max_age_<=0||max_skew_<0||max_skew_>max_age_)
       throw std::runtime_error("Invalid frame or freshness limits");
@@ -43,6 +57,10 @@ class Merger : public rclcpp::Node {
         if(scans_[k]->header.frame_id==frame_)tf.rotation.w=1;
         else tf=buffer_->lookupTransform(frame_,scans_[k]->header.frame_id,rclcpp::Time(scans_[k]->header.stamp)).transform;
         lidar_cloud_merge::append(*scans_[k],tf,k,points);
+      }
+      if(self_filter_){
+        const auto removed=lidar_cloud_merge::exclude_body(points,body_);
+        RCLCPP_INFO_THROTTLE(get_logger(),*get_clock(),5000,"Body filter: removed %zu, retained %zu points in latest pair",removed,points.size());
       }
       auto header=scans_[stamps[0]>=stamps[1]?0:1]->header;header.frame_id=frame_;
       publisher_->publish(lidar_cloud_merge::cloud(points,header));

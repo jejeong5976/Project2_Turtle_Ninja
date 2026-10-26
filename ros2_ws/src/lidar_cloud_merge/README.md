@@ -64,5 +64,51 @@ A hardware-free bag check against `desk-alignment-e2FRy6` independently checked
 180-degree transform. The user confirmed the live merged view on 2026-10-25:
 RViz displayed both source colors on /lidar/points_merged with Global Status OK.
 The desk driver/TF launch must remain running alongside the merger; running only
-the merger and RViz produces no points. Live sensor-loss/recovery behavior and
-moving-platform operation have not been validated. Calibration remains deferred.
+the merger and RViz produces no points. At this initial checkpoint, live sensor-loss/
+recovery behavior had not been validated; see the 2026-10-26 results below.
+Moving-platform operation remains unvalidated. Calibration remains deferred.
+
+## Optional robot-body exclusion (2026-10-26)
+
+The user confirmed a 256 x 256 mm body footprint centered on the plate datum and
+10 mm outward margin on every side. This gives a 276 x 276 mm XY exclusion region,
+including its boundary, at all heights. It is a geometric exclusion, not proof that
+every removed return came from the robot; obstacles inside the margin disappear too.
+
+With the provisional front origin at plate (+110,+5) mm and front yaw pi,
+`x_front=0.110-x_plate`, `y_front=0.005-y_plate`. Consequently the mask center in
+lidar_front_link is (+0.110,+0.005) m, and its limits are X [-0.028,+0.248] m,
+Y [-0.133,+0.143] m. Do not use a square centered on the front sensor itself.
+Recompute these values when mounting geometry changes. Current filtered mode requires
+`target_frame=lidar_front_link`; the box is axis-aligned in that frame.
+
+Startup parameters (metres): `body_length=0.256`, `body_width=0.256`,
+`body_margin=0.010`, `body_center_x=0.110`, `body_center_y=0.005`.
+`self_filter_enabled` defaults to false. Parameters are read at startup; restart the
+node to change the filter. Use this after rebuilding the persistent workspace:
+
+```bash
+ros2 run lidar_cloud_merge stationary_cloud_merge --ros-args \
+  -p stationary_test:=true -p self_filter_enabled:=true
+```
+
+The filter acts after both scans are transformed and before cloud serialization.
+It preserves survivor intensity/source IDs and both original scan topics. A periodic
+log reports removed/retained points in the latest pair; an all-excluded pair produces
+an empty cloud. Disable by restarting with `self_filter_enabled:=false`.
+
+Core tests cover transformed rear points, all boundary corners, outside points on
+each edge, coordinate conversion, negative-margin rejection and retained point fields.
+Live verification reported by the user on 2026-10-26:
+- The enabled filter logged 23-76 removed points per reported pair and retained
+  577-657 points. These are observations, not acceptance thresholds.
+- The user confirmed the physical exclusion check: body-region returns disappeared
+  while targets outside the expanded boundary remained visible.
+- The user confirmed front-driver and rear-driver recovery after separately
+  stopping and restarting each driver; merged output resumed without restarting
+  the merger.
+
+For repeat verification, compare enabled/disabled views and place a stationary
+target just outside an accessible mask edge (and beyond the sensor's minimum
+range). Confirm it remains visible. Fine calibration and moving-platform operation
+remain deferred; these checks validate the current stationary arrangement only.

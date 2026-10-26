@@ -5,11 +5,37 @@
 #include <geometry_msgs/msg/transform.hpp>
 #include <tf2/LinearMath/Transform.hpp>
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <vector>
 #include <stdexcept>
 namespace lidar_cloud_merge {
 using Point = std::array<float, 5>;
+// Axis-aligned footprint in the output frame; all heights are excluded.
+struct BodyMask {
+  double center_x=0.110, center_y=0.005;
+  double length=0.256, width=0.256, margin=0.010;
+  void validate() const {
+    if (!std::isfinite(center_x)||!std::isfinite(center_y)||
+        !std::isfinite(length)||!std::isfinite(width)||!std::isfinite(margin)||
+        length<=0||width<=0||margin<0||
+        !std::isfinite(std::abs(center_x)+length/2+margin)||
+        !std::isfinite(std::abs(center_y)+width/2+margin))
+      throw std::runtime_error("Invalid body footprint or margin");
+  }
+  bool contains(const Point &p) const {
+    // Match bounds to PointCloud2 float32 precision, including boundary points.
+    return p[0]>=float(center_x-length/2-margin)&&p[0]<=float(center_x+length/2+margin)&&
+           p[1]>=float(center_y-width/2-margin)&&p[1]<=float(center_y+width/2+margin);
+  }
+};
+inline size_t exclude_body(std::vector<Point>& points,const BodyMask& mask) {
+  mask.validate();
+  const auto before=points.size();
+  points.erase(std::remove_if(points.begin(),points.end(),
+    [&mask](const Point&p){return mask.contains(p);}),points.end());
+  return before-points.size();
+}
 inline void append(const sensor_msgs::msg::LaserScan &s,
                    const geometry_msgs::msg::Transform &t, float source,
                    std::vector<Point> &out) {
