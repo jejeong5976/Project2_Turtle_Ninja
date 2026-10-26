@@ -1,0 +1,10 @@
+# TEMPLATE ONLY: all rules are disabled until the actual Jetson USB identities are recorded.
+# Inspect each adapter independently with:
+# udevadm info --query=property --name=/dev/ttyUSB0
+# Prefer distinct ID_SERIAL_SHORT; otherwise use the exact ID_PATH and fixed USB sockets.
+# Replace every placeholder, then uncomment ONLY the matching pair of rules.
+# SUBSYSTEM=="tty", ENV{ID_SERIAL_SHORT}=="FRONT_UNIQUE_SERIAL", SYMLINK+="lidar_front", GROUP="dialout", MODE="0660"
+# SUBSYSTEM=="tty", ENV{ID_SERIAL_SHORT}=="REAR_UNIQUE_SERIAL", SYMLINK+="lidar_rear", GROUP="dialout", MODE="0660"
+# Alternative for adapters without unique serial numbers:
+# SUBSYSTEM=="tty", ENV{ID_PATH}=="FRONT_EXACT_USB_PATH", SYMLINK+="lidar_front", GROUP="dialout", MODE="0660"
+# SUBSYSTEM=="tty", ENV{ID_PATH}=="REAR_EXACT_USB_PATH", SYMLINK+="lidar_rear", GROUP="dialout", MODE="0660"
