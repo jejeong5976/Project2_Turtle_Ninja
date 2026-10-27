@@ -1,0 +1,41 @@
+# Our controller and conservative limits, with the recovered wheel geometry.
+# This is also the geometry source for drive_only.urdf.xacro; no duplicate
+# URDF module positions and no implicit rotation between base frames.
+controller_manager:
+  ros__parameters:
+    update_rate: 100
+    enforce_command_limits: true
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    swerve_controller:
+      type: swerve_controller/SwerveController
+
+swerve_controller:
+  ros__parameters:
+    module_names: [fl, fr, rl, rr]
+    # +X is the calibrated forward direction, +Y left. Suffixes retain old names.
+    module_x: [-0.064, 0.064, -0.064, 0.064]
+    module_y: [0.112, 0.112, -0.112, -0.112]
+    module_offset: [0.0269, 0.0269, -0.0269, -0.0269]
+    wheel_radius: 0.033
+    # drive_only.launch.py derives steer_min/max from the hardware map.
+    steer_limit: 3.141592653589793
+    require_motion_mode: false
+    cmd_vel_topic: /cmd_vel
+    cmd_timeout_s: 0.3
+    max_linear: 0.10
+    max_angular: 0.5
+    max_linear_accel: 0.2
+    max_angular_accel: 0.8
+    cosine_scale: true
+    steer_then_drive: true
+    steer_tolerance: 0.17
+    roll_while_steering: true
+    steer_rate_source: reported
+    use_imu: false
+    odom_frame: odom
+    base_frame: base_footprint
+    publish_tf: true
+    odom_rate_hz: 50.0
+    still_linear: 0.01
+    still_angular: 0.05

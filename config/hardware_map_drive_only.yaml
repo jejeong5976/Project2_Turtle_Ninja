@@ -1,0 +1,35 @@
+# Wheel configuration recovered from lidar_scan_jetson_20261027.tar.gz:
+# SHA256 c6b47e1bbfd11d5250843ee566f93d6d17d18c6800b7dfb0b77bff89a81b531a
+# Source: nt_description/config/hardware_map_drive_only.yaml, October 19 zeroes,
+# supported by October 26 physical test/readback records. Not a new live readback.
+# Use only with drive_only.launch.py / drive_only.urdf.xacro in this repository.
+# Calibrated +X = old CAD -Y; +Y = old CAD +X. Retained suffixes are NOT current
+# positions: fl=rear-left, fr=front-left, rl=rear-right, rr=front-right.
+# The full-robot/desk hardware_map.yaml remains a separate profile.
+buses:
+  - name: bus_drive
+    port: /dev/opencr_drive
+    baud: 1000000
+    # Wheel feedback first. No assumed IMU mounting TF or gyro fusion.
+    imu: false
+    joints: [drive_fl_joint, drive_fr_joint, drive_rl_joint, drive_rr_joint,
+             steer_fl_joint, steer_fr_joint, steer_rl_joint, steer_rr_joint]
+
+motors:
+  drive_fl_joint: {id: 1, model: XM430-W210, mode: velocity, scale: 1.0, profile_acc: 20, initial: 0.0}
+  drive_fr_joint: {id: 2, model: XM430-W210, mode: velocity, scale: -1.0, profile_acc: 20, initial: 0.0}
+  drive_rl_joint: {id: 41, model: XM430-W210, mode: velocity, scale: -1.0, profile_acc: 20, initial: 0.0}
+  drive_rr_joint: {id: 42, model: XM430-W210, mode: velocity, scale: 1.0, profile_acc: 20, initial: 0.0}
+  steer_fl_joint: {id: 11, model: XM430-W350, mode: position, scale: -1.0, zero_tick: 3066, profile_vel: 40, profile_acc: 10, initial: 0.0}
+  steer_fr_joint: {id: 12, model: XM430-W350, mode: position, scale: -1.0, zero_tick: 1552, profile_vel: 40, profile_acc: 10, initial: 0.0}
+  steer_rl_joint: {id: 13, model: XM430-W350, mode: position, scale: -1.0, zero_tick: 2577, profile_vel: 40, profile_acc: 10, initial: 0.0}
+  steer_rr_joint: {id: 14, model: XM430-W350, mode: position, scale: -1.0, zero_tick: 3589, profile_vel: 40, profile_acc: 10, initial: 0.0}
+
+# Controller bounds are derived from calibrated ticks, with 20 ticks at each end.
+# These are motor position windows, not proof of mechanical/cable clearance.
+steer_margin_ticks: 20
+watchdog: 15
+battery_warn_v: 10.8
+battery_stop_v: 10.2
+require_all_motors: true
+torque_off_on_deactivate: true

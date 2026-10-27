@@ -22,6 +22,7 @@
   <exec_depend>hardware</exec_depend>   <!-- hardware:=opencr (D3 A안) -->
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>xacro</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>  <!-- drive-only launch configuration -->
   <exec_depend>coin_d4_driver</exec_depend>
   <exec_depend>coin_d4_experimental_driver</exec_depend>
   <exec_depend>ament_index_python</exec_depend>

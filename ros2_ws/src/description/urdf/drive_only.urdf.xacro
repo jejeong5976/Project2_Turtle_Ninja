@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<!-- Wheel-only kinematic model in the measured steering-zero convention.
+     Full robot.urdf.xacro and all LiDAR TF remain independent and unchanged.
+     No chassis footprint, arm, IMU pose, or LiDAR mounting geometry is inferred. -->
+<robot name="ninja_turtle_drive_only" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="hardware" default="mock"/>
+  <xacro:arg name="hardware_map" default="$(find bringup)/config/hardware_map_drive_only.yaml"/>
+  <xacro:arg name="controllers" default="$(find bringup)/config/controllers_drive_only.yaml"/>
+  <xacro:arg name="opencr_port" default="auto"/>
+  <xacro:arg name="opencr_ports" default="auto"/>
+  <xacro:property name="hw" value="${xacro.load_yaml('$(arg hardware_map)')}"/>
+  <xacro:property name="geom" value="${xacro.load_yaml('$(arg controllers)')['swerve_controller']['ros__parameters']}"/>
+  <xacro:property name="opencr_ports" value="${dict([kv.split('=', 1) for kv in '$(arg opencr_ports)'.split(',') if '=' in kv])}"/>
+  <xacro:include filename="ros2_control.xacro"/>
+
+  <link name="base_footprint"/>
+  <link name="base_link"/>
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/><child link="base_link"/>
+    <origin xyz="0 0 ${geom['wheel_radius']}" rpy="0 0 0"/>
+  </joint>
+
+  <xacro:macro name="drive_module" params="i">
+    <xacro:property name="name" value="${geom['module_names'][i]}"/>
+    <xacro:property name="motor" value="${hw['motors']['steer_' + name + '_joint']}"/>
+    <xacro:property name="q0" value="${motor['scale'] * (0 - motor['zero_tick']) * 2 * pi / 4096}"/>
+    <xacro:property name="q1" value="${motor['scale'] * (4095 - motor['zero_tick']) * 2 * pi / 4096}"/>
+    <link name="steer_${name}_link"/>
+    <joint name="steer_${name}_joint" type="revolute">
+      <parent link="base_link"/><child link="steer_${name}_link"/>
+      <origin xyz="${geom['module_x'][i]} ${geom['module_y'][i]} 0" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="${min(q0,q1)}" upper="${max(q0,q1)}" effort="3.0" velocity="5.0"/>
+    </joint>
+    <link name="wheel_${name}_link">
+      <!-- Radius from the drive profile; 20 mm visual width from the legacy CAD
+           model. This is not a navigation collision/footprint definition. -->
+      <visual>
+        <origin rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${geom['wheel_radius']}" length="0.020"/></geometry>
+      </visual>
+    </link>
+    <joint name="drive_${name}_joint" type="continuous">
+      <parent link="steer_${name}_link"/><child link="wheel_${name}_link"/>
+      <origin xyz="0 ${geom['module_offset'][i]} 0" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+  <xacro:drive_module i="${0}"/>
+  <xacro:drive_module i="${1}"/>
+  <xacro:drive_module i="${2}"/>
+  <xacro:drive_module i="${3}"/>
+  <xacro:nt_buses buses="${hw['buses']}" hardware="$(arg hardware)"/>
+</robot>

@@ -76,7 +76,9 @@
           <param name="measure_max_age_s">0.05</param>          <!-- 못 읽은 모터 · 이보다 오래된 STATE 는 NaN 으로 (옛 값에 새 시각 금지, R3) -->
           <param name="config_timeout_s">8.0</param>            <!-- 켤 때 악수 기다리기 (IMU 영점 5 s 포함) -->
           <param name="require_all_motors">${'true' if hw.get('require_all_motors', True) else 'false'}</param>
-          <param name="torque_off_on_deactivate">false</param>  <!-- 끌 때 팔이 떨어지지 않게 토크 유지 -->
+          <!-- Full-robot default retains holding torque; the separate wheel-only
+               profile opts into torque-off on deactivation. -->
+          <param name="torque_off_on_deactivate">${'true' if hw.get('torque_off_on_deactivate', False) else 'false'}</param>
           <param name="battery_warn_v">${hw.get('battery_warn_v', 10.8)}</param>   <!-- 배터리 경고 [V] (DIAG, 잠정) -->
           <param name="battery_stop_v">${hw.get('battery_stop_v', 10.2)}</param>   <!-- 배터리 정지 [V] — 평균이 2 번 연속 아래면 ERROR (잠정) -->
         </xacro:if>
