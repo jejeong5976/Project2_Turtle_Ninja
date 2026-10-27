@@ -1,13 +1,16 @@
 # Metres and radians. null blocks dual-LiDAR TF until explicitly measured/assumed.
-# XY estimates refer to plate assembly center, NOT base_link.
+# Plate-relative geometry accepted as an assumption on 2026-10-27 from
+# FL0_LiDAR_Plan.pdf. This does not locate the plate relative to base_link.
 plate_x: null
 plate_y: null
 plate_yaw: null
+# Retained ground-height estimate; the PDF datum does not establish ground height.
 mount_surface_above_ground: 0.028
-# User-supplied provisional offset (2026-10-24); physical validation pending.
+# Drawing value, accepted as assumed geometry; not physically calibrated.
 h_scan: 0.0265
 front_x: 0.110
 rear_x: -0.110
 sensor_y: 0.005
-front_yaw: null
-rear_yaw: null
+# Scan zero: front rearward, rear forward in plate axes (+X forward, +Y left).
+front_yaw: 3.141592653589793
+rear_yaw: 0.0

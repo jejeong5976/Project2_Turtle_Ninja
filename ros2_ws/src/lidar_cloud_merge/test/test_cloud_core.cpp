@@ -29,5 +29,20 @@ int main(){using namespace lidar_cloud_merge;
  sensor_msgs::msg::LaserScan near=s;near.angle_increment=0;near.ranges={.1f,.3f};
  std::vector<Point> rear_points;append(near,tf,1,rear_points);
  check(exclude_body(rear_points,mask)==1&&rear_points.size()==1&&std::abs(rear_points[0][0]+.08)<1e-6);
- check(cloud({},std_msgs::msg::Header()).data.empty());std::cout<<"PASS projection, filtering, fields, empty cloud, freshness, skew and body footprint\n";
+ // Revised installed-robot envelope; leave the desk mask above unchanged.
+ BodyMask swept{.110,.005,.2552,.3050,.010};swept.validate();
+ for(float x:{-.0276f,.2476f})for(float y:{-.1575f,.1675f})check(swept.contains({x,y,0,0,0}));
+ for(Point p:std::vector<Point>{{-.0277f,0,0,0,0},{.2477f,0,0,0,0},
+                              {0,-.1576f,0,0,0},{0,.1676f,0,0,0}})check(!swept.contains(p));
+ // Outward-steered wheel region now excluded; narrower X must remain exact.
+ check(swept.contains({.11f,.16f,0,0,0})&&!mask.contains({.11f,.16f,0,0,0}));
+ check(!swept.contains({-.0278f,0,0,0,0})&&mask.contains({-.0278f,0,0,0,0}));
+ // +5 mm sensor offset makes the two scan-frame Y intervals asymmetric.
+ for(double xr:{-.0277,.0,.11,.2477})for(double yr:{-.1676,-.16,.0,.16,.1576})
+   check(swept.contains({float(.22-xr),float(-yr),0,0,1})==
+         (xr>=-.0276&&xr<=.2476&&yr>=-.1675&&yr<=.1575));
+ for(double xp:{-.138,-.1375,0.,.1375,.138})for(double yp:{-.163,-.1624,0.,.1624,.163})
+   check(swept.contains({float(.110-xp),float(.005-yp),0,0,0})==
+         (std::abs(xp)<=.1376&&std::abs(yp)<=.1625));
+ check(cloud({},std_msgs::msg::Header()).data.empty());std::cout<<"PASS projection, filtering, fields, empty cloud, freshness, skew, desk and revised steering envelopes\n";
 }

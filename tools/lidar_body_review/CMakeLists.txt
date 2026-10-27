@@ -1,0 +1,28 @@
+cmake_minimum_required(VERSION 3.16)
+project(lidar_body_review LANGUAGES CXX)
+find_package(ament_cmake REQUIRED)
+find_package(rosbag2_cpp REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_msgs REQUIRED)
+
+set(MERGER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../ros2_ws/src/lidar_cloud_merge")
+add_library(review_core INTERFACE)
+target_compile_features(review_core INTERFACE cxx_std_17)
+target_include_directories(review_core INTERFACE "${MERGER_DIR}/include")
+target_link_libraries(review_core INTERFACE ${sensor_msgs_TARGETS} ${geometry_msgs_TARGETS} tf2::tf2)
+
+add_executable(review_body_mask review_body_mask.cpp)
+target_compile_options(review_body_mask PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(review_body_mask review_core rosbag2_cpp::rosbag2_cpp rclcpp::rclcpp)
+
+add_executable(review_live_cloud review_live_cloud.cpp)
+target_compile_options(review_live_cloud PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(review_live_cloud review_core rosbag2_cpp::rosbag2_cpp rclcpp::rclcpp ${tf2_msgs_TARGETS})
+
+enable_testing()
+add_executable(test_cloud_core "${MERGER_DIR}/test/test_cloud_core.cpp")
+target_link_libraries(test_cloud_core review_core)
+add_test(NAME existing_cloud_core COMMAND test_cloud_core)

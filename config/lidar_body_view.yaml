@@ -1,0 +1,21 @@
+# Explicit opt-in stationary cloud view for the installed Jetson sensors.
+# FL0_LiDAR_Plan.pdf accepted as assumed assembly geometry on 2026-10-27.
+# Front (+110,+5) mm, yaw pi; rear (-110,+5) mm, yaw 0, in plate axes.
+# Revised FL0 specification: tight 255.2 x 305.0 mm envelope over 360 deg steering.
+# Add 10 mm/side: plate X +/-0.1376, Y +/-0.1625 m (275.2 x 325.0 mm).
+# In lidar_front_link: X [-0.0276,0.2476], Y [-0.1575,0.1675] m, inclusive.
+# These CAD bounds use the accepted mounting assumptions, not measured calibration.
+# Use a separate cloud topic; this never filters either raw LaserScan topic.
+/jetson_lidar_body_view:
+  ros__parameters:
+    stationary_test: false
+    use_sim_time: false
+    target_frame: lidar_front_link
+    self_filter_enabled: true
+    body_center_x: 0.110
+    body_center_y: 0.005
+    body_length: 0.2552
+    body_width: 0.3050
+    body_margin: 0.010
+    max_age: 0.3
+    max_skew: 0.075
