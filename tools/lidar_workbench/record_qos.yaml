@@ -1,0 +1,9 @@
+/tf_static:
+  reliability: reliable
+  durability: transient_local
+  history: keep_all
+/map:
+  reliability: reliable
+  durability: transient_local
+  history: keep_last
+  depth: 1

@@ -41,3 +41,6 @@ CLAUDE.md
 
 # Datasets (synthetic / real)
 datasets/
+
+# Generated maze models, synthetic scans and offline SLAM graphs
+output/maze_mapping_lab/

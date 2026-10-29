@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<!-- User-run, stationary first-map trial. Existing wheel launch stays separate.
+     Stop the original front driver first. Do not launch a second owner of
+     lidar_front_link or map->odom. No motion commands or hardware-controller changes. -->
+<launch>
+  <arg name="capture_dir" description="New directory for raw timing and ROS logs"/>
+  <arg name="slam_params_file" default="$(dirname)/slam_front_experiment.yaml"/>
+
+  <!-- Accepted front geometry relative to ground-level base_footprint.
+       The 0.0545 m scan height is an estimate; plate X/Y/yaw remain zero. -->
+  <node pkg="tf2_ros" exec="static_transform_publisher" name="front_mapping_mount"
+        args="--x 0.110 --y 0.005 --z 0.0545 --yaw 3.141592653589793 --pitch 0 --roll 0 --frame-id base_footprint --child-frame-id lidar_front_link"
+        output="screen"/>
+
+  <node pkg="coin_d4_mapping_driver" exec="front_mapping_input" name="front_mapping_input" output="screen">
+    <param name="mapping_experiment" value="true"/>
+    <param name="use_sim_time" value="false"/>
+    <param name="timing_model" value="nominal"/>
+    <!-- Explicit provisional hypothesis, not a measured delay. -->
+    <param name="assumed_delay_ns" value="0"/>
+    <param name="port" value="/dev/serial/by-path/platform-3610000.usb-usb-0:2.4.4:1.0-port0"/>
+    <param name="timing_scans" value="200"/>
+    <param name="timing_jsonl" value="$(var capture_dir)/timing.jsonl"/>
+  </node>
+
+  <include file="$(find-pkg-share slam_toolbox)/launch/online_async_launch.py">
+    <arg name="slam_params_file" value="$(var slam_params_file)"/>
+    <arg name="use_sim_time" value="false"/>
+    <arg name="autostart" value="true"/>
+    <arg name="use_lifecycle_manager" value="false"/>
+  </include>
+</launch>

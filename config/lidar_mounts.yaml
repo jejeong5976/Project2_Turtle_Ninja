@@ -1,9 +1,11 @@
 # Metres and radians. null blocks dual-LiDAR TF until explicitly measured/assumed.
 # Plate-relative geometry accepted as an assumption on 2026-10-27 from
-# FL0_LiDAR_Plan.pdf. This does not locate the plate relative to base_link.
-plate_x: null
-plate_y: null
-plate_yaw: null
+# FL0_LiDAR_Plan.pdf. User confirmed on 2026-10-27 that the plate centre
+# coincides horizontally with the wheel-base origin and drawing +X matches
+# the tested drive-only +X travel direction. Height remains estimated below.
+plate_x: 0.0
+plate_y: 0.0
+plate_yaw: 0.0
 # Retained ground-height estimate; the PDF datum does not establish ground height.
 mount_surface_above_ground: 0.028
 # Drawing value, accepted as assumed geometry; not physically calibrated.

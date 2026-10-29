@@ -1,0 +1,122 @@
+--- a/include/coin_d4_driver/coin_d4_base_handler.hpp
++++ b/include/coin_d4_driver/coin_d4_base_handler.hpp
+@@ -22,6 +22,8 @@
+ #include <memory>
+ #include <string>
+ #include <thread>
++#include <functional>
++#include "coin_d4_driver/mapping_frame.hpp"
+ 
+ #include "coin_d4_driver/lidar_sdk/lidar_data_processor.hpp"
+ #include "coin_d4_driver/lidar_sdk/locker.hpp"
+@@ -50,8 +52,14 @@
+   void deactivate_grab_thread();
+   void activate_publish_thread();
+   void deactivate_publish_thread();
++  // Set before activating threads; callback only enqueues a bounded frame copy.
++  void set_mapping_callback(std::function<void(const lidar_mapping::Frame &)> callback) {mapping_callback_=std::move(callback);}
+ 
+ private:
++  std::function<void(const lidar_mapping::Frame &)> mapping_callback_;
++  lidar_timing::ClockPair mapping_clock_{};
++  bool mapping_closing_valid_=false;
++  lidar_mapping::Frame mapping_frame_;
+   std::shared_ptr<lidar_timing::Recorder> timing_;
+   uint64_t timing_handoff_id_ = 0;
+   uint64_t timing_publish_id_ = 0;
+--- a/src/coin_d4_base_handler.cpp
++++ b/src/coin_d4_base_handler.cpp
+@@ -69,11 +69,11 @@
+   timing_ = std::make_shared<lidar_timing::Recorder>(
+     declare_parameter_once(parameter_prefix_ + "timing_jsonl", std::string("")),
+     declare_parameter_once(parameter_prefix_ + "timing_scans", 100));
+-  if (!declare_parameter_once(parameter_prefix_ + "stationary_test", false)) {
+-    throw std::runtime_error("Experimental driver requires stationary_test:=true; acquisition timing is unresolved");
++  if (!declare_parameter_once(parameter_prefix_ + "mapping_experiment", false)) {
++    throw std::runtime_error("Separate mapping prototype requires mapping_experiment:=true; timing remains hypothetical");
+   }
+   RCLCPP_WARN(logging_interface_->get_logger(),
+-    "STATIONARY EXPERIMENT: 400 angle bins, 0.05-12 m, publication stamp, time_increment=0; not for navigation");
++    "MAPPING PROTOTYPE: selected-source frames only; no legacy scan publisher; timing uncalibrated");
+   lidar_status_ = std::make_shared<LidarHardwareStatus>();
+   lidar_time_ = std::make_shared<LidarTimeStatus>();
+   lidar_general_info_.port = declare_parameter_once(parameter_prefix_ + "port", "/dev/ttyUSB0");
+@@ -255,6 +255,12 @@
+                 memcpy(scan_node_buf_, local_scan, scan_count * sizeof(node_info));
+                 scan_node_count_ = scan_count;
+                 ++timing_handoff_id_;
++                mapping_clock_.before_ns=lidar_timing::mono_ns();
++                mapping_clock_.ros_ns=get_node_time().nanoseconds();
++                mapping_clock_.after_ns=lidar_timing::mono_ns();
++                mapping_closing_valid_=local_buf[pos].timing_checksum_ok &&
++                  local_buf[pos].mapping_ring_header_ns==lidar_time_->scan_end_time &&
++                  !params_interface_->get_parameter("use_sim_time").as_bool();
+                 if (timing_->recording()) {
+                   if (params_interface_->get_parameter("use_sim_time").as_bool()) timing_->invalidate_clock();
+           const auto before = lidar_timing::mono_ns();
+@@ -351,7 +357,7 @@
+             scan_msg->intensities[i] = scan.points[i].intensity;
+           }
+ 
+-          publish_scan(std::move(scan_msg));
++          if(mapping_callback_)mapping_callback_(mapping_frame_);
+           timing_->event("published", {{"scan_id", static_cast<int64_t>(timing_publish_id_)},
+             {"mono_ns", lidar_timing::mono_ns()}});
+           try {
+@@ -500,6 +506,25 @@
+   const auto start = lidar_time_->scan_start_time;
+   const auto end = lidar_time_->scan_end_time;
+   const double seconds = end >= start ? (end-start)/1e9 : 0.0;
++  mapping_frame_={};mapping_frame_.id=timing_publish_id_;
++  mapping_frame_.start=start;mapping_frame_.end=end;mapping_frame_.count=count;
++  mapping_frame_.clock=mapping_clock_;
++  mapping_frame_.source_valid=mapping_closing_valid_ && scan_node_buf_[0].timing_checksum_ok &&
++    scan_node_buf_[0].timing_sample_index==0 && scan_node_buf_[0].mapping_ring_header_ns==start &&
++    !lidar_general_info_.reverse;
++  std::vector<lidar_diagnostic::Sample> mapping_samples;
++  for(size_t i=0;i<count;++i) {
++    const auto &raw=scan_node_buf_[i];
++    mapping_samples.push_back({(raw.angle_q6_checkbit >> LIDAR_RESP_MEASUREMENT_ANGLE_SHIFT)/64.0,
++      static_cast<double>(raw.distance_q2),raw.sync_quality,raw.exp_m==1});
++  }
++  const auto mapping_grid=lidar_diagnostic::convert(mapping_samples,400,false,.05,12.);
++  for(size_t i=0;i<mapping_grid.bins.size();++i) {
++    const auto &b=mapping_grid.bins[i];if(!std::isfinite(b.range))continue;
++    mapping_frame_.source_valid &= scan_node_buf_[b.source].timing_checksum_ok!=0;
++    mapping_frame_.beams.push_back({static_cast<int>(i),static_cast<int64_t>(b.source),b.range,
++      -mapping_samples[b.source].angle_deg*std::acos(-1.)/180.});
++  }
+   lidar_diagnostic::experimental_scan(outscan, scan_node_buf_, count,
+     lidar_general_info_.reverse, seconds);
+   if (timing_->recording()) {
+--- a/src/coin_d4_node_handler.cpp
++++ b/src/coin_d4_node_handler.cpp
+@@ -31,7 +31,7 @@
+     node->get_node_parameters_interface()),
+   node_(node)
+ {
+-  this->make_scan_publisher(lidar_general_info_.topic_name);
++  // Separate mapping executable owns the only output publisher after validation.
+ }
+ 
+ CoinD4NodeHandler::~CoinD4NodeHandler()
+--- a/include/coin_d4_driver/lidar_sdk/lidar_information.hpp
++++ b/include/coin_d4_driver/lidar_sdk/lidar_information.hpp
+@@ -74,6 +74,7 @@
+   uint64_t timing_packet_id;
+   uint16_t timing_sample_index;
+   uint8_t timing_checksum_ok;
++  uint64_t mapping_ring_header_ns;
+   uint8_t sync_flag;
+   uint16_t sync_quality;
+   uint16_t angle_q6_checkbit;
+--- a/src/lidar_sdk/lidar_data_processor.cpp
++++ b/src/lidar_sdk/lidar_data_processor.cpp
+@@ -472,6 +472,7 @@
+   node->timing_packet_id = timing_packet_id_;
+   node->timing_sample_index = package_sample_index_;
+   node->timing_checksum_ok = check_sum_result_ ? 1 : 0;
++  node->mapping_ring_header_ns = timing_ring_header_ns_;
+   // A packet event is emitted only once, on its first decoded sample.
+   if (package_sample_index_ == 0) {
+     const auto validated_ns = lidar_timing::mono_ns();

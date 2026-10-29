@@ -1,0 +1,3 @@
+# Unified-diff blank context lines contain a required space, including at EOF.
+# Preserve patch contents and retain the other whitespace checks.
+*.patch whitespace=-blank-at-eol,-blank-at-eof

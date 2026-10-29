@@ -11,13 +11,17 @@ upstream="$(realpath -- "$1")"
 review_dir="$(mktemp -d /tmp/lidar-offline-check-XXXXXX)"
 echo "Check artifacts: $review_dir"
 flags=(-std=c++17 -Wall -Wextra -Werror -pedantic -fsanitize=undefined -fno-sanitize-recover=undefined)
-for test in test_recorder test_timing_recorder test_sample_time_model test_host_time_anchor; do
+for test in test_recorder test_timing_recorder test_sample_time_model test_host_time_anchor test_motion_model test_motion_check test_scene test_mapping_scan test_mapping_frame; do
   g++ "${flags[@]}" -pthread -I"$upstream/include" \
     "$script_dir/$test.cpp" -o "$review_dir/$test"
   mkdir "$review_dir/$test-output"
   "$review_dir/$test" "$review_dir/$test-output"
 done
 g++ "${flags[@]}" "$script_dir/replay_timing.cpp" -lboost_json -o "$review_dir/replay_timing"
+g++ "${flags[@]}" "$script_dir/replay_motion.cpp" -o "$review_dir/replay_motion"
+g++ "${flags[@]}" "$script_dir/analyze_scene.cpp" -o "$review_dir/analyze_scene"
+g++ "${flags[@]}" "$script_dir/replay_mapping.cpp" -o "$review_dir/replay_mapping"
+g++ "${flags[@]}" "$script_dir/test_mapping_replay.cpp" -lboost_json -o "$review_dir/test_mapping_replay"
 if [[ $# -ge 2 ]]; then
   timing_workspace="$(realpath -- "$2")"
   "$timing_workspace/build/coin_d4_timing_driver/test_timing_parser" "$review_dir/parser.jsonl"

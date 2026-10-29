@@ -29,6 +29,8 @@ struct Scan {
   lidar_timing::ClockPair handoff_clock{},publish_clock{};
   std::map<int64_t,std::pair<int64_t,int64_t>> samples; // raw index -> packet, packet index
   std::map<int64_t,int64_t> bins;
+  std::map<int64_t,std::pair<double,double>> rays; // range metres, decoded angle radians
+  bool converted=false,reverse=false;
 };
 void summary(const char* name,std::vector<double> values) {
   require(!values.empty(),"No statistics");std::sort(values.begin(),values.end());
@@ -71,6 +73,12 @@ int main(int argc,char** argv) {
       } else if (kind=="sample") {
         auto& s=scans[integer(o,"scan_id")];
         require(s.samples.emplace(integer(o,"raw_index"),std::make_pair(integer(o,"packet_id"),integer(o,"packet_sample_index"))).second,"Duplicate sample");
+        s.rays.emplace(integer(o,"raw_index"),std::make_pair(integer(o,"distance_mm")/1000.0,
+          integer(o,"angle_q6")/64.0*std::acos(-1.)/180.0));
+      } else if (kind=="conversion") {
+        auto& s=scans[integer(o,"scan_id")];require(!s.converted,"Duplicate conversion");
+        const auto reverse=integer(o,"reverse");require(reverse==0 || reverse==1,"Invalid reverse flag");
+        s.converted=true;s.reverse=reverse;
       } else if (kind=="bin") {
         auto& s=scans[integer(o,"scan_id")];
         require(s.bins.emplace(integer(o,"bin_index"),integer(o,"raw_index")).second,"Duplicate bin");
@@ -98,6 +106,7 @@ int main(int argc,char** argv) {
       ++published;
       require(s.boundary && s.handoff && s.count>0 && s.count<800 && s.start>=0 && s.end>s.start,"Invalid ring boundary/count or missing handoff");
       require(s.samples.size()==static_cast<std::size_t>(s.count) && s.bins.size()==400,"Incomplete scan provenance");
+      require(s.converted,"Missing scan conversion orientation");
       for (int64_t i=0;i<s.count;++i) {
         const auto source=s.samples.at(i);const auto n=packets.at(source.first);
         require(source.second>=0 && source.second<n,"Invalid packet sample index");
@@ -143,7 +152,7 @@ int main(int argc,char** argv) {
     const int fd=open(argv[2],O_WRONLY|O_CREAT|O_EXCL,0600);
     if (fd<0) throw std::runtime_error(std::string("Cannot create output: ")+std::strerror(errno));
     FILE* out=fdopen(fd,"w");if (!out) {close(fd);throw std::runtime_error("fdopen failed");}
-    bool good=std::fprintf(out,"scan_id,bin_index,source_index,packet_id,packet_sample_index,nominal_relative_ns,period_scaled_relative_ns,host_nominal_lower_ns,host_nominal_upper_ns,host_scaled_lower_ns,host_scaled_upper_ns,acquisition_time_valid\n")>0;
+    bool good=std::fprintf(out,"scan_id,bin_index,source_index,packet_id,packet_sample_index,nominal_relative_ns,period_scaled_relative_ns,host_nominal_lower_ns,host_nominal_upper_ns,host_scaled_lower_ns,host_scaled_upper_ns,acquisition_time_valid,range_m,raw_angle_rad\n")>0;
     for (const auto& output:outputs) {
       for (std::size_t b=0;b<output.times.size();++b) {
         const auto& t=output.times[b];
@@ -151,12 +160,13 @@ int main(int argc,char** argv) {
         good &= std::fprintf(out,"%lld,%zu,%lld,%lld,%lld,%.3f,%.3f",
           static_cast<long long>(output.id),b,static_cast<long long>(t.source_index),
           static_cast<long long>(provenance.first),static_cast<long long>(provenance.second),t.nominal_ns,t.period_scaled_ns)>0;
-        if (t.source_index<0) good &= std::fprintf(out,",,,,,0\n")>0;
+        if (t.source_index<0) good &= std::fprintf(out,",,,,,0,nan,nan\n")>0;
         else {
           const auto& e=output.envelopes[b];
-          good &= std::fprintf(out,",%lld,%lld,%lld,%lld,0\n",static_cast<long long>(e[0].lower_ns),
+          const auto &scan=scans.at(output.id);const auto ray=scan.rays.at(t.source_index);
+          good &= std::fprintf(out,",%lld,%lld,%lld,%lld,0,%.9f,%.12f\n",static_cast<long long>(e[0].lower_ns),
             static_cast<long long>(e[0].upper_ns),static_cast<long long>(e[1].lower_ns),
-            static_cast<long long>(e[1].upper_ns))>0;
+            static_cast<long long>(e[1].upper_ns),ray.first,scan.reverse?ray.second:-ray.second)>0;
         }
       }
     }

@@ -112,3 +112,28 @@ For repeat verification, compare enabled/disabled views and place a stationary
 target just outside an accessible mask edge (and beyond the sensor's minimum
 range). Confirm it remains visible. Fine calibration and moving-platform operation
 remain deferred; these checks validate the current stationary arrangement only.
+# Front scan preparation (2026-10-27)
+
+`stationary_front_scan_filter` is a separate C++ executable. It reads
+`/lidar_front/scan` and writes `/lidar_front/scan_body_filtered` using sensor-data
+QoS. It requires explicit `stationary_test:=true`; this acknowledges stationary
+use, it does not detect motion. It opens no device, publishes no TF and leaves
+the existing merger and raw scans unchanged.
+
+The fixed front-frame body box matches the accepted full steering envelope:
+X [-0.0276, 0.2476], Y [-0.1575, 0.1675] metres, inclusive. Body endpoints and
+invalid/out-of-range beams become NaN, never clear-space infinity. Valid exterior
+returns retain their ranges/intensities. Header, physical frame, angle grid and
+timing are preserved. This is endpoint exclusion, not a calibrated angular
+occlusion model; exterior returns still need physical inspection. No synthetic
+origin, merged-cloud projection, retimestamping or deskew is performed.
+
+This is a stationary inspection component, **not a moving-SLAM input contract**.
+It deliberately provides no scan freshness or settled-motion admission gate.
+Do not feed it to a moving mapper until the selected timing workflow is validated.
+The experimental driver still publishes at receipt/publication time with unknown
+per-ray timing. NaN handling must also be verified with the chosen mapper.
+
+Offline tests cover the inclusive boundary, invalid/unknown rays, preservation
+of metadata and input, and rejection of mismatched frames or invalid metadata.
+Deployment and live validation remain user-run and pending.

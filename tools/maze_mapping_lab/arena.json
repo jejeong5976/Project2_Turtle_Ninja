@@ -1,0 +1,53 @@
+{
+  "units": "metres",
+  "source": "datasets/mission/20261028/mission_v5.pdf page 2; arena.jpg",
+  "status": "Drawing-derived simulation model, not a surveyed arena",
+  "nominal_outer_size": [4.464, 6.364],
+  "post_center_bounds": [0.0, 0.0, 4.404, 6.304],
+  "bounds_basis": "Inferred: 60 mm posts plus nominal overall size; matches drawing grid",
+  "wall_height": 0.30,
+  "wall_thickness": 0.006,
+  "post_radius": 0.030,
+  "dimension_status": "Wall height/thickness and post radius are provisional; not measured",
+  "wall_segments": [
+    [0,0,4.404,0], [4.404,0,4.404,6.304], [4.404,6.304,0,6.304], [0,6.304,0,0],
+    [1.101,0.583,1.101,1.317], [1.101,1.317,1.835,1.317],
+    [1.835,1.317,1.835,2.051], [1.835,2.051,1.101,2.051],
+    [1.101,2.051,1.101,2.785],
+    [2.569,1.317,4.037,1.317],
+    [2.569,2.051,3.303,2.051], [3.303,2.051,3.303,3.519],
+    [3.303,3.519,4.037,3.519],
+    [3.303,4.253,4.037,4.253],
+    [0.367,4.253,1.101,4.253], [1.101,4.253,1.101,3.519],
+    [1.101,4.987,1.101,5.721],
+    [1.835,4.987,2.569,4.987], [2.569,4.987,2.569,5.721],
+    [3.303,4.987,3.303,5.721]
+  ],
+  "wall_positions_basis": "Digitized drawing: inferred 734 mm modular pitch; half-grid X=1101,1835,2569,3303,4037 mm; Y=950+(n+0.5)*734 mm. Needs physical confirmation.",
+  "boxes": [
+    {"name":"source1", "center":[1.468,0.950], "size":[0.205,0.205,0.070]},
+    {"name":"source2", "center":[3.670,3.152], "size":[0.205,0.205,0.070]},
+    {"name":"source3", "center":[2.936,5.354], "size":[0.205,0.205,0.070]},
+    {"name":"source4", "center":[0.734,5.354], "size":[0.205,0.205,0.070]},
+    {"name":"source5", "center":[2.202,5.354], "size":[0.205,0.205,0.070]},
+    {"name":"source6", "center":[3.670,3.886], "size":[0.205,0.205,0.070]},
+    {"name":"L1", "center":[3.670,0.950], "size":[0.205,0.205,0.070]},
+    {"name":"L3", "center":[3.670,5.354], "size":[0.205,0.205,0.070]},
+    {"name":"central_SW", "center":[1.997,3.295], "size":[0.410,0.410,0.070]},
+    {"name":"central_SE", "center":[2.407,3.295], "size":[0.410,0.410,0.070]},
+    {"name":"central_NW", "center":[1.997,3.705], "size":[0.410,0.410,0.070]},
+    {"name":"central_NE", "center":[2.407,3.705], "size":[0.410,0.410,0.070]}
+  ],
+  "central_platform_basis": "820 mm square is specified; center (2202,3500) mm is drawing-derived. L2 placement center (2202,3700) mm is specified.",
+  "mission_start": [0.734,0.950,3.141592653589793],
+  "lidars": [[0.110,0.005,0.0545,3.141592653589793],[-0.110,0.005,0.0545,0]],
+  "lidar_basis": "Preserved working optical transforms in base_footprint; separate from CAD URDF housing transforms",
+  "placeholder_inventory": "Six pairs of red/green cylinders are visual placeholders only; no actual mission inventory inferred",
+  "routes": {
+    "perimeter_closed": [[0.734,0.950],[0.50,0.40],[3.10,0.40],[4.0,0.55],[4.12,2.6],[4.12,4.65],[4.0,5.95],[0.45,5.95],[0.36,4.65],[0.36,2.7],[0.734,0.950]],
+    "coverage_closed": [[0.734,0.950],[1.45,0.43],[3.1,0.50],[4.1,2.65],[3.67,2.65],[3.15,3.886],[3.67,4.65],[3.67,5.93],[2.936,5.93],[2.936,5.0],[2.20,4.55],[2.20,5.93],[0.65,5.93],[0.55,4.72],[0.40,3.1],[1.48,3.15],[1.48,4.45],[2.95,4.45],[2.95,2.55],[2.2,2.55],[2.2,1.65],[0.734,0.950]],
+    "coverage_open": [[0.734,0.950],[1.45,0.43],[3.1,0.50],[4.1,2.65],[3.67,2.65],[3.15,3.886],[3.67,4.65],[3.67,5.93],[2.936,5.93],[2.936,5.0],[2.20,4.55],[2.20,5.93],[0.65,5.93],[0.55,4.72],[0.40,3.1],[1.48,3.15],[1.48,4.45],[2.95,4.45],[2.95,2.55],[2.2,2.55]],
+    "north_closed": [[0.65,5.93],[2.20,5.93],[2.20,4.55],[2.936,5.0],[2.936,5.93],[3.67,5.93],[3.67,4.65],[3.15,3.886],[3.67,2.65],[4.1,2.65],[3.1,0.50],[1.45,0.43],[0.734,0.950],[0.40,3.1],[1.48,3.15],[1.48,4.45],[2.95,4.45],[2.95,2.55],[2.2,2.55],[0.55,4.72],[0.65,5.93]]
+  },
+  "route_status": "Proposed mapping survey waypoints, A* connected with clearance checks; not autonomous navigation or manipulation goals. North start is a simulation comparison, not official mission start."
+}

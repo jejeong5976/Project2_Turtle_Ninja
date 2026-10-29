@@ -1,0 +1,16 @@
+{
+  "status": "Simulation comparisons; all noise/drift settings are proposed sensitivity assumptions",
+  "datasets": [
+    {"name":"perimeter040", "route":"perimeter_closed", "speed":0.04, "seed":1},
+    {"name":"coverage040", "route":"coverage_closed", "speed":0.04, "seed":1},
+    {"name":"open040", "route":"coverage_open", "speed":0.04, "seed":1},
+    {"name":"north040", "route":"north_closed", "speed":0.04, "seed":1},
+    {"name":"coverage025", "route":"coverage_closed", "speed":0.025, "seed":1},
+    {"name":"coverage080", "route":"coverage_closed", "speed":0.08, "seed":1},
+    {"name":"holonomic040", "route":"coverage_closed", "speed":0.04, "seed":1, "heading":"fixed"},
+    {"name":"holonomic025", "route":"coverage_closed", "speed":0.025, "seed":1, "heading":"fixed"},
+    {"name":"holonomic040_seed2", "route":"coverage_closed", "speed":0.04, "seed":2, "heading":"fixed"},
+    {"name":"coverage040_seed2", "route":"coverage_closed", "speed":0.04, "seed":2},
+    {"name":"ideal040", "route":"coverage_closed", "speed":0.04, "seed":1, "range_noise":0, "odom_scale":0, "yaw_drift":0}
+  ]
+}

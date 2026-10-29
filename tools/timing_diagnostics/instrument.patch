@@ -1,0 +1,317 @@
+--- a/coin_d4_mapping_driver/CMakeLists.txt
++++ b/coin_d4_mapping_driver/CMakeLists.txt
+@@ -25,3 +25,8 @@
+   target_link_libraries(test_mapping_parser mapping_sensor util)
+ endif()
+ ament_package()
++
++# Isolated timing diagnostic copy only.
++find_package(Threads REQUIRED)
++include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
++target_link_libraries(mapping_sensor Threads::Threads)
+--- a/coin_d4_mapping_driver/include/coin_d4_driver/coin_d4_base_handler.hpp
++++ b/coin_d4_mapping_driver/include/coin_d4_driver/coin_d4_base_handler.hpp
+@@ -23,6 +23,7 @@
+ #include <string>
+ #include <thread>
+ #include <functional>
++#include "nt_timing_trace.hpp"
+ #include "coin_d4_driver/mapping_frame.hpp"
+ 
+ #include "coin_d4_driver/lidar_sdk/lidar_data_processor.hpp"
+@@ -56,6 +57,7 @@
+   void set_mapping_callback(std::function<void(const lidar_mapping::Frame &)> callback) {mapping_callback_=std::move(callback);}
+ 
+ private:
++  nt_timing::Logger full_timing_{"lidar_source"};
+   std::function<void(const lidar_mapping::Frame &)> mapping_callback_;
+   lidar_timing::ClockPair mapping_clock_{};
+   bool mapping_closing_valid_=false;
+--- a/coin_d4_mapping_driver/include/coin_d4_driver/lidar_sdk/lidar_data_processor.hpp
++++ b/coin_d4_mapping_driver/include/coin_d4_driver/lidar_sdk/lidar_data_processor.hpp
+@@ -20,6 +20,7 @@
+ #include <stdint.h>
+ #include <memory>
+ #include "coin_d4_driver/timing_recorder.hpp"
++#include "nt_timing_trace.hpp"
+ 
+ #include "coin_d4_driver/lidar_sdk/lidar_information.hpp"
+ #include "coin_d4_driver/lidar_sdk/mtime.hpp"
+@@ -30,6 +31,7 @@
+ class LidarDataProcessor
+ {
+ private:
++  nt_timing::Logger full_timing_{"lidar_parser"};
+   std::shared_ptr<lidar_timing::Recorder> timing_;
+   uint64_t timing_packet_id_ = 0;
+   int64_t timing_ring_header_ns_ = 0;
+--- a/coin_d4_mapping_driver/src/coin_d4_base_handler.cpp
++++ b/coin_d4_mapping_driver/src/coin_d4_base_handler.cpp
+@@ -261,6 +261,8 @@
+                 mapping_closing_valid_=local_buf[pos].timing_checksum_ok &&
+                   local_buf[pos].mapping_ring_header_ns==lidar_time_->scan_end_time &&
+                   !params_interface_->get_parameter("use_sim_time").as_bool();
++                full_timing_.event(nt_timing::Handoff,timing_handoff_id_,mapping_clock_.ros_ns,
++                  lidar_time_->scan_start_time,lidar_time_->scan_end_time,scan_count,local_buf[pos].timing_packet_id);
+                 if (timing_->recording()) {
+                   if (params_interface_->get_parameter("use_sim_time").as_bool()) timing_->invalidate_clock();
+           const auto before = lidar_timing::mono_ns();
+@@ -515,6 +517,8 @@
+   std::vector<lidar_diagnostic::Sample> mapping_samples;
+   for(size_t i=0;i<count;++i) {
+     const auto &raw=scan_node_buf_[i];
++    full_timing_.event(nt_timing::Raw,timing_publish_id_,0,i,raw.timing_packet_id,raw.timing_sample_index,int64_t(raw.timing_checksum_ok)|(int64_t(raw.exp_m)<<8)|(int64_t(raw.sync_flag)<<16),
++      (raw.angle_q6_checkbit >> LIDAR_RESP_MEASUREMENT_ANGLE_SHIFT)/64.0,raw.distance_q2,raw.sync_quality);
+     mapping_samples.push_back({(raw.angle_q6_checkbit >> LIDAR_RESP_MEASUREMENT_ANGLE_SHIFT)/64.0,
+       static_cast<double>(raw.distance_q2),raw.sync_quality,raw.exp_m==1});
+   }
+@@ -525,6 +529,9 @@
+     mapping_frame_.beams.push_back({static_cast<int>(i),static_cast<int64_t>(b.source),b.range,
+       -mapping_samples[b.source].angle_deg*std::acos(-1.)/180.});
+   }
++  full_timing_.event(nt_timing::Frame,timing_publish_id_,mapping_clock_.ros_ns,start,end,count,mapping_frame_.source_valid);
++  full_timing_.event(nt_timing::Frame,timing_publish_id_,mapping_clock_.ros_ns,mapping_clock_.before_ns,mapping_clock_.after_ns,-1,0);
++  for(const auto &b:mapping_frame_.beams)full_timing_.event(nt_timing::Beam,timing_publish_id_,0,b.bin,b.source,0,0,b.range,b.angle);
+   lidar_diagnostic::experimental_scan(outscan, scan_node_buf_, count,
+     lidar_general_info_.reverse, seconds);
+   if (timing_->recording()) {
+--- a/coin_d4_mapping_driver/src/lidar_sdk/lidar_data_processor.cpp
++++ b/coin_d4_mapping_driver/src/lidar_sdk/lidar_data_processor.cpp
+@@ -280,6 +280,7 @@
+           const auto read_result = serial_port_->read_data(global_recv_buffer_, recv_size);
+           const auto after = lidar_timing::mono_ns();
+           const auto queued_after = serial_port_->available();
++          full_timing_.event(nt_timing::Read,timing_packet_id_,0,before,after,queued_before,queued_after,recv_size,read_result,0);
+           if (timing_) timing_->event("read", {{"packet_id", static_cast<int64_t>(timing_packet_id_)},
+             {"stage", 0}, {"mono_before_ns", before}, {"mono_after_ns", after},
+             {"requested_bytes", static_cast<int64_t>(recv_size)}, {"read_result", read_result},
+@@ -409,6 +410,7 @@
+           const auto read_result = serial_port_->read_data(global_recv_buffer_, recv_size);
+           const auto after = lidar_timing::mono_ns();
+           const auto queued_after = serial_port_->available();
++          full_timing_.event(nt_timing::Read,timing_packet_id_,0,before,after,queued_before,queued_after,recv_size,read_result,1);
+           if (timing_) timing_->event("read", {{"packet_id", static_cast<int64_t>(timing_packet_id_)},
+             {"stage", 1}, {"mono_before_ns", before}, {"mono_after_ns", after},
+             {"requested_bytes", static_cast<int64_t>(recv_size)}, {"read_result", read_result},
+@@ -480,6 +482,7 @@
+       if (lidar_time_->tim_scan_start == 0) lidar_time_->tim_scan_start = timing_ring_header_ns_;
+       else lidar_time_->tim_scan_end = timing_ring_header_ns_;
+     }
++    full_timing_.event(nt_timing::Packet,timing_packet_id_,0,timing_ring_header_ns_,validated_ns,check_sum_result_,package_sample_num,calculated_check_sum_,target_check_sum_);
+     if (timing_) timing_->event("packet", {{"packet_id", static_cast<int64_t>(timing_packet_id_)},
+       {"checksum_ok", check_sum_result_}, {"sample_count", package_sample_num},
+       {"ring_header_ns", timing_ring_header_ns_}, {"validated_ns", validated_ns},
+--- a/coin_d4_mapping_driver/src/mapping_node.cpp
++++ b/coin_d4_mapping_driver/src/mapping_node.cpp
+@@ -10,6 +10,7 @@
+ #include <sys/wait.h>
+ #include <unistd.h>
+ class MappingNode:public rclcpp::Node {
++  nt_timing::Logger timing_{"mapping"};
+   std::unique_ptr<robotis::coin_d4::CoinD4NodeHandler> handler_;
+   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+   rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr scan_pub_;
+@@ -20,10 +21,12 @@
+   std::string model_;int64_t delay_,last_reference_=-1,last_scan_id_=-1,last_publish_=0;
+   size_t published_=0,rejected_=0;bool fault_=false;std::string reason_="waiting for input";
+   void reject(const std::string &why,bool latch=false) {
++    timing_.event(nt_timing::Rejected,last_scan_id_,last_reference_,latch);
+     ++rejected_;reason_=why;fault_|=latch;
+     RCLCPP_WARN_THROTTLE(get_logger(),*get_clock(),2000,"Mapping scan withheld: %s%s",why.c_str(),latch?"; restart required":"");
+   }
+   void odometry(nav_msgs::msg::Odometry::ConstSharedPtr m) {
++    timing_.event(nt_timing::OdomReceived,rclcpp::Time(m->header.stamp).nanoseconds(),rclcpp::Time(m->header.stamp).nanoseconds());
+     if(fault_)return;
+     const auto &q=m->pose.pose.orientation;const auto &p=m->pose.pose.position;
+     const auto stamp=rclcpp::Time(m->header.stamp).nanoseconds(),current=now().nanoseconds();
+@@ -44,6 +47,7 @@
+     if(fault_)return;
+     lidar_mapping::Frame frame;
+     {std::lock_guard<std::mutex> guard(mutex_);if(pending_.empty())return;frame=std::move(pending_.front());pending_.pop_front();}
++    nt_timing::Span timing_span(timing_,nt_timing::MappingBegin,nt_timing::MappingEnd,frame.id,0);
+     try {
+       const auto timed=lidar_mapping::time_frame(frame,model_,delay_);
+       const auto before=lidar_timing::mono_ns(),current=now().nanoseconds(),after=lidar_timing::mono_ns();
+@@ -52,8 +56,9 @@
+       if(odom_.size()<2||current-odom_.back().stamp_ns>100000000){reject("missing/fresh odometry unavailable");return;}
+       if(timed.first<odom_.front().stamp_ns){reject("odometry lacks early beam coverage");return;}
+       if(timed.reference>odom_.back().stamp_ns) {
++        timing_.event(nt_timing::OdomWait,frame.id,timed.reference,odom_.back().stamp_ns);
+         std::lock_guard<std::mutex> guard(mutex_);pending_.push_front(std::move(frame));
+-        while(pending_.size()>4)pending_.pop_back();
++        while(pending_.size()>4){timing_.event(nt_timing::QueueDrop,pending_.back().id);pending_.pop_back();}
+         return;
+       }
+       if(frame.id<=last_scan_id_||timed.reference<=last_reference_){reject("scan/reference regression",true);return;}
+@@ -69,7 +74,9 @@
+       out.angle_min=0;out.angle_increment=2*std::acos(-1.)/scan.bins.size();out.angle_max=(scan.bins.size()-1)*out.angle_increment;
+       out.time_increment=0;out.scan_time=(frame.end-frame.start)/1e9;out.range_min=.05;out.range_max=12;
+       for(const auto &bin:scan.bins)out.ranges.push_back(float(bin.range));
+-      scan_pub_->publish(out);last_scan_id_=frame.id;last_reference_=timed.reference;last_publish_=current;++published_;reason_="publishing";
++      timing_.event(nt_timing::ScanPublishBegin,frame.id,timed.reference);
++      scan_pub_->publish(out);
++      timing_.event(nt_timing::ScanPublishEnd,frame.id,timed.reference);last_scan_id_=frame.id;last_reference_=timed.reference;last_publish_=current;++published_;reason_="publishing";
+     }catch(const std::exception &e){reject(e.what());}
+   }
+ public:
+@@ -104,7 +111,8 @@
+         throw std::runtime_error("Front serial port is owned or fuser inspection failed; stop only the original front driver");
+       handler_=std::make_unique<robotis::coin_d4::CoinD4NodeHandler>("",this);
+       handler_->set_mapping_callback([this](const lidar_mapping::Frame &frame){
+-        std::lock_guard<std::mutex> guard(mutex_);if(pending_.size()>=4)pending_.pop_front();pending_.push_back(frame);
++        timing_.event(nt_timing::MappingReceived,frame.id);
++        std::lock_guard<std::mutex> guard(mutex_);if(pending_.size()>=4){timing_.event(nt_timing::QueueDrop,pending_.front().id);pending_.pop_front();}pending_.push_back(frame);
+       });
+       handler_->activate_grab_thread();handler_->activate_publish_thread();
+     }
+--- a/coin_d4_mapping_driver/src/test_timing_parser.cpp
++++ b/coin_d4_mapping_driver/src/test_timing_parser.cpp
+@@ -57,6 +57,8 @@
+     assert(node.distance_q2==1000 && node.timing_checksum_ok==1);
+   }
+   recorder->published();
++  // Full-run parser trace must continue after the legacy JSON recorder seals.
++  for(int i=0;i<300;++i)feed(i%40==0,true);
+   serial.close(); close(master);
+   std::ifstream file(argv[1]);
+   const std::string content{std::istreambuf_iterator<char>(file),{}};
+--- a/hardware/CMakeLists.txt
++++ b/hardware/CMakeLists.txt
+@@ -56,3 +56,9 @@
+ 
+ ament_export_dependencies(hardware_interface pluginlib rclcpp rclcpp_lifecycle)
+ ament_package()
++
++# Isolated timing diagnostic copy only.
++find_package(Threads REQUIRED)
++include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
++target_link_libraries(opencr_link PUBLIC Threads::Threads)
++target_link_libraries(hardware PUBLIC Threads::Threads)
+--- a/hardware/include/hardware/opencr_link.hpp
++++ b/hardware/include/hardware/opencr_link.hpp
+@@ -16,6 +16,7 @@
+ 
+ #pragma once
+ 
++#include "nt_timing_trace.hpp"
+ #include <chrono>
+ #include <cstddef>
+ #include <cstdint>
+@@ -181,6 +182,8 @@
+ 
+ class OpenCRLink
+ {
++  nt_timing::Logger timing_{"opencr"};
++  uint64_t timing_state_id_=0;
+ public:
+   using Clock = std::chrono::steady_clock;
+ 
+--- a/hardware/src/opencr_hardware.cpp
++++ b/hardware/src/opencr_hardware.cpp
+@@ -79,6 +79,7 @@
+   void invalidate_states();   // 모든 상태 칸 NaN (ERROR 뒤 옛 값이 남지 않게)
+   bool send(bool torque, bool with_commands);
+ 
++  nt_timing::Logger timing_{"hardware"};
+   std::unique_ptr<OpenCRLink> link_;
+   std::vector<JointIfaces> ifaces_;
+   std::vector<double> targets_;
+@@ -324,8 +325,9 @@
+ }
+ 
+ // ---------------------------------------------------------------- 100 Hz
+-return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
+-{
++return_type OpenCRHardware::read(const rclcpp::Time &time, const rclcpp::Duration &)
++{
++  nt_timing::Span timing_span(timing_,nt_timing::HardwareBegin,nt_timing::HardwareEnd,time.nanoseconds(),time.nanoseconds());
+   const auto t0 = std::chrono::steady_clock::now();
+   struct Timer   // 어느 return 으로 나가든 걸린 시간을 기록
+   {
+@@ -343,6 +345,7 @@
+     return return_type::ERROR;
+   }
+   const auto & s = link_->state();
++  timing_.event(nt_timing::StateUsed,time.nanoseconds(),time.nanoseconds(),s.ms,s.seq_echo,s.comm_err,s.status,age);
+   // 펌웨어가 설정한 모터 수만큼 안 보냄 = OpenCR 가 리셋돼서 CONFIG 를 잃었음 → 멈춤 (다시 켜야 함)
+   if (!s.joints_valid) {
+     RCLCPP_ERROR(get_logger(), "OpenCR 가 모터 상태를 안 보냄 (보드가 리셋됐나?) → 멈춤");
+--- a/hardware/src/opencr_link.cpp
++++ b/hardware/src/opencr_link.cpp
+@@ -197,7 +197,9 @@
+   int new_states = 0;
+   uint8_t buf[512];
+   for (int guard = 0; guard < 64; ++guard) {   // 한 번에 너무 오래 붙잡지 않게 최대 32 kB
++    const auto read_start=nt_timing::clock_ns(CLOCK_MONOTONIC);
+     const long n = port_.read_some(buf, sizeof(buf));
++    timing_.event(nt_timing::Read, timing_state_id_, 0, read_start, nt_timing::clock_ns(CLOCK_MONOTONIC), n, sizeof(buf));
+     if (n < 0) {return -1;}
+     if (n == 0) {break;}
+     for (long k = 0; k < n; ++k) {
+@@ -206,6 +208,10 @@
+       if (parser_.type() == ntp::TYPE_STATE) {
+         ntp::State s;
+         if (!ntp::decode_state(parser_.data(), parser_.len(), s)) {continue;}
++        ++timing_state_id_;
++        timing_.event(nt_timing::StateDecoded,timing_state_id_,0,s.ms,s.seq_echo,s.comm_err,s.status);
++        for(size_t ti=0;ti<s.n && ti<ntp::MAX_JOINTS;++ti)
++          timing_.event(nt_timing::StateJoint,timing_state_id_,0,ti,s.ms,0,0,s.pos[ti],s.vel[ti],s.cur[ti]);
+         state_.ms = s.ms;
+         state_.seq_echo = s.seq_echo;
+         state_.status = s.status;
+--- a/swerve_controller/CMakeLists.txt
++++ b/swerve_controller/CMakeLists.txt
+@@ -34,3 +34,8 @@
+     pluginlib::pluginlib rclcpp::rclcpp rclcpp_lifecycle::rclcpp_lifecycle ${geometry_msgs_TARGETS})
+ endif()
+ ament_package()
++
++# Isolated timing diagnostic copy only.
++find_package(Threads REQUIRED)
++include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
++target_link_libraries(swerve_controller_plugin PUBLIC Threads::Threads)
+--- a/swerve_controller/src/swerve_controller.cpp
++++ b/swerve_controller/src/swerve_controller.cpp
+@@ -16,6 +16,7 @@
+ // 실시간 규칙: update() 안에서는 기다리지 않는다 — 토픽에서 온 값은 try_lock 으로만 꺼내고,
+ //             발행은 별도 타이머가 함 (update 는 최신 odom 을 칸에 넣어 두기만)
+ 
++#include "nt_timing_trace.hpp"
+ #include <algorithm>
+ #include <atomic>
+ #include <chrono>
+@@ -56,6 +57,7 @@
+   controller_interface::return_type update(const rclcpp::Time & time, const rclcpp::Duration & period) override;
+ 
+ private:
++  nt_timing::Logger timing_{"swerve"};
+   bool read_modules(std::vector<ModuleState> & out) const;
+   void write_modules(const std::vector<ModuleState> & m);
+   void publish_odom();
+@@ -372,6 +374,7 @@
+ // ---------------------------------------------------------------- 100 Hz (controller_manager 가 부름)
+ return_type SwerveController::update(const rclcpp::Time & time, const rclcpp::Duration & period)
+ {
++  nt_timing::Span timing_span(timing_,nt_timing::ControlBegin,nt_timing::ControlEnd,time.nanoseconds(),time.nanoseconds());
+   const double now_s = time.seconds();
+   const double dt = period.seconds();
+ 
+@@ -442,6 +445,7 @@
+     std::unique_lock<std::mutex> lk(odom_mtx_, std::try_to_lock);
+     if (lk.owns_lock()) {
+       const auto & p = drive_->pose();
++      timing_.event(nt_timing::OdomMade,time.nanoseconds(),time.nanoseconds(),0,0,0,0,p.x,p.y,p.yaw);
+       odom_msg_.header.stamp = time;
+       odom_msg_.header.frame_id = odom_frame_;
+       odom_msg_.child_frame_id = base_frame_;
+@@ -496,7 +500,10 @@
+     if (!odom_ready_) {return;}
+     msg = odom_msg_;
+   }
++  const auto trace_stamp=rclcpp::Time(msg.header.stamp).nanoseconds();
++  timing_.event(nt_timing::OdomPublishBegin,trace_stamp,trace_stamp);
+   pub_odom_->publish(msg);
++  timing_.event(nt_timing::OdomPublishEnd,trace_stamp,trace_stamp);
+   if (publish_tf_) {
+     geometry_msgs::msg::TransformStamped tf;
+     tf.header = msg.header;

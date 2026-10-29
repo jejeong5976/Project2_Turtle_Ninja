@@ -1,0 +1,9 @@
+# Hardware-free integration sequence. Distances are wheel-estimated, not surveyed.
+forward 0.05
+backward 0.05
+left 0.05
+right 0.05
+ccw 10
+cw 10
+save mock_room
+quit

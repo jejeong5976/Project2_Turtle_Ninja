@@ -1,0 +1,10 @@
+cmake_minimum_required(VERSION 3.16)
+project(lidar_diagnostic_ros_test LANGUAGES CXX)
+find_package(rclcpp REQUIRED)
+find_package(geometry_msgs REQUIRED)
+add_executable(test_rotation_publisher ../test_rotation_publisher.cpp)
+target_compile_features(test_rotation_publisher PRIVATE cxx_std_17)
+target_compile_options(test_rotation_publisher PRIVATE
+  -Wall -Wextra -Wpedantic -Werror -fsanitize=undefined -fno-sanitize-recover=undefined)
+target_link_options(test_rotation_publisher PRIVATE -fsanitize=undefined)
+target_link_libraries(test_rotation_publisher rclcpp::rclcpp ${geometry_msgs_TARGETS})

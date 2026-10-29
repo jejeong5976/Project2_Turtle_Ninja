@@ -1,0 +1,27 @@
+# Documentation only. Not a launch parameter file; do not source/apply to live SLAM.
+physical_front_box_check: pending  # User explicitly says not checked in base frame.
+scan_topic: /lidar_front/scan_mapping
+scan_frame: lidar_front_link
+base_frame: base_footprint
+axis_convention: {x: forward, y: left, z: up}
+active_front_transform:
+  parent: base_footprint
+  child: lidar_front_link
+  xyz_m: [0.110, 0.005, 0.0545]
+  rpy_rad: [0.0, 0.0, 3.141592653589793]
+equivalent_front_transform_from_base_link:
+  # Only valid for current base_footprint -> base_link = [0, 0, 0.033], zero RPY.
+  parent: base_link
+  child: lidar_front_link
+  xyz_m: [0.110, 0.005, 0.0215]
+  rpy_rad: [0.0, 0.0, 3.141592653589793]
+plate_offsets: {x_m: 0.0, y_m: 0.0, yaw_rad: 0.0}
+height_status: estimated_not_measured
+wheel_calibration: assumed_correct_preserved
+timing: {model: nominal, assumed_delay_ns: 0, acquisition_time_valid: false}
+mapping_sensors: [front]
+nt_scan_yaw:
+  used_by_current_launch: false
+  equivalent_absolute_value_rad: 3.141592653589793
+  condition: same_base_axes_and_scan_zero_and_angle_direction
+  physically_verified: false

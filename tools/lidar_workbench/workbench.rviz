@@ -1,0 +1,61 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Global Options:
+    Fixed Frame: map
+    Frame Rate: 20
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 0.5
+    - Class: rviz_default_plugins/Map
+      Name: Continuous map (front SLAM)
+      Enabled: true
+      Topic:
+        Value: /map
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+        History Policy: Keep Last
+        Depth: 1
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Merged observations (unfiltered)
+      Enabled: true
+      Topic:
+        Value: /lidar/points_merged
+        Reliability Policy: Best Effort
+      Style: Points
+      Size (Pixels): 3
+      Color Transformer: FlatColor
+      Color: 0; 220; 255
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Filtered observations
+      Enabled: false
+      Topic:
+        Value: /lidar/points_filtered
+        Reliability Policy: Best Effort
+      Style: Points
+      Color Transformer: FlatColor
+      Color: 0; 255; 0
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Rejected observations (not proven noise)
+      Enabled: false
+      Topic:
+        Value: /lidar/points_rejected
+        Reliability Policy: Best Effort
+      Style: Points
+      Color Transformer: FlatColor
+      Color: 255; 0; 0
+    - Class: rviz_default_plugins/TF
+      Name: Frames
+      Enabled: false
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Scale: 90
+      Target Frame: map
+Window Geometry:
+  Width: 1200
+  Height: 800
