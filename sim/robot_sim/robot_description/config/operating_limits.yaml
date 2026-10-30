@@ -1,0 +1,17 @@
+# 실물에서 실제로 써 본 운용 값(2026-10-26). URDF <limit> 는 모터 하드웨어 한계, 이 파일은 학습 환경·실물 운용 상한용.
+# 단위: 속도 rad/s, 출력 % (Goal PWM / 885), 전류 A
+arm_tested_max:
+  source: "A9F5 실물 3/3 (ARM_20261026T022813Z·023047Z·023249Z), 전체 27.3초"
+  velocity_rad_s: {arm_joint1: 0.65, arm_joint2: 0.84, arm_joint3: 0.84, arm_joint4: 0.77, arm_joint5: 0.1}   # 실제 측정 속도 27/35/35/32 × 0.229 rpm. J5 = 설정 Profile Velocity 4 × 0.229 rpm = 0.096 (실측 아님, Profile Acceleration 2)
+  pwm_limit_percent: {arm_joint1: 45, arm_joint2: 90, arm_joint3: 79, arm_joint4: 56, arm_joint5: 60}         # 재생 중 Goal PWM 400/800/700/500 (실제 사용은 그 절반 이하). J5 = 설정 PWM 60 % (control 담당 확인)
+  current_peak_A: {arm_joint1: 0.12, arm_joint2: 0.79, arm_joint3: 0.52, arm_joint4: 0.20, arm_joint5: 0.07}   # J5 = control 담당 전달 0.070 A (2026-10-28)
+  tracking_lag_deg_max: 8.3   # J3, 빠른 구간에서 목표보다 늦은 최대 각도
+gripper:
+  mode: "전류 제한 위치 모드(5), Goal Current 60 (약 0.16 A)"
+  real_gap_mm: {closed: 16, puck: 29, open: 79}
+  model_note: "관절 한계는 16 mm(합의된 닫힘 표시), 하지만 모델 손가락 형상끼리 약 19.6~21 mm 에서 닿음(형상 두께 또는 간격 대응 오차, 실측 필요). 퍽 29 mm 는 범위 안"
+safety_in_real_tool:
+  overspeed: "설정 속도 + max(2, 설정/5) Profile 단위"
+  lag_fault_ticks: 200
+  temperature_stop_C: 50
+  min_voltage_V: 10.5
