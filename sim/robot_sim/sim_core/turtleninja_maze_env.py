@@ -873,11 +873,14 @@ def add_crank_visuals(stage):
     """그리퍼 크랭크(회색) · 링크 막대(노랑)를 손가락 위치에 맞춰 움직이는 보이는 모양 (물리 무관) = 배포판 config/nt_train_kit.CrankVisuals.
     URDF 막대는 CAD 자세(58.5 mm)로 고정돼 있어 그리퍼를 16 mm 로 닫으면 막대 끝이 옆으로 튀어나와 보임 -> 카메라 쓸 때 붙임.
     env.instantiate 뒤에 한 번 부르고, 손가락을 바꾼 뒤 렌더 전에 update_crank_visuals."""
-    import sys as _s
-    if str(ROBOT_DIR) not in _s.path:
-        _s.path.insert(0, str(ROBOT_DIR))
-    from config.nt_train_kit import CrankVisuals
-    return CrankVisuals(stage)
+    import importlib.util
+    module_path = ROBOT_DIR / 'config' / 'nt_train_kit.py'
+    spec = importlib.util.spec_from_file_location('turtle_ninja_robot_train_kit', module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'Cannot load robot training helpers: {module_path}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.CrankVisuals(stage)
 
 
 def update_crank_visuals(crank, robot):
