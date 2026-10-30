@@ -869,18 +869,34 @@ class TrafficLightLook:
             self.light[c].Set(gain * TL_LAMP[c]['glow'] if on else 0.0)
 
 
+def _load_train_kit():
+    """배포판 config/nt_train_kit.py 를 파일 경로로 직접 불러옴 (한 번만, 이후 sys.modules 것 재사용).
+    robot_description/config 는 __init__.py 없는 네임스페이스 패키지라, sys.path 어딘가에 일반 모듈 config.py
+    (예: cv2 폴더의 OpenCV 로더 설정)가 있으면 sys.path 순서와 무관하게 그쪽이 잡힘 -> NameError: LOADER_DIR."""
+    import importlib.util
+    import sys
+    name = 'turtle_ninja_robot_train_kit'
+    if name in sys.modules:
+        return sys.modules[name]
+    module_path = ROBOT_DIR / 'config' / 'nt_train_kit.py'
+    spec = importlib.util.spec_from_file_location(name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'배포판 학습 도우미를 못 불러옴: {module_path}')
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        del sys.modules[name]   # 실패한 반쪽 모듈이 남지 않게
+        raise
+    return module
+
+
 def add_crank_visuals(stage):
     """그리퍼 크랭크(회색) · 링크 막대(노랑)를 손가락 위치에 맞춰 움직이는 보이는 모양 (물리 무관) = 배포판 config/nt_train_kit.CrankVisuals.
     URDF 막대는 CAD 자세(58.5 mm)로 고정돼 있어 그리퍼를 16 mm 로 닫으면 막대 끝이 옆으로 튀어나와 보임 -> 카메라 쓸 때 붙임.
     env.instantiate 뒤에 한 번 부르고, 손가락을 바꾼 뒤 렌더 전에 update_crank_visuals."""
-    import importlib.util
-    module_path = ROBOT_DIR / 'config' / 'nt_train_kit.py'
-    spec = importlib.util.spec_from_file_location('turtle_ninja_robot_train_kit', module_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f'Cannot load robot training helpers: {module_path}')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.CrankVisuals(stage)
+    return _load_train_kit().CrankVisuals(stage)
 
 
 def update_crank_visuals(crank, robot):
