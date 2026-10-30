@@ -1,0 +1,66 @@
+#usda 1.0
+(
+    defaultPrim = "DistractPaper"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "DistractPaper" (
+    prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+)
+{
+    bool physics:kinematicEnabled = 1
+
+    def Mesh "plate" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        rel material:binding = </DistractPaper/Looks/distract_1>
+        normal3f[] normals = [(1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0)] (
+            interpolation = "vertex"
+        )
+        point3f[] points = [(0.0002, -0.044, -0.03), (0.0002, 0.044, -0.03), (0.0002, 0.044, 0.03), (0.0002, -0.044, 0.03)]
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+    }
+
+    def "Looks"
+    {
+        def Material "distract_1"
+        {
+            token outputs:surface.connect = </DistractPaper/Looks/distract_1/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </DistractPaper/Looks/distract_1/tex.outputs:rgb>
+                float inputs:metallic = 0
+                float inputs:roughness = 0.7
+                token outputs:surface
+            }
+
+            def Shader "st"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                token inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "tex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./tex/distract_1.png@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </DistractPaper/Looks/distract_1/st.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+        }
+    }
+}
+

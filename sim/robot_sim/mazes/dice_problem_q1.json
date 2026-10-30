@@ -1,0 +1,20 @@
+{
+ "name": "q1",
+ "note": "발제 v5 공개 연습 문제 Q1 (신호 · 바코드). 퍽 ID · 색 · 모양 배정은 placement.csv 미공개라 가정: 박스마다 왼쪽(-X) 빨강 · 오른쪽(+X) 초록 (발제 그림), 모양은 박스마다 번갈아. 빨강 6 · 초록 6 = 발제 설명용 예제 비율",
+ "signal": "RGRRGRGGYGYG",
+ "barcode": "P2-01",
+ "pucks": [
+  {"id": 0,  "box": 1, "side": -1, "color": "red",   "shape": "cyl"},
+  {"id": 1,  "box": 1, "side":  1, "color": "green", "shape": "box"},
+  {"id": 2,  "box": 2, "side": -1, "color": "red",   "shape": "box"},
+  {"id": 3,  "box": 2, "side":  1, "color": "green", "shape": "cyl"},
+  {"id": 4,  "box": 3, "side": -1, "color": "red",   "shape": "cyl"},
+  {"id": 5,  "box": 3, "side":  1, "color": "green", "shape": "box"},
+  {"id": 6,  "box": 4, "side": -1, "color": "red",   "shape": "box"},
+  {"id": 7,  "box": 4, "side":  1, "color": "green", "shape": "cyl"},
+  {"id": 8,  "box": 5, "side": -1, "color": "red",   "shape": "cyl"},
+  {"id": 9,  "box": 5, "side":  1, "color": "green", "shape": "box"},
+  {"id": 10, "box": 6, "side": -1, "color": "red",   "shape": "box"},
+  {"id": 11, "box": 6, "side":  1, "color": "green", "shape": "cyl"}
+ ]
+}
