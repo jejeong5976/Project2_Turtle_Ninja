@@ -1,0 +1,42 @@
+common:
+  model: yolo26n.pt
+  imgsz: 960           # 학습은 정사각형
+  batch: 16             # 8 GB GPU 에서 1280 의 한계. OOM 이면 -1 (자동)
+  workers: 4
+  optimizer: AdamW
+  warmup_bias_lr: 0.0   # AdamW 직접 지정 시 기본 0.1 이 그대로 남음 (auto 면 ultralytics 가 0 으로 바꿈)
+  patience: 30          # val 이 이만큼 에폭 동안 안 좋아지면 멈춤
+  seed: 42
+  # augmentation
+  hsv_h: 0.01           # 색상: 작게! 클래스에 색(red/green)이 들어가 있음 (가이드의 0.3 은 색을 후처리로 판정할 때 값)
+  hsv_s: 0.5            # 채도: 크게 (조명·카메라 차이)
+  hsv_v: 0.3            # 밝기: 크게
+  degrees: 3.0          # 카메라가 로봇에 고정이라 회전은 조금만
+  translate: 0.1
+  scale: 0.2
+  fliplr: 0.5
+  mosaic: 0.0
+
+# 실제 카메라 차이 대비 사진 증강 (albumentations, 학습 때만. val/test 는 원본). p: 0 이면 끔
+# 실물 Arducam 노출·화이트밸런스 고정값 미정 -> 넓게. 색온도는 R-B 축만 움직여 red/green 구분은 유지됨
+albu:
+  white_balance: {p: 0.5, kelvin: [4000, 8000]}       # 색온도 (PlanckianJitter blackbody). 강의실 형광등 약 5000 K
+  exposure: {p: 0.3, brightness: 0.25, contrast: 0.2} # 밝기·대비 ±. hsv_v 와 겹치므로 너무 키우지 말 것
+  gamma: {p: 0.3, range: [70, 140]}                   # 감마 ×100 (0.7–1.4)
+  blur: {p: 0.3, motion: [3, 9], defocus: [1, 3]}     # 주행 흔들림(커널 px) · 초점(반지름 px) · 가우시안 중 하나. 1.2 m 밖 퍽은 10 px 안팎이라 크게 하지 말 것
+  vignette: {p: 0.3, intensity: [0.05, 0.2]}          # 광각 렌즈 주변부 어두움 (가운데를 밝힘)
+
+stages:
+  sim:                  # 1 stage - train with simulation dataset (33 epoch 고정, 2단계는 last.pt 에서 시작)
+    data: data_sim.yaml
+    epochs: 33          # 고정. val 로 best 를 고르면 작은 val 의 운에 따라 시작점이 크게 달라짐 (ep9 → test 0.907, ep33 → 0.949)
+    patience: 0         # 조기 종료 없음 (common 의 30 을 덮어씀)
+    lr0: 0.001
+    close_mosaic: 15
+    name: sim_pre
+  real:                 # 2 stage - finetuning with real data only (start from stage 1 last.pt)
+    data: data_real.yaml
+    epochs: 60
+    lr0: 0.0005
+    close_mosaic: 10
+    name: real_ft
