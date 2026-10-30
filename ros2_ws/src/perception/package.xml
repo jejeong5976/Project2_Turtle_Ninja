@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>perception</name>
+  <version>0.2.0</version>
+  <description>YOLO 추론(ONNX Runtime), 바코드 판독, 퍽 AprilTag · 색, 신호등</description>
+  <maintainer email="team@example.com">F팀 닌자터틀</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>cv_bridge</depend>
+  <depend>interfaces</depend>
+  <depend>libopencv-dev</depend>
+  <!-- onnxruntime C++ 는 rosdep 키가 없어서 따로 설치 (README 참고) -->
+
+  <exec_depend>launch_ros</exec_depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
