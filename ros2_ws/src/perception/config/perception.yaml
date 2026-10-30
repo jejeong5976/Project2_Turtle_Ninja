@@ -3,84 +3,81 @@
 #   /perception/task_text   (interfaces/TaskText)         벽 1D 바코드 원문
 #   /perception/signals     (interfaces/SignalState)      red / orange / green / off / unknown
 #
-# 모델 경로(model)는 launch 인자로 넣음 (엔진은 Jetson 에서 빌드, git 제외)
+# 노드 하나(perception)가 카메라별 파라미터를 <camera>.* 로, 바코드를 barcode.* 로 받음
+# 모델 경로(<camera>.model)와 provider 는 launch 인자로 넣음 (.onnx, git 제외). 입력 크기 · 클래스 이름은 모델에서 읽음
 # [확인 필요] 표시 값은 실측 후 갱신
 
-wide_detector:
+perception:
   ros__parameters:
-    camera: wide
-    image_topic: /wide_cam/image_raw
-    image_qos: reliable            # reliable | best_effort (큰 이미지는 best_effort 면 프로세스 사이에서 유실)
-    camera_info_topic: /wide_cam/camera_info
-    depth_topic: ""
-    imgsz: [736, 1280]
-    conf: 0.35
-    max_hz: 15.0
-    enabled: true
-    publish_signals: true          # 신호등은 광각이 상시 담당
-    read_tags: true                # 광각에선 태그가 작아 가까울 때만 읽힘
-    puck_classes: [puck_cyl, puck_box]
-    signal_class: signal_tower
-    tag:
-      family: 36h11                # [확인 필요] 퍽 태그 종류
-      size: 0.025                  # [확인 필요] 태그 한 변 (m)
-      min_side_px: 60
-    color:                         # [확인 필요] 광각 실측으로 재보정 (OpenCV HSV 0~179)
-      roi_frac: 0.6
-      v_min: 40
-      min_pixels: 30
-      s_beige_max: 70
-      beige_hue: [5, 35]
-      red_hue: [170, 10]
-      green_hue: [40, 85]
-    signal:                        # [확인 필요] bbox 높이 대비 칸 위치 (위→아래: 캡, 빨강, 주황, 초록)
-      red: [0.10, 0.40]
-      orange: [0.40, 0.70]
-      green: [0.70, 1.00]
-      v_margin: 40.0
+    cameras: [wide, wrist]
+
+    wide:
+      image_topic: /wide_cam/image_raw
+      image_qos: reliable            # reliable | best_effort (큰 이미지는 best_effort 면 프로세스 사이에서 유실)
+      camera_info_topic: /wide_cam/camera_info
+      depth_topic: ""
+      conf: 0.5                      # planning 기준
+      iou: 0.7
+      max_hz: 15.0
+      enabled: true
+      publish_signals: true          # 신호등은 광각이 상시 담당
+      read_tags: true                # 광각에선 태그가 작아 가까울 때만 읽힘
+      puck_classes: [red_cyl, green_cyl, red_box, green_box]
+      signal_class: traffic_light
+      tag:
+        family: 36h11                # [확인 필요] 퍽 태그 종류
+        size: 0.025                  # [확인 필요] 태그 한 변 (m)
+        min_side_px: 60
+      color:                         # [확인 필요] 광각 실측으로 재보정 (OpenCV HSV 0~179)
+        roi_frac: 0.6
+        v_min: 40
+        min_pixels: 30
+        s_beige_max: 70
+        beige_hue: [5, 35]
+        red_hue: [170, 10]
+        green_hue: [40, 85]
+      signal:                        # [확인 필요] bbox 높이 대비 칸 위치 (위→아래: 캡, 빨강, 주황, 초록)
+        red: [0.10, 0.40]
+        orange: [0.40, 0.70]
+        green: [0.70, 1.00]
+        v_margin: 40.0
+        window: 5
+        need: 3
+        timeout: 1.0
+
+    wrist:
+      image_topic: /wrist_cam/color/image_raw
+      image_qos: reliable
+      camera_info_topic: /wrist_cam/color/camera_info
+      depth_topic: /wrist_cam/aligned_depth_to_color/image_raw
+      conf: 0.5
+      iou: 0.7
+      max_hz: 15.0
+      enabled: false                 # 상태 머신이 ~/wrist/enable 로 켬 (ALIGN · 적재함 단계)
+      publish_signals: false
+      read_tags: true
+      puck_classes: [red_cyl, green_cyl, red_box, green_box]
+      signal_class: traffic_light
+      tag:
+        family: 36h11
+        size: 0.025
+        min_side_px: 60
+      color:                         # [확인 필요] 손목 실측으로 재보정
+        roi_frac: 0.6
+        v_min: 40
+        min_pixels: 30
+        s_beige_max: 70
+        beige_hue: [5, 35]
+        red_hue: [170, 10]
+        green_hue: [40, 85]
+
+    barcode:
+      camera: wrist                  # 이 카메라 이미지에서 읽음 (벽 앞에서 손목으로 정면 정렬 후)
+      max_hz: 10.0
+      enabled: true                  # 탐지가 꺼져 있어도 전체 화면으로 읽음
+      class: barcode                 # 같은 프레임의 이 클래스 bbox 를 먼저 확대해서 읽음
+      roi_pad: 0.3
+      roi_scale: 2.0
+      full_frame: true
       window: 5
       need: 3
-      timeout: 1.0
-
-wrist_detector:
-  ros__parameters:
-    camera: wrist
-    image_topic: /wrist_cam/color/image_raw
-    image_qos: reliable
-    camera_info_topic: /wrist_cam/color/camera_info
-    depth_topic: /wrist_cam/aligned_depth_to_color/image_raw
-    imgsz: [480, 640]
-    conf: 0.35
-    max_hz: 15.0
-    enabled: false                 # 상태 머신이 ~/enable 로 켬 (ALIGN · 적재함 단계)
-    publish_signals: false
-    read_tags: true
-    puck_classes: [puck_cyl, puck_box]
-    signal_class: signal_tower
-    tag:
-      family: 36h11
-      size: 0.025
-      min_side_px: 60
-    color:                         # [확인 필요] 손목 실측으로 재보정
-      roi_frac: 0.6
-      v_min: 40
-      min_pixels: 30
-      s_beige_max: 70
-      beige_hue: [5, 35]
-      red_hue: [170, 10]
-      green_hue: [40, 85]
-
-barcode:
-  ros__parameters:
-    camera: wrist                  # 벽 앞에서 손목으로 정면 정렬 후 읽음. 광각으로 바꾸면 image_topic 도 같이
-    image_topic: /wrist_cam/color/image_raw
-    image_qos: reliable
-    max_hz: 10.0
-    enabled: true
-    barcode_class: barcode
-    roi_pad: 0.3
-    roi_scale: 2.0
-    roi_timeout: 0.5
-    full_frame: true
-    window: 5
-    need: 3
