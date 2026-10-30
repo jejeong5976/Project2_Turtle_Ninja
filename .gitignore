@@ -41,3 +41,26 @@ CLAUDE.md
 
 # Datasets (synthetic / real)
 datasets/
+
+# YOLO 학습 결과 (runs/wide, runs/eval, runs/logs, TensorBoard)
+yolo/wide/runs/
+
+# 손목 seg 학습 결과
+yolo/wrist/runs/
+
+# 손목 로컬 실험 (자세 회귀 decoder 비교 · 정밀도 비교 · 다른 노트북, 파이프라인에 안 씀)
+yolo/wrist/decoder/
+yolo/wrist/scripts/sim_to_pose.py
+yolo/wrist/scripts/compare_onnx_int8.py
+yolo/wrist/scripts/compare_precision.py
+yolo/wrist/scripts/preview_aug.py
+yolo/wrist/scripts/real_data.py
+yolo/wrist/scripts/prepare_data.py
+yolo/wrist/experiments/train_decoder.ipynb
+yolo/wrist/experiments/train_eval.ipynb
+yolo/wrist/experiments/train_eval_2.ipynb
+
+# 손목 카메라 캘리브레이션: 인쇄용 PDF · 미리보기 (make_gt_sheet.py 로 다시 만듦), 실물 오차 시험 도구
+tools/wrist_calib/gt_sheet.pdf
+tools/wrist_calib/gt_sheet_preview.png
+tools/wrist_calib/eval_sheet.py
