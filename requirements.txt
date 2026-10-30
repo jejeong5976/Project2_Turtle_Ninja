@@ -1,0 +1,14 @@
+# Jetson 에서 돌리는 Python 도구용 (tools/wrist_calib · tools/d435_viewer)
+# - 로봇 노드(ros2_ws, C++)는 pip 필요 없음 (JetPack · apt · colcon)
+# - 설치: python3 -m venv --system-site-packages ~/venvs/tools && ~/venvs/tools/bin/pip install -r requirements.txt
+#   (--system-site-packages = 시스템 ROS 2 rclpy 를 같이 씀. handeye.py --joints ros 때 필요)
+# - 시스템 패키지: sudo apt install python3-tk (화면 창)
+
+numpy>=2.0
+opencv-python>=4.7        # cv2.aruco.ArucoDetector 는 4.7 부터. Ubuntu 24.04 apt 판(4.6)은 안 됨
+scipy>=1.11               # handeye.py solve (least_squares)
+pillow>=10.0              # 화면 창 (OpenCV 창이 안 될 때 Tk 로 대신 보여줌)
+pyrealsense2>=2.55        # D435. ARM(Jetson) 용 pip 패키지가 없으면 librealsense 를 소스 빌드 (Python 바인딩 포함)
+
+# d435_puck_viewer.py --seg (YOLO seg 로 퍽 분할) 때만 필요. Jetson torch 는 JetPack 판을 따로 설치
+# ultralytics>=8.4

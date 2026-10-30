@@ -1,0 +1,70 @@
+{
+ "formula": "q[rad] = radians(q_deg_at_ref) + sign × (Present Position − ref_tick) × 2π/4096",
+ "arm": [
+  {
+   "id": 11,
+   "joint": "arm_joint1",
+   "sign": -1,
+   "ref_tick": 4088,
+   "q_deg_at_ref": -94.6485994803,
+   "basis": "가정: 받침 자세 4088 = CAD 정면, 틱 증가 = 로봇 왼쪽. 사진·실행 기록과 맞음, 줄자 확정 아님"
+  },
+  {
+   "id": 12,
+   "joint": "arm_joint2",
+   "sign": 1,
+   "ref_tick": 2154.0990699165495,
+   "q_deg_at_ref": 0.0,
+   "basis": "v10 지도, 줄자 높이 실측으로 확인(3 mm 안, 측정 자세 5개 + 받침 자세)"
+  },
+  {
+   "id": 13,
+   "joint": "arm_joint3",
+   "sign": -1,
+   "ref_tick": 1624.340201421027,
+   "q_deg_at_ref": 0.0,
+   "basis": "v10 지도, 줄자 높이 실측으로 확인(3 mm 안, 측정 자세 5개 + 받침 자세)"
+  },
+  {
+   "id": 14,
+   "joint": "arm_joint4",
+   "sign": 1,
+   "ref_tick": 1897.6563964598654,
+   "q_deg_at_ref": 0.0,
+   "basis": "v10 지도, 줄자 높이 실측으로 확인(3 mm 안, 측정 자세 5개 + 받침 자세)"
+  },
+  {
+   "id": 16,
+   "joint": "arm_joint5",
+   "sign": -1,
+   "ref_tick": 2018.4811061630635,
+   "q_deg_at_ref": 0.0,
+   "basis": "v10 지도, 줄자 높이 실측으로 확인(3 mm 안, 측정 자세 5개 + 받침 자세)"
+  }
+ ],
+ "gripper": {
+  "id": 15,
+  "joints": [
+   "gripper_finger_a_joint",
+   "gripper_finger_b_joint (mimic)"
+  ],
+  "gap0_mm": 58.50723799617533,
+  "gap_table_tick_mm": [
+   [
+    1045,
+    79.0
+   ],
+   [
+    2270,
+    29.0
+   ],
+   [
+    2658,
+    16.0
+   ]
+  ],
+  "formula": "간격[mm] = 표 보간(틱), 손가락 q[m] = (간격 − gap0)/2000",
+  "note": "그리퍼는 크랭크: 2680 닫힘 ↔ 약 1045 완전 열림 ↔ −593 반대쪽 닫힘. 표는 닫힘~열림 구간만"
+ },
+ "frames": "J1·그리퍼는 확장 위치 모드라 전원을 켤 때 위치 기준으로 틱이 정해짐 — 받침 자세에서 전원을 켤 것(지금까지의 실물 절차)"
+}

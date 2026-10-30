@@ -1,0 +1,8 @@
+#!/bin/bash
+# 실물 전체 성공 실행 14개(A9 5 · A9F~F5 7 · A10 2) → config/arm_replays/<실행>.json (키보드 데모 9/0 키로 고름)
+cd "$(dirname "$0")/.."
+for r in ARM_20261025T122354Z ARM_20261025T124745Z ARM_20261025T131012Z ARM_20261026T014434Z ARM_20261026T014742Z \
+         ARM_20261026T020137Z ARM_20261026T021016Z ARM_20261026T021426Z ARM_20261026T021752Z \
+         ARM_20261026T022813Z ARM_20261026T023047Z ARM_20261026T023249Z ARM_20261025T133451Z ARM_20261025T134033Z; do
+  echo "== $r"; python3 tools/make_arm_replay.py $r config/arm_replays/$r.json | sed -n '1p;$p'
+done

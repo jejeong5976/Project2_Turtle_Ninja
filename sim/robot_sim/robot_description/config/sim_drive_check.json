@@ -1,0 +1,731 @@
+{
+ "engine": "MuJoCo 3.12.0",
+ "control_hz": 100,
+ "physics_hz": 500,
+ "limits": {
+  "max_linear": 0.2612,
+  "max_angular": 1.675,
+  "accel": [
+   1.0,
+   6.0
+  ],
+  "max_wheel_speed": 7.9137
+ },
+ "note": "시뮬 결과. 바퀴 마찰 1.0·팔/그리퍼 토크 OFF·받침 안 손목/손가락은 받침에 용접(형상 관통 3.9 mm 때문에 접촉 대신)·로봇 충돌은 바닥과만. 실물 결과 아님.",
+ "scenarios": {
+  "전진": [
+   {
+    "cmd": [
+     0.2612,
+     0,
+     0
+    ],
+    "secs": 2.0,
+    "move_mm": [
+     487,
+     0
+    ],
+    "yaw_deg": -0.0,
+    "late_vel": [
+     0.26,
+     -0.0,
+     -0.0
+    ],
+    "gate_blocked_s": 0.0,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.45,
+     "arm3": 0.19,
+     "arm4": 0.11,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.93,
+    "late_speed_ratio": 0.995
+   }
+  ],
+  "옆(왼)": [
+   {
+    "cmd": [
+     0,
+     0.2612,
+     0
+    ],
+    "secs": 2.0,
+    "move_mm": [
+     -1,
+     405
+    ],
+    "yaw_deg": 0.1,
+    "late_vel": [
+     -0.0,
+     0.26,
+     0.0
+    ],
+    "gate_blocked_s": 0.31,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.41,
+     "arm3": 0.19,
+     "arm4": 0.09,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.01
+    },
+    "progress": 0.78,
+    "late_speed_ratio": 0.995
+   }
+  ],
+  "대각(앞왼)": [
+   {
+    "cmd": [
+     0.1847,
+     0.1847,
+     0
+    ],
+    "secs": 2.0,
+    "move_mm": [
+     320,
+     315
+    ],
+    "yaw_deg": -0.5,
+    "late_vel": [
+     0.1839,
+     0.1838,
+     -0.0
+    ],
+    "gate_blocked_s": 0.14,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.44,
+     "arm3": 0.19,
+     "arm4": 0.1,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.86,
+    "late_speed_ratio": 0.995
+   }
+  ],
+  "대각(앞오른, rr 끝)": [
+   {
+    "cmd": [
+     0.1847,
+     -0.1847,
+     0
+    ],
+    "secs": 2.0,
+    "move_mm": [
+     323,
+     -313
+    ],
+    "yaw_deg": 1.0,
+    "late_vel": [
+     0.1842,
+     -0.1835,
+     0.005
+    ],
+    "gate_blocked_s": 0.14,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.44,
+     "arm3": 0.19,
+     "arm4": 0.1,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.86,
+    "late_speed_ratio": 0.995
+   }
+  ],
+  "후진": [
+   {
+    "cmd": [
+     -0.2612,
+     0,
+     0
+    ],
+    "secs": 2.0,
+    "move_mm": [
+     -487,
+     0
+    ],
+    "yaw_deg": 0.0,
+    "late_vel": [
+     -0.26,
+     -0.0,
+     0.0
+    ],
+    "gate_blocked_s": 0.0,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.41,
+     "arm3": 0.19,
+     "arm4": 0.09,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.01
+    },
+    "progress": 0.93,
+    "late_speed_ratio": 0.995
+   }
+  ],
+  "제자리 회전": [
+   {
+    "cmd": [
+     0,
+     0,
+     1.675
+    ],
+    "secs": 2.0,
+    "move_mm": [
+     0,
+     0
+    ],
+    "yaw_deg": 168.8,
+    "late_vel": [
+     -0.0,
+     -0.0001,
+     1.665
+    ],
+    "gate_blocked_s": 0.09,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.41,
+     "arm3": 0.19,
+     "arm4": 0.09,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "late_wz_ratio": 0.994
+   }
+  ],
+  "S자": [
+   {
+    "cmd": [
+     0.2612,
+     0,
+     0
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     357,
+     0
+    ],
+    "yaw_deg": -0.0,
+    "late_vel": [
+     0.26,
+     -0.0,
+     -0.0
+    ],
+    "gate_blocked_s": 0.0,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.45,
+     "arm3": 0.19,
+     "arm4": 0.11,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.91,
+    "late_speed_ratio": 0.995
+   },
+   {
+    "cmd": [
+     0.1847,
+     0.1847,
+     0
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     280,
+     236
+    ],
+    "yaw_deg": -2.1,
+    "late_vel": [
+     0.1838,
+     0.1838,
+     -0.0
+    ],
+    "gate_blocked_s": 0.0,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.42,
+     "arm3": 0.19,
+     "arm4": 0.09,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.93,
+    "late_speed_ratio": 0.995
+   },
+   {
+    "cmd": [
+     0.2612,
+     0,
+     0
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     365,
+     30
+    ],
+    "yaw_deg": 1.9,
+    "late_vel": [
+     0.26,
+     -0.0,
+     -0.0
+    ],
+    "gate_blocked_s": 0.0,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.44,
+     "arm3": 0.19,
+     "arm4": 0.1,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.93,
+    "late_speed_ratio": 0.995
+   },
+   {
+    "cmd": [
+     0.1847,
+     -0.1847,
+     0
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     281,
+     -235
+    ],
+    "yaw_deg": 2.5,
+    "late_vel": [
+     0.1842,
+     -0.1835,
+     0.005
+    ],
+    "gate_blocked_s": 0.0,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.42,
+     "arm3": 0.19,
+     "arm4": 0.09,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.93,
+    "late_speed_ratio": 0.995
+   },
+   {
+    "cmd": [
+     0.2612,
+     0,
+     0
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     365,
+     -30
+    ],
+    "yaw_deg": -1.9,
+    "late_vel": [
+     0.26,
+     -0.0,
+     -0.0
+    ],
+    "gate_blocked_s": 0.0,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.44,
+     "arm3": 0.19,
+     "arm4": 0.11,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.93,
+    "late_speed_ratio": 0.995
+   }
+  ],
+  "정면 유지 전방향": [
+   {
+    "cmd": [
+     0.2612,
+     0.0,
+     0
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     357,
+     0
+    ],
+    "yaw_deg": -0.0,
+    "late_vel": [
+     0.26,
+     -0.0,
+     -0.0
+    ],
+    "gate_blocked_s": 0.0,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.45,
+     "arm3": 0.19,
+     "arm4": 0.11,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.91,
+    "late_speed_ratio": 0.995
+   },
+   {
+    "cmd": [
+     0.1847,
+     0.1847,
+     0
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     280,
+     236
+    ],
+    "yaw_deg": -2.1,
+    "late_vel": [
+     0.1838,
+     0.1838,
+     -0.0
+    ],
+    "gate_blocked_s": 0.0,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.42,
+     "arm3": 0.19,
+     "arm4": 0.09,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.93,
+    "late_speed_ratio": 0.995
+   },
+   {
+    "cmd": [
+     0.0,
+     0.2612,
+     0
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     26,
+     365
+    ],
+    "yaw_deg": -1.3,
+    "late_vel": [
+     0.0,
+     0.26,
+     0.0
+    ],
+    "gate_blocked_s": 0.0,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.41,
+     "arm3": 0.19,
+     "arm4": 0.09,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.01
+    },
+    "progress": 0.93,
+    "late_speed_ratio": 0.995
+   },
+   {
+    "cmd": [
+     -0.1847,
+     0.1847,
+     0
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     -242,
+     274
+    ],
+    "yaw_deg": -0.6,
+    "late_vel": [
+     -0.1838,
+     0.1838,
+     0.0
+    ],
+    "gate_blocked_s": 0.0,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.41,
+     "arm3": 0.19,
+     "arm4": 0.08,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.93,
+    "late_speed_ratio": 0.995
+   },
+   {
+    "cmd": [
+     -0.2612,
+     0.0,
+     0
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     -238,
+     12
+    ],
+    "yaw_deg": -1.2,
+    "late_vel": [
+     -0.2597,
+     0.0,
+     0.001
+    ],
+    "gate_blocked_s": 0.46,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.52,
+     "arm3": 0.2,
+     "arm4": 0.14,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.03
+    },
+    "progress": 0.61,
+    "late_speed_ratio": 0.994
+   },
+   {
+    "cmd": [
+     -0.1847,
+     -0.1847,
+     0
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     -264,
+     -248
+    ],
+    "yaw_deg": 1.2,
+    "late_vel": [
+     -0.1838,
+     -0.1838,
+     0.0
+    ],
+    "gate_blocked_s": 0.0,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.47,
+     "arm3": 0.19,
+     "arm4": 0.12,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.92,
+    "late_speed_ratio": 0.995
+   },
+   {
+    "cmd": [
+     -0.0,
+     -0.2612,
+     0
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     -12,
+     -236
+    ],
+    "yaw_deg": -0.4,
+    "late_vel": [
+     -0.0006,
+     -0.2599,
+     0.005
+    ],
+    "gate_blocked_s": 0.47,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.53,
+     "arm3": 0.2,
+     "arm4": 0.15,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.6,
+    "late_speed_ratio": 0.995
+   },
+   {
+    "cmd": [
+     0.1847,
+     -0.1847,
+     0
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     46,
+     -52
+    ],
+    "yaw_deg": -1.2,
+    "late_vel": [
+     0.065,
+     -0.0622,
+     -0.026
+    ],
+    "gate_blocked_s": 1.11,
+    "arm_max_dev": {
+     "arm1": 0.01,
+     "arm2": 0.44,
+     "arm3": 0.19,
+     "arm4": 0.1,
+     "arm5": 0.01,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.18,
+    "late_speed_ratio": 0.344
+   },
+   {
+    "cmd": [
+     0.2612,
+     -0.0,
+     0
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     65,
+     -6
+    ],
+    "yaw_deg": -1.6,
+    "late_vel": [
+     0.0822,
+     -0.0018,
+     -0.023
+    ],
+    "gate_blocked_s": 1.12,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.53,
+     "arm3": 0.21,
+     "arm4": 0.15,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.17,
+    "late_speed_ratio": 0.315
+   }
+  ],
+  "곡선": [
+   {
+    "cmd": [
+     0.2612,
+     0,
+     1.0
+    ],
+    "secs": 2.0,
+    "move_mm": [
+     244,
+     159
+    ],
+    "yaw_deg": 67.0,
+    "late_vel": [
+     0.1673,
+     -0.0014,
+     0.636
+    ],
+    "gate_blocked_s": 0.07,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.45,
+     "arm3": 0.19,
+     "arm4": 0.11,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.47,
+    "late_speed_ratio": 0.64
+   },
+   {
+    "cmd": [
+     0.2612,
+     0,
+     -1.0
+    ],
+    "secs": 2.0,
+    "move_mm": [
+     295,
+     -127
+    ],
+    "yaw_deg": -60.0,
+    "late_vel": [
+     0.1674,
+     0.0013,
+     -0.637
+    ],
+    "gate_blocked_s": 0.0,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.43,
+     "arm3": 0.19,
+     "arm4": 0.1,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.01
+    },
+    "progress": 0.57,
+    "late_speed_ratio": 0.641
+   }
+  ],
+  "회전→전진": [
+   {
+    "cmd": [
+     0,
+     0,
+     1.675
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     0,
+     0
+    ],
+    "yaw_deg": 121.1,
+    "late_vel": [
+     0.0,
+     -0.0001,
+     1.665
+    ],
+    "gate_blocked_s": 0.09,
+    "arm_max_dev": {
+     "arm1": 0.0,
+     "arm2": 0.41,
+     "arm3": 0.19,
+     "arm4": 0.09,
+     "arm5": 0.0,
+     "gripper_finger_a": 0.02
+    },
+    "late_wz_ratio": 0.994
+   },
+   {
+    "cmd": [
+     0.2612,
+     0,
+     0
+    ],
+    "secs": 1.5,
+    "move_mm": [
+     305,
+     30
+    ],
+    "yaw_deg": 5.6,
+    "late_vel": [
+     0.26,
+     -0.0,
+     -0.0
+    ],
+    "gate_blocked_s": 0.14,
+    "arm_max_dev": {
+     "arm1": 0.01,
+     "arm2": 0.45,
+     "arm3": 0.19,
+     "arm4": 0.11,
+     "arm5": 0.01,
+     "gripper_finger_a": 0.02
+    },
+    "progress": 0.78,
+    "late_speed_ratio": 0.995
+   }
+  ]
+ }
+}

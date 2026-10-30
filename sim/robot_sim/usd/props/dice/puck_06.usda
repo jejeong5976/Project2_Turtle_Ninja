@@ -1,0 +1,193 @@
+#usda 1.0
+(
+    defaultPrim = "Puck"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "Puck" (
+    prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    customData = {
+        dictionary puck = {
+            string color = "red"
+            string name = "ID6"
+            string shape = "box"
+            int tag_id = 6
+        }
+    }
+)
+{
+    float physics:mass = 0.017
+
+    def Cube "body" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </Puck/Looks/body>
+        rel material:binding:physics = </Puck/PhysicsMaterial>
+        double size = 1
+        float3 xformOp:scale = (0.03, 0.03, 0.06)
+        uniform token[] xformOpOrder = ["xformOp:scale"]
+    }
+
+    def Material "PhysicsMaterial" (
+        prepend apiSchemas = ["PhysicsMaterialAPI"]
+    )
+    {
+        float physics:dynamicFriction = 0.3
+        float physics:restitution = 0
+        float physics:staticFriction = 0.35
+    }
+
+    def "Looks"
+    {
+        def Material "body"
+        {
+            token outputs:surface.connect = </Puck/Looks/body/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.80919266, 0.038391106, 0.085443154)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.55
+                token outputs:surface
+            }
+        }
+
+        def Material "tag36h11_06"
+        {
+            token outputs:surface.connect = </Puck/Looks/tag36h11_06/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </Puck/Looks/tag36h11_06/tex.outputs:rgb>
+                float inputs:metallic = 0
+                float inputs:roughness = 0.7
+                token outputs:surface
+            }
+
+            def Shader "st"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                token inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "tex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @../tex/tag36h11_06.png@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </Puck/Looks/tag36h11_06/st.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+        }
+    }
+
+    def Mesh "tag_top" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        rel material:binding = </Puck/Looks/tag36h11_06>
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        point3f[] points = [(-0.01, 0.01, 0.0302), (-0.01, -0.01, 0.0302), (0.01, -0.01, 0.0302), (0.01, 0.01, 0.0302)]
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+    }
+
+    def Mesh "tag_bottom" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        rel material:binding = </Puck/Looks/tag36h11_06>
+        normal3f[] normals = [(0, 0, -1), (0, 0, -1), (0, 0, -1), (0, 0, -1)] (
+            interpolation = "vertex"
+        )
+        point3f[] points = [(-0.01, -0.01, -0.0302), (-0.01, 0.01, -0.0302), (0.01, 0.01, -0.0302), (0.01, -0.01, -0.0302)]
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+    }
+
+    def Mesh "tag_px" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        rel material:binding = </Puck/Looks/tag36h11_06>
+        normal3f[] normals = [(1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0)] (
+            interpolation = "vertex"
+        )
+        point3f[] points = [(0.0152, -0.01, -0.01), (0.0152, 0.01, -0.01), (0.0152, 0.01, 0.01), (0.0152, -0.01, 0.01)]
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+    }
+
+    def Mesh "tag_nx" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        rel material:binding = </Puck/Looks/tag36h11_06>
+        normal3f[] normals = [(-1, 0, 0), (-1, 0, 0), (-1, 0, 0), (-1, 0, 0)] (
+            interpolation = "vertex"
+        )
+        point3f[] points = [(-0.0152, 0.01, -0.01), (-0.0152, -0.01, -0.01), (-0.0152, -0.01, 0.01), (-0.0152, 0.01, 0.01)]
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+    }
+
+    def Mesh "tag_py" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        rel material:binding = </Puck/Looks/tag36h11_06>
+        normal3f[] normals = [(0, 1, 0), (0, 1, 0), (0, 1, 0), (0, 1, 0)] (
+            interpolation = "vertex"
+        )
+        point3f[] points = [(0.01, 0.0152, -0.01), (-0.01, 0.0152, -0.01), (-0.01, 0.0152, 0.01), (0.01, 0.0152, 0.01)]
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+    }
+
+    def Mesh "tag_ny" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        rel material:binding = </Puck/Looks/tag36h11_06>
+        normal3f[] normals = [(0, -1, 0), (0, -1, 0), (0, -1, 0), (0, -1, 0)] (
+            interpolation = "vertex"
+        )
+        point3f[] points = [(-0.01, -0.0152, -0.01), (0.01, -0.0152, -0.01), (0.01, -0.0152, 0.01), (-0.01, -0.0152, 0.01)]
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+    }
+}
+

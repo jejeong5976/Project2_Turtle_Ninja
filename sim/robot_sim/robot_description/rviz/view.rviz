@@ -1,0 +1,82 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Global Options:
+    Background Color: 245; 245; 245
+    Fixed Frame: base_link
+    Frame Rate: 30
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 0.05
+      Plane Cell Count: 16
+      Color: 160; 160; 164
+      Offset: {X: 0, Y: 0, Z: -0.072}
+    - Class: rviz_default_plugins/RobotModel
+      Name: RobotModel
+      Enabled: true
+      Description Source: Topic
+      Description Topic:
+        Value: /robot_description
+        Depth: 1
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+      Visual Enabled: true
+      Collision Enabled: false
+    - Class: rviz_default_plugins/Axes
+      Name: axes_base_link
+      Enabled: true
+      Reference Frame: base_link
+      Length: 0.25
+      Radius: 0.004
+    - Class: rviz_default_plugins/Axes
+      Name: axes_lidar_front_link
+      Enabled: true
+      Reference Frame: lidar_front_link
+      Length: 0.08
+      Radius: 0.003
+    - Class: rviz_default_plugins/Axes
+      Name: axes_lidar_rear_link
+      Enabled: true
+      Reference Frame: lidar_rear_link
+      Length: 0.08
+      Radius: 0.003
+    - Class: rviz_default_plugins/Axes
+      Name: axes_base_scan_front
+      Enabled: true
+      Reference Frame: base_scan_front
+      Length: 0.05
+      Radius: 0.002
+    - Class: rviz_default_plugins/Axes
+      Name: axes_base_scan_rear
+      Enabled: true
+      Reference Frame: base_scan_rear
+      Length: 0.05
+      Radius: 0.002
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 1.05
+      Focal Point: {X: 0.0, Y: 0.0, Z: 0.12}
+      Target Frame: base_link
+      Pitch: 0.45
+      Yaw: 0.75
+Window Geometry:
+  X: 2000
+  Y: 40
+  Width: 1200
+  Height: 900

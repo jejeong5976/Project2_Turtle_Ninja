@@ -1,0 +1,76 @@
+{
+ "source": "갤럭시 S23 울트라 2026-10-23 촬영 (real_photos/)",
+ "panos": {
+  "191331": {
+   "file": "pano_191331.jpg",
+   "period_px": 10511,
+   "vfov_deg": 115.1
+  },
+  "185756": {
+   "file": "pano_185756.jpg",
+   "period_px": 10509,
+   "vfov_deg": 115.1
+  },
+  "191023": {
+   "file": "pano_191023.jpg",
+   "period_px": 10559,
+   "vfov_deg": 115.1
+  },
+  "191156": {
+   "file": "pano_191156.jpg",
+   "period_px": 10409,
+   "vfov_deg": 115.1
+  }
+ },
+ "carpet": {
+  "file": "carpet_tile.jpg",
+  "tile_m": 0.4,
+  "px_per_mm": 2.888,
+  "mean_srgb": [
+   107,
+   106,
+   106
+  ]
+ },
+ "colors": {
+  "panel": {
+   "srgb": [
+    76,
+    82,
+    98
+   ],
+   "linear": [
+    0.0723,
+    0.0844,
+    0.1221
+   ],
+   "n_px": 383200
+  },
+  "blue_print": {
+   "srgb": [
+    22,
+    36,
+    109
+   ],
+   "linear": [
+    0.008,
+    0.0176,
+    0.1529
+   ],
+   "n_px": 175113
+  },
+  "aluminum": {
+   "srgb": [
+    110,
+    111,
+    105
+   ],
+   "linear": [
+    0.1559,
+    0.159,
+    0.1413
+   ],
+   "n_px": 34680
+  }
+ }
+}
