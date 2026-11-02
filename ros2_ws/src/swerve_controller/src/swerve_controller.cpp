@@ -199,7 +199,7 @@ CallbackReturn SwerveController::on_init()
     auto_declare<double>("imu_track_gate", 0.0087);     // [rad/s] 바이어스 뺀 값이 이 안일 때만 따라감 (0.5°/s)
     auto_declare<std::string>("imu_motion_bias_topic", "/imu_motion_bias");   // z = 움직일 때 더할 회전 [rad/s], 빈 문자열 = 안 씀
     auto_declare<double>("imu_motion_bias_max", 0.005);  // [rad/s] 받은 값 자르기 (0.3°/s)
-    auto_declare<double>("imu_motion_bias_timeout_s", 5.0);   // 이만큼 안 오면 0 으로 
+    auto_declare<double>("imu_motion_bias_timeout_s", 5.0);   // 이만큼 안 오면 0 으로
     auto_declare<double>("still_linear", 0.01);
     auto_declare<double>("still_angular", 0.05);
   } catch (const std::exception & e) {
@@ -292,7 +292,7 @@ CallbackReturn SwerveController::on_configure(const rclcpp_lifecycle::State &)
   cfg.steer_then_drive = node->get_parameter("steer_then_drive").as_bool();
   cfg.steer_tolerance = node->get_parameter("steer_tolerance").as_double();
   cfg.roll_while_steering = node->get_parameter("roll_while_steering").as_bool();
-  // 0 이하면 명령 · 차례가 영원히 "오래됨" 이거나 조향 게이트가 영원히 닫혀 오류 없이 안 움직임 
+  // 0 이하면 명령 · 차례가 영원히 "오래됨" 이거나 조향 게이트가 영원히 닫혀 오류 없이 안 움직임
   if (!(cfg.cmd_timeout_s > 0.0 && cfg.turn_timeout_s > 0.0 && cfg.steer_tolerance > 0.0 &&
         node->get_parameter("imu_timeout_s").as_double() >= 0.0)) {
     RCLCPP_ERROR(node->get_logger(), "cmd_timeout_s · turn_timeout_s · steer_tolerance > 0, imu_timeout_s >= 0 이어야 함");
@@ -448,7 +448,7 @@ CallbackReturn SwerveController::on_configure(const rclcpp_lifecycle::State &)
       });
   }
   motion_bias_max_ = node->get_parameter("imu_motion_bias_max").as_double();
-  // 음수면 아래 clamp 의 (하한 > 상한) 이 정의되지 않은 동작 . 0 = 받은 값을 늘 0 으로 자름 (= 안 씀)
+  // 음수면 아래 clamp 의 (하한 > 상한) 이 정의되지 않은 동작. 0 = 받은 값을 늘 0 으로 자름 (= 안 씀)
   if (!std::isfinite(motion_bias_max_) || motion_bias_max_ < 0.0 || motion_bias_max_ > 0.1) {
     RCLCPP_ERROR(node->get_logger(), "imu_motion_bias_max 는 0 ~ 0.1 rad/s 이어야 함 (받은 값 %.4f)", motion_bias_max_);
     return CallbackReturn::ERROR;

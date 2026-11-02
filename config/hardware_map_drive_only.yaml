@@ -32,7 +32,7 @@ buses:
 
 # 프로파일 (실물 비교로 바꿈): 조향 profile_vel 40 → 200 (55 → 실측 약 260°/s, 135° 뒤집기 1.05 → 0.61 s) ·
 #   profile_acc 10 → 60 (확 돌지 않게) · 구동 profile_acc 20 → 40 (20 은 바퀴에서 ≈0.25 m/s² 로 몸 가속 0.5 를 다시 막음)
-#   조향 최고 속도에서 선 · 전류 이상 없음 (공중 air_steer200_050, 바닥 floor_C_050: 조향 전류 최대 약 210~280 mA)
+#   조향 최고 속도에서 선 · 전류 이상 없음 (공중 · 바닥 시험: 조향 전류 최대 약 210~280 mA)
 motors:
   drive_fl_joint: {id: 1,  model: XM430-W210, mode: velocity, profile_acc: 40, scale: 1.0}
   drive_fr_joint: {id: 2,  model: XM430-W210, mode: velocity, profile_acc: 40, scale: -1.0}

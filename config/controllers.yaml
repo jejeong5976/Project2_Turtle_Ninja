@@ -58,7 +58,9 @@ swerve_controller:
     # ---- 느리게 (D16) ----
     max_linear: 0.10               # [m/s]
     max_angular: 0.5               # [rad/s]
-    # 실물 바닥 비교(runs/floor_C_050 · floor_rec_050 · floor_steer200_hold_050)로 정함 (예전 0.2 / 0.8):
+    max_wheel_speed: 7.9           # [rad/s] 바퀴 모터 한계 (XM430-W210 Velocity Limit 330 × 0.229 rpm = 7.91). 넘으면 네 바퀴를 같은 비율로 줄임
+                                   #   (다이나믹셀은 한계를 넘는 속도 명령을 무시하고 이전 속도로 계속 돎). 지금 최고 속도에선 약 5 rad/s 라 닿지 않음
+    # 실물 바닥 비교로 정함 (예전 0.2 / 0.8):
     #   0.2 / 0.8 은 방향 전환이 늦고(ㄹ자 0.40) 바퀴끼리 끌림(구동 729 mA) → 0.5 / 2.0 (제한 없음은 덜컹거림)
     max_linear_accel: 0.5          # [m/s²]
     max_angular_accel: 2.0         # [rad/s²]
