@@ -12,6 +12,7 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -63,9 +64,10 @@ std::array<Eigen::Matrix4d, 5> arm_frames(const ArmModel & m, const Q5 & q);
 Grip arm_grip(const ArmModel & m, const Q5 & q);
 
 // 목표 (손끝 p, 접근축 a, 닫힘축 c) — seeds 가 비면 J1 13 × J5 3 + 무작위 24 씨앗
+//   roll_period: 닫힘축을 몇 ° 마다 같게 볼지 (90 = 네모 퍽 대칭, 실물 계산기와 같음 · 180 = 손가락 방향을 정확히)
 std::vector<IkSolution> arm_ik(
   const ArmModel & m, const Eigen::Vector3d & p, const Eigen::Vector3d & a, const Eigen::Vector3d & c,
-  const std::vector<Q5> & seeds = {});
+  const std::vector<Q5> & seeds = {}, double roll_period = 90.0);
 
 Ticks q_to_ticks(const ArmModel & m, const Q5 & q);
 Q5 ticks_to_q(const ArmModel & m, const Ticks & t);
@@ -87,8 +89,12 @@ struct PickPose
 
 // 퍽 (모델 x, y, 윗면 z, 면 돌림 yaw [°]) 위 heights [mm] 마다 수직 손 자세 (앞 높이 해를 씨앗으로). 실패면 빈 목록 + why
 //   명령(enc)은 실물 계산기처럼 쥔 물체 없이 계산
+//   close_deg: 닫힘축 방향 [°] 을 직접 줌 (이웃 퍽을 보고 고른 방향, grasp_select). NaN 이면 위 규칙
 std::vector<PickPose> pick_poses(
   const ArmModel & m, double x, double y, double top_z, double yaw_deg, const std::vector<double> & heights_mm,
-  std::string & why);
+  std::string & why, double close_deg = std::nan(""));
+
+// 기본 닫힘축 방향 [rad] (pick_poses 가 close_deg 없이 쓰는 방향): 원기둥 = J1 → 퍽 방향의 수직, 네모 = 그에 가장 가까운 면 법선
+double default_close_rad(const ArmModel & m, double x, double y, double yaw_deg);
 
 }  // namespace manipulation
