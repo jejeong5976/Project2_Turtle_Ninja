@@ -18,7 +18,8 @@ planning · perception 이 붙을 때 보는 표. 이름은 팀 시뮬 브리지
 | `/imu_motion_bias` | `geometry_msgs/Vector3Stamped` | `navigation/pose_guard` → swerve_controller | 1 Hz | z = 움직일 때 자이로에 더할 회전 [rad/s]. 정상 판정일 때만 보냄, 5 s 안 오면 컨트롤러는 0 |
 | `/imu_sensor_broadcaster/imu` | `sensor_msgs/Imu` | imu_sensor_broadcaster (실물만) | `imu_link` | 주행 OpenCR 의 MPU-9250 칩 기준. 장착 yaw=+90° |
 | `/joint_states` | `sensor_msgs/JointState` | joint_state_broadcaster | | 바퀴 · 조향 `drive_*_joint` · `steer_*_joint`, 팔 `joint1~5` · `gripper_left_joint` (오른손은 URDF mimic) |
-| `/joint_states_corrected` | `sensor_msgs/JointState` | `manipulation/arm_state_publisher` → robot_state_publisher | `/joint_states` 와 같은 시각 | TF 용. 팔 `joint2~4` 에 처짐 보정을 더하고 그리퍼 연결 막대 3 관절을 붙임. control_master · MoveIt 은 `/joint_states` 그대로 |
+| `/joint_states_corrected` | `sensor_msgs/JointState` | `manipulation/arm_state_publisher` → robot_state_publisher | `/joint_states` 와 같은 시각 | TF 용. 팔 `joint2~4` 에 처짐 보정을 더하고 그리퍼 연결 막대 3 관절을 붙임. 팔 관절이 하나라도 빠진 순간은 팔 관절을 안 보냄 (TF 가 멈춘 걸로 드러남). control_master 는 `/joint_states` 그대로 |
+| `/joint_states_moveit` | `sensor_msgs/JointState` | `manipulation/arm_state_publisher` → move_group | 같은 시각 | MoveIt 용. 엔코더 값 그대로 + 그리퍼 연결 막대 3 관절 |
 | `/arm_task` | `interfaces/action/ArmTask` | control_master (서버) | target `PoseStamped` (보통 base_link) | 7 가지 작업 모두 동작 (아래 '팔 작업') |
 | `/control/motion_mode` | `interfaces/msg/MotionMode` | control_master → swerve_controller | 10 Hz | 바퀴 · 팔 차례 (팔 움직이는 동안 바퀴 잠금) |
 
@@ -59,7 +60,7 @@ T_5c · T_5d 는 광학축 회전까지 포함하므로 optical 회전을 다시
 `camera_link` 는 CAD 전면 프레임이고, `camera_optical_frame` · `d435_color_optical_frame` (인지 노드 · 시뮬 이름) 은 `wrist_cam_color_optical_frame` 과 같은 위치·방향의 별칭이다.
 손목 · 광각 카메라와 프로파일은 `with_accessories:=true` 일 때 들어간다.
 
-적재함 시각 프레임은 `rack_cell_S1_link` ~ `rack_cell_S12_link` 이다. 번호는 팔 J1 축에서 먼 칸부터이고, planning 은 S1 부터 채운다.
+적재함 시각 프레임은 `rack_cell_S1_link` ~ `rack_cell_S12_link` 이다. 번호는 팔 J1 축에서 먼 칸부터이다. 채우는 순서는 `config/planning.yaml` `cargo_slots` (실물 시험 순서 S12, S7, S9, …), 칸끼리 제약은 `config/rack_cells.yaml` `rack_constraints`.
 옛 이름 (`arm_tests/rack_cells.json`) 대응: S1 = L8, S2 = L7, S3 = L6, S4 = B, S5 = L2, S6 = L4, S7 = D, S8 = L5, S9 = A, S10 = L1, S11 = L3, S12 = C.
 `base_link → rack_cell_<칸>_link` 고정 관절은 `rack_cell_<칸>_fixed` 이며, 원점은 각 칸 바닥 중심이다.
 `arm_tests/rack_cells.json` 의 `cells.*.xy` 를 그대로 쓰고, z 는 `floor_z + 0.039 = 0.1325` m, yaw 는 칸별 `yaw_deg` (없으면 전체값 1°) 를 쓴다.
@@ -79,15 +80,17 @@ STORE · RETRIEVE 경로는 11-01 실물 적재함 12 칸 시험에서 성공한
 | 작업 | 시작 자세 | 하는 일 | 끝 자세 | 다음 | 가짜 로봇 시간 |
 |---|---|---|---|---|---|
 | HOME | 아무 자세 | 접기 (LOOK 자세면 정해진 복귀 경로) | 받침 (주행 가능) | | 5 s |
-| PICK | 받침 | target 퍽 위 40 mm → 10 → −30 mm 에서 쥠 → 들기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | STORE 또는 PLACE | 16 s |
+| PICK | 받침 또는 LOOK 자세 (LOOK 이면 검사된 복귀 경로로 받침을 거쳐 감) | target 퍽 위 40 mm → 10 → −30 mm 에서 쥠 → 들기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | STORE 또는 PLACE | 16 s (LOOK 에서 24 s) |
 | STORE | 박스 위 기준점 (PICK 뒤) | slot 칸에 놓기 | 받침 (주행 가능) | | 19~31 s |
 | RETRIEVE | 받침 | slot 칸에서 꺼내기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | PLACE | 19~32 s |
 | PLACE | 박스 위 기준점 (PICK · RETRIEVE 뒤) | target 위 40 → 10 → −23 mm 에서 놓기 → 들기 | 받침 (주행 가능) | | 17 s |
 | LOOK · LOOK_BARCODE | 받침 | 손목 카메라 관찰 자세 | 그 자세 유지 | HOME | |
 
-- **target** (PICK · PLACE): `base_link` 기준 퍽 **중심**. `z = 0` 이면 박스 위 기본 높이(바닥면 0.037 + 퍽 0.06 m). 네모 퍽 면 방향은 orientation 의 yaw. 팔이 닿지 않는 자리면 거절(이유가 result.message).
+- **target** (PICK · PLACE): `docs/planning/planning_interfaces.md` 6 절 약속 그대로 — `base_link` 기준 **그리퍼 중심이 갈 점** = 퍽 중심 + 쥘 끝(위) 방향 × `grasp_offset_m` (0.015), 방향 z 축 = 쥘 끝 · x 축 = 네모 퍽 면. 서 있는 퍽만 (누운 퍽은 실물 시험 전이라 거절). `base_link` 가 아닌 프레임 · NaN 은 거절. `z = 0` 이면 박스 위 기본 높이 (손 시험용). 팔이 닿지 않는 자리면 거절(이유가 result.message).
 - **slot** (STORE · RETRIEVE): `S1` ~ `S12`. 시작 자세가 맞지 않으면 거절 (예: PICK 없이 STORE).
 - 실패 · 취소 · 시간 초과 뒤에는 STOP 잠금, HOME 이 성공해야 다시 주행.
+- HOME 이 검사된 복귀 경로 없이 받침으로 곧장 가는 건 받침 근처이거나 (켤 때 등) 팔이 경로 중간이 아닐 때만. **퍽을 쥔 채 · 경로 작업이 도중에 멈춘 뒤에는 HOME 거절** (칸 · 박스 안에서 직선으로 쓸고 나올 수 있음) → STORE · PLACE 로 끝내거나 사람이 팔을 받침 근처로 옮긴 뒤 HOME.
+- 퍽을 쥔 채 주행은 없음 (PICK 뒤에는 STORE 또는 PLACE).
 - 박스 위 기준점 = 실물 빼기 시험 때 내려놓던 자리 (base_link 기준 x 210.2, y 38.0 mm, −4°) 위 40 mm.
 
 ## 지도 파일

@@ -1,4 +1,4 @@
-# 적재함 12 칸 — 칸 ID S1~S12 (팔 J1 축에서 먼 칸부터, planning 이 S1 부터 채움)
+# 적재함 12 칸 — 칸 ID S1~S12 (팔 J1 축에서 먼 칸부터). 채우는 순서는 config/planning.yaml cargo_slots (실물 시험 순서)
 #   같은 ID: URDF rack_cell_<ID>_link · config/planning.yaml cargo_slots · config/arm_paths.yaml store_<ID> · retrieve_<ID> · ArmTask.slot
 # 값은 실물 측정 · 보정 그대로 (11-01 넣기 · 빼기 12 칸 성공 때). base_link 기준 [m], 칸 방향 yaw [°]
 #   measured_name: 실물 시험 때 이름 (기록 · runs 를 찾을 때)
