@@ -1,0 +1,49 @@
+# hardware_map_drive_only.yaml — 젯슨 ROS 가 주행 OpenCR 1 장만 쓸 때의 하드웨어 지도 (하드웨어는 다 장착, 팔 OpenCR 만 안 붙임 — SLAM · 주행 실물 구성)
+# =============================================================================
+#   ros2 launch bringup robot.launch.py arm:=false hardware_map:=<이 파일>
+# 지도에 팔 관절 · 팔 보드가 없어야 arm:=false 가 실행된다 (robot.launch.py 가 확인). 팔 OpenCR 까지 붙인 실행은 hardware_map.yaml.
+#
+# ID · 방향은 주행 보드 실물 측정값
+#   위치 (로봇 뒤에서 앞을 보는 기준)   구동 XM430-W210 (속도)   조향 XM430-W350 (위치)
+#   왼쪽 앞                              1                         11
+#   오른쪽 앞                            2                         12
+#   왼쪽 뒤                              41                        13
+#   오른쪽 뒤                            42                        14
+#   구동: 2 · 41 은 scale −1 (새 앞쪽 기준으로 모터 + 가 뒤로 굴림), 1 · 42 는 +1. 2 · 42 는 Drive Mode 1 (방향 반대로 맞춰 둠).
+#         ⚠ 모터를 바꾸면 바퀴를 띄운 채 전진 명령에 네 바퀴가 모두 앞쪽으로 굴러가는지 눈으로 확인
+#   조향: 모터 + (눈금 증가) = 위에서 볼 때 시계 → URDF steer 축 +z 기준 scale −1
+#
+# 조향 영점 zero_tick: 네 바퀴를 앞쪽(라이다 쪽)으로 정렬했을 때 읽은 눈금. 비우면(null) hardware:=opencr 실행을 거부한다.
+# 위치 모드 눈금 0~4095 때문에 모듈마다 한쪽으로 덜 돈다. launch 가 범위를 계산해 컨트롤러가 그 안에서 조향각 + 바퀴 정 · 역회전을 고름
+# Homing Offset (조향 모터 EEPROM): 눈금 창의 가운데가 직진이 되게 맞춰 둠 — fl −1018 · fr +496 · rl −529 · rr −1024
+#   (위치 모드 한계 ±1024 라 rr 은 덜 옮김) → zero_tick 2048 · 2048 · 2048 · 2565, 범위 fl · fr · rl ±180° · rr −133 ~ +225°.
+#   ⚠ 모터를 바꾸면(교체 · 공장 초기화) Homing 이 0 으로 돌아가 이 영점과 어긋남 → DYNAMIXEL Wizard 로 Homing Offset 을 위 값으로 다시 쓸 것.
+# 선(케이블) 한계 cable_min_deg / cable_max_deg (선택): 눈금 창보다 선이 먼저 당기는 모듈만 관절 각 [deg] 로 적음 → launch 가 범위를 그 안으로 줄임.
+#   지금은 네 바퀴 모두 눈금 창 양 끝까지 선이 당기지 않음 (모터로 양 끝까지 돌려 전류 상승 없음 확인) → 적지 않음.
+#
+# 나머지 값(보드 설정 · 프로파일 · 경비견 · 배터리)은 hardware_map.yaml 과 같다.
+buses:
+  - name: bus_drive
+    port: /dev/opencr_drive
+    baud: 1000000
+    imu: true
+    joints: [drive_fl_joint, drive_fr_joint, drive_rl_joint, drive_rr_joint,
+             steer_fl_joint, steer_fr_joint, steer_rl_joint, steer_rr_joint]
+
+# 프로파일 (실물 비교로 바꿈): 조향 profile_vel 40 → 200 (55 → 실측 약 260°/s, 135° 뒤집기 1.05 → 0.61 s) ·
+#   profile_acc 10 → 60 (확 돌지 않게) · 구동 profile_acc 20 → 40 (20 은 바퀴에서 ≈0.25 m/s² 로 몸 가속 0.5 를 다시 막음)
+#   조향 최고 속도에서 선 · 전류 이상 없음 (공중 · 바닥 시험: 조향 전류 최대 약 210~280 mA)
+motors:
+  drive_fl_joint: {id: 1,  model: XM430-W210, mode: velocity, profile_acc: 40, scale: 1.0}
+  drive_fr_joint: {id: 2,  model: XM430-W210, mode: velocity, profile_acc: 40, scale: -1.0}
+  drive_rl_joint: {id: 41, model: XM430-W210, mode: velocity, profile_acc: 40, scale: -1.0}
+  drive_rr_joint: {id: 42, model: XM430-W210, mode: velocity, profile_acc: 40, scale: 1.0}
+  steer_fl_joint: {id: 11, model: XM430-W350, mode: position, profile_vel: 200, profile_acc: 60, scale: -1.0, zero_tick: 2048}
+  steer_fr_joint: {id: 12, model: XM430-W350, mode: position, profile_vel: 200, profile_acc: 60, scale: -1.0, zero_tick: 2048}
+  steer_rl_joint: {id: 13, model: XM430-W350, mode: position, profile_vel: 200, profile_acc: 60, scale: -1.0, zero_tick: 2048}
+  steer_rr_joint: {id: 14, model: XM430-W350, mode: position, profile_vel: 200, profile_acc: 60, scale: -1.0, zero_tick: 2565}
+
+watchdog: 15
+battery_warn_v: 10.8
+battery_stop_v: 10.2
+require_all_motors: true

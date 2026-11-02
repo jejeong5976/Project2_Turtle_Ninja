@@ -62,7 +62,7 @@ protected:
     controller->assign_interfaces(std::move(command_loans), std::move(state_loans));
   }
 
-  void publish_command(double vx = 0.009, double vy = 0.0008)
+  void publish_command(double vx = 0.009, double vy = 0.0008, double stamp_age_s = NAN)
   {
     auto node = std::make_shared<rclcpp::Node>("rate_test_sender",
       rclcpp::NodeOptions().use_intra_process_comms(true));
@@ -77,6 +77,9 @@ protected:
     }
     ASSERT_GT(pub->get_subscription_count(), 0u);
     geometry_msgs::msg::TwistStamped cmd;
+    if (std::isfinite(stamp_age_s)) {   // 양수 = 과거, 음수 = 미래
+      cmd.header.stamp = controller->get_node()->now() - rclcpp::Duration::from_seconds(stamp_age_s);
+    }
     cmd.twist.linear.x = vx;
     cmd.twist.linear.y = vy;  // default ~5 degrees: force the steering-before-drive branch
     for (int i = 0; i < 10; ++i) {
@@ -121,6 +124,23 @@ TEST_F(SwerveControllerTest, PositionInterfaceCompensationAndInvalidEstimateStop
   ASSERT_TRUE(states[1]->set_value(0.16));
   update();
   for (int i = 4; i < 8; ++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(), 0.0);}
+}
+
+TEST_F(SwerveControllerTest, StaleOrFutureStampedCommandIsDropped)
+{
+  configure("position");
+  ASSERT_EQ(controller->on_activate(rclcpp_lifecycle::State()), CallbackReturn::SUCCESS);
+  publish_command(0.05, 0.0, 2.0);   // 2 s 전에 보낸 명령이 늦게 도착 → 버림
+  for (int k = 0; k < 5; ++k) {update();}
+  for (int i = 4; i < 8; ++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(), 0.0);}
+  publish_command(0.05, 0.0, -3.0);  // 보낸 쪽 시계가 3 s 앞섬 → 버림
+  for (int k = 0; k < 5; ++k) {update();}
+  for (int i = 4; i < 8; ++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(), 0.0);}
+  publish_command(0.05, 0.0, 0.0);   // 방금 보낸 명령은 받음
+  for (int k = 0; k < 5; ++k) {update();}
+  double sum = 0.0;
+  for (int i = 4; i < 8; ++i) {sum += std::fabs(commands[i]->get_optional<double>().value());}
+  EXPECT_GT(sum, 0.0);
 }
 
 TEST_F(SwerveControllerTest, PositionActivationRequiresReadyEstimate)
@@ -173,4 +193,55 @@ TEST_F(SwerveControllerTest, ModuleRangesReachCommandsAndRejectDiagonal)
   publish_command(.03,.03);
   update();
   for (int i=0;i<8;++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(),0.0);}
+}
+
+TEST_F(SwerveControllerTest, UnknownSteeringPolicyRejected)
+{
+  controller->get_node()->set_parameter(rclcpp::Parameter("steering_policy", "typo"));
+  EXPECT_EQ(controller->on_configure(rclcpp_lifecycle::State()), CallbackReturn::ERROR);
+}
+
+// imu_motion_bias_max 가 음수면 std::clamp(하한 > 상한) 이 정의되지 않음 → 설정 단계에서 거부
+TEST_F(SwerveControllerTest, NegativeMotionBiasMaxRejected)
+{
+  controller->get_node()->set_parameter(rclcpp::Parameter("imu_motion_bias_max", -0.005));
+  EXPECT_EQ(controller->on_configure(rclcpp_lifecycle::State()), CallbackReturn::ERROR);
+}
+
+TEST_F(SwerveControllerTest, ReportedStateFailureCancelsOldCommand)
+{
+  configure("reported");
+  ASSERT_EQ(controller->on_activate(rclcpp_lifecycle::State()), CallbackReturn::SUCCESS);
+  publish_command(.05,0); update();
+  ASSERT_TRUE(states[0]->set_value<double>(NAN)); update();
+  ASSERT_TRUE(states[0]->set_value(0.0)); update();
+  for (int i=4;i<8;++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(),0);}
+}
+
+TEST_F(SwerveControllerTest, CoherentMixedPoseAndDeactivationHoldMeasuredPosition)
+{
+  controller->get_node()->set_parameters({
+    rclcpp::Parameter("steering_policy", "coherent"),
+    rclcpp::Parameter("steer_min",std::vector<double>{-1.5478,-3.8704,-2.298, -.7454}),
+    rclcpp::Parameter("steer_max",std::vector<double>{4.6725,2.3501,3.9225,5.4749})});
+  configure("reported");
+  ASSERT_TRUE(states[2]->set_value(-M_PI));
+  ASSERT_EQ(controller->on_activate(rclcpp_lifecycle::State()),CallbackReturn::SUCCESS);
+  publish_command(.05,0); update();
+  for (int i=0;i<8;++i) {EXPECT_NEAR(commands[i]->get_optional<double>().value(),0,1e-9);}
+  // Deactivation in the middle of steering must hold feedback, not the 0-degree target.
+  ASSERT_TRUE(states[2]->set_value(-2.5));
+  ASSERT_EQ(controller->on_deactivate(rclcpp_lifecycle::State()),CallbackReturn::SUCCESS);
+  EXPECT_DOUBLE_EQ(commands[1]->get_optional<double>().value(),-2.5);
+  for (int i=4;i<8;++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(),0);}
+}
+
+TEST_F(SwerveControllerTest, ReadFaultHoldsLastMeasuredInsteadOfUnfinishedTarget)
+{
+  configure("reported");
+  ASSERT_EQ(controller->on_activate(rclcpp_lifecycle::State()),CallbackReturn::SUCCESS);
+  publish_command(0,.05); update();
+  ASSERT_GT(std::fabs(commands[0]->get_optional<double>().value()),1);
+  ASSERT_TRUE(states[8]->set_value<double>(NAN)); update();
+  for (int i=0;i<8;++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(),0);}
 }

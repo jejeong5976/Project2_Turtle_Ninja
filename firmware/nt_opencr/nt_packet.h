@@ -16,7 +16,7 @@
 //   0x04 CONFIG_ACK OpenCR → Jetson  "몇 번 모터가 대답했나" (ping 결과)
 //   0x01 CMD        Jetson → OpenCR  100 Hz: 토크 켜기 + 모터별 목표 (rad 또는 rad/s)
 //   0x02 STATE      OpenCR → Jetson  100 Hz: 시간 + IMU + 모터별 위치 · 속도 · 전류
-//   0x05 DIAG       OpenCR → Jetson  1 Hz: 보드 안에서 잰 시간 (한 바퀴 · Sync Read/Write · 개별 읽기/쓰기 · 고장 정지 · USB 보내기) (2026-10-16)
+//   0x05 DIAG       OpenCR → Jetson  1 Hz: 보드 안에서 잰 시간 (한 바퀴 · Sync Read/Write · 개별 읽기/쓰기 · 고장 정지 · USB 보내기)
 //                   + CONFIG 를 받으면 그 순간 구간을 끊어 "CONFIG 전" 표시로 한 번 보냄 (전후 숫자가 섞이지 않게)
 //                   모르는 종류는 받는 쪽이 그냥 버림 → 이 종류를 모르는 옛 플러그인과도 같이 쓸 수 있음
 //
@@ -57,9 +57,9 @@ const uint8_t ST_TORQUE = 0x01;           // 토크 켜짐
 const uint8_t ST_HOST_TIMEOUT = 0x02;     // Jetson 명령이 끊김 → 펌웨어가 바퀴를 세움 (경비견)
 const uint8_t ST_IMU_OK = 0x04;           // IMU 정상
 const uint8_t ST_CONFIGURED = 0x08;       // CONFIG 받음
-const uint8_t ST_WRITE_FAIL = 0x10;       // 이번 주기 목표 쓰기(Sync Write) 전송 실패 (2026-10-16 R5)
+const uint8_t ST_WRITE_FAIL = 0x10;       // 이번 주기 목표 쓰기(Sync Write) 전송 실패 (R5)
 const uint8_t ST_HW_ERROR = 0x20;         // 어느 모터든 Hardware Error Status ≠ 0 (과부하 · 과열 · 전압 → 모터가 스스로 토크 끔)
-const uint8_t ST_FAULT_LATCHED = 0x40;    // 펌웨어 고장 잠금 (쓰기 실패로 바퀴를 세움) — CONFIG 를 다시 받을 때까지 계속 켜짐 (2026-10-16 재검증 R6)
+const uint8_t ST_FAULT_LATCHED = 0x40;    // 펌웨어 고장 잠금 (쓰기 실패로 바퀴를 세움) — CONFIG 를 다시 받을 때까지 계속 켜짐 (R6)
 
 // ------------------------------------------------------------------ 상자 안 내용물
 struct JointConfig
@@ -113,7 +113,7 @@ struct State
   float cur[MAX_JOINTS];   // A
 };
 
-// 보드 안 시간 측정 (DIAG, 2026-10-16) — micros() 로 재서 1 초마다 보냄. 단위 µs (65535 에서 멈춤)
+// 보드 안 시간 측정 (DIAG) — micros() 로 재서 1 초마다 보냄. 단위 µs (65535 에서 멈춤)
 //   왜 보드 안에서: PC 에서 USB 를 거쳐 재면 PC · USB · 중계 펌웨어 시간이 섞여 버스 · 펌웨어 시간을 가를 수 없었음
 struct TimeStat
 {
@@ -135,10 +135,10 @@ struct Diag
   TimeStat single_write;   // 개별 쓰기 1 회 왕복 (토크 켜기/끄기 · 고장 정지)
   uint16_t fault_stop_us;  // 마지막 고장 확정 → 개별 정지 시도 끝까지 (0 = 고장 없음)
   uint8_t fault_flags;     // 비트 0 = 고장 잠금, 1 = 버스 침묵, 2 = CONFIG 전 구간 (DIAG_FLAG_*)
-  // 배터리 (2026-10-16 보드 2장 · 와플파이 배터리): 모터가 재는 입력 전압 [0.1 V], 되읽기 때 1 모터씩. 0 = 이번 구간에 못 읽음
+  // 배터리 (보드 2장 · 와플파이 배터리): 모터가 재는 입력 전압 [0.1 V], 되읽기 때 1 모터씩. 0 = 이번 구간에 못 읽음
   uint8_t volt_min_dv;     // 이 구간 최저 (출발 순간 처짐 포함)
   uint8_t volt_mean_dv;    // 이 구간 평균
-  // (2026-10-16 v2) 첫 구간에만 한 바퀴 10 ms 초과 · 65535 포화가 보였던 원인 확인용
+  // 첫 구간에만 한 바퀴 10 ms 초과 · 65535 포화가 보였던 원인 확인용
   TimeStat usb_tx;         // 상태 · DIAG 를 USB 로 보내기 1 회 (기다리지 않는 쓰기). fail = 송신 버퍼가 차서(PC 가 안 읽음) 버린 상자
   uint16_t config_ms;      // 이 구간 바로 앞에서 CONFIG 처리(bus_configure)에 걸린 시간 [ms]. 0 = 이 구간 앞에 CONFIG 없음
 };
@@ -308,7 +308,7 @@ inline void get_stat(const uint8_t *&p, TimeStat &t)
   get(p, &t.max_us, 2);
 }
 
-const uint8_t DIAG_LEN_V1 = 4 + 2 + 8 + 2 + 8 * 4 + 2 + 1 + 2;   // 53 (2026-10-16 첫 판 — 받을 때는 usb_tx · config_ms = 0)
+const uint8_t DIAG_LEN_V1 = 4 + 2 + 8 + 2 + 8 * 4 + 2 + 1 + 2;   // 53 (첫 판 — 받을 때는 usb_tx · config_ms = 0)
 const uint8_t DIAG_LEN = DIAG_LEN_V1 + 8 + 2;                    // 63 (v2: + usb_tx + config_ms, 뒤에 붙임)
 
 inline uint16_t encode_diag(const Diag &g, uint8_t *out, uint16_t cap)

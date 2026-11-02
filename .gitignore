@@ -42,6 +42,10 @@ CLAUDE.md
 # Datasets (synthetic / real)
 datasets/
 
+# 팔 · 주행 시험 기록 (arm_tests/runs 등) · 젯슨 udev 규칙 (make_udev_rules.py 로 만듦)
+runs/
+tools/jetson/99-ninja-turtle-opencr.rules
+
 # YOLO 학습 결과 (runs/wide, runs/eval, runs/logs, TensorBoard)
 yolo/wide/runs/
 

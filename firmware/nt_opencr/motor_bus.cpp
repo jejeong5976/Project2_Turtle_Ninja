@@ -28,19 +28,20 @@ using namespace ControlTableItem;
 uint8_t n_ = 0;
 uint8_t ids_[ntp::MAX_JOINTS];
 uint8_t modes_[ntp::MAX_JOINTS];
+bool ext_pos_[ntp::MAX_JOINTS];   // (fw_ext) 전류 기반 위치 + goal_current 0 = 확장 위치 모드 (J1)
 uint16_t ok_ = 0;          // 비트 i = i 번째 모터가 ping 에 대답함 → 이 모터들만 읽고 씀
 bool torque_ = false;
 // 운전 중 되읽기 (R5)
 uint8_t health_idx_ = 0;
 uint16_t torque_lost_ = 0;   // 토크를 켜 둔 상태인데 Torque Enable 이 0 으로 읽힌 모터
 uint16_t hw_err_ = 0;        // Hardware Error Status ≠ 0 인 모터
-// ---- 고장 잠금 · 시간 예산 (2026-10-16 재검증 R6 · R7) ----------------------------------------------
+// ---- 고장 잠금 · 시간 예산  ----------------------------------------------
 // 순서: Sync Write 실패 관측 → 고장 확정 → 바퀴에 하나씩 속도 0 (예산 안에서) → 실패면 버스 침묵 → 모터 Bus Watchdog
 //   고장 확정 = 연속 WRITE_FAIL_LIMIT 번, 또는 첫 실패에서 WRITE_FAIL_CONFIRM_MS 가 지난 뒤 또 실패 (루프가 밀려도 늦어지지 않게)
 //   ★ 확정되면 **잠금(latched_)**: 통신이 돌아와도 다시 목표를 쓰지 않음 (예전: 다음 Sync Write 성공 때 원래 속도로 재출발)
 //     잠금을 푸는 길은 CONFIG(bus_configure) 하나 — 사람이 원인 확인 후 하드웨어를 다시 설정할 때만
 //   시간: 운전 중 모든 개별 읽기 · 쓰기에 IO_TIMEOUT_MS 를 직접 넘김 (라이브러리 기본은 100 ms → 바퀴 4개면 0.4 s)
-//   ⚠ 아래 숫자는 설계 목표. 실제 버스 · 모터에서 지키는지는 tools/hw_bench.py 로 따로 재야 함
+//   ⚠ 아래 숫자는 설계 목표. 실제 버스 · 모터에서 지키는지는 실물에서 따로 재야 함
 const uint8_t WRITE_FAIL_LIMIT = 3;           // 연속 실패 횟수 (임시 판정값 — 정지 시간 보장이 아님)
 const uint32_t WRITE_FAIL_CONFIRM_MS = 20;    // 첫 실패 뒤 이만큼 지나 또 실패하면 횟수와 상관없이 확정
 const uint32_t IO_TIMEOUT_MS = 3;             // 운전 중 개별 읽기 · 쓰기 응답 대기 (1 Mbps 응답은 0.2 ms 남짓)
@@ -109,6 +110,17 @@ int32_t rad_to_pos_tick(float rad)
   return t;
 }
 
+// 확장 위치(여러 바퀴) 목표 틱 — 그리퍼 · J1 (팔 실물 검증)
+// 전류 기반 위치(확장 위치) 모드는 여러 바퀴가 됨 → 0~4095 로 자르지 않음 (그리퍼가 4095 에서 막혀 37 mm 까지만 열림 · J1 을 이 모드로 쓰면 정면 4088 넘어 왼쪽으로).
+//   XM430 확장 위치 범위 ±1,048,575 (약 ±256 바퀴) 안으로만 자름
+int32_t rad_to_ext_tick(float rad)
+{
+  int32_t t = static_cast<int32_t>(lroundf(rad / POS_RAD_PER_TICK)) + 2048;
+  if (t < -1048575) {t = -1048575;}
+  if (t > 1048575) {t = 1048575;}
+  return t;
+}
+
 int32_t rads_to_vel_tick(float rads)
 {
   int32_t t = static_cast<int32_t>(lroundf(rads / VEL_RADS_PER_TICK));
@@ -161,20 +173,33 @@ uint16_t bus_configure(const ntp::Config &c)
 {
   n_ = c.n;
   uint16_t ok = 0;
+  // 팔 보드 = 전류 기반 위치(그리퍼 · J1) 모터가 있는 CONFIG. 주행 보드엔 없음 → 조향(같은 ID 11~14) 에는 안 씀.
+  bool arm_board = false;
+  for (uint8_t k = 0; k < c.n; ++k) {arm_board = arm_board || (c.j[k].mode == ntp::MODE_CURRENT_POSITION);}
   for (uint8_t i = 0; i < n_; ++i) {
     ids_[i] = c.j[i].id;
     modes_[i] = c.j[i].mode;
+    ext_pos_[i] = (c.j[i].mode == ntp::MODE_CURRENT_POSITION && c.j[i].goal_current == 0);
     if (!dxl.ping(ids_[i])) {continue;}
     // ping 만이 아니라 아래 설정이 **전부** 써져야 ok. 하나라도 실패하면 그 모터는 안 쓰는 것으로
     bool good = dxl.torqueOff(ids_[i]);                                       // 모드는 토크가 꺼져 있어야 바뀜
     good = dxl.writeControlTableItem(RETURN_DELAY_TIME, ids_[i], 0) && good;   // 응답 지연 0 (기본 500 µs → 14개면 7 ms 손해)
     if (modes_[i] == ntp::MODE_VELOCITY) {
       good = dxl.setOperatingMode(ids_[i], OP_VELOCITY) && good;
+    } else if (modes_[i] == ntp::MODE_CURRENT_POSITION && c.j[i].goal_current == 0) {
+      // 힘 한계 0 = 확장 위치 모드: 일반 위치 제어(PWM 출력)와 같고 여러 바퀴만 됨 — J1.
+      //   전류 기반 위치로 J1 을 돌리면 팔을 뻗은 자세에서 10 Hz ±3~6 틱 떨림 (실물 측정)
+      good = dxl.setOperatingMode(ids_[i], OP_EXTENDED_POSITION) && good;
     } else if (modes_[i] == ntp::MODE_CURRENT_POSITION) {
       good = dxl.setOperatingMode(ids_[i], OP_CURRENT_BASED_POSITION) && good;
       good = dxl.writeControlTableItem(GOAL_CURRENT, ids_[i], c.j[i].goal_current) && good;
     } else {
       good = dxl.setOperatingMode(ids_[i], OP_POSITION) && good;
+    }
+    if (arm_board) {
+      // 팔 위치 게인 (RAM, 전원 끄면 기본값 P 800 · I 0 · D 0 으로 돌아감). 값 = 팔 실물 검증값:
+      //   J2 · J3 · J4 (12 · 13 · 14) I 100 — 중력 위치 오차 25~56 틱 → 2~4 틱 (실물 203800). J1 D 1600 은 떨림을 키워서 뺌 (같은 실물)
+      if (ids_[i] == 12 || ids_[i] == 13 || ids_[i] == 14) {good = dxl.writeControlTableItem(POSITION_I_GAIN, ids_[i], 100) && good;}
     }
     good = dxl.writeControlTableItem(PROFILE_VELOCITY, ids_[i], c.j[i].profile_vel) && good;
     good = dxl.writeControlTableItem(PROFILE_ACCELERATION, ids_[i], c.j[i].profile_acc) && good;
@@ -256,7 +281,7 @@ void bus_health_step()
     return;
   }
   if (he != 0) {hw_err_ |= bit;} else {hw_err_ &= static_cast<uint16_t>(~bit);}
-  // 배터리 전압 (2026-10-16): 모터 입력 전압 = 그 보드 배터리 전압 (선 손실만큼 낮게). 출발 순간 처짐도 잡히게 매 바퀴
+  // 배터리 전압: 모터 입력 전압 = 그 보드 배터리 전압 (선 손실만큼 낮게). 출발 순간 처짐도 잡히게 매 바퀴
   const int32_t dv = timed_read(PRESENT_INPUT_VOLTAGE, ids_[i]);
   if (last_ok() && dv > 0 && dv < 256) {
     volt_sum_dv_ += static_cast<uint32_t>(dv);
@@ -276,7 +301,7 @@ void bus_health_step()
 // 고장 확정: 잠그고, 모터마다 하나씩 "지금 동작 멈춤" 을 씀 (하나씩 쓰면 모터가 대답 → 정말 받았는지 앎)
 //   ① 바퀴(속도 모드): 속도 0 — 가장 위험한 것부터
 //   ② 조향 · 팔(위치 모드): 목표 = 마지막으로 읽은 현재 위치 → 하던 동작(이전 목표로 가던 것)을 그 자리에서 멈춤
-//      (2026-10-16 재검증 4-A: 예전에는 바퀴만 세워서, 관측 읽기가 계속되면 Watchdog 도 안 걸려 팔이 이전 목표까지 계속 갔음)
+//      (예전에는 바퀴만 세워서, 관측 읽기가 계속되면 Watchdog 도 안 걸려 팔이 이전 목표까지 계속 갔음)
 //      위치는 직전 Sync Read 값(최대 한 바퀴 10 ms 전) — 그 사이 움직인 만큼 아주 조금 되돌아갈 수 있음
 //      직전 Sync Read 에서 못 읽은 위치 모터는 "지금 위치" 를 모름 → 확인 실패로 침
 //   ③ 그리퍼(전류 기반 위치)는 건드리지 않음: 목표를 지금 위치로 바꾸면 쥐는 힘이 빠져 퍽을 놓칠 수 있음
@@ -294,8 +319,10 @@ static bool stop_one(uint8_t i, uint32_t t0)
   }
   if (!(read_ok_ & (1u << i))) {return false;}   // 지금 위치를 모름
   int32_t here = sr_data_[i].position;
-  if (here < 0) {here = 0;}
-  if (here > 4095) {here = 4095;}   // 위치 모드 목표 범위
+  if (!ext_pos_[i]) {                 // (fw_ext) 확장 위치(J1) 는 여러 바퀴 → 자르지 않음
+    if (here < 0) {here = 0;}
+    if (here > 4095) {here = 4095;}   // 위치 모드 목표 범위
+  }
   return timed_write(GOAL_POSITION, ids_[i], here);
 }
 
@@ -309,7 +336,7 @@ static void enter_fault()
   // pass 1 = 조향 · 팔: 바퀴가 모두 확인됐을 때만. 하나라도 실패하면 거기서 멈추고 침묵 (어차피 Watchdog 이 전부 세움)
   for (int pass = 0; pass < 2 && all; ++pass) {
     for (uint8_t i = 0; i < n_; ++i) {
-      if (!(ok_ & (1u << i)) || modes_[i] == ntp::MODE_CURRENT_POSITION) {continue;}
+      if (!(ok_ & (1u << i)) || (modes_[i] == ntp::MODE_CURRENT_POSITION && !ext_pos_[i])) {continue;}   // (fw_ext) 그리퍼만 건너뜀, 확장 위치(J1) 는 세움
       if ((modes_[i] == ntp::MODE_VELOCITY) != (pass == 0)) {continue;}
       all = stop_one(i, t0) && all;
       if (!all && pass == 1) {break;}
@@ -356,7 +383,7 @@ bool bus_write_targets(const ntp::Cmd &c, bool host_ok)
       sw_vel_info_.xel_count++;
     } else if (valid) {
       // 위치 모터: 목표가 있을 때만 씀. 없으면 안 써서 마지막 목표에서 버팀
-      sw_pos_[i] = rad_to_pos_tick(c.target[i]);
+      sw_pos_[i] = (modes_[i] == ntp::MODE_CURRENT_POSITION) ? rad_to_ext_tick(c.target[i]) : rad_to_pos_tick(c.target[i]);
       sw_pos_xels_[sw_pos_info_.xel_count].id = ids_[i];
       sw_pos_xels_[sw_pos_info_.xel_count].p_data = reinterpret_cast<uint8_t *>(&sw_pos_[i]);
       sw_pos_info_.xel_count++;

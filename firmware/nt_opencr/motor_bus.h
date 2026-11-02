@@ -25,7 +25,7 @@ uint16_t bus_configure(const ntp::Config &c);
 // 토크 켜기/끄기. 켤 때는 위치 모터의 목표를 "지금 위치" 로 먼저 맞춰서 팔이 휙 움직이지 않게
 void bus_set_torque(bool on);
 // 실제로 토크가 켜졌나 → STATE 의 ST_TORQUE 비트
-//   = 위의 쓰기가 전부 성공했고 + 운전 중 되읽은 Torque Enable 이 꺼진 모터가 없음 (2026-10-16 R5)
+//   = 위의 쓰기가 전부 성공했고 + 운전 중 되읽은 Torque Enable 이 꺼진 모터가 없음 (R5)
 //   예전에는 "마지막 쓰기 성공" 만 기억해서, 운전 중 모터가 스스로 토크를 끄거나(과부하 shutdown) 재부팅돼도 몰랐음
 bool bus_torque_is_on();
 // 모터 상태 되읽기 한 칸 (매 주기 1 모터씩 돌아가며: Hardware Error Status · 입력 전압(배터리) · Torque Enable). 14 개면 0.14 s 에 한 바퀴
@@ -39,7 +39,7 @@ uint16_t bus_hw_error_mask();
 // 돌려주는 값: Sync Write 전송이 전부 성공했나 (false → ST_WRITE_FAIL). ⚠ 전송 성공 ≠ 각 모터가 목표를 받아들임
 //   (Sync Write 는 모터가 대답하지 않음) → 실제 반영은 상태 읽기(위치가 따라오나)와 위 되읽기로 봄
 //
-// 고장 잠금 (2026-10-16 재검증 R6 · R7) — 자세한 숫자는 motor_bus.cpp 맨 위
+// 고장 잠금 (R6 · R7) — 자세한 숫자는 motor_bus.cpp 맨 위
 //   Sync Write 가 연속 3 번 실패하거나 첫 실패 뒤 20 ms 지나 또 실패 → 고장 확정 → **잠금**
 //     ① 바퀴에 하나씩 속도 0, 이어서 조향 · 팔은 목표 = 지금 위치 (그리퍼는 그대로 — 쥔 힘 유지)
 //        전체 20 ms 예산, 각 3 ms 응답 대기
@@ -52,7 +52,7 @@ bool bus_fault_latched();      // → STATE 의 ST_FAULT_LATCHED
 bool bus_is_silent();
 uint32_t bus_stop_attempt_ms();   // 마지막 개별 정지 시도에 걸린 시간 [ms] (시험용)
 
-// 보드 안 시간 측정 (DIAG, 2026-10-16) — 지금까지 모은 Sync Read · Sync Write · 개별 읽기/쓰기 시간과
+// 보드 안 시간 측정 (DIAG) — 지금까지 모은 Sync Read · Sync Write · 개별 읽기/쓰기 시간과
 //   마지막 고장 정지 시간을 g 에 채우고 0 부터 다시 모음 (g.loop · resync · ms · window_ms 는 .ino 가 채움)
 void bus_timing_take(ntp::Diag &g);
 

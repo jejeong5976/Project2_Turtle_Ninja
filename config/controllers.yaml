@@ -33,18 +33,19 @@ swerve_controller:
   ros__parameters:
     # 모듈 순서 fl, fr, rl, rr → 관절 이름 steer_<이름>_joint / drive_<이름>_joint 로 자동
     module_names: ["fl", "fr", "rl", "rr"]
-    # ⚠ URDF(robot.urdf.xacro) 의 module_x / module_y / wheel_off 와 같은 값 (팀 CAD 에서 잰 값)
-    module_x: [0.112, 0.112, -0.112, -0.112]           # [m] 조향축 위치 앞(+) 뒤(-)
-    module_y: [0.064, -0.064, 0.064, -0.064]           # [m] 왼(+) 오른(-)
-    module_offset: [0.0269, -0.0269, 0.0269, -0.0269]  # [m] 바퀴가 조향축에서 바깥쪽으로 (D14)
-    wheel_radius: 0.033                                # [m] 실측 후 수정
-    steer_limit: 3.14159           # [rad] 조향 모터 끝 (위치 모드 ±π). 넘는 목표는 반대쪽 + 바퀴 거꾸로 (D19)
-    # 선택 설정: steer_min / steer_max 배열을 둘 다 주면 모듈별 연속 범위를 사용.
-    # 순서 fl, fr, rl, rr · 단위 rad · 관절 물리 좌표(앞 0, 반시계 +).
-    # 두 배열이 비어 있으면 기존 공통 steer_limit 동작을 유지한다.
+    # 실물 기하 — URDF(robot.urdf.xacro) module_x_front 0.060 · module_x_rear 0.070 · module_y 0.112 · wheel_off 와 같은 값
+    #   앞 = +X (라이다 쪽), 왼쪽 = +Y. 관절 이름 fl · fr · rl · rr 은 옛 위치 이름을 그대로 씀 (아래 순서가 실제 위치)
+    #   실측: 좌우 조향축 224 mm · 앞뒤 130 mm · 앞 모듈이 뒤보다 몸체 안쪽으로 약 10 mm
+    #     → 몸체 가운데(base_footprint) 에서 앞 모듈 +60 · 뒤 모듈 −70 mm
+    #   offset: 바퀴가 조향축에서 떨어진 쪽 (+ = 바퀴 굴림 방향의 왼쪽). 왼쪽 모듈(fl · fr) +, 오른쪽 모듈(rl · rr) − (바퀴가 바깥쪽)
+    module_x: [-0.070, 0.060, -0.070, 0.060]           # [m] 조향축 위치 앞(+) 뒤(-)
+    module_y: [0.112, 0.112, -0.112, -0.112]           # [m] 왼(+) 오른(-)
+    module_offset: [0.0269, 0.0269, -0.0269, -0.0269]  # [m] 바퀴가 조향축에서 바깥쪽으로 (D14)
+    wheel_radius: 0.033                                # [m] 바퀴 반지름 (CAD 33.0 mm)
+    steer_limit: 3.14159           # [rad] 영점(zero_tick) 없는 지도(mock)일 때만 쓰는 공통 범위 ±π. 넘는 목표는 반대쪽 + 바퀴 거꾸로 (D19)
+    # 모듈별 범위 steer_min / steer_max (순서 fl, fr, rl, rr · rad · 관절 각): 여기 적지 않음.
+    #   launch(swerve_setup)가 hardware_map 의 zero_tick · scale · 선 한계(cable_*_deg)로 계산해 arm:=true · false 모두 넘김
     # 한 모듈이라도 가능한 각도/역회전 조합이 없으면 전체 구동 0, 조향 현재 위치 유지.
-    # CAD 관절의 부호는 모듈마다 다르므로 원시 CAD 0~90°를 여기 그대로 넣으면 안 됨.
-    # 실물 간섭/케이블 범위가 미확정이므로 현재 하드웨어 설정에는 값을 넣지 않는다.
 
     # ---- 안전 ----
     cmd_timeout_s: 0.3             # /cmd_vel 이 이만큼 끊기면 목표 0 (이 루프 안에서 — 보내는 쪽이 죽어도)
@@ -57,14 +58,33 @@ swerve_controller:
     # ---- 느리게 (D16) ----
     max_linear: 0.10               # [m/s]
     max_angular: 0.5               # [rad/s]
-    max_linear_accel: 0.2          # [m/s²] 0 → 최고속까지 0.5 s
-    max_angular_accel: 0.8         # [rad/s²]
+    max_wheel_speed: 7.9           # [rad/s] 바퀴 모터 한계 (XM430-W210 Velocity Limit 330 × 0.229 rpm = 7.91). 넘으면 네 바퀴를 같은 비율로 줄임
+                                   #   (다이나믹셀은 한계를 넘는 속도 명령을 무시하고 이전 속도로 계속 돎). 지금 최고 속도에선 약 5 rad/s 라 닿지 않음
+    # 실물 바닥 비교로 정함 (예전 0.2 / 0.8):
+    #   0.2 / 0.8 은 방향 전환이 늦고(ㄹ자 0.40) 바퀴끼리 끌림(구동 729 mA) → 0.5 / 2.0 (제한 없음은 덜컹거림)
+    max_linear_accel: 0.5          # [m/s²]
+    max_angular_accel: 2.0         # [rad/s²]
+    # 자세 고를 때 "돌아야 할 각도 × 2" 를 비용에 더함 (0 = 예전). 범위 끝에서 314° 크게 도는 것 없앰
+    steer_travel_weight: 2.0
+    # 정면 유지 (자이로 되먹임, 최대 0.15 rad/s, 0.5° 이하 무시): 끝 방향 오차 7~8° → 0.5° 안팎
+    heading_hold_kp: 2.0           # [1/s]
+    heading_hold_wz_per_speed: 0.4 # 보정 회전 ≤ 0.4 × 이동 속도 (0.05 m/s 에서 조향 흔들림 관찰)
+    # 가지 고르기 보강 (모의 36 방향 seed 87419: 뒤집힘 9 → 4, 출발 지연 최대 1.12 → 0.86 s, 정확도 그대로.
+    #   설정 찾기 30 조합 × 순서 6 에서 한도 90° 가 뒤집힘 · 총 시간 모두 좋음). 시험 때 바꾸기: NT_COHERENT_MAX_TRAVEL_DEG · NT_END_GUARD_DEG · NT_KEEP_BRANCH_WZ
+    steer_coherent_max_travel: 1.5708   # [rad] 90°. 공통 자세로 맞추려면 이보다 크게 도는 바퀴가 있으면 바퀴별로 (0 = 끔)
+    steer_end_guard: 0.2618             # [rad] 15°. 멈춘 상태에서 고를 때 범위 끝 15° 안쪽 가지에 벌점 (주행 중 옆 보정 ≤ 약 17° 대비, 0 = 끔)
+    keep_branch_max_wz: 0.2             # [rad/s] 이동 중 이 이하 회전(정면 유지 · 추종기 보정)이 가지를 바꾸게 하면 줄임 (0 = 끔)
     cosine_scale: true
 
     # ---- 조향 먼저, 구동 나중 (D15) ----
     steer_then_drive: true
     steer_tolerance: 0.17          # [rad] ≈ 10°
     roll_while_steering: true      # 조향만 도는 동안 바퀴를 offset 만큼 따라 굴림 (D14). 이때 바퀴 모터도 조금 힘을 씀
+    # 정지 후 바깥쪽 자세(조향 0°) 복귀 — 기본 끔. 신선한 0 명령 + 바퀴 차례 + 실측 바퀴 정지가 park_idle_s 이어질 때만.
+    #   명령 끊김 · 상태 못 읽음 · 컨트롤러 끄기에서는 시작 안 함. 바퀴는 roll_while_steering 보상만 (launch park_on_idle:=true)
+    park_on_idle: false
+    park_idle_s: 1.0               # [s]
+    park_still_wheel: 0.05         # [rad/s]
     steer_rate_source: reported    # position: OpenCR 보드 시각 기반 60 ms 위치 추정 (ROS 실물 검증 전, 선택 옵션)
 
     # ---- odom (회전은 IMU 자이로, D12) ----
@@ -74,7 +94,9 @@ swerve_controller:
     odom_rate_hz: 50.0
     use_imu: true                  # 안 오면 (mock) 자동으로 바퀴 계산
     imu_topic: /imu_sensor_broadcaster/imu
-    imu_bias_time_s: 2.0           # 켠 뒤 멈춰 있는 2 s 평균 = 자이로 바이어스
+    imu_bias_time_s: 5.0           # 켠 뒤 멈춰 있는 5 s 평균 = 자이로 바이어스 (잡음 0.07 ~ 0.16°/s)
+    imu_still_hold_s: 1.0          # 그 뒤 멈춘 지 1 s 지나야 바이어스 따라감 (멈춘 직후 남은 회전까지 배우면 직진 1 m 마다 약 1° 틀어짐)
+    imu_track_gate: 0.0087         # [rad/s] 바이어스 뺀 값 0.5°/s 안일 때만 따라감
     imu_timeout_s: 0.2
     still_linear: 0.01
     still_angular: 0.05
@@ -85,7 +107,7 @@ arm_controller:
     command_interfaces: [position]
     state_interfaces: [position, velocity]
     allow_partial_joints_goal: true
-    # 목표 오차 검사 (2026-10-16 R1). 없으면 JTC 의 기본 허용값이 0 = "검사 안 함" 이라서
+    # 목표 오차 검사. 없으면 JTC 의 기본 허용값이 0 = "검사 안 함" 이라서
     #   관절이 걸려 목표에 못 가도 시간만 지나면 성공을 돌려줌 (Codex 재현: 어깨 고정 → HOME 성공)
     #   goal_time: 궤적 끝 시각 뒤 이 시간 안에 모든 관절이 goal 오차 안 + 거의 멈춤이 아니면 실패 (GOAL_TOLERANCE_VIOLATED)
     #   ⚠ 값은 잠정 — 실물에서 HOME · 집기 자세의 처짐(중력) · 모터 분해능을 재고 다시 정할 것
