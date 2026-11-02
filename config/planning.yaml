@@ -1,0 +1,103 @@
+# planning.yaml — mission_manager 설정 (실제 사용값)
+# - 노드: mission 패키지 mission_manager (미션 = mission_manager.cpp, 실행기 = planning 패키지 executor.cpp)
+# - 위치: 레포 최상위 config/ → bringup 이 share/bringup/config 로 설치
+# - 코드(declare_parameter) 기본값과 지금은 동일
+# - 이 파일이 없으면 mission.launch.py 가 코드 기본값으로 띄움
+# - 값 바꾸면 bringup 다시 빌드 (--symlink-install 이면 바로 반영)
+# 시간 단위 s, 거리 단위 m
+
+mission_manager:
+  ros__parameters:
+    # ---- dice (발제 v5 '주사위 기억 로봇', 설계 docs/planning/transfer_planner_design.md)
+    dice_map: ""                      # 비우면 레포 maps/dice_map.yaml (경기장 좌표 · 정차 자세 · map_from_arena)
+    travel_table: ""                  # 비우면 레포 maps/dice_travel_times.yaml (노드 사이 이동 · 팔 동작 시간)
+    collect_order: [1, 2, 6, 3, 4, 5] # 시작 박스 방문 순서 (마지막 박스 LOOK 뒤 할당 · 운반 계획)
+    look_dwell_s: 1.0                 # LOOK 뒤 검출 모으는 시간
+    dice_pick_fresh_s: 90.0           # 정차 중 PICK 은 LOOK 때 본 odom 기준 위치를 이 시간까지 씀 (차체가 서 있으므로)
+    transfer_max_remaining: 4         # 박스에 남은 퍽이 이보다 많으면 정확해 대신 대체 해 (Jetson 계산 시간 보호)
+    # 재검증 (발제 '이동 후 검증' 8점): VERIFY LOOK 뒤 새 관측으로 판정 → /planning/verify_record + 기록 파일
+    verify_radius_m: 0.18             # 장소 중심에서 이 안의 퍽 = 그 장소 퍽 (칸 최대 0.085, 박스 윗면 반폭 0.1025)
+    verify_cell_tol_m: 0.03           # 칸 중심에서 이 안이면 칸 위
+    verify_vote_ratio: 0.7            # 퍽 색 · 모양 = LOOK 동안 읽힌 장 다수결, 1 등 비율 < 이것이면 모름
+    # ---- 기록 파일 (발제 '기록: signal.json, allocation.json'): <record_dir>/run_<시각>/
+    #   signal.json (신호 기록 끝날 때) · allocation.json + allocation_rev<N>.json (계획 · 재계획 때, 첫 PLACE 전) · verify.yaml (재검증 끝)
+    record_dir: ~/planning_logs       # "" = 안 씀
+    max_replans: 6                    # dice 단계가 재시도로도 안 되면 그 퍽 · 장소 빼고 다시 계획하는 최대 횟수
+    map_frame: map
+    base_frame: base_link
+    odom_frame: odom                  # 집을 때 target 계산용 (AMCL 보정에 안 흔들리는 프레임)
+    tick_hz: 10.0
+
+    # ---- 시간
+    time_limit_s: 0.0                 # 0 = 제한 없음 (대회 규칙 확인 후 설정)
+    return_margin_s: 60.0             # 남은 시간이 이보다 적으면 출발점 복귀
+
+    # ---- 받는 쪽 규칙
+    detection_max_age_s: 0.5          # 촬영 시각이 이보다 오래된 검출 버림
+    min_confidence: 0.5
+    candidate_max_age_s: 30.0         # ID 못 읽은 후보를 이만큼 못 보면 삭제
+    signal_timeout_s: 1.0             # /perception/traffic_light 가 이만큼 끊기면 UNKNOWN 으로 봄
+    # 신호등 점멸 기록 (발제 v5: 출발 구역에서 12 번 점멸, 1 s 켜짐 + 1 s 소등, 끝 3 s 소등). 설명 signal_recorder.hpp
+    signal_record: true               # STANDBY · HOME · 첫 READ_BARCODE · OBSERVE_SIGNAL 동안 기록. 순서 = 바코드 → 점멸 관측 → task 실행 (발제 v5)
+    barcode_look: true                # READ_BARCODE = 이동 → 팔 LOOK_BARCODE (손목으로 바코드 정면) → 읽기 → 팔 HOME
+    barcode_enable_service: /perception/barcode/enable   # READ_BARCODE 동안만 perception 바코드 판독 켬 (std_srvs/SetBool). "" 면 안 부름
+    signal_wait_s: 90.0               # OBSERVE_SIGNAL 최대 대기 (넘으면 불완전으로 진행, 색 추정 안 함)
+    signal_expected: 12               # 점멸 수
+    signal_min_on_s: 0.3              # 이보다 짧은 켜짐은 깜빡임 (오검출)
+    signal_min_off_s: 0.25            # 점멸 사이 소등으로 인정하는 최소 길이
+    signal_end_off_s: 2.5             # 마지막 뒤 이만큼 소등이면 끝 (발제 3 s, 관측 지연 여유)
+    signal_max_gap_s: 0.8             # 기록 중 이보다 오래 못 보면 점멸을 놓쳤을 수 있음 → 불완전
+    signal_majority: 0.8              # 점멸 색 다수결 최소 비율 (못 넘으면 '?')
+    signal_max_ambiguous: 0.3         # 점멸 안 애매 관측 비율 상한 (넘으면 '?')
+    signal_min_count: 1               # 색별 횟수 규칙 (발제 각 1-6)
+    signal_max_count: 6
+    control_timeout_s: 1.0            # /odom · /control/motion_mode 끊김 → FAULT
+    require_motion_mode: true         # MotionMode 따름: 주행은 DRIVE 일 때만, 팔 작업은 ready 일 때만 (control 없이 시험할 땐 false)
+    drive_wait_s: 10.0                # 주행 단계에서 DRIVE 를 이만큼 못 받으면 HOME 끼워 넣음 (INIT 은 FAULT)
+
+    # ---- 출발 · 준비 확인 (STANDBY) · 실행 중 감시 (require_* false = 그 항목 안 봄, 시험용)
+    auto_start: false                 # true 면 준비되는 즉시 시작 (시험용). 대회는 /mission/start
+    lifecycle_services: ["/lifecycle_manager_navigation/is_active"]   # localization_source: amcl 이면 /lifecycle_manager_localization 은 코드가 더함
+    require_scan: true
+    scan_topics: [/lidar_front/scan, /lidar_rear/scan]   # 라이다 2 개 각각 감시, 하나라도 끊기면 SCAN_LOST (이동 차단). 실물 드라이버도 lidar_front/scan · lidar_rear/scan 로 띄운 것으로 앎 (사용자, 2026-11-01, 실물 ros2 topic list 로 최종 확인)
+    scan_timeout_s: 1.0
+    require_detections: true
+    detection_topics: [/perception/wrist/detections]   # 받을 퍽 검출 토픽 (카메라마다 따로). 광각 /perception/wide/detections 는 위치가 NaN 이라 안 받음
+    detection_frames: ["d435_color_optical_frame"]   # 출력이 살아 있어야 하는 카메라 프레임 (DetectionArray.header.frame_id). D435 컬러 렌즈 (케이스 가운데 proxy 에서 32.5 mm, 2026-10-29)
+    detection_timeout_s: 1.0
+    require_localization: true
+    localization_source: health       # health = pose_guard /localization_health (실물 slam_toolbox, nav2 localization:=slam) | amcl = /amcl_pose 공분산 (시뮬)
+    localization_health_topic: /localization_health   # level 0 정상 · 1 경고 · 2 정지. 2 이상 · 끊김 = 상실, start 는 0 일 때만
+    loc_timeout_s: 2.0                # map → odom TF · /localization_health 가 이만큼 갱신 안 되면 위치 추정 상실
+    loc_ready_xy_std_m: 0.10          # amcl 만: start 허용 표준편차 (시험용 초기값)
+    loc_ready_yaw_std_deg: 10.0
+    loc_lost_xy_std_m: 0.30           # amcl 만: 실행 중 상실 판단
+    loc_lost_yaw_std_deg: 30.0
+    loc_fault_s: 1.0                  # 위치 추정 상실이 이만큼 이어지면 FAULT
+    monitor_recover_s: 2.0            # scan · 검출 끊김: 회복이 이만큼 유지되면 해제
+    monitor_max_recoveries: 2         # 자동 해제 최대 횟수 (start 마다 초기화)
+    monitor_fault_s: 10.0             # 이만큼 회복 못 하면 FAULT
+
+    # ---- 액션
+    action_retry_s: 1.0               # 팔 작업 거절 시 재전송 간격
+    action_retry_max_s: 15.0
+    server_wait_s: 30.0               # Nav2 · /arm_task 서버가 이만큼 안 뜨면 단계 실패 (INIT HOME 이면 FAULT)
+    nav_timeout_s: 60.0
+    arm_timeout_s: 60.0
+    read_timeout_s: 5.0               # 바코드 지점 도착 뒤 읽기 대기
+
+    # ---- 재고 (적재함 · 그리퍼)
+    cargo_slots: [S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12]   # URDF rack_cell_S* 이름, 팔에서 먼 칸부터 = 채우는 순서. dice 는 11 칸 이상 필요
+    cargo_file: ""                    # 재고 기록 파일 (빈 문자열 = 저장 안 함)
+    cargo_restore: false              # 시작할 때 파일에서 복원 (노드 재시작 때만 true)
+
+    # ---- 퍽
+    puck_standoff_m: 0.30             # 퍽 앞에 설 거리 (approach 생기면 줄임)
+    pick_fresh_s: 2.0                 # 이보다 오래 전에 본 위치로는 집지 않음
+    puck_half_height_m: 0.03          # 퍽 높이 6 cm 의 절반 (PLACE 때 놓은 퍽 중심 = place_height + 이 값)
+    grasp_offset_m: 0.015             # 그리퍼 중심 = 퍽 중심 + 쥘 끝 방향으로 이 값 (긴축 한쪽 끝 3 cm 구간을 쥠, 적재함 설계 기준)
+
+    # ---- 재시도
+    nav_retries: 1
+    pick_retries: 2
+    place_retries: 1

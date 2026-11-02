@@ -4,7 +4,7 @@
   ====================================================================
   구성
     몸통 · 스워브 : 와플 판 3층 + 하판, 스워브 모듈 4 개 (팀 Swerve CAD, 모듈 위치는 실측)
-    팔           : OpenManipulator-X 5 관절 + 그리퍼 (joint1~5 · gripper_left_joint), 적재함 12 칸 (rack_cell_*)
+    팔           : OpenManipulator-X 5 관절 + 그리퍼 (joint1~5 · gripper_left_joint), 적재함 12 칸 (rack_cell_S1 … S12, 팔에서 먼 칸부터)
     센서         : 앞 · 뒤 LDS-03, 손목 D435, 광각 카메라(프로파일 위), IMU (주행 OpenCR 보드 위)
     전자부품     : 젯슨, 배터리, OpenCR 2 장, 라이다 연결 보드 2 장 — 보기용만 (질량은 base_link 에 포함)
 
@@ -688,18 +688,19 @@
       </link>
       <joint name="rack_cell_${name}_fixed" type="fixed"><parent link="base_link"/><child link="rack_cell_${name}_link"/><origin xyz="${x} ${y} 0.1325" rpy="0 0 ${yaw}"/></joint>
     </xacro:macro>
-    <xacro:rack_cell_visual name="A" x="0.081200" y="-0.072100" yaw="0.017453292520"/>
-    <xacro:rack_cell_visual name="B" x="0.079500" y="-0.114000" yaw="-0.057246799465"/>
-    <xacro:rack_cell_visual name="C" x="0.015800" y="-0.068100" yaw="-0.088662726001"/>
-    <xacro:rack_cell_visual name="D" x="0.011600" y="-0.108400" yaw="-0.099658300289"/>
-    <xacro:rack_cell_visual name="L1" x="0.084142" y="0.066838" yaw="-0.014259339989"/>
-    <xacro:rack_cell_visual name="L2" x="0.084300" y="0.107300" yaw="-0.013456488533"/>
-    <xacro:rack_cell_visual name="L3" x="0.023953" y="0.069231" yaw="0.009512044423"/>
-    <xacro:rack_cell_visual name="L4" x="0.021900" y="0.109700" yaw="-0.012583823907"/>
-    <xacro:rack_cell_visual name="L5" x="-0.043572" y="0.070504" yaw="0.039147735122"/>
-    <xacro:rack_cell_visual name="L6" x="-0.043400" y="0.111000" yaw="0.009564404301"/>
-    <xacro:rack_cell_visual name="L7" x="-0.109317" y="0.064428" yaw="-0.026232298657"/>
-    <xacro:rack_cell_visual name="L8" x="-0.110130" y="0.106931" yaw="-0.042638393626"/>
+    <!-- 칸 이름 S1–S12 = 팔 J1 축(base_link 0.0225, 0)에서 먼 칸부터. planning 이 S1 부터 채움. 옛 이름 (arm_tests/rack_cells.json) 은 줄 끝 주석 -->
+    <xacro:rack_cell_visual name="S1" x="-0.110130" y="0.106931" yaw="-0.042638393626"/>   <!-- 옛 L8, J1 축까지 170 mm -->
+    <xacro:rack_cell_visual name="S2" x="-0.109317" y="0.064428" yaw="-0.026232298657"/>   <!-- 옛 L7, J1 축까지 147 mm -->
+    <xacro:rack_cell_visual name="S3" x="-0.043400" y="0.111000" yaw="0.009564404301"/>   <!-- 옛 L6, J1 축까지 129 mm -->
+    <xacro:rack_cell_visual name="S4" x="0.079500" y="-0.114000" yaw="-0.057246799465"/>   <!-- 옛 B, J1 축까지 127 mm -->
+    <xacro:rack_cell_visual name="S5" x="0.084300" y="0.107300" yaw="-0.013456488533"/>   <!-- 옛 L2, J1 축까지 124 mm -->
+    <xacro:rack_cell_visual name="S6" x="0.021900" y="0.109700" yaw="-0.012583823907"/>   <!-- 옛 L4, J1 축까지 110 mm -->
+    <xacro:rack_cell_visual name="S7" x="0.011600" y="-0.108400" yaw="-0.099658300289"/>   <!-- 옛 D, J1 축까지 109 mm -->
+    <xacro:rack_cell_visual name="S8" x="-0.043572" y="0.070504" yaw="0.039147735122"/>   <!-- 옛 L5, J1 축까지 97 mm -->
+    <xacro:rack_cell_visual name="S9" x="0.081200" y="-0.072100" yaw="0.017453292520"/>   <!-- 옛 A, J1 축까지 93 mm -->
+    <xacro:rack_cell_visual name="S10" x="0.084142" y="0.066838" yaw="-0.014259339989"/>   <!-- 옛 L1, J1 축까지 91 mm -->
+    <xacro:rack_cell_visual name="S11" x="0.023953" y="0.069231" yaw="0.009512044423"/>   <!-- 옛 L3, J1 축까지 69 mm -->
+    <xacro:rack_cell_visual name="S12" x="0.015800" y="-0.068100" yaw="-0.088662726001"/>   <!-- 옛 C, J1 축까지 68 mm -->
   </xacro:if>
 
   <!-- 스워브 모듈 4 개: 위치 · 바퀴 offset 은 controllers.yaml 과 같은 값 -->
