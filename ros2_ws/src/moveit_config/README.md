@@ -24,6 +24,7 @@ ros2 launch moveit_config move_group.launch.py use_rviz:=true
 그리퍼 연결 막대는 손가락 위치로만 움직여 MoveIt 이 피할 수 없음. 닫힘(−1.6 mm)에서 충돌용 단순 메시끼리만 겹치는
 크랭크 ↔ 손가락 · 막대 ↔ 막대 쌍은 끔 (실제 메시는 막대 사이 0.46 mm). 연결 막대 각도는 `manipulation/arm_state_publisher` 가 `/joint_states_corrected` 로 냄.
 적재함 칸 안 퍽 · 쥔 퍽은 MoveIt 장면에 없음 (칸 퍽과의 거리는 pose_safety 검사).
+move_group 은 `/joint_states_moveit` (엔코더 + 연결 막대 3 관절) 을 읽음. bringup 없이 띄우면 `joint_states:=joint_states`.
 
 ## URDF 를 바꾸면 충돌 쌍 다시 계산
 ```bash
