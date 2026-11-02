@@ -126,3 +126,48 @@ TEST(PathActions, StartCheck)
   EXPECT_FALSE(manipulation::path_start_ok(p, {std::nan(""), 0, 0, 0, 0}, 0.1, why));
   EXPECT_FALSE(manipulation::path_start_ok(p, {10 * kDeg, 0, 0, 0}, 0.1, why));
 }
+
+// 8) 0.1° 이하 미세 이동도 짧게 (예전: 한 칸이라 평균 속도 0 → 50 ~ 100 s)
+TEST(TimePath, TinyMoveIsShort)
+{
+  const std::vector<double> s{0, 0, 0, 0, 0};
+  for (double d : {0.01, 0.05, 0.09, 0.1, 0.11}) {
+    const auto pts = manipulation::time_path(s, {node("a", {d, 0, 0, 0, 0})}, PathTiming{});
+    ASSERT_FALSE(pts.empty());
+    EXPECT_LT(pts.back().t, 0.5) << d << "°";
+    EXPECT_NEAR(pts.back().q[0], d * kDeg, 1e-12);
+  }
+}
+
+// 9) 모든 경유점이 출력 점에 그대로 있음 (JTC 가 점 사이를 직선으로 이어도 꺾인 곳을 깎지 않음)
+TEST(TimePath, KeepsEveryWaypoint)
+{
+  const std::vector<double> s{0, 0, 0, 0, 0};
+  const std::vector<PathNode> nodes{node("a", {10, 3, 0, 0, 0}), node("b", {12, -4, 1, 0, 0}), node("c", {25, 2, 0, 0, 0}),
+    node("d", {26.3, 2.5, 0, 0, 0})};
+  const auto pts = manipulation::time_path(s, nodes, PathTiming{});
+  for (const auto & n : nodes) {
+    bool found = false;
+    for (const auto & p : pts) {
+      double d = 0.0;
+      for (std::size_t j = 0; j < 5; ++j) {d = std::max(d, std::fabs(p.q[j] - n.q[j]));}
+      found = found || d < 1e-9;
+    }
+    EXPECT_TRUE(found) << n.name;
+  }
+  for (std::size_t i = 1; i < pts.size(); ++i) {EXPECT_GT(pts[i].t, pts[i - 1].t);}
+  EXPECT_LE(max_speed_dps(s, pts), 40.0 * 1.05);
+}
+
+// 10) 실측 출발: 허용 오차만큼 어긋난 자세에서도 첫 구간이 속도 한계 안 (예전: 첫 0.05 s 에 몰아서 100 °/s 넘음)
+TEST(PathActions, StartsFromMeasuredPose)
+{
+  ArmPath p{"stand", {node("받침", {0, 0, 0, 0, 0}, true), node("up", {0, 10, 0, 0, 0}, true)}, false};
+  const std::vector<double> q_now{0.09, 0, 0, 0, 0};   // J1 0.09 rad (5.2°) 어긋남
+  const auto acts = manipulation::path_actions(p, PathTiming{}, manipulation::GripperValues{}, q_now);
+  ASSERT_EQ(acts.size(), 1u);
+  EXPECT_LE(max_speed_dps(q_now, acts[0].points), 20.0 * 1.05);
+  EXPECT_NEAR(acts[0].points.back().q[0], 0.0, 1e-12);
+  const auto old = manipulation::path_actions(p, PathTiming{}, manipulation::GripperValues{});
+  EXPECT_GT(max_speed_dps(q_now, old[0].points), 50.0);   // 실측을 안 주면 (예전 방식) 첫 점까지 급하게
+}

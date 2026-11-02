@@ -6,6 +6,8 @@
 //    받침에 얹혀 있으면 0 (rest_near 안), 받침에서 rest_far 만큼 떨어지면 전부 — 사이는 직선 (실물에서 확인할 값)
 // ② 그리퍼 연결 막대: gripper_left_joint 로 크랭크 · 양쪽 막대 관절각 (URDF 수동 관절)
 // 위치만 내보냄 (속도 · 토크는 측정값이 아님). NaN 인 관절은 빼고 나머지는 그대로 → 한 관절 문제로 TF 전체가 멈추지 않음
+//   단 팔 관절이 하나라도 없거나 NaN 이면 그 순간 팔 관절 5 개를 다 뺌 (처짐 보정 없이 나머지 팔 관절만 보내면 TF 의미가 바뀜 → 안 보내 TF 가 멈춘 걸로 드러냄)
+// ③ MoveIt 용 /joint_states_moveit: 엔코더 값 그대로 + 그리퍼 연결 막대 3 관절 (MoveIt 은 엔코더 기준, 막대 각도만 필요)
 // 입력 시각 그대로, 타이머 · 명령 없음
 
 #include <array>
@@ -44,7 +46,9 @@ public:
     linkage_on_ = declare_parameter<bool>("gripper_linkage_on", true) && load_gripper_linkage(*this, linkage_);
     const auto in = declare_parameter<std::string>("input_topic", "joint_states");
     const auto out = declare_parameter<std::string>("output_topic", "joint_states_corrected");
+    const auto moveit_out = declare_parameter<std::string>("moveit_topic", "joint_states_moveit");
     pub_ = create_publisher<sensor_msgs::msg::JointState>(out, 10);
+    moveit_pub_ = create_publisher<sensor_msgs::msg::JointState>(moveit_out, 10);
     sub_ = create_subscription<sensor_msgs::msg::JointState>(
       in, rclcpp::SensorDataQoS(), [this](sensor_msgs::msg::JointState::ConstSharedPtr m) {on_state(*m);});
     RCLCPP_INFO(get_logger(), "%s → %s · 처짐 보정 %s · 그리퍼 연결 막대 %s", in.c_str(), out.c_str(),
@@ -76,11 +80,23 @@ private:
     if (bad) {RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "측정 없음(NaN) 관절은 빼고 보냄");}
     bool all_arm = true;
     for (int k : arm_idx) {all_arm = all_arm && k >= 0;}
+    sensor_msgs::msg::JointState mv = o;   // MoveIt 용: 엔코더 그대로
     if (sag_on_ && all_arm) {
       std::array<double, 5> q;
       for (int k = 0; k < 5; ++k) {q[k] = o.position[arm_idx[k]];}
       const auto c = sag_corrected(model_, q, 0.0, sag_weight(q, rest_, rest_near_, rest_far_));
       for (int k = 0; k < 5; ++k) {o.position[arm_idx[k]] = c[k];}
+    } else if (sag_on_ && !all_arm) {
+      // 일부 팔 관절만 있음 → 이 순간 팔 관절은 하나도 안 보냄 (처짐 보정 안 된 값이 섞이지 않게)
+      sensor_msgs::msg::JointState keep;
+      keep.header = o.header;
+      for (std::size_t i = 0; i < o.name.size(); ++i) {
+        bool arm = false;
+        for (std::size_t k = 0; k < arm_joints_.size() && k < 5; ++k) {arm = arm || o.name[i] == arm_joints_[k];}
+        if (!arm) {keep.name.push_back(o.name[i]); keep.position.push_back(o.position[i]);}
+      }
+      o = keep;
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "팔 관절 측정이 빠져 이 순간 팔 TF 를 안 보냄");
     }
     std::array<double, 3> lk;
     if (linkage_on_ && std::isfinite(grip)) {
@@ -88,12 +104,15 @@ private:
         for (std::size_t k = 0; k < 3 && k < linkage_joints_.size(); ++k) {
           o.name.push_back(linkage_joints_[k]);
           o.position.push_back(lk[k]);
+          mv.name.push_back(linkage_joints_[k]);
+          mv.position.push_back(lk[k]);
         }
       } else {
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "그리퍼 %.4f m 에서 연결 막대 계산 안 됨 (범위 밖)", grip);
       }
     }
     pub_->publish(o);
+    moveit_pub_->publish(mv);
   }
 
   std::vector<std::string> arm_joints_, linkage_joints_;
@@ -103,7 +122,7 @@ private:
   bool sag_on_{false}, linkage_on_{false};
   std::array<double, 5> rest_{};
   double rest_near_{0.05}, rest_far_{0.15};
-  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr pub_;
+  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr pub_, moveit_pub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr sub_;
 };
 
