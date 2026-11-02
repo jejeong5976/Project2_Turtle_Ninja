@@ -18,7 +18,8 @@ planning · perception 이 붙을 때 보는 표. 이름은 팀 시뮬 브리지
 | `/imu_motion_bias` | `geometry_msgs/Vector3Stamped` | `navigation/pose_guard` → swerve_controller | 1 Hz | z = 움직일 때 자이로에 더할 회전 [rad/s]. 정상 판정일 때만 보냄, 5 s 안 오면 컨트롤러는 0 |
 | `/imu_sensor_broadcaster/imu` | `sensor_msgs/Imu` | imu_sensor_broadcaster (실물만) | `imu_link` | 주행 OpenCR 의 MPU-9250 칩 기준. 장착 yaw=+90° |
 | `/joint_states` | `sensor_msgs/JointState` | joint_state_broadcaster | | 바퀴 · 조향 `drive_*_joint` · `steer_*_joint`, 팔 `joint1~5` · `gripper_left_joint` (오른손은 URDF mimic) |
-| `/arm_task` | `interfaces/action/ArmTask` | control_master (서버) | target `PoseStamped` (보통 base_link) | HOME 은 동작. PICK · PLACE 는 아래 '아직' 참고 |
+| `/joint_states_corrected` | `sensor_msgs/JointState` | `manipulation/arm_state_publisher` → robot_state_publisher | `/joint_states` 와 같은 시각 | TF 용. 팔 `joint2~4` 에 처짐 보정을 더하고 그리퍼 연결 막대 3 관절을 붙임. control_master · MoveIt 은 `/joint_states` 그대로 |
+| `/arm_task` | `interfaces/action/ArmTask` | control_master (서버) | target `PoseStamped` (보통 base_link) | 7 가지 작업 모두 동작 (아래 '팔 작업') |
 | `/control/motion_mode` | `interfaces/msg/MotionMode` | control_master → swerve_controller | 10 Hz | 바퀴 · 팔 차례 (팔 움직이는 동안 바퀴 잠금) |
 
 손목 RealSense 는 기본 이름으로 띄운다: `ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true publish_tf:=false` → `/camera/camera/*`.
@@ -63,11 +64,31 @@ T_5c · T_5d 는 광학축 회전까지 포함하므로 optical 회전을 다시
 `base_link → rack_cell_<칸>_link` 고정 관절은 `rack_cell_<칸>_fixed` 이며, 원점은 각 칸 바닥 중심이다.
 `arm_tests/rack_cells.json` 의 `cells.*.xy` 를 그대로 쓰고, z 는 `floor_z + 0.039 = 0.1325` m, yaw 는 칸별 `yaw_deg` (없으면 전체값 1°) 를 쓴다.
 컵 테두리 윗면은 팀 base_link 기준 `rim_z + 0.039 = 0.1605` m (칸 원점에서 +0.028 m) 이다.
-적재함도 `with_accessories:=true` 조건의 시각 링크이며 충돌·관성은 없다. 집기 보정용 `place_offset` 은 컵 프레임 위치에 더하지 않는다.
+적재함도 `with_accessories:=true` 조건의 링크이다. 칸마다 바닥 + 벽 4 장 충돌 상자가 있어 MoveIt 이 팔과의 충돌을 본다 (관성은 없음). 집기 보정용 `place_offset` 은 컵 프레임 위치에 더하지 않는다.
+칸 위치 그림: `config/rack_cells.yaml` (S1~S12 의 xy · yaw · 옛 이름).
 
 스워브 관절 이름의 fl · fr · rl · rr 은 옛 이름을 유지한다. 새 좌표계에서 같은 순서의 조향축 `(x,y)` 는
 `(-0.070,+0.112)` · `(+0.060,+0.112)` · `(-0.070,-0.112)` · `(+0.060,-0.112)` m (실측: 앞뒤 조향축 130 mm, 중심이 몸체 가운데보다 5 mm 뒤),
 바퀴 offset 은 `(+0.0269,+0.0269,-0.0269,-0.0269)` m 로 `config/controllers.yaml` 과 같다.
+
+## 팔 작업 (`/arm_task`, control_master)
+
+팔은 늘 한 작업씩. 받으면 바퀴를 세우고 정지를 확인한 뒤 움직인다. **주행은 받침에 접혀 끝나는 작업 뒤에만** 허용된다 (`/control/motion_mode`).
+STORE · RETRIEVE 경로는 11-01 실물 적재함 12 칸 시험에서 성공한 실행 기록을 그대로 재생한 것 (`config/arm_paths.yaml`, 칸 근처 15 °/s · 빈 공간 40 °/s).
+
+| 작업 | 시작 자세 | 하는 일 | 끝 자세 | 다음 | 가짜 로봇 시간 |
+|---|---|---|---|---|---|
+| HOME | 아무 자세 | 접기 (LOOK 자세면 정해진 복귀 경로) | 받침 (주행 가능) | | 5 s |
+| PICK | 받침 | target 퍽 위 40 mm → 10 → −30 mm 에서 쥠 → 들기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | STORE 또는 PLACE | 16 s |
+| STORE | 박스 위 기준점 (PICK 뒤) | slot 칸에 놓기 | 받침 (주행 가능) | | 19~31 s |
+| RETRIEVE | 받침 | slot 칸에서 꺼내기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | PLACE | 19~32 s |
+| PLACE | 박스 위 기준점 (PICK · RETRIEVE 뒤) | target 위 40 → 10 → −23 mm 에서 놓기 → 들기 | 받침 (주행 가능) | | 17 s |
+| LOOK · LOOK_BARCODE | 받침 | 손목 카메라 관찰 자세 | 그 자세 유지 | HOME | |
+
+- **target** (PICK · PLACE): `base_link` 기준 퍽 **중심**. `z = 0` 이면 박스 위 기본 높이(바닥면 0.037 + 퍽 0.06 m). 네모 퍽 면 방향은 orientation 의 yaw. 팔이 닿지 않는 자리면 거절(이유가 result.message).
+- **slot** (STORE · RETRIEVE): `S1` ~ `S12`. 시작 자세가 맞지 않으면 거절 (예: PICK 없이 STORE).
+- 실패 · 취소 · 시간 초과 뒤에는 STOP 잠금, HOME 이 성공해야 다시 주행.
+- 박스 위 기준점 = 실물 빼기 시험 때 내려놓던 자리 (base_link 기준 x 210.2, y 38.0 mm, −4°) 위 40 mm.
 
 ## 지도 파일
 
@@ -75,6 +96,6 @@ T_5c · T_5d 는 광학축 회전까지 포함하므로 optical 회전을 다시
 
 ## 아직 안 맞는 것
 
-- **팔 PICK · PLACE**: 실물 집기 · 적재는 지금 손목 카메라로 퍽을 다시 찾아 자세를 계산하는 별도 도구(실물 시험 중). `/arm_task` 로 묶는 것은 시험이 끝난 뒤.
-- **팔 적재함 넣기 · 꺼내기 (`ArmTask` STORE · RETRIEVE)**: 실물 12 칸 동작은 확인했지만 control_master 에는 아직 없음 (지금은 거절).
+- **팔 작업 실물 확인**: `/arm_task` 7 작업은 가짜 로봇에서 12 칸 전부 (49 동작) 통과. C++ control_master 로 실물 팔을 돌리는 확인은 남아 있다 (PICK 1 회, 칸 몇 개 저속).
+- **손목 카메라 TF 처짐 보정**: 실물 비교 전. 이상하면 `robot.launch.py sag_correction:=false` 로 끄고 비교.
 - **실물 카메라 연결**: 위 frame_id · `publish_tf:=false` 를 실제 RealSense 실행 설정과 대조하는 시험은 남아 있다.

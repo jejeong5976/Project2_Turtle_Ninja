@@ -11,18 +11,20 @@
 #   - control_master 는 받으면 먼저 바퀴를 세우고 몸통 0.5 s 정지를 확인한 뒤 팔을 움직임, 한 번에 한 무리
 #   - 바쁨 · ready 아님 · 모르는 task 번호면 거절
 #   - 실패 · 취소 · 시간 초과 뒤에는 STOP 잠금, HOME 이 성공해야 다시 DRIVE
-#   - STORE 부터 LOOK_BARCODE 까지는 발제 v5 용으로 planning 이 추가함. control_master 구현 전에는 거절됨
+#   - 시작 자세가 맞아야 받음: STORE · PLACE 는 박스 위 기준점(퍽 쥔 채, PICK · RETRIEVE 끝)에서만, PICK · RETRIEVE · LOOK 은 받침에서
+#   - 주행은 받침에 접혀 끝나는 작업(HOME · STORE · PLACE) 뒤에만. PICK · RETRIEVE 뒤에는 바퀴 잠금 유지
+#   - 전체 표: docs/integration/robot_interfaces.md '팔 작업'
 
 uint8 HOME     = 0            # 주행용 접은 자세
-uint8 PICK     = 1            # target 위치의 퍽 집기
-uint8 PLACE    = 2            # target 위치에 놓기
-uint8 STORE    = 3            # 그리퍼에 쥔 퍽 → 적재함 slot 칸에 넣기
-uint8 RETRIEVE = 4            # 적재함 slot 칸의 퍽 → 그리퍼로 꺼내기
+uint8 PICK     = 1            # target 위치의 퍽 집기 → 박스 위 기준점에서 쥔 채 멈춤
+uint8 PLACE    = 2            # 기준점에서 target 위치에 놓기 → 받침
+uint8 STORE    = 3            # 기준점(쥔 퍽) → 적재함 slot 칸에 넣기 → 받침
+uint8 RETRIEVE = 4            # 받침 → 적재함 slot 칸의 퍽 꺼내기 → 기준점에서 쥔 채 멈춤
 uint8 LOOK     = 5            # 손목 카메라 관찰 자세: 앞 박스 · 장소 위를 내려다봄, 끝나면 그 자세 유지
 uint8 LOOK_BARCODE = 6        # 손목 카메라로 출발 구역 벽 바코드를 정면으로 봄, 끝나면 그 자세 유지
 uint8 task
-geometry_msgs/PoseStamped target   # PICK · PLACE 때만 씀, 보통 frame_id = base_link
-string slot                        # STORE · RETRIEVE 때만 씀, 적재함 칸 이름 = control 과 같은 이름
+geometry_msgs/PoseStamped target   # PICK · PLACE 때만 씀, frame_id = base_link, 퍽 중심 (z = 0 이면 박스 위 기본 높이), 네모 퍽 면 방향 = yaw
+string slot                        # STORE · RETRIEVE 때만 씀, 적재함 칸 S1 ~ S12 (config/rack_cells.yaml)
 ---
 # 결과
 bool success
