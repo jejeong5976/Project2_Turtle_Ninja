@@ -38,8 +38,15 @@
         <xacro:if value="${hardware == 'opencr' and jn.startswith('steer_')}">
           <state_interface name="position_velocity"/>
         </xacro:if>
+        <!-- mock_dynamics: 다이나믹셀 프로파일 값 (0 = 제한 없음 → 모터 자체 한계) -->
+        <xacro:if value="${hardware == 'mock' and mock_dynamics}">
+          <param name="profile_vel">${m.get('profile_vel', 0)}</param>
+          <param name="profile_acc">${m.get('profile_acc', 0)}</param>
+        </xacro:if>
         <!-- 플러그인(hardware)이 읽는 모터 정보. 펌웨어가 켤 때 CONFIG 로 받아 모터에 씀 -->
         <xacro:if value="${hardware == 'opencr'}">
+          <!-- zero_tick: null = 실물에서 아직 안 잰 영점 (hardware_map_drive_only.yaml) → 기본 2048 로 돌지 않게 멈춤 -->
+          <xacro:if value="${'zero_tick' in m and m['zero_tick'] is None}">${xacro.fatal(jn + ': zero_tick 미확정 (null) — 실물 직진 정렬 후 읽은 눈금을 hardware_map 에 넣을 것')}</xacro:if>
           <param name="id">${m['id']}</param>
           <param name="mode">${m['mode']}</param>
           <param name="profile_vel">${m.get('profile_vel', 0)}</param>
@@ -57,7 +64,11 @@
   <xacro:macro name="nt_bus" params="bus hardware">
     <ros2_control name="${bus['name']}" type="system">
       <hardware>
-        <xacro:if value="${hardware == 'mock'}">
+        <!-- mock_dynamics:=true (2026-10-28): 조향 · 바퀴에 속도 · 가속 한계가 있는 가짜 모터 (hardware/src/mock_dynamics.cpp) -->
+        <xacro:if value="${hardware == 'mock' and mock_dynamics}">
+          <plugin>hardware/MockDynamics</plugin>
+        </xacro:if>
+        <xacro:if value="${hardware == 'mock' and not mock_dynamics}">
           <plugin>mock_components/GenericSystem</plugin>
         </xacro:if>
         <xacro:if value="${hardware == 'gazebo'}">

@@ -89,7 +89,11 @@ public:
   //   (π/2 보다 작으면 뒤집기로도 못 가는 방향이 생겨서 π/2 로 올림)
   SwerveKinematics(std::vector<ModuleGeometry> modules, double wheel_radius,
     double steer_limit = 3.14159265358979323846,
-    std::vector<SteeringRange> ranges = {});
+    std::vector<SteeringRange> ranges = {}, bool coherent = false,
+    double branch_margin = 3.0 * 3.14159265358979323846 / 180.0, double end_slack = 0.0,
+    double max_range_width = 2.0 * 3.14159265358979323846);
+  // end_slack: 모듈 범위 끝을 이만큼(최대 2°) 넘는 방향은 끝 각도로 보냄 (기본 0 = 끝에 맞추지 않음).
+  // max_range_width: 모듈 범위 폭 상한 (기본 한 바퀴 2π = 위치 모드). 여러 바퀴 모드(확장 위치 모드)일 때만 최대 6π (2026-10-28)
 
   // 역기구학: 몸 속도 → 모듈별 명령
   //   current      : 지금 모듈 상태 (조향 각도만 씀). 크기가 0 이면 최적화 없이 계산
@@ -105,21 +109,43 @@ public:
   std::vector<ModuleState> inverse(
     const BodyTwist & cmd,
     const std::vector<ModuleState> & current,
-    bool cosine_scale = true, bool * feasible = nullptr) const;
+    bool cosine_scale = true, bool * feasible = nullptr,
+    const std::vector<ModuleState> & previous = {}, bool prefer_outward = true) const;
+  // prefer_outward: coherent 에서 "바퀴 바깥쪽" 선호를 쓸지. SwerveDrive 는 몸이 병진 중이면 false 로 넘김
+  //   (2026-10-26 실물: 이동 중 방향 전환 때 fr·rl 이 70.3° 에서 180° 반대 분기로 바뀌어 매번 정지·재조향).
   // ranges가 있으면 그 구간이 공통 steer_limit보다 우선한다.
   // 불가능한 방향은 전체 바퀴 0 + 현재 조향 유지로 반환하고 feasible=false.
   bool has_module_ranges() const {return !ranges_.empty();}
+
+  // travel_weight (2026-10-28, 기본 0 = 예전과 같음): coherent 자세 고르기 비용에 "가중치 × 지금 조향에서 돌아야 할 각도 [rad]" 를 더함.
+  //   공통 방향 후보(네 바퀴 합)와 바퀴별 후보 둘 다. 0° 에 가까운 자세만 보던 기준이라 범위 끝에서 300° 넘게 도는 자세를 고르던 것
+  //   (10-26 실물 · 10-28 조향 속도 모의: 정면 유지 전방향 오른쪽 → 앞오른쪽에서 fl 269.5° → −45°) 을 줄임. 0 ~ 10
+  void set_travel_weight(double w);
+  double travel_weight() const {return travel_weight_;}
+
+  // 가지 고르기 보강 (2026-10-29, 둘 다 기본 0 = 예전과 같음). 10-28 실물 36 방향 왕복: 나갈 때 130~163° 뒤집힘 6 방향 · 출발 지연 최대 1.9 s
+  //   coherent_max_travel [rad]: 공통 자세(네 바퀴 같은 방향)로 맞추려면 어느 바퀴든 이 각도보다 많이 돌아야 하면 그 공통 자세를 쓰지 않음
+  //     → 바퀴별로 고름. 네 범위의 공통 구간이 약 171° 뿐이라 공통 자세끼리 옮기면 170° 가까이 도는 경우가 생김. 0 ~ π
+  //   end_guard [rad]: 멈춘 상태에서 새로 자세를 고를 때(prefer_outward) 범위 끝에서 이 각도 안쪽 후보에 벌점 (끝에 가까울수록 큼, 최대 4π).
+  //     coherent · nearest 둘 다 (모듈별 범위가 있을 때)
+  //     → 끝에 붙은 바퀴가 작은 방향 보정에도 주행 중 반대 가지로 뒤집히는 것(10-28 실물 140°: rr −40°, 끝 −44.5°)을 출발 전에 피함. 0 ~ 45°
+  void set_branch_options(double coherent_max_travel, double end_guard);
+  double coherent_max_travel() const {return coherent_max_travel_;}
+  double end_guard() const {return end_guard_;}
 
   // 조향만 도는 동안(바퀴 구동은 멈춘 단계) 바퀴가 따라 굴러야 하는 속도 [rad/s]
   //   바퀴가 조향축 옆 offset 에 있으면, 조향이 θ̇ 로 돌 때 바퀴 접지점이 굴림 방향으로 θ̇·offset 만큼 움직임
   //   → 바퀴를 −θ̇·offset / r 로 같이 굴려 주지 않으면 바닥에 끌림 (조향 모터 부담 ↑, 위치 틀어짐)
   double roll_while_steering(std::size_t i, double steer_rate) const;
+  // 바깥쪽 자세(모든 조향 0°)가 모듈별 범위 안인가 (범위가 없으면 true)
+  bool park_reachable() const;
 
   // 순기구학: 모듈 상태 → 몸 속도 (odom 계산용)
   //   모듈이 4개라 식이 8개, 모르는 것은 3개 → 최소제곱으로 "가장 그럴듯한" 값
   BodyTwist forward(const std::vector<ModuleState> & states) const;
 
   std::size_t size() const {return modules_.size();}
+  const std::vector<ModuleGeometry> & modules() const {return modules_;}
   double wheel_radius() const {return wheel_radius_;}
 
 private:
@@ -127,6 +153,14 @@ private:
   double wheel_radius_;
   double steer_limit_;
   std::vector<SteeringRange> ranges_;
+  // coherent: shared physical target for translation when feasible; otherwise nearest zero.
+  // Previous commanded targets provide branch hysteresis, never measured mixed poses.
+  bool coherent_;
+  double branch_margin_;
+  double end_slack_;
+  double travel_weight_ = 0.0;
+  double coherent_max_travel_ = 0.0;
+  double end_guard_ = 0.0;
 };
 
 // ============================================================================
@@ -138,7 +172,9 @@ private:
 //
 // 자이로의 약점 = 바이어스(가만히 있어도 0 이 아닌 값) → 멈춰 있을 때의 평균을 빼 줌
 //   ① 켠 직후 bias_time_s 동안 멈춰 있으면 평균으로 바이어스를 잡음 (그전엔 ready() = false → 바퀴 ω 사용)
-//   ② 그 뒤에도 멈춰 있을 때마다 아주 천천히 바이어스를 따라감 (온도 변화 대응)
+//   ② 그 뒤에도 멈춰 있을 때마다 아주 천천히 바이어스를 따라감 (온도 변화 대응 — 11-01 실물: 1 시간에 −0.023 → −0.081 °/s)
+//      단 멈춘 지 still_hold_s 가 지나고, 바이어스 뺀 값이 track_gate 안일 때만 (11-01 실물: 멈춘 직후 몸이 아직 살짝 도는 것까지
+//      바이어스로 배워 직진 1 m 마다 odom 방향 약 1° 틀어짐 — 경로 339 s 동안 SLAM 이 28° 고침)
 //   ③ IMU 가 timeout_s 넘게 안 오면 ready() = false → 바퀴 ω 로 자동 복귀
 //      (OpenCR 플러그인은 IMU 가 고장이면 NaN 을 보냄 → 그런 값은 "안 온 것" 으로 침)
 //
@@ -148,24 +184,35 @@ private:
 class GyroYaw
 {
 public:
-  GyroYaw(double bias_time_s = 2.0, double timeout_s = 0.2, double track_gain = 0.002)
-  : bias_time_s_(bias_time_s), timeout_s_(timeout_s), gain_(track_gain) {}
+  GyroYaw(
+    double bias_time_s = 2.0, double timeout_s = 0.2, double track_gain = 0.002,
+    double still_hold_s = 1.0, double track_gate = 0.0087)
+  : bias_time_s_(bias_time_s), timeout_s_(timeout_s), gain_(track_gain),
+    hold_s_(still_hold_s), gate_(track_gate) {}
 
   // 자이로 z 한 개 [rad/s]. still = 지금 몸통이 멈춰 있나 (바퀴 기준)
   void add_sample(double now_s, double gz, bool still)
   {
+    // 움직임은 값이 이상해도 먼저 반영 (11-02 GPT 검토: 튐을 버리며 움직임까지 버려 멈춤 1 s 대기 · 켤 때 연속 정지를 건너뜀)
+    if (!still) {
+      still_since_ = -1.0;
+      if (!calibrated_) {start_t_ = -1.0; sum_ = 0.0; n_ = 0;}   // 움직이면 처음부터
+    }
     if (!std::isfinite(gz)) {return;}   // NaN = IMU 없음 → 샘플로 안 침 (곧 ready() = false)
+    if (std::fabs(gz) > kMaxRate) {return;}   // 2026-11-01 순간 튐 (로봇은 1 rad/s 도 안 돎) → 버림, 계속 튀면 곧 ready() = false (바퀴 ω)
+    if (!calibrated_ && n_ > 0 && now_s - last_t_ > timeout_s_) {start_t_ = -1.0; sum_ = 0.0; n_ = 0;}   // 켤 때 재는 중 긴 공백 = 다시
     last_t_ = now_s;
     last_gz_ = gz;
+    if (still && still_since_ < 0.0) {still_since_ = now_s;}
     if (!calibrated_) {
-      if (!still) {start_t_ = -1.0; sum_ = 0.0; n_ = 0; return;}   // 움직이면 처음부터
+      if (!still) {return;}
       if (start_t_ < 0.0) {start_t_ = now_s;}
       sum_ += gz;
       ++n_;
       if (now_s - start_t_ >= bias_time_s_ && n_ > 0) {bias_ = sum_ / n_; calibrated_ = true;}
       return;
     }
-    if (still) {bias_ += gain_ * (gz - bias_);}
+    if (still && now_s - still_since_ >= hold_s_ && std::fabs(gz - bias_) < gate_) {bias_ += gain_ * (gz - bias_);}
   }
 
   bool ready(double now_s) const {return calibrated_ && now_s - last_t_ <= timeout_s_;}
@@ -174,8 +221,10 @@ public:
   bool calibrated() const {return calibrated_;}
 
 private:
-  double bias_time_s_, timeout_s_, gain_;
+  static constexpr double kMaxRate = 5.0;   // [rad/s]
+  double bias_time_s_, timeout_s_, gain_, hold_s_, gate_;
   bool calibrated_{false};
+  double still_since_{-1.0};
   double start_t_{-1.0}, sum_{0.0};
   long n_{0};
   double bias_{0.0}, last_t_{-1e9}, last_gz_{0.0};
@@ -199,6 +248,8 @@ private:
 
 struct SwerveDriveConfig
 {
+  // Zero speed/acceleration caps mean no body-level shaping.
+  double max_wheel_speed = 0.0;    // rad/s; motor Goal Velocity range, 0 = not configured
   double max_linear = 0.10;        // [m/s]  D16
   double max_angular = 0.5;        // [rad/s]
   double max_linear_accel = 0.2;   // [m/s²]
@@ -209,6 +260,40 @@ struct SwerveDriveConfig
   bool steer_then_drive = true;    // D15
   double steer_tolerance = 0.17;   // [rad]
   bool roll_while_steering = true; // D14
+  // 정지 후 바깥쪽 자세(조향 0°) 복귀 — 기본 끔. 켜면: 신선한 0 명령 + 바퀴 차례 + 실측 바퀴 정지가 park_idle_s 동안
+  //   끊김 없이 이어질 때만 네 조향을 0° 로 (바퀴는 roll_while_steering 보상만). 명령 끊김 · 상태 못 읽음 · NaN ·
+  //   컨트롤러 끄기(종료 · 오류 · 비상정지)에서는 시작하지 않고, 복귀 중이면 그 자리에서 멈춤
+  bool park_on_idle = false;
+  double park_idle_s = 1.0;        // [s]
+  double park_still_wheel = 0.05;  // [rad/s] 실측 바퀴 속도가 넷 다 이보다 작아야 "정지"
+  // ---- 동시 조향·구동 (2026-10-23 시험본 → 2026-10-26 적용, 기본 끔) ----
+  // 켜면: 움직이는 중 방향을 바꿀 때, 몸 명령을 "이전 명령 → 새 명령" 사이에서 조향이 이미 따라온 만큼만 진행시킨다.
+  //   조건 = 모든 모듈의 (목표 조향 − 실측 조향) ≤ steer_tolerance × blend_margin. 가장 큰 진행 비율을 이분 탐색으로 찾음.
+  //   바퀴 구동은 그 진행 비율의 몸 명령으로, 조향 모터에는 **새 명령(가속 제한 전)의 각도**를 바로 보냄 (2026-10-26:
+  //   진행 비율 각도를 보내면 목표가 실측 6.8° 앞이라 조향이 제 속도를 못 내고 정체 판정에 걸렸음).
+  //   ④ "조향 먼저" 게이트·가속 제한·명령 끊김·범위 검사는 그대로 → 조향이 못 따라오면 기존처럼 구동 0.
+  //   정지 상태에서 출발할 때는 기존 동작(조향 먼저) 그대로.
+  bool blend_steer_drive = false;
+  double blend_margin = 1.0;       // (0, 1]. 1 보다 크게는 받지 않음 (게이트를 넓히지 않음)
+  // 조향 정체: 진행 비율 < 1 인데 실측 조향이 안 도는(모든 |steer_rate| < 0.1 rad/s) 상태가 이만큼 이어지면 구동 0
+  //   (조향 고장·전력 처짐 대비. 조향이 돌고 있으면 큰 각도 전환이라도 정체 아님). 0 이하면 blend 를 켜도 안 씀
+  double blend_stall_s = 0.0;
+  // ---- 정면 유지 되먹임 (2026-10-28, 기본 끔) ----
+  // 켜면: 이동 명령이 있고 회전 명령이 0 인 동안, 그 이동을 시작할 때의 차체 방향(odom yaw — 실물은 자이로 포함)을 기억했다가
+  //   회전 = clamp(kp × (기억한 방향 − 지금 방향), ±max_wz) 를 더함. 오차 deadband 안이면 0. 회전 명령이 오거나 멈추면 풂.
+  //   10-26 실물: 정면 유지 명령인데 차체가 최대 7.2° 틀어짐. 너무 크게 섞으면 조향이 흔들려 ④ 게이트에 걸리므로 max_wz 를 작게.
+  double heading_hold_kp = 0.0;          // [1/s] 0 = 끔
+  double heading_hold_max_wz = 0.15;     // [rad/s]
+  double heading_hold_deadband = 0.0087; // [rad] ≈ 0.5°
+  // 보정 회전 상한을 이동 속도에 비례 (2026-10-28, 0 = 끔 = max_wz 만): 상한 = min(max_wz, 이 값 × 이동 속도).
+  //   느릴수록 같은 회전이 조향각을 크게 바꿔 조향이 흔들림(실물 0.05 m/s 보정 시험에서 관찰). 0.4 → 조향 변화 약 3° 이내
+  //   (회전 반경 0.13 m 모듈: atan(wz·0.13 / v) ≈ atan(0.4·0.13) = 3°)
+  double heading_hold_wz_per_speed = 0.0;   // [rad/s per m/s]
+  // ---- 이동 중 가지 유지 (2026-10-29, 기본 0 = 끔) ----
+  // 이동 중에 들어온 작은 회전(|wz| ≤ 이 값, 정면 유지 · 경로 추종기 방향 보정)이 어느 바퀴든 다른 가지로 갈아타게 만들면
+  //   회전을 갈아타지 않는 데까지만 줄임 (이분 탐색). 10-28 실물 140° 왕복: 추종기 보정 wz −0.014 rad/s(속도 0.02 m/s)로 rr 목표가
+  //   −45.5° (끝 −44.5° + 여유 1°) 를 오가며 반대 가지와 번갈아 → 주행 중 186° 뒤집힘 · 3.3 s 손해. 켜면 정면 유지의 "통째로 생략" 대신 이걸 씀
+  double keep_branch_max_wz = 0.0;   // [rad/s]
 };
 
 struct Pose2D
@@ -246,12 +331,31 @@ public:
 
   const Pose2D & pose() const {return pose_;}
   const BodyTwist & output() const {return out_;}   // 가속 제한을 거친 지금 목표 (0 이면 "세우는 중/섰음")
+  // 시험 기록용: 이번 주기에 ④ 게이트가 구동을 막았나 / 동시 조향 진행 비율(0~1) / 조향 정체로 세웠나
+  bool gate_blocked() const {return gate_blocked_;}
+  double blend_ratio() const {return blend_ratio_;}
+  double wz_keep_ratio() const {return wz_keep_ratio_;}   // 이동 중 가지 유지로 회전을 줄인 비율 (1 = 그대로)
+  bool blend_stalled() const {return blend_stalled_;}
   bool command_feasible() const {return command_feasible_;}
+  bool parking() const {return parking_;}             // 지금 바깥쪽 자세로 돌아가는 중 (또는 이미 그 자세를 잡고 있음)
   void reset();                                      // 켤 때: 목표 0, 명령 지움 (odom 은 유지)
   const SwerveKinematics & kinematics() const {return kin_;}
 
 private:
+  // 복귀 조건을 이번 주기에 갱신 → 복귀해야 하면 true
+  bool update_park(double now_s, bool fresh_zero, const std::vector<ModuleState> & measured);
+  std::vector<ModuleState> previous_targets_;
   bool command_feasible_ = true;
+  bool gate_blocked_ = false;
+  double blend_ratio_ = 1.0;
+  bool translating_ = false;     // 멈춤 이후 병진을 냈는가 (true 동안 바깥쪽 선호 끔, 분기 유지)
+  bool holding_heading_ = false;  // 정면 유지 중 (heading_hold_kp > 0)
+  double wz_keep_ratio_ = 1.0;    // 이동 중 가지 유지로 회전을 줄인 비율 (1 = 안 줄임)
+  double hold_yaw_ = 0.0;         // 기억한 차체 방향 [rad]
+  double blend_since_ = -1.0;   // 진행 비율 < 1 이고 조향이 안 돌기 시작한 시각 (< 0 = 아님)
+  bool blend_stalled_ = false;
+  bool parking_ = false;
+  double idle_since_ = -1.0;   // 신선한 0 명령 + 실측 정지가 시작된 시각 (< 0 = 아님)
   SwerveKinematics kin_;
   SwerveDriveConfig cfg_;
   BodyTwist cmd_{0.0, 0.0, 0.0};

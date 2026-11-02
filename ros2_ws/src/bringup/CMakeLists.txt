@@ -10,5 +10,7 @@ install(DIRECTORY "${REPOSITORY_CONFIG_DIR}/"
   FILES_MATCHING PATTERN "*.yaml"
 )
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
+# 앞 · 뒤 라이다 합치기 (slam.launch.py) — ros2 run bringup scan_merger.py
+install(PROGRAMS scripts/scan_merger.py DESTINATION lib/${PROJECT_NAME})
 
 ament_package()

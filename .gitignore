@@ -41,3 +41,5 @@ CLAUDE.md
 
 # Datasets (synthetic / real)
 datasets/
+runs/
+tools/jetson/99-ninja-turtle-opencr.rules
