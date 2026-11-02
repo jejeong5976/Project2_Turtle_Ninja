@@ -56,6 +56,9 @@
 #include "trajectory_msgs/msg/joint_trajectory_point.hpp"
 
 #include "manipulation/arm.hpp"
+#include "manipulation/arm_kinematics.hpp"
+#include "manipulation/arm_model_params.hpp"
+#include "manipulation/arm_path.hpp"
 #include "interfaces/action/arm_task.hpp"
 #include "interfaces/msg/motion_mode.hpp"
 
@@ -85,6 +88,25 @@ public:
     motion_margin_s_ = declare_parameter<double>("motion_margin_s", 3.0);
     gripper_open_ = declare_parameter<double>("gripper_open", 0.019);
     gripper_close_ = declare_parameter<double>("gripper_close", -0.005);
+    grip_.open = gripper_open_;
+    grip_.close = gripper_close_;
+    grip_.release = declare_parameter<double>("gripper_release", 0.0093);
+    gripper_time_s_ = declare_parameter<double>("gripper_time_s", 1.2);
+    // ---- 실물 경로 (config/arm_paths.yaml) ----
+    timing_.speed_dps = declare_parameter<double>("path_speed_dps", 40.0);
+    timing_.stand_speed_dps = declare_parameter<double>("path_stand_speed_dps", 20.0);
+    timing_.accel_dps2 = declare_parameter<double>("path_accel_dps2", 150.0);
+    timing_.dt_s = declare_parameter<double>("path_dt_s", 0.05);
+    path_start_tol_ = declare_parameter<double>("path_start_tolerance", 0.1);
+    load_paths();
+    // ---- 집기 · 놓기 (실물 집기 계산기와 같은 기구학, config/arm_kinematics.yaml) ----
+    staging_ = declare_parameter<std::vector<double>>("staging_pose", std::vector<double>{});
+    pick_heights_ = declare_parameter<std::vector<double>>("pick_heights_mm", {40.0, 10.0, -30.0});
+    place_heights_ = declare_parameter<std::vector<double>>("place_heights_mm", {40.0, 10.0, -23.0});
+    surface_z_ = declare_parameter<double>("puck_surface_z", 0.037);
+    puck_h_ = declare_parameter<double>("puck_height", 0.060);
+    slow_dps_ = declare_parameter<double>("near_puck_speed_dps", 15.0);
+    model_ok_ = load_model();
     for (const char * p : {"home", "pick_above", "pick_down", "place_above", "place_down"}) {
       poses_[p] = declare_parameter<std::vector<double>>(
         std::string("poses.") + p, std::vector<double>(arm_joints_.size(), 0.0));
@@ -193,14 +215,16 @@ private:
       RCLCPP_WARN(get_logger(), "팔 작업이 이미 진행 중 → 새 작업 거절");
       return rclcpp_action::GoalResponse::REJECT;
     }
-    if (make_arm_plan(goal.task, gripper_open_, gripper_close_).empty()) {
-      RCLCPP_WARN(get_logger(), "모르는 팔 작업 번호 %u → 거절", static_cast<unsigned>(goal.task));
-      return rclcpp_action::GoalResponse::REJECT;
-    }
     // 준비 조건 (방송의 ready 와 같은 함수 — 방송과 실제 받기 판단이 어긋나지 않게)
     std::string why;
     if (!task_ready(now().seconds(), why)) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "%s → 팔 작업 거절", why.c_str());
+      return rclcpp_action::GoalResponse::REJECT;
+    }
+    pending_plan_ = build_plan(goal, why);
+    if (pending_plan_.empty()) {
+      RCLCPP_WARN(get_logger(), "팔 작업 %u%s%s 거절: %s", static_cast<unsigned>(goal.task),
+        goal.slot.empty() ? "" : " 칸 ", goal.slot.c_str(), why.c_str());
       return rclcpp_action::GoalResponse::REJECT;
     }
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
@@ -227,12 +251,190 @@ private:
   void on_arm_accepted(const std::shared_ptr<ArmGoalHandle> gh)
   {
     arm_goal_ = gh;
-    const auto plan = make_arm_plan(gh->get_goal()->task, gripper_open_, gripper_close_);
+    const auto plan = std::move(pending_plan_);
+    pending_plan_.clear();
     runner_.start(plan);
     arbiter_.request_arm();   // 바퀴부터 세우기 → 잠금 답 + 몸통이 멈추면 ARM
     publish_turn();
     RCLCPP_INFO(get_logger(), "팔 작업 %u 받음 (동작 %zu개) → 바퀴 세우는 중",
       static_cast<unsigned>(gh->get_goal()->task), plan.size());
+  }
+
+  // ======================================================================== 작업 → 동작 목록
+  // STORE · RETRIEVE · LOOK 류 · 접기는 실물에서 검사 · 실행한 경로(config/arm_paths.yaml) 그대로. 팔이 경로 출발 자세에 있어야 함
+  //   STORE <칸>   : 박스 위 들기(퍽 쥠) → 칸에 넣기 → 받침 (주행 허용)
+  //   RETRIEVE <칸>: 받침 → 칸에서 꺼내기 → 박스 위 들기 (퍽 쥠, 바퀴 잠금 유지 — 이어서 PLACE)
+  //   LOOK · LOOK_BARCODE: 받침 → 관찰 자세 (그 자세 유지). 이미 그 자세면 그대로
+  //   HOME: 접혀 있으면 home 한 점, 아니면 지금 자세에서 출발하는 검사된 복귀 경로(home_from_*), 없으면 home 한 점
+  //   PICK: 받침 → 펼치기 → 퍽 위 40 열기 → 10 → 쥐기 −30 닫기 → 10 → 40 → 박스 위 기준점 (퍽 쥠, 바퀴 잠금 유지 — 이어서 STORE)
+  //   PLACE: 기준점(퍽 쥠) → 놓을 자리 위 40 → 10 → −23 열기 → 10 → 40 닫기 → P0 → 접기 → 받침 (주행 허용)
+  //     목표 = ArmTask.target (base_link): x · y = 퍽 중심, z = 퍽 중심 높이 (0 이면 박스 위), 방향 yaw = 네모 퍽 면
+  // 빈 목록 = 거절 (why 에 이유)
+  std::vector<ArmAction> build_plan(const ArmTask::Goal & goal, std::string & why)
+  {
+    using G = ArmTask::Goal;
+    switch (goal.task) {
+      case G::STORE:
+        return path_plan("store_" + goal.slot, why);
+      case G::RETRIEVE:
+        return path_plan("retrieve_" + goal.slot, why);
+      case G::LOOK:
+        return look_plan("look", why);
+      case G::LOOK_BARCODE:
+        return look_plan("look_barcode", why);
+      case G::HOME:
+        return home_plan();
+      case G::PICK:
+        return pick_plan(goal, why);
+      case G::PLACE:
+        return place_plan(goal, why);
+      default: {
+        auto plan = make_arm_plan(goal.task, gripper_open_, gripper_close_);
+        if (plan.empty()) {why = "모르는 작업 번호";}
+        return plan;
+      }
+    }
+  }
+
+  std::vector<ArmAction> path_plan(const std::string & name, std::string & why)
+  {
+    const auto it = paths_.find(name);
+    if (it == paths_.end()) {why = "경로 " + name + " 없음 (config/arm_paths.yaml)"; return {};}
+    if (!path_start_ok(it->second, joint_buf_, path_start_tol_, why)) {return {};}
+    return path_actions(it->second, timing_, grip_);
+  }
+
+  std::vector<ArmAction> look_plan(const std::string & name, std::string & why)
+  {
+    const auto it = paths_.find(name);
+    if (it == paths_.end()) {why = "경로 " + name + " 없음 (config/arm_paths.yaml)"; return {};}
+    ArmPath at_end{name, {it->second.nodes.back()}, false};
+    std::string dummy;
+    if (path_start_ok(at_end, joint_buf_, path_start_tol_, dummy)) {   // 이미 그 자세 → 그 점으로 한 번 (작은 보정)
+      ArmAction a{"approach", false, at_end.nodes[0].name, 0.0};
+      a.points = {{at_end.nodes[0].q, 0.5}};
+      a.duration_s = 0.5;
+      return {a};
+    }
+    auto plan = path_plan(name, why);
+    if (plan.empty()) {why += " — 받침(HOME)에서 시작해야 함";}
+    return plan;
+  }
+
+  std::vector<ArmAction> home_plan()
+  {
+    if (!fold_->confirmed(now().seconds())) {
+      for (const auto & [name, path] : paths_) {
+        std::string why;
+        if (name.rfind("home_from_", 0) == 0 && path.ends_home && path_start_ok(path, joint_buf_, path_start_tol_, why)) {
+          RCLCPP_INFO(get_logger(), "HOME: 경로 %s", name.c_str());
+          return path_actions(path, timing_, grip_);
+        }
+      }
+      RCLCPP_WARN(get_logger(), "HOME: 지금 자세에서 출발하는 검사된 복귀 경로 없음 → home 한 점으로 곧장");
+    }
+    return make_arm_plan(kArmHome, gripper_open_, gripper_close_);
+  }
+
+  // 퍽 자리(목표) → 모델 좌표 (x, y, 퍽 윗면 z, 면 yaw [°])
+  void target_in_model(const ArmTask::Goal & goal, double & x, double & y, double & top, double & yaw) const
+  {
+    const auto & p = goal.target.pose.position;
+    const auto & o = goal.target.pose.orientation;
+    x = p.x;
+    y = p.y;
+    const double top_team = p.z != 0.0 ? p.z + puck_h_ / 2.0 : surface_z_ + puck_h_;
+    top = top_team + model_.team_base_z_floor - model_.base_z_floor;
+    const double n = o.x * o.x + o.y * o.y + o.z * o.z + o.w * o.w;
+    yaw = n > 0.5 ? std::atan2(2.0 * (o.w * o.z + o.x * o.y), 1.0 - 2.0 * (o.y * o.y + o.z * o.z)) * 180.0 / M_PI : std::nan("");
+  }
+
+  PathNode model_node(const std::string & name, const Ticks & enc, double speed, const std::string & grip = "") const
+  {
+    return {name, ticks_to_command(model_, enc), false, speed, grip, false};
+  }
+
+  std::vector<ArmAction> pick_plan(const ArmTask::Goal & goal, std::string & why)
+  {
+    const auto unfold = paths_.find("unfold");
+    if (!model_ok_ || unfold == paths_.end() || staging_.size() != 5) {why = "팔 모델 · 펼치기 경로 · 기준점 설정 없음"; return {};}
+    double x, y, top, yaw;
+    target_in_model(goal, x, y, top, yaw);
+    const auto P = pick_poses(model_, x, y, top, yaw, pick_heights_, why);
+    if (P.size() != 3) {return {};}
+    ArmPath path = unfold->second;
+    path.name = "pick";
+    path.ends_home = false;
+    path.nodes.push_back(model_node("above", P[0].enc, 0.0, "open"));
+    path.nodes.push_back(model_node("down", P[1].enc, slow_dps_));
+    path.nodes.push_back(model_node("grasp", P[2].enc, slow_dps_, "close"));
+    path.nodes.push_back(model_node("up", P[1].enc, slow_dps_));
+    path.nodes.push_back(model_node("lift", P[0].enc, slow_dps_));
+    path.nodes.push_back({"staging", staging_, false, slow_dps_, "", false});
+    if (!path_start_ok(path, joint_buf_, path_start_tol_, why)) {why += " — 받침(HOME)에서 시작해야 함"; return {};}
+    RCLCPP_INFO(get_logger(), "PICK: 퍽 (%.3f, %.3f) 돌림 %.1f° → 쥐기 틱 [%d %d %d %d %d]", x, y, yaw,
+      P[2].ticks[0], P[2].ticks[1], P[2].ticks[2], P[2].ticks[3], P[2].ticks[4]);
+    return path_actions(path, timing_, grip_);
+  }
+
+  std::vector<ArmAction> place_plan(const ArmTask::Goal & goal, std::string & why)
+  {
+    const auto fold = paths_.find("fold");
+    if (!model_ok_ || fold == paths_.end() || staging_.size() != 5) {why = "팔 모델 · 접기 경로 · 기준점 설정 없음"; return {};}
+    double x, y, top, yaw;
+    target_in_model(goal, x, y, top, yaw);
+    const auto P = pick_poses(model_, x, y, top, yaw, place_heights_, why);
+    if (P.size() != 3) {return {};}
+    ArmPath path;
+    path.name = "place";
+    path.ends_home = true;
+    path.nodes.push_back({"staging", staging_, false, 0.0, "", false});
+    path.nodes.push_back(model_node("above", P[0].enc, slow_dps_));
+    path.nodes.push_back(model_node("down", P[1].enc, slow_dps_));
+    path.nodes.push_back(model_node("drop", P[2].enc, slow_dps_, "open"));
+    path.nodes.push_back(model_node("up", P[1].enc, slow_dps_));
+    path.nodes.push_back(model_node("clear", P[0].enc, slow_dps_, "close"));
+    for (const auto & n : fold->second.nodes) {path.nodes.push_back(n);}
+    if (!path_start_ok(path, joint_buf_, path_start_tol_, why)) {why += " — 퍽을 쥐고 박스 위 기준점에 있어야 함 (PICK · RETRIEVE 뒤)"; return {};}
+    return path_actions(path, timing_, grip_);
+  }
+
+  // 팔 기구학 읽기: arm_model.* (config/arm_kinematics.yaml)
+  bool load_model()
+  {
+    if (load_arm_model(*this, model_)) {return true;}
+    RCLCPP_WARN(get_logger(), "팔 기구학(arm_model) 설정 없음 · 크기 다름 → PICK · PLACE 거절");
+    return false;
+  }
+
+  // 경로 묶음 읽기: arm_paths.names 마다 arm_paths.<이름>.{nodes, q(관절 5 개 × 점), stand, speed, grip, stop, ends_home}
+  void load_paths()
+  {
+    const auto names = declare_parameter<std::vector<std::string>>("arm_paths.names", std::vector<std::string>{});
+    const std::size_t nj = arm_joints_.size();
+    for (const auto & n : names) {
+      const std::string k = "arm_paths." + n + ".";
+      const auto ids = declare_parameter<std::vector<std::string>>(k + "nodes", std::vector<std::string>{});
+      const auto q = declare_parameter<std::vector<double>>(k + "q", std::vector<double>{});
+      const auto stand = declare_parameter<std::vector<bool>>(k + "stand", std::vector<bool>{});
+      const auto speed = declare_parameter<std::vector<double>>(k + "speed", std::vector<double>{});
+      const auto grip = declare_parameter<std::vector<std::string>>(k + "grip", std::vector<std::string>{});
+      const auto stop = declare_parameter<std::vector<bool>>(k + "stop", std::vector<bool>{});
+      const std::size_t m = ids.size();
+      if (m < 2 || q.size() != m * nj || stand.size() != m || speed.size() != m || grip.size() != m || stop.size() != m) {
+        RCLCPP_ERROR(get_logger(), "경로 %s: 점 수가 맞지 않음 (nodes %zu, q %zu) → 안 씀", n.c_str(), m, q.size());
+        continue;
+      }
+      ArmPath p;
+      p.name = n;
+      p.ends_home = declare_parameter<bool>(k + "ends_home", false);
+      for (std::size_t i = 0; i < m; ++i) {
+        const std::string g = grip[i] == "-" ? "" : grip[i];
+        p.nodes.push_back({ids[i], std::vector<double>(q.begin() + i * nj, q.begin() + (i + 1) * nj), stand[i], speed[i], g, stop[i]});
+      }
+      paths_[n] = p;
+    }
+    RCLCPP_INFO(get_logger(), "실물 경로 %zu 개", paths_.size());
   }
 
   // ======================================================================== 50 Hz 본체
@@ -299,9 +501,11 @@ private:
           fb->phase = c.action.phase;
           arm_goal_->publish_feedback(fb);
           if (c.action.is_gripper) {
-            send_trajectory(grip_client_, {gripper_joint_}, {c.action.gripper}, c.gen);
+            send_trajectory(grip_client_, {gripper_joint_}, {{{c.action.gripper}, gripper_time_s_}}, c.gen);
+          } else if (!c.action.points.empty()) {
+            send_trajectory(arm_client_, arm_joints_, c.action.points, c.gen);
           } else {
-            send_trajectory(arm_client_, arm_joints_, poses_.at(c.action.pose), c.gen);
+            send_trajectory(arm_client_, arm_joints_, {{poses_.at(c.action.pose), move_time_s_}}, c.gen);
           }
           break;
         }
@@ -337,10 +541,10 @@ private:
     }
   }
 
-  // "시간표" 한 줄(목표 자세 1개, move_time 초 동안)을 재생기에 보냄. 답은 콜백 → runner_ 로 전달
+  // 시간표(점들, 시작부터 초)를 재생기에 보냄. 답은 콜백 → runner_ 로 전달
   void send_trajectory(
     const FJTClient::SharedPtr & client, const std::vector<std::string> & joints,
-    const std::vector<double> & positions, unsigned gen)
+    const std::vector<TrajPoint> & points, unsigned gen)
   {
     active_client_ = client;
     active_handle_.reset();
@@ -351,10 +555,12 @@ private:
     }
     FJT::Goal goal;
     goal.trajectory.joint_names = joints;
-    trajectory_msgs::msg::JointTrajectoryPoint p;
-    p.positions = positions;
-    p.time_from_start = rclcpp::Duration::from_seconds(move_time_s_);
-    goal.trajectory.points.push_back(p);
+    for (const auto & tp : points) {
+      trajectory_msgs::msg::JointTrajectoryPoint p;
+      p.positions = tp.q;
+      p.time_from_start = rclcpp::Duration::from_seconds(tp.t);
+      goal.trajectory.points.push_back(p);
+    }
 
     FJTClient::SendGoalOptions opt;
     opt.goal_response_callback = [this, gen, client](const rclcpp_action::ClientGoalHandle<FJT>::SharedPtr h) {
@@ -448,6 +654,17 @@ private:
   double gripper_open_{0.019}, gripper_close_{-0.005};
   double still_lin_{0.01}, still_ang_{0.05}, odom_timeout_s_{0.5};
   std::map<std::string, std::vector<double>> poses_;
+  GripperValues grip_;                       // 열기 · 놓기 · 닫기 [m]
+  double gripper_time_s_{1.2};
+  PathTiming timing_;                        // 실물 실행기와 같은 속도 규칙
+  double path_start_tol_{0.1};               // 경로 출발 자세 허용 [rad]
+  std::map<std::string, ArmPath> paths_;     // 실물 경로 (config/arm_paths.yaml)
+  std::vector<ArmAction> pending_plan_;      // 받기 판단 때 만든 동작 목록 → 받은 뒤 그대로 시작
+  ArmModel model_;                           // 실물 집기 계산기와 같은 팔 기구학
+  bool model_ok_{false};
+  std::vector<double> staging_;              // 박스 위 기준점 명령 [rad] (PICK 끝 = STORE · PLACE 시작)
+  std::vector<double> pick_heights_, place_heights_;   // 퍽 윗면 위 손끝 높이 [mm]: 위 · 내림 · 쥐기(놓기)
+  double surface_z_{0.037}, puck_h_{0.060}, slow_dps_{15.0};
   std::unique_ptr<FoldCheck> fold_;          // 접힘 실측 확인 (R1)
   std::unique_ptr<HardwareWatch> hw_;        // 하드웨어 측정 살아 있나 (재검증 R6 · 보드 2장)
   std::vector<std::string> hw_watch_joints_;  // 측정을 볼 관절 (기본 14 개 = 주행 · 팔 보드 전부)

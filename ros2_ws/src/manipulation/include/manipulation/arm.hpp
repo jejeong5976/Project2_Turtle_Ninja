@@ -32,12 +32,21 @@ constexpr uint8_t kArmHome = 0;
 constexpr uint8_t kArmPick = 1;
 constexpr uint8_t kArmPlace = 2;
 
+// 시간표 점 하나 (궤적 시작부터 t 초에 관절값 q)
+struct TrajPoint
+{
+  std::vector<double> q;
+  double t;
+};
+
 struct ArmAction
 {
   std::string phase;     // 진행 상황 이름 (ArmTask feedback): approach · grasp · lift · release · retreat
   bool is_gripper;       // false = 팔 자세로, true = 그리퍼만
-  std::string pose;      // 팔: 자세 이름 (home, pick_above …)
+  std::string pose;      // 팔: 자세 이름 (home, pick_above …). 경로 동작은 마지막 점 이름 (받침이면 "home")
   double gripper;        // 그리퍼: 손가락 위치 [m]
+  std::vector<TrajPoint> points{};   // 비어 있지 않으면 이 시간표 그대로 (실물 경로, arm_path.hpp). 비면 pose 하나를 move_time 에
+  double duration_s{0.0};            // points 의 마지막 시각 (시간 제한 계산)
 };
 
 // 모르는 작업 번호면 빈 목록. 마지막 동작은 항상 접기(home) → 끝나면 바로 주행해도 안전
@@ -148,7 +157,7 @@ class ArmRunner
 {
 public:
   // accept_timeout_s: 재생기가 "받았다" 고 답할 때까지
-  // motion_timeout_s: 받은 뒤 끝날 때까지 (move_time + 여유)
+  // motion_timeout_s: 받은 뒤 끝날 때까지 (move_time + 여유). 시간표가 있는 동작은 + duration_s
   // cancel_timeout_s: 취소를 보낸 뒤 "멈췄다(결과)" 답을 기다리는 최대 시간
   // verify_timeout_s: 마지막 home 동작 뒤 "실측으로 접힘" 을 확인할 때까지 기다리는 최대 시간
   ArmRunner(double accept_timeout_s, double motion_timeout_s, double cancel_timeout_s, double verify_timeout_s = 2.0)

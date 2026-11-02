@@ -1,0 +1,94 @@
+// arm_kinematics.hpp — 실물 집기 계산기와 같은 팔 기구학 (순수 C++, test/test_arm_kinematics.cpp)
+// =====================================================================
+// 모델 = 실물 시험에 쓴 기구학 (config/arm_kinematics.yaml, 10-27 배포 URDF 의 팔 사슬 + 손끝 · 틱 변환표 · 처짐 계수)
+//   좌표: 모델 base (바닥 위 base_z_floor) — 로봇 base_link 와 x · y 같고 z 만 다름 (model_z = base_link_z + team_base_z_floor − base_z_floor)
+//   관절 q [rad] 는 모델 관절 (팀 ROS 관절값과 다름) → 틱 → 팀 명령 rad = (틱 − 영점) · 2π/4096
+// 계산
+//   - FK: base → arm_base → 관절 5 개, 손끝 · 접근축 · 닫힘축 = link5 좌표 상수
+//   - IK: 손끝 위치 · 접근축 · 닫힘축(90° 마다 같음) 잔차의 Levenberg–Marquardt, 관절 한계 안. 씨앗 여러 개
+//   - 처짐 앞먹임: 실제 관절 = 엔코더 + c · τ (J2 · J3 · J4 중력 토크) → 명령 = 실제 − c · τ
+//   - 퍽 집기 자세: 수직 손, 손끝이 퍽 윗면 위 h [mm] (위 40 · 10 · 쥐기 −30), 손목 롤은 받침 자세에 가까운 해
+
+#pragma once
+
+#include <array>
+#include <string>
+#include <vector>
+
+#include <Eigen/Dense>
+
+namespace manipulation
+{
+
+struct JointMapEntry
+{
+  double ref_tick;
+  double q_deg_at_ref;
+  double sign;
+};
+
+struct ArmModel
+{
+  Eigen::Matrix4d T_base_armbase{Eigen::Matrix4d::Identity()};
+  std::array<Eigen::Matrix4d, 5> joint_T{};
+  std::array<Eigen::Vector3d, 5> axis{};
+  Eigen::Vector3d tip5{Eigen::Vector3d::Zero()}, app5{Eigen::Vector3d::Zero()}, close5{Eigen::Vector3d::Zero()};
+  Eigen::Vector2d j1_xy{Eigen::Vector2d::Zero()};
+  std::array<double, 5> lo{}, hi{}, template_q{};
+  double q5_rest{0.0};
+  std::array<JointMapEntry, 5> jm{};
+  std::array<std::array<double, 2>, 5> tick_range{};
+  double sag_c{0.0};                  // [rad / N·m]
+  double base_z_floor{0.072};         // 모델 base 높이 (바닥 위)
+  double team_base_z_floor{0.033};    // 로봇 base_link 높이 (바닥 위)
+  std::array<double, 5> zero_tick{{4088, 2048, 2048, 2048, 2048}};   // 팀 하드웨어 영점 (hardware_map zero_tick)
+};
+
+using Q5 = std::array<double, 5>;
+using Ticks = std::array<int, 5>;
+
+struct Grip
+{
+  Eigen::Vector3d tip, app, close;
+};
+
+struct IkSolution
+{
+  Q5 q;
+  double pos_mm, app_deg, roll_deg;
+};
+
+// 관절 5 개 뒤 좌표계 (arm_link1 .. arm_link5_wrist_roll, 모델 base 기준)
+std::array<Eigen::Matrix4d, 5> arm_frames(const ArmModel & m, const Q5 & q);
+Grip arm_grip(const ArmModel & m, const Q5 & q);
+
+// 목표 (손끝 p, 접근축 a, 닫힘축 c) — seeds 가 비면 J1 13 × J5 3 + 무작위 24 씨앗
+std::vector<IkSolution> arm_ik(
+  const ArmModel & m, const Eigen::Vector3d & p, const Eigen::Vector3d & a, const Eigen::Vector3d & c,
+  const std::vector<Q5> & seeds = {});
+
+Ticks q_to_ticks(const ArmModel & m, const Q5 & q);
+Q5 ticks_to_q(const ArmModel & m, const Ticks & t);
+bool ticks_in_range(const ArmModel & m, const Ticks & t);
+// 팀 명령 rad (관절 1..5)
+std::vector<double> ticks_to_command(const ArmModel & m, const Ticks & t);
+
+// 중력 토크 τ2 · τ3 · τ4 [N·m] (held_kg = 손끝에 쥔 물체)
+std::array<double, 3> sag_torques(const ArmModel & m, const Q5 & q, double held_kg);
+// 원하는 실제 관절 → 엔코더가 가리켜야 할 관절 (처짐 앞먹임)
+Q5 encoder_goal_q(const ArmModel & m, const Q5 & q_true, double held_kg);
+
+struct PickPose
+{
+  std::string name;
+  Ticks ticks;   // 실제 목표
+  Ticks enc;     // 처짐 앞먹임 명령
+};
+
+// 퍽 (모델 x, y, 윗면 z, 면 돌림 yaw [°]) 위 heights [mm] 마다 수직 손 자세 (앞 높이 해를 씨앗으로). 실패면 빈 목록 + why
+//   명령(enc)은 실물 계산기처럼 쥔 물체 없이 계산
+std::vector<PickPose> pick_poses(
+  const ArmModel & m, double x, double y, double top_z, double yaw_deg, const std::vector<double> & heights_mm,
+  std::string & why);
+
+}  // namespace manipulation

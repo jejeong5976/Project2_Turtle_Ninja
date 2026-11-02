@@ -172,6 +172,8 @@ def generate_launch_description():
         DeclareLaunchArgument("use_rviz", default_value="false"),
         DeclareLaunchArgument("arm", default_value="true",
                               description="false = 팔 OpenCR 을 안 붙이고 바퀴만 (팔 관절이 없는 hardware_map 필요, 위 설명)"),
+        DeclareLaunchArgument("sag_correction", default_value="true",
+                              description="false = TF 에 팔 처짐 보정을 안 넣음 (엔코더 그대로, 실물 A/B 비교용)"),
         DeclareLaunchArgument("steering_policy", default_value="coherent",
                               description="coherent = 평행 이동은 공통 자세 우선 (기본) | nearest = 예전 최소 이동"),
         DeclareLaunchArgument("park_on_idle", default_value="false",
@@ -224,15 +226,22 @@ def generate_launch_description():
     ctrl_yaml = cfg("controllers.yaml")
 
     nodes = [
+        # TF 는 실제 팔 자세로: arm_state_publisher 가 엔코더 /joint_states 에 처짐 보정 · 그리퍼 연결 막대를 더해 /joint_states_corrected
+        #   (손목 카메라 보정이 처짐 보정한 손목 기준). control_master · MoveIt 은 엔코더 /joint_states 그대로
+        Node(package="manipulation", executable="arm_state_publisher",
+             parameters=[cfg("arm_kinematics.yaml"), cfg("gripper_linkage.yaml"),
+                         {"sag_correction": ParameterValue(arg("sag_correction"), value_type=bool)}],
+             respawn=True, respawn_delay=1.0, output="both"),
         Node(package="robot_state_publisher", executable="robot_state_publisher",
-             parameters=[{"robot_description": robot_description}], output="both"),
+             parameters=[{"robot_description": robot_description}], remappings=[("joint_states", "joint_states_corrected")],
+             output="both"),
 
         # Lyrical 의 ros2_control_node 는 URDF 를 /robot_description 토픽으로 받음 (robot_state_publisher 가 방송)
         Node(package="controller_manager", executable="ros2_control_node",
              parameters=[ctrl_yaml, {"enforce_command_limits": ParameterValue(arg("enforce_command_limits"), value_type=bool)}], remappings=[("~/robot_description", "/robot_description")], output="both"),
 
         Node(package="manipulation", executable="control_master",
-             parameters=[cfg("control.yaml")], condition=IfCondition(with_arm), output="both"),
+             parameters=[cfg("control.yaml"), cfg("arm_paths.yaml"), cfg("arm_kinematics.yaml")], condition=IfCondition(with_arm), output="both"),
 
         Node(package="rviz2", executable="rviz2", condition=IfCondition(arg("use_rviz")),
              arguments=["-d", PathJoinSubstitution([desc, "rviz", "navigation.rviz"]), "-f", "odom"]),

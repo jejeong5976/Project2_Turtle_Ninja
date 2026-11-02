@@ -1,0 +1,29 @@
+# 적재함 12 칸 — 칸 ID S1~S12 (팔 J1 축에서 먼 칸부터, planning 이 S1 부터 채움)
+#   같은 ID: URDF rack_cell_<ID>_link · config/planning.yaml cargo_slots · config/arm_paths.yaml store_<ID> · retrieve_<ID> · ArmTask.slot
+# 값은 실물 측정 · 보정 그대로 (11-01 넣기 · 빼기 12 칸 성공 때). base_link 기준 [m], 칸 방향 yaw [°]
+#   measured_name: 실물 시험 때 이름 (기록 · runs 를 찾을 때)
+#   place_offset: 칸에 넣을 때 팔을 옮긴 보정 [m] (실물에서 맞춘 값)
+rack_cells:
+  floor_z: 0.1325   # 칸 바닥
+  rim_z: 0.1605     # 컵 테두리
+  cells:
+    S1: {measured_name: L8, xy: [-0.110130, 0.106931], yaw_deg: -2.443, place_offset: [0.0050, 0.0080]}
+    S2: {measured_name: L7, xy: [-0.109317, 0.064428], yaw_deg: -1.503, place_offset: [0.0010, 0.0040]}
+    S3: {measured_name: L6, xy: [-0.043400, 0.111000], yaw_deg: 0.548, place_offset: [0.0045, -0.0055]}
+    S4: {measured_name: B, xy: [0.079500, -0.114000], yaw_deg: -3.280, place_offset: [0.0000, 0.0050]}
+    S5: {measured_name: L2, xy: [0.084300, 0.107300], yaw_deg: -0.771, place_offset: [-0.0060, -0.0020]}
+    S6: {measured_name: L4, xy: [0.021900, 0.109700], yaw_deg: -0.721, place_offset: [-0.0030, -0.0040]}
+    S7: {measured_name: D, xy: [0.011600, -0.108400], yaw_deg: -5.710, place_offset: [0.0060, -0.0062]}
+    S8: {measured_name: L5, xy: [-0.043572, 0.070504], yaw_deg: 2.243, place_offset: [0.0056, -0.0085]}
+    S9: {measured_name: A, xy: [0.081200, -0.072100], yaw_deg: 1.000, place_offset: [0.0010, 0.0010]}
+    S10: {measured_name: L1, xy: [0.084142, 0.066838], yaw_deg: -0.817, place_offset: [-0.0020, -0.0020]}
+    S11: {measured_name: L3, xy: [0.023953, 0.069231], yaw_deg: 0.545, place_offset: [-0.0060, -0.0030]}
+    S12: {measured_name: C, xy: [0.015800, -0.068100], yaw_deg: -5.080, place_offset: [0.0030, -0.0017]}
+
+# 칸 제약 — 그 동작 때 비어 있어야 하는 칸 (11-02 pose_safety 최악 검사: 대상 칸 말고 11 칸이 다 찬 상태로 실물 재생 경로 검사)
+#   실제로 닿음: 빼기 S7 ← S12 퍽 (−13 mm), 넣기 · 빼기 S10 ← S5 퍽 (−8 · −9 mm)
+#   경계값 (관절 ±2° 오차를 넣었을 때 −1 ~ 2 mm, 실물로 확인하기 전까지 지킴): S1 ← S2 (넣기 · 빼기), 넣기 S9 ← S4 · S11 ← S6 · S12 ← S7
+#   config/planning.yaml cargo_slots 채우는 순서는 넣기 제약을 모두 만족. 빼기는 S12 → S7, S5 → S10, S2 → S1 순서로
+rack_constraints:
+  store_needs_empty: {S1: [S2], S9: [S4], S10: [S5], S11: [S6], S12: [S7]}
+  retrieve_needs_empty: {S1: [S2], S7: [S12], S10: [S5]}

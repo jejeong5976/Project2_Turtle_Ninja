@@ -19,6 +19,7 @@
   <depend>controller_manager_msgs</depend>
   <depend>lifecycle_msgs</depend>
   <depend>interfaces</depend>
+  <depend>eigen</depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
 

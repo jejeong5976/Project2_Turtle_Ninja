@@ -112,7 +112,8 @@ LateGoal ArmRunner::on_goal_response(unsigned gen, bool accepted, double now_s)
     return LateGoal::IGNORE;
   }
   accepted_ = true;
-  motion_deadline_ = now_s + motion_timeout_s_;
+  const double extra = idx_ > 0 && idx_ <= plan_.size() ? plan_[idx_ - 1].duration_s : 0.0;
+  motion_deadline_ = now_s + motion_timeout_s_ + extra;
   return LateGoal::USE;
 }
 
