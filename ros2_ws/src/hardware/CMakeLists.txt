@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.8)
 project(hardware)
 
-# 빌드 유형을 안 주면 최적화(Release) — 2026-10-29 측정: 100 Hz 주기 계산이 -O0 대비 3~4 배 빠름 (최적화 없음이 기본이었음)
+# 빌드 유형을 안 주면 최적화(Release) — 측정: 100 Hz 주기 계산이 -O0 대비 3~4 배 빠름 (최적화 없음이 기본이었음)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release)
 endif()
@@ -35,7 +35,7 @@ target_compile_features(opencr_link PUBLIC cxx_std_17)
 set_target_properties(opencr_link PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # ② ros2_control 플러그인 (controller_manager 가 이름 "hardware/OpenCRHardware" 로 불러 씀)
-add_library(hardware SHARED src/opencr_hardware.cpp src/mock_dynamics.cpp)   # mock_dynamics: 2026-10-28 속도 · 가속 한계 가짜 모터
+add_library(hardware SHARED src/opencr_hardware.cpp src/mock_dynamics.cpp)   # mock_dynamics: 속도 · 가속 한계 가짜 모터
 target_link_libraries(hardware PUBLIC
   opencr_link
   hardware_interface::hardware_interface

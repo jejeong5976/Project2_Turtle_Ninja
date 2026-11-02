@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 젯슨 상태 확인 (2026-10-29) — 읽기만 함. 아무것도 설치 · 변경하지 않음.
+# 젯슨 상태 확인 — 읽기만 함. 아무것도 설치 · 변경하지 않음.
 #   bash tools/jetson/jetson_check.sh            (결과를 그대로 복사해서 노트북에서 확인)
 # 보는 것: OS · CPU 종류 · ROS 배포판 · 빌드 도구 · 필요한 ROS 패키지 · 시리얼 포트 · dialout 권한 · 포트 이름 고정 · 전원 모드 · 메모리 · 디스크
 ROS_DISTRO_WANT=${ROS_DISTRO_WANT:-lyrical}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SLAM 지도 저장 (2026-10-31) — run_robot.sh slam 이 떠 있는 동안, 로봇을 세운 채로.
+# SLAM 지도 저장 — run_robot.sh slam 이 떠 있는 동안, 로봇을 세운 채로.
 #   bash tools/jetson/save_map.sh arena          → ~/maps/arena.{pgm,yaml} (보기 · Nav2 용) + ~/maps/arena.{posegraph,data} (locate 용)
 # 같은 이름이 있으면 거부 (덮어쓰지 않음). 저장 뒤 locate: bash tools/jetson/run_robot.sh locate opencr ~/maps/arena
 set -uo pipefail

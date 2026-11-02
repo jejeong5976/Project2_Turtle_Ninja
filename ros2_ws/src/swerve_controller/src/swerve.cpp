@@ -33,7 +33,7 @@ BodyTwist limit_accel(
   if (dt <= 0.0) {return current;}
   // 선속도 · 회전을 **같은 비율로** 바꿈: 둘 중 오래 걸리는 쪽에 맞춰 이번 주기에 갈 비율 f 를 정함.
   //   따로 자르면 출발 중 vx:vy:ω 비율이 바뀌어 모듈 조향각이 계속 변하고, 느린 조향(≈ 55°/s)이 못 따라가
-  //   "조향 먼저" 가 속도를 0 으로 되돌리기를 반복함 (2026-10-19 가짜 보드 전진+회전에서 확인). 각 한계는 그대로 지킴
+  //   "조향 먼저" 가 속도를 0 으로 되돌리기를 반복함 (가짜 보드 전진+회전에서 확인). 각 한계는 그대로 지킴
   const double dvx = target.vx - current.vx;
   const double dvy = target.vy - current.vy;
   const double dw = target.wz - current.wz;
@@ -178,11 +178,11 @@ std::vector<ModuleState> SwerveKinematics::inverse(
       const double heading=std::atan2(vy,vx);
       double best=0.0, best_speed=0.0, distance=INFINITY;
       struct Candidate {double angle; double speed; bool safe;};
-      std::array<Candidate, 2> cand_buf{};   // 정 · 역 두 후보 (주기마다 힙 할당 안 하게, 2026-10-29)
+      std::array<Candidate, 2> cand_buf{};   // 정 · 역 두 후보 (주기마다 힙 할당 안 하게)
       std::size_t n_cand = 0;
       for (int reverse=0; reverse<2; ++reverse) {
         const double base=heading+reverse*kPi;
-        // end_slack_(기본 0): 끝을 이만큼 넘는 목표는 끝 각도로 보내고 바퀴 속도 × cos(차이) (2026-10-26, 최대 시험에서만 1°).
+        // end_slack_(기본 0): 끝을 이만큼 넘는 목표는 끝 각도로 보내고 바퀴 속도 × cos(차이) (최대 시험에서만 1°).
         //   범위는 넓히지 않음 — rr −45° 처럼 0.5° 모자라 180° 가까이 반대로 도는 것만 막음
         const double first=std::ceil((r.min-base-end_slack_-1e-12)/(2*kPi));
         const double last=std::floor((r.max-base+end_slack_+1e-12)/(2*kPi));
@@ -197,7 +197,7 @@ std::vector<ModuleState> SwerveKinematics::inverse(
         [](const Candidate & c) {return c.safe;});
       // Coherent translation: of the two parallel poses (angle, angle+pi) prefer the one whose
       // wheel offset points away from the body centre, so sideways driving keeps every wheel
-      // outboard instead of tucking two diagonal wheels under the deck (user request 2026-10-26).
+      // outboard instead of tucking two diagonal wheels under the deck .
       // A deadband near the tie keeps the old choice; physical ranges are not changed.
       auto outward = [&](double a) {
           return -modules_[i].offset * std::sin(a) * modules_[i].x + modules_[i].offset * std::cos(a) * modules_[i].y;
@@ -207,7 +207,7 @@ std::vector<ModuleState> SwerveKinematics::inverse(
       // 바깥쪽 선호는 (a) 몸이 병진 중이 아닐 때만 (prefer_outward), (b) 바깥쪽 후보가 범위 끝에서 10° 넘게 안쪽일 때만.
       //   병진 중에는 그 자리에 "직전 목표와 같은 분기" 를 같은 무게로 → 멈춤↔이동 경계에서 분기가 오락가락하지 않음.
       //   (b): rr 은 −45° 를 못 가서 바깥쪽 = 315° 가 되는데, 그쪽은 끝(315.4°)에 붙어 있고 가는 데 200° 넘게 돌아감
-      //   (2026-10-26 실물 floor_max_050: 이동 0 mm 구간의 원인). 자세와 무관한 규칙이라 같은 명령 = 같은 자세는 유지.
+      //   (실물 floor_max_050: 이동 0 mm 구간의 원인). 자세와 무관한 규칙이라 같은 명령 = 같은 자세는 유지.
       constexpr double out_guard = 10.0 * kPi / 180.0;
       const bool outward_alt = prefer_outward && std::any_of(cand_buf.begin(), cand_buf.begin() + n_cand,
         [&](const Candidate & d) {
@@ -218,7 +218,7 @@ std::vector<ModuleState> SwerveKinematics::inverse(
         const auto & c = cand_buf[ci];
         if (coherent_ && safe_exists && !c.safe) {continue;}
         // nearest(모듈별 범위): 실측에서 돌아야 할 양. coherent: 공통 자세 · 목표 히스테리시스 · 바깥쪽 선호 + 돌아야 할 양 × travel_weight
-        //   (2026-10-29 정리: 예전 한 줄 삼항식은 ?: 우선순위 때문에 뒤의 항이 coherent 에만 붙었음 — 범위 끝 벌점은 두 정책 모두에)
+        //   (범위 끝 벌점은 두 정책 모두에)
         const bool switched = have_previous && !retained(i, c.angle);
         double cost = std::fabs(c.angle - now);
         if (coherent_) {
@@ -449,7 +449,7 @@ std::vector<ModuleState> SwerveDrive::update(
         lim = std::min(lim, cfg_.heading_hold_wz_per_speed * std::hypot(cmd_.vx, cmd_.vy));   // 느리면 약하게
       }
       corrected.wz = std::clamp(cfg_.heading_hold_kp * err, -lim, lim);
-      // 보정 회전 때문에 어느 바퀴든 자세를 갈아타면(범위 끝에 붙은 바퀴 — 10-28 모의: rr −44.5° 에서 반대 분기로 돌기 시작)
+      // 보정 회전 때문에 어느 바퀴든 자세를 갈아타면(범위 끝에 붙은 바퀴 — 모의: rr −44.5° 에서 반대 분기로 돌기 시작)
       //   이번 주기는 보정 안 함. 같은 분기 안의 작은 각도 변화(< 30°)만 허용
       //   이동 중 가지 유지(keep_branch_max_wz)가 켜져 있으면 이 검사 대신 아래 ①-1b 가 갈아타지 않는 데까지만 줄임
       const bool keep_branch = cfg_.keep_branch_max_wz > 0.0 && translating_ &&
@@ -469,10 +469,10 @@ std::vector<ModuleState> SwerveDrive::update(
   } else {
     holding_heading_ = false;
   }
-  // ①-1b 이동 중 가지 유지 (keep_branch_max_wz > 0 일 때만, 2026-10-29): 이미 병진 중이고 작은 회전이 섞였을 때
+  // ①-1b 이동 중 가지 유지 (keep_branch_max_wz > 0 일 때만): 이미 병진 중이고 작은 회전이 섞였을 때
   //   회전 0 일 때의 바퀴 각도에서, 회전 때문에 생기는 기하학적 방향 변화를 빼고도 30° 넘게 달라지는 바퀴
   //   (= 반대 방향 · 한 바퀴 감기 같은 다른 가지)가 생기면 회전을 그 직전 비율까지 줄임.
-  //   (10-29 오후 고침: 예전엔 기하학적 변화까지 30° 로 막아 느린 곡선 명령 — 0.02 m/s + 0.15 rad/s 등 — 의 회전을 깎았음)
+  //   (기하학적 변화까지 30° 로 막으면 느린 곡선 명령 — 0.02 m/s + 0.15 rad/s 등 — 의 회전을 깎음)
   wz_keep_ratio_ = 1.0;
   if (cfg_.keep_branch_max_wz > 0.0 && translating_ && kin_.has_module_ranges() && measured.size() == kin_.size() &&
       std::hypot(wanted.vx, wanted.vy) >= kStopEps && std::fabs(wanted.wz) >= kStopEps &&
@@ -543,7 +543,7 @@ std::vector<ModuleState> SwerveDrive::update(
   // ②-2 동시 조향·구동 (기본 끔): 움직이는 중에만. 조향이 따라온 만큼만 새 방향으로 진행
   blend_ratio_ = 1.0;
   gate_blocked_ = false;
-  // 이동(병진) 중일 때만. 제자리 회전에서 넘어갈 때는 기존 "조향 먼저" (2026-10-26 실물: 회전→전진에서 더 돌고 덜 감)
+  // 이동(병진) 중일 때만. 제자리 회전에서 넘어갈 때는 기존 "조향 먼저" (실물: 회전→전진에서 더 돌고 덜 감)
   // 회전이 주인 명령(모듈 자리 회전 속도 > 병진 속도, 반경 0.13 m 기준)도 제외 → 가속 램프 중 섞이는 것도 기존대로
   const double trans = std::hypot(before.vx, before.vy);
   const bool moving = trans >= kStopEps && trans >= std::fabs(before.wz) * 0.13;

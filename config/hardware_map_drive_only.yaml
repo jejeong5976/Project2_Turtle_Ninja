@@ -1,9 +1,9 @@
-# hardware_map_drive_only.yaml — 팔 없이 바퀴만 시험할 때의 하드웨어 지도 (주행 OpenCR 1장)
+# hardware_map_drive_only.yaml — 젯슨 ROS 가 주행 OpenCR 1 장만 쓸 때의 하드웨어 지도 (하드웨어는 다 장착, 팔 OpenCR 만 안 붙임 — SLAM · 주행 실물 구성)
 # =============================================================================
 #   ros2 launch bringup robot.launch.py arm:=false hardware_map:=<이 파일>
 # 팔 관절 · 팔 보드가 없어야 arm:=false 가 실행된다 (robot.launch.py 가 확인). 팔이 달린 로봇은 hardware_map.yaml 그대로.
 #
-# ID · 방향은 2026-10-16 주행 보드 실물 측정값
+# ID · 방향은 주행 보드 실물 측정값
 #   위치 (로봇 뒤에서 앞을 보는 기준)   구동 XM430-W210 (속도)   조향 XM430-W350 (위치)
 #   왼쪽 앞                              1                         11
 #   오른쪽 앞                            2                         12
@@ -14,18 +14,18 @@
 #         ⚠ 바퀴를 띄운 시험에서 전진 명령 때 네 바퀴가 모두 새 앞쪽으로 굴러가는지 눈으로 확인
 #   조향: 모터 + (눈금 증가) = 위에서 볼 때 시계 → URDF steer 축 +z 기준 scale −1
 #
-# 조향 영점 zero_tick (2026-10-19, usb_to_dxl + tools/hw_bench.py limits 로 읽음): 라이다 위치에 맞춘 새 전진 방향으로 네 바퀴를 정렬한 눈금.
+# 조향 영점 zero_tick (usb_to_dxl + tools/hw_bench.py limits 로 읽음): 라이다 위치에 맞춘 새 전진 방향으로 네 바퀴를 정렬한 눈금.
 #   이전 직진 눈금(2052 · 2564 · 3586 · 2565)과 약 90° 다름 — 전진 방향 자체를 바꾼 것. 비우면(null) hardware:=opencr 실행을 거부한다.
 # 위치 모드 눈금 0~4095 때문에 모듈마다 한쪽으로 덜 돈다 (이 영점에서 14 번 시계 쪽 약 −43°). launch 가 범위를 계산해
 #   컨트롤러가 그 안에서 조향각 + 바퀴 정 · 역회전을 고름
-# 2026-10-30 Homing Offset (조향 모터 EEPROM, steer_probe_20261028/steer_homing.py): 눈금 창을 직진 가운데로 —
+# Homing Offset (조향 모터 EEPROM, steer_probe_20261028/steer_homing.py): 눈금 창을 직진 가운데로 —
 #   fl −1018 · fr +496 · rl −529 · rr −1024 (위치 모드 한계 ±1024 라 rr 은 덜 옮김) → zero_tick 3066 · 1552 · 2577 · 3589 → 2048 · 2048 · 2048 · 2565,
 #   범위 fl · fr · rl ±180° · rr −133~+225° (공통 177° → 311°, 시뮬 36 방향 뒤집힘 30 → 15). 모터로 양 끝 확인 (steer_probe 10:02, 전류 ≤ 8 mA).
 #   ⚠ 모터를 바꾸면(교체 · 공장 초기화) Homing 이 0 으로 → 이 영점과 어긋남. steer_probe.sh homing read 로 확인.
-# 선(케이블) 한계 cable_min_deg / cable_max_deg (2026-10-28, 선택): 눈금 창보다 선이 먼저 당기는 쪽만 관절 각 [deg] 로 적음.
+# 선(케이블) 한계 cable_min_deg / cable_max_deg (선택): 눈금 창보다 선이 먼저 당기는 쪽만 관절 각 [deg] 로 적음.
 #   launch 가 모듈 범위를 이 안으로 줄임(URDF 한계도 같음). 13 번(rl) + 쪽: 모터로 돌려 전류가 오르는 곳 179~180° (공중 2번),
-#   10-26 실물 주행에서도 182° 넘으면 전류 상승(219° 611 mA) → 170° (약 10° 여유). 나머지 셋은 소프트웨어 끝까지 전류 상승 없음.
-#   2026-10-30 선 연장 뒤: 모터로 네 바퀴 소프트웨어 양 끝까지 전류 상승 없음(최대 13 mA, steer_probe 21:08), 손으로 돌린 선 범위
+#   실물 주행에서도 182° 넘으면 전류 상승(219° 611 mA) → 170° (약 10° 여유). 나머지 셋은 소프트웨어 끝까지 전류 상승 없음.
+#   선 연장 뒤: 모터로 네 바퀴 소프트웨어 양 끝까지 전류 상승 없음(최대 13 mA, steer_probe 21:08), 손으로 돌린 선 범위
 #   fl −457~+383 · fr −556~+691 · rl −488~+480 · rr −714~+515° (steer_sweep 21:16) → 13 번 170° 제한 지움 (지금은 눈금 창이 범위).
 #
 # 나머지 값(보드 설정 · 프로파일 · 경비견 · 배터리)은 hardware_map.yaml 과 같다.
@@ -37,7 +37,7 @@ buses:
     joints: [drive_fl_joint, drive_fr_joint, drive_rl_joint, drive_rr_joint,
              steer_fl_joint, steer_fr_joint, steer_rl_joint, steer_rr_joint]
 
-# 프로파일 (2026-10-28 실물 비교로 바꿈): 조향 profile_vel 40 → 200 (55 → 실측 약 260°/s, 135° 뒤집기 1.05 → 0.61 s) ·
+# 프로파일 (실물 비교로 바꿈): 조향 profile_vel 40 → 200 (55 → 실측 약 260°/s, 135° 뒤집기 1.05 → 0.61 s) ·
 #   profile_acc 10 → 60 (확 돌지 않게) · 구동 profile_acc 20 → 40 (20 은 바퀴에서 ≈0.25 m/s² 로 몸 가속 0.5 를 다시 막음)
 #   조향 최고 속도에서 선 · 전류 이상 없음 (공중 air_steer200_050, 바닥 floor_C_050: 조향 전류 최대 약 210~280 mA)
 motors:

@@ -53,7 +53,7 @@
           <param name="profile_acc">${m.get('profile_acc', 0)}</param>
           <param name="goal_current">${m.get('goal_current', 0)}</param>
           <param name="scale">${m.get('scale', 1.0)}</param>
-          <param name="zero_tick">${m.get('zero_tick', 2048)}</param>   <!-- 관절 0 일 때 모터 눈금 (2026-10-16, 기본 2048) -->
+          <param name="zero_tick">${m.get('zero_tick', 2048)}</param>   <!-- 관절 0 일 때 모터 눈금 (기본 2048) -->
         </xacro:if>
       </joint>
       <xacro:nt_joint_ifaces names="${names[1:]}" hardware="${hardware}"/>
@@ -64,7 +64,7 @@
   <xacro:macro name="nt_bus" params="bus hardware">
     <ros2_control name="${bus['name']}" type="system">
       <hardware>
-        <!-- mock_dynamics:=true (2026-10-28): 조향 · 바퀴에 속도 · 가속 한계가 있는 가짜 모터 (hardware/src/mock_dynamics.cpp) -->
+        <!-- mock_dynamics:=true: 조향 · 바퀴에 속도 · 가속 한계가 있는 가짜 모터 (hardware/src/mock_dynamics.cpp) -->
         <xacro:if value="${hardware == 'mock' and mock_dynamics}">
           <plugin>hardware/MockDynamics</plugin>
         </xacro:if>

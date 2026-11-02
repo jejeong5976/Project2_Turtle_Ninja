@@ -1,8 +1,0 @@
-# drive_only.yaml — robot.launch.py arm:=false (팔이 없는 로봇으로 바퀴만 시험) 때 swerve_controller 에 controllers.yaml 다음으로 얹는 값
-# 바꾸는 것: 팔과의 차례(control_master 의 DRIVE 허가)를 보지 않음. 팔 · control_master 를 띄우지 않으므로 허가를 줄 노드가 없다.
-# 그대로인 것 (controllers.yaml): 실물 기하 · 가속 · 정면 유지 · 자세 가중치 · cmd_timeout_s 0.3 · 속도 제한 · 조향 먼저 · 상태를 못 읽으면 바퀴 0
-# 2026-10-29: 기하 · 가속 · 정면 유지 · 가중치는 controllers.yaml 로 옮김 (팔이 있는 실행도 같은 로봇이라 같아야 함).
-#   조향 정책 · 모듈별 범위는 launch(swerve_setup)가 두 모드 모두 넘김
-swerve_controller:
-  ros__parameters:
-    require_motion_mode: false

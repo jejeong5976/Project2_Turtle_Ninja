@@ -35,7 +35,7 @@ TEST(Blend, StallUnsetKeepsLegacyGate) {   // blend 를 켜도 정체 시간이 
   EXPECT_TRUE(gated);   // 조향이 안 따라오면 기존 게이트가 걸림
 }
 
-TEST(Blend, WheelsFollowMeasuredWhileSteerGoesToFinalAngle) {   // 2026-10-26: 바퀴는 진행 비율 명령, 조향은 최종 각도로 바로
+TEST(Blend, WheelsFollowMeasuredWhileSteerGoesToFinalAngle) {   // 바퀴는 진행 비율 명령, 조향은 최종 각도로 바로
   SwerveDriveConfig c; c.blend_steer_drive = true; c.blend_stall_s = 0.5;
   double t; auto d = running(c, t);
   bool limited = false, led = false;
@@ -122,7 +122,7 @@ TEST(Blend, NanMeasurementSkipsBlend) {
   EXPECT_DOUBLE_EQ(d.blend_ratio(), 1.0);
 }
 
-TEST(Blend, PureRotationToTranslationKeepsLegacyGate) {   // 2026-10-26 실물: 회전→전진은 기존 "조향 먼저"
+TEST(Blend, PureRotationToTranslationKeepsLegacyGate) {   // 실물: 회전→전진은 기존 "조향 먼저"
   SwerveDriveConfig c; c.blend_steer_drive = true; c.blend_stall_s = 1.0;
   SwerveDrive d(kin(), c);
   double t = 0.0;

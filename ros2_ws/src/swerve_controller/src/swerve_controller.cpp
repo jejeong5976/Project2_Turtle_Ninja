@@ -71,9 +71,10 @@ private:
   bool use_imu_ = true;
   bool position_rate_ = false;
   double still_linear_ = 0.01, still_angular_ = 0.05;
-  // 바퀴별 속도 배율 (2026-10-28, 기본 1): 쓸 때 곱하고 읽을 때 나눔 → 실제 이동과 odom 이 같이 맞음.
+  // 바퀴별 속도 배율 (기본 1): 쓸 때 곱하고 읽을 때 나눔 → 실제 이동과 odom 이 같이 맞음.
   //   카펫에서 바퀴마다 파묻힘(1~2 mm)이 달라 실제 굴림 반지름이 다른 것 보정 (정면 유지 끄면 1 m 에 2.1° 왼쪽으로 돎)
   std::vector<double> wheel_gain_;
+  std::vector<double> wheel_out_;   // 이번 주기에 쓴 바퀴 모터 속도 (update 안에서 할당하지 않게 미리 잡음)
   double max_wheel_speed_ = 0.0;
   std::string odom_frame_, base_frame_;
 
@@ -100,11 +101,12 @@ private:
   std::mutex imu_mtx_;
   GyroYaw gyro_;
   std::atomic<bool> base_still_{false};
-  // 2026-11-01 움직이는 동안 자이로가 덜 느끼는 회전 (실물: 0.09°/s, 5 분에 29° — SLAM 이 고치던 양).
+  // 움직이는 동안 자이로가 덜 느끼는 회전 (실물: 0.09°/s, 5 분에 29° — SLAM 이 고치던 양).
   //   pose_guard 가 map→odom 방향 고침 속도로 재서 imu_motion_bias_topic 으로 보냄 → 바퀴가 움직일 때만 자이로에 더함
   std::atomic<double> motion_bias_{0.0};
   std::atomic<double> motion_bias_t_{-1e9};   // 마지막으로 받은 시각 [s] — motion_bias_timeout_s_ 넘으면 안 씀 (pose_guard 가 꺼져도 남지 않게)
   double motion_bias_max_ = 0.005, motion_bias_timeout_s_ = 5.0;
+  double cmd_max_age_s_ = 0.3;   // 보낸 시각이 이보다 오래된 /cmd_vel 은 버림 (= cmd_timeout_s)
   double last_lin_speed_ = 0.0;
 
   // 루프 → 발행 타이머
@@ -152,15 +154,15 @@ CallbackReturn SwerveController::on_init()
     auto_declare<std::vector<double>>("steer_max", {});
     auto_declare<double>("max_linear", 0.10);
     auto_declare<double>("max_wheel_speed", 0.0);
-    auto_declare<std::vector<double>>("wheel_speed_gain", {});   // 2026-10-28 바퀴별 속도 배율 [fl, fr, rl, rr], 비우면 모두 1
+    auto_declare<std::vector<double>>("wheel_speed_gain", {});   // 바퀴별 속도 배율 [fl, fr, rl, rr], 비우면 모두 1
     auto_declare<double>("steer_branch_margin", 3.0 * M_PI / 180.0);
     auto_declare<double>("steer_end_slack", 0.0);       // [rad] 0 ~ 2°. 범위 끝을 이만큼 넘는 방향은 끝 각도로 (기본 끔)
-    auto_declare<double>("steer_travel_weight", 0.0);   // 2026-10-28: 자세 고를 때 돌아야 할 각도 비용 가중치 (0 = 예전과 같음, 0~10)
-    auto_declare<double>("steer_coherent_max_travel", 0.0);   // 2026-10-29 [rad] 공통 자세 이동 한도 (0 = 없음)
-    auto_declare<double>("steer_end_guard", 0.0);             // 2026-10-29 [rad] 멈춘 상태에서 고를 때 범위 끝 벌점 구간 (0 = 끔)
-    auto_declare<double>("keep_branch_max_wz", 0.0);          // 2026-10-29 [rad/s] 이동 중 작은 회전으로 가지 바꾸지 않기 (0 = 끔)
-    auto_declare<bool>("steer_multi_turn", false);      // 2026-10-28: 여러 바퀴 조향 범위 허용 (확장 위치 모드, 지금은 모의 전용)
-    auto_declare<double>("heading_hold_kp", 0.0);        // 2026-10-28 정면 유지 되먹임 (0 = 끔)
+    auto_declare<double>("steer_travel_weight", 0.0);   // 자세 고를 때 돌아야 할 각도 비용 가중치 (0 = 예전과 같음, 0~10)
+    auto_declare<double>("steer_coherent_max_travel", 0.0);   // [rad] 공통 자세 이동 한도 (0 = 없음)
+    auto_declare<double>("steer_end_guard", 0.0);             // [rad] 멈춘 상태에서 고를 때 범위 끝 벌점 구간 (0 = 끔)
+    auto_declare<double>("keep_branch_max_wz", 0.0);          // [rad/s] 이동 중 작은 회전으로 가지 바꾸지 않기 (0 = 끔)
+    auto_declare<bool>("steer_multi_turn", false);      // 여러 바퀴 조향 범위 허용 (확장 위치 모드, 지금은 모의 전용)
+    auto_declare<double>("heading_hold_kp", 0.0);        // 정면 유지 되먹임 (0 = 끔)
     auto_declare<double>("heading_hold_max_wz", 0.15);   // [rad/s]
     auto_declare<double>("heading_hold_deadband", 0.0087);   // [rad]
     auto_declare<double>("heading_hold_wz_per_speed", 0.0);  // [rad/s per m/s] 0 = 속도 비례 끔
@@ -176,7 +178,7 @@ CallbackReturn SwerveController::on_init()
     auto_declare<bool>("park_on_idle", false);
     auto_declare<double>("park_idle_s", 1.0);
     auto_declare<double>("park_still_wheel", 0.05);
-    auto_declare<bool>("blend_steer_drive", false);   // 동시 조향·구동 (2026-10-26, 기본 끔)
+    auto_declare<bool>("blend_steer_drive", false);   // 동시 조향·구동 (기본 끔)
     auto_declare<double>("blend_margin", 1.0);
     auto_declare<double>("blend_stall_s", 0.0);
     auto_declare<std::string>("steer_rate_source", "reported");
@@ -193,11 +195,11 @@ CallbackReturn SwerveController::on_init()
     auto_declare<std::string>("imu_topic", "/imu_sensor_broadcaster/imu");
     auto_declare<double>("imu_bias_time_s", 2.0);
     auto_declare<double>("imu_timeout_s", 0.2);
-    auto_declare<double>("imu_still_hold_s", 1.0);      // 2026-11-01 멈춘 뒤 이만큼 지나야 바이어스 따라감
+    auto_declare<double>("imu_still_hold_s", 1.0);      // 멈춘 뒤 이만큼 지나야 바이어스 따라감
     auto_declare<double>("imu_track_gate", 0.0087);     // [rad/s] 바이어스 뺀 값이 이 안일 때만 따라감 (0.5°/s)
-    auto_declare<std::string>("imu_motion_bias_topic", "/imu_motion_bias");   // 2026-11-01 z = 움직일 때 더할 회전 [rad/s], 빈 문자열 = 안 씀
+    auto_declare<std::string>("imu_motion_bias_topic", "/imu_motion_bias");   // z = 움직일 때 더할 회전 [rad/s], 빈 문자열 = 안 씀
     auto_declare<double>("imu_motion_bias_max", 0.005);  // [rad/s] 받은 값 자르기 (0.3°/s)
-    auto_declare<double>("imu_motion_bias_timeout_s", 5.0);   // 이만큼 안 오면 0 으로 (11-02 Fable 검토)
+    auto_declare<double>("imu_motion_bias_timeout_s", 5.0);   // 이만큼 안 오면 0 으로 
     auto_declare<double>("still_linear", 0.01);
     auto_declare<double>("still_angular", 0.05);
   } catch (const std::exception & e) {
@@ -265,6 +267,7 @@ CallbackReturn SwerveController::on_configure(const rclcpp_lifecycle::State &)
   max_wheel_speed_ = cfg.max_wheel_speed;
   wheel_gain_ = node->get_parameter("wheel_speed_gain").as_double_array();
   if (wheel_gain_.empty()) {wheel_gain_.assign(names_.size(), 1.0);}
+  wheel_out_.assign(names_.size(), 0.0);
   if (wheel_gain_.size() != names_.size()) {
     RCLCPP_ERROR(node->get_logger(), "wheel_speed_gain 은 모듈 수(%zu)와 같아야 함", names_.size());
     return controller_interface::CallbackReturn::ERROR;
@@ -283,12 +286,13 @@ CallbackReturn SwerveController::on_configure(const rclcpp_lifecycle::State &)
   cfg.max_linear_accel = node->get_parameter("max_linear_accel").as_double();
   cfg.max_angular_accel = node->get_parameter("max_angular_accel").as_double();
   cfg.cmd_timeout_s = node->get_parameter("cmd_timeout_s").as_double();
+  cmd_max_age_s_ = cfg.cmd_timeout_s;
   cfg.turn_timeout_s = node->get_parameter("turn_timeout_s").as_double();
   cfg.cosine_scale = node->get_parameter("cosine_scale").as_bool();
   cfg.steer_then_drive = node->get_parameter("steer_then_drive").as_bool();
   cfg.steer_tolerance = node->get_parameter("steer_tolerance").as_double();
   cfg.roll_while_steering = node->get_parameter("roll_while_steering").as_bool();
-  // 0 이하면 명령 · 차례가 영원히 "오래됨" 이거나 조향 게이트가 영원히 닫혀 오류 없이 안 움직임 (2026-10-29 검토)
+  // 0 이하면 명령 · 차례가 영원히 "오래됨" 이거나 조향 게이트가 영원히 닫혀 오류 없이 안 움직임 
   if (!(cfg.cmd_timeout_s > 0.0 && cfg.turn_timeout_s > 0.0 && cfg.steer_tolerance > 0.0 &&
         node->get_parameter("imu_timeout_s").as_double() >= 0.0)) {
     RCLCPP_ERROR(node->get_logger(), "cmd_timeout_s · turn_timeout_s · steer_tolerance > 0, imu_timeout_s >= 0 이어야 함");
@@ -395,10 +399,19 @@ CallbackReturn SwerveController::on_configure(const rclcpp_lifecycle::State &)
   sub_cmd_ = node->create_subscription<geometry_msgs::msg::TwistStamped>(
     node->get_parameter("cmd_vel_topic").as_string(), 10,
     [this](geometry_msgs::msg::TwistStamped::ConstSharedPtr m) {
+      const double now = get_node()->now().seconds();
+      // 보낸 시각이 있으면 나이 검사 — 큐 · 네트워크에서 늦게 도착한 옛 명령이 멈춘 바퀴를 다시 돌리지 않게.
+      //   시각 0 = 보낸 쪽이 안 적음 → 받은 시각만 씀. 보낸 쪽 시계가 많이 늦으면 모든 명령이 버려짐 (멈춤 쪽으로 실패)
+      const rclcpp::Time stamp(m->header.stamp, get_node()->get_clock()->get_clock_type());
+      if (stamp.nanoseconds() != 0 && now - stamp.seconds() > cmd_max_age_s_) {
+        RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 2000,
+          "/cmd_vel 이 %.2f s 늦게 옴 (> %.2f s) → 버림. 보낸 쪽 시계 · 네트워크 확인", now - stamp.seconds(), cmd_max_age_s_);
+        return;
+      }
       std::lock_guard<std::mutex> lk(cmd_mtx_);
       const auto & t = m->twist;
       cmd_in_ = {t.linear.x, t.linear.y, t.angular.z};
-      cmd_in_time_ = get_node()->now().seconds();   // 받은 시각 (보낸 쪽 시계가 달라도 상관없게)
+      cmd_in_time_ = now;   // 시간 초과는 받은 시각 기준
       cmd_in_new_ = true;
       cmd_in_bad_ = !std::isfinite(t.linear.x) || !std::isfinite(t.linear.y) || !std::isfinite(t.angular.z);
     });
@@ -433,7 +446,7 @@ CallbackReturn SwerveController::on_configure(const rclcpp_lifecycle::State &)
       });
   }
   motion_bias_max_ = node->get_parameter("imu_motion_bias_max").as_double();
-  // 음수면 아래 clamp 의 (하한 > 상한) 이 정의되지 않은 동작 (2026-11-02 검토). 0 = 받은 값을 늘 0 으로 자름 (= 안 씀)
+  // 음수면 아래 clamp 의 (하한 > 상한) 이 정의되지 않은 동작 . 0 = 받은 값을 늘 0 으로 자름 (= 안 씀)
   if (!std::isfinite(motion_bias_max_) || motion_bias_max_ < 0.0 || motion_bias_max_ > 0.1) {
     RCLCPP_ERROR(node->get_logger(), "imu_motion_bias_max 는 0 ~ 0.1 rad/s 이어야 함 (받은 값 %.4f)", motion_bias_max_);
     return CallbackReturn::ERROR;
@@ -522,7 +535,7 @@ CallbackReturn SwerveController::on_activate(const rclcpp_lifecycle::State &)
   std::vector<ModuleState> now;
   last_steer_.assign(names_.size(), 0.0);
   // 지금 조향 자세를 모르면 켜지 않음 — 모르는 자세 대신 0° 를 "유지" 명령으로 보내면 조향이 0° 로 돎
-  //   (예전엔 position 모드만 거부, reported 모드는 0° 를 썼음 — 2026-10-29 검토). 켜진 뒤 못 읽으면 update() 가 마지막 실측을 유지
+  //   (예전엔 position 모드만 거부, reported 모드는 0° 를 썼음). 켜진 뒤 못 읽으면 update() 가 마지막 실측을 유지
   if (!read_modules(now)) {
     RCLCPP_ERROR(get_node()->get_logger(), "모터 상태를 못 읽음 (position_velocity 준비 전 포함) → 켜기 거부");
     return CallbackReturn::ERROR;
@@ -581,7 +594,7 @@ return_type SwerveController::update(const rclcpp::Time & time, const rclcpp::Du
   }
 
   // ③ 모터 상태 읽기 → 못 읽으면 바퀴 0 · 조향 그대로
-  std::vector<ModuleState> & meas = meas_buf_;   // 멤버 버퍼 재사용 (주기마다 새로 할당하지 않게 — 2026-10-16 검토)
+  std::vector<ModuleState> & meas = meas_buf_;   // 측정값 버퍼만 재사용 (drive_->update 안의 역기구학은 작은 벡터를 할당함, 8.6 µs 측정)
   if (!read_modules(meas)) {
     drive_->reset();  // Any unreadable state cancels the previous command, including park.
     write_modules(drive_->stop_hold(last_steer_));
@@ -671,22 +684,26 @@ void SwerveController::write_modules(const std::vector<ModuleState> & m)
 {
   const std::size_t n = names_.size();
   if (command_interfaces_.size() != 2 * n || m.size() != n) {return;}
+  // 배율을 곱한 모터 속도. 하나라도 한계를 넘으면 네 바퀴를 같은 비율로 줄임 — 하나만 자르면 바퀴끼리 속도 비가 깨져
+  //   몸이 돌거나 미끄러짐 (다이나믹셀은 한계를 넘는 Goal Velocity 를 무시하므로 한계 안으로는 꼭 넣어야 함)
+  double peak = 0.0;
   for (std::size_t i = 0; i < n; ++i) {
+    wheel_out_[i] = m[i].wheel_speed * wheel_gain_[i];
+    peak = std::max(peak, std::fabs(wheel_out_[i]));
+  }
+  const double scale = (max_wheel_speed_ > 0.0 && peak > max_wheel_speed_) ? max_wheel_speed_ / peak : 1.0;
+  for (std::size_t i = 0; i < n; ++i) {
+    wheel_out_[i] *= scale;
     // set_value 는 다른 쪽이 잠깐 잡고 있으면 실패할 수 있음 → 다음 주기에 다시 씀 (10 ms 뒤)
     (void)command_interfaces_[i].set_value(m[i].steer_angle);
-    // 배율을 곱한 뒤 모터 속도 한계 안으로 (다이나믹셀은 한계를 넘는 Goal Velocity 를 무시함)
-    double w = m[i].wheel_speed * wheel_gain_[i];
-    if (max_wheel_speed_ > 0.0) {w = std::clamp(w, -max_wheel_speed_, max_wheel_speed_);}
-    (void)command_interfaces_[n + i].set_value(w);
+    (void)command_interfaces_[n + i].set_value(wheel_out_[i]);
   }
   std::unique_lock<std::mutex> lk(odom_mtx_, std::try_to_lock);   // 기록용 사본 (못 잠그면 이번 주기는 건너뜀)
   if (lk.owns_lock() && cmd_msg_.position.size() == 2 * n) {
     cmd_msg_.header.stamp = get_node()->now();
-    for (std::size_t i = 0; i < n; ++i) {   // 실제로 쓴 값 (배율 · 모터 한계 뒤, 11-02 GPT 검토)
-      double w = m[i].wheel_speed * wheel_gain_[i];
-      if (max_wheel_speed_ > 0.0) {w = std::clamp(w, -max_wheel_speed_, max_wheel_speed_);}
+    for (std::size_t i = 0; i < n; ++i) {   // 실제로 쓴 값
       cmd_msg_.position[i] = m[i].steer_angle;
-      cmd_msg_.velocity[n + i] = w;
+      cmd_msg_.velocity[n + i] = wheel_out_[i];
     }
     cmd_msg_new_ = true;
   }

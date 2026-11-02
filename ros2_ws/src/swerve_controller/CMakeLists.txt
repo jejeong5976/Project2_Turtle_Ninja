@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.8)
 project(swerve_controller)
 
-# 빌드 유형을 안 주면 최적화(Release) — 2026-10-29 측정: 100 Hz 주기 계산이 -O0 대비 3~4 배 빠름 (최적화 없음이 기본이었음)
+# 빌드 유형을 안 주면 최적화(Release) — 측정: 100 Hz 주기 계산이 -O0 대비 3~4 배 빠름 (최적화 없음이 기본이었음)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release)
 endif()

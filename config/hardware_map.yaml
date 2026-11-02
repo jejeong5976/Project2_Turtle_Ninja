@@ -9,11 +9,11 @@
 #   - 팔 이름 · ID: OpenManipulator-X + 6축 손목
 #       관절 joint1~4 = ID 11~14 (OpenManipulator-X 그대로), 그리퍼 = 15, 새 손목 회전 joint5 = 16
 #       "6축" = 그리퍼 포함 모터 6개 / 팔 관절은 5개 (몸통 1 + 굽힘 3 + 손목 비틀기 1)
-#   - 스워브 ID: 바퀴 1 · 2 · 41 · 42, 조향 11~14 (실물 확인, 2026-10-19). 팔 11~14 와 겹치지만 보드(USB)가 달라 괜찮음
+#   - 스워브 ID: 바퀴 1 · 2 · 41 · 42, 조향 11~14 (실물 확인). 팔 11~14 와 겹치지만 보드(USB)가 달라 괜찮음
 #
 # 순서 규칙: 한 bus 안의 joints 순서 = ros2_control 블록 안 joint 순서 = CONFIG 상자의 모터 순서 (firmware/nt_opencr/nt_packet.h)
 
-# 2026-10-16 결정: OpenCR 2장 · 전원 2구역 (와플파이 기본 배터리 2개)
+# 결정: OpenCR 2장 · 전원 2구역 (와플파이 기본 배터리 2개)
 #   주행 보드 ← 배터리 A : 바퀴 4 + 조향 4   /   팔 보드 ← 배터리 B : 팔 5 + 그리퍼 1   /   Jetson ← 외부 19 V (기둥 따라 배선)
 #   보드마다 ros2_control 하드웨어가 따로 (이름 = name). 한쪽이 고장 나면 control_master 가 전체 STOP
 #   포트 이름은 udev 로 고정 — 시험 때는 launch 인자 opencr_ports:=bus_drive=…,bus_arm=… 로 바꿈
@@ -30,24 +30,24 @@ buses:
     joints: [joint1, joint2, joint3, joint4, joint5, gripper_left_joint]
 
 # mode: velocity = 속도 모드(바퀴), position = 위치 모드(조향·팔), gripper = 전류기반 위치(그리퍼, 단위 m)
-# scale · zero_tick (2026-10-16): 관절 = (모터 rad − (zero_tick − 2048) × 2π/4096) × scale. 기본 scale 1 · zero_tick 2048 (= 예전과 같음)
-#   조향은 모터 + 가 위에서 시계라 scale −1, zero_tick = 직진 눈금 (10-19 실측, 새 앞쪽 기준 — 아래 motors)
+# scale · zero_tick: 관절 = (모터 rad − (zero_tick − 2048) × 2π/4096) × scale. 기본 scale 1 · zero_tick 2048 (= 예전과 같음)
+#   조향은 모터 + 가 위에서 시계라 scale −1, zero_tick = 직진 눈금 (실측, 새 앞쪽 기준 — 아래 motors)
 #   zero_tick 은 위치 모드만 (바퀴 속도 모드는 2048 그대로여야 함 — 플러그인이 거부)
-# 2026-10-30 Homing Offset (조향 모터 EEPROM, steer_probe_20261028/steer_homing.py): 눈금 창을 직진 가운데로 —
+# Homing Offset (조향 모터 EEPROM, steer_probe_20261028/steer_homing.py): 눈금 창을 직진 가운데로 —
 #   fl −1018 · fr +496 · rl −529 · rr −1024 (위치 모드 한계 ±1024 라 rr 은 덜 옮김) → zero_tick 3066 · 1552 · 2577 · 3589 → 2048 · 2048 · 2048 · 2565,
 #   범위 fl · fr · rl ±180° · rr −133~+225° (공통 177° → 311°, 시뮬 36 방향 뒤집힘 30 → 15). 모터로 양 끝 확인 (steer_probe 10:02, 전류 ≤ 8 mA).
 #   ⚠ 모터를 바꾸면(교체 · 공장 초기화) Homing 이 0 으로 → 이 영점과 어긋남. steer_probe.sh homing read 로 확인.
-# 선(케이블) 한계 cable_min_deg / cable_max_deg: hardware_map_drive_only.yaml 설명과 같음. 2026-10-30 선 연장 뒤 13 번 170° 제한 지움
+# 선(케이블) 한계 cable_min_deg / cable_max_deg: hardware_map_drive_only.yaml 설명과 같음. 선을 늘린 뒤로는 제한 없음
 #   (모터로 네 바퀴 소프트웨어 양 끝까지 전류 상승 없음 · 손으로 돌린 선 범위 모두 한 바퀴 넘음 → 지금은 눈금 창이 범위)
 # initial: 가짜 하드웨어(mock)로 켰을 때의 시작 각도 [rad] — 팔이 접힌 자세로 보이게
 # profile_vel · profile_acc: 모터가 스스로 지키는 속도 · 가속 한계 (D16 "느리게" — 순간 전류를 모터 안에서 한 번 더 줄임)
 #   단위는 다이나믹셀 눈금 그대로: Profile Velocity 1 = 0.229 rpm, Profile Acceleration 1 = 214.577 rev/min²
-#   조향 200 → 최고 약 4.8 rad/s (실측 257~267°/s), 가속 60 → 약 22 rad/s²  (10-28 실물 비교로 정함, 예전 40/10)
+#   조향 200 → 최고 약 4.8 rad/s (실측 257~267°/s), 가속 60 → 약 22 rad/s²  (실물 비교로 정함, 예전 40/10)
 #   바퀴 가속 40 → 바퀴 약 15 rad/s² = 몸통 약 0.5 m/s² (swerve_controller max_linear_accel 0.5 와 맞춤, 예전 20)
 #   팔은 안 씀: joint_trajectory_controller 가 시간표대로(한 동작 4 s) 이미 천천히 보내기 때문 (둘 다 걸면 늦게 따라가 오차)
 motors:
-  # 바퀴 · 조향 (2026-10-29): hardware_map_drive_only.yaml 실측값과 같게 — ID · 회전 방향(scale) · 직진 영점(zero_tick, 10-19 실측)
-  #   · 프로파일(조향 200/60 · 바퀴 가속 40, 10-28 실물 비교로 정함) (선 한계 없음 — 10-30 선 연장 뒤 지움, 위 설명). 바꿀 땐 두 파일 같이
+  # 바퀴 · 조향: hardware_map_drive_only.yaml 실측값과 같게 — ID · 회전 방향(scale) · 직진 영점(zero_tick, 실측)
+  #   · 프로파일(조향 200/60 · 바퀴 가속 40, 실물 비교로 정함) (선 한계 없음, 위 설명). 바꿀 땐 두 파일 같이
   drive_fl_joint: {id: 1,  model: XM430-W210, mode: velocity, profile_acc: 40, scale: 1.0}
   drive_fr_joint: {id: 2,  model: XM430-W210, mode: velocity, profile_acc: 40, scale: -1.0}
   drive_rl_joint: {id: 41, model: XM430-W210, mode: velocity, profile_acc: 40, scale: -1.0}
@@ -72,7 +72,7 @@ motors:
 # 펌웨어가 켤 때(CONFIG) 모터에 씀 = 안전장치 3겹째 (펌웨어까지 멈춰도 모터가 스스로 섬)
 watchdog: 15
 
-# 배터리 (와플파이 기본 배터리 3셀 리튬폴리머 11.1 V · 1,800 mAh · 5C, 보드마다 1 개) — 2026-10-16
+# 배터리 (와플파이 기본 배터리 3셀 리튬폴리머 11.1 V · 1,800 mAh · 5C, 보드마다 1 개)
 #   펌웨어가 모터 입력 전압을 1 초 단위로 보고(DIAG). 평균이 stop 아래로 2 번 연속이면 그 보드 ERROR → control_master 전체 STOP
 #   ⚠ 잠정: 셀당 3.6 V(10.8) 경고 · 3.4 V(10.2) 정지. XM430 입력 하한 약 10 V. 실제 부하 중 처짐을 재고 정할 것
 battery_warn_v: 10.8

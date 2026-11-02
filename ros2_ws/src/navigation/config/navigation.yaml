@@ -1,0 +1,21 @@
+# 라이다 합치기 · 위치 감시 설정 (slam.launch.py 가 넘김)
+scan_merger:
+  ros__parameters:
+    frame: base_footprint
+    bins: 720                   # 0.5°
+    range_min: 0.05
+    range_max: 8.0
+    body_half: [0.17, 0.19]     # 자기 몸(바퀴 · 기둥 · 선) 상자 반길이 · 반폭 [m] — tools/drive/body_footprint.py 와 같게
+    max_age: 0.15               # [s] 라이다끼리 이보다 시각이 벌어지면 /scan 안 냄 (한쪽 끊김)
+    out: /scan
+
+pose_guard:
+  ros__parameters:
+    base_frame: base_footprint
+    hold_s: 1.0                 # 정지 · 경고를 원인이 없어진 뒤 더 유지하는 시간 [s]
+    publish_bias: true          # /imu_motion_bias 보냄 (자이로 이동 치우침)
+    bias_file: ~/.imu_motion_bias
+    bias_initial: 0.0016        # [rad/s] 파일이 없을 때 (실물 0.09 °/s)
+    bias_gain: 0.3              # 5 s 창마다 남은 치우침에 곱해 더함
+    bias_max: 0.005             # [rad/s] swerve_controller imu_motion_bias_max 와 같게
+    bias_window_s: 5.0

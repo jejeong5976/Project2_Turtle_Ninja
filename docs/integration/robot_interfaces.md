@@ -1,7 +1,7 @@
-# 로봇 쪽 인터페이스 (주행 · 조향 · IMU · 라이다 SLAM · 팔) — 2026-11-01
+# 로봇 쪽 인터페이스 (주행 · 조향 · IMU · 라이다 SLAM · 팔)
 
 planning · perception 이 붙을 때 보는 표. 이름은 팀 시뮬 브리지(`sim/robot_sim/scripts/sim_nav_bridge.py`)
-· 인지 노드(`feat/perception-node`) 와 맞춤. 아래 장착값은 11-01 실측 반영 `description/urdf/robot.urdf.xacro` 기준이며, 이 복사본에서는 파일 대조·오프라인 검증만 수행했다.
+· 인지 노드(`perception`, `config/perception.yaml`) 와 맞춤. 장착값은 실측 반영 `description/urdf/robot.urdf.xacro` 기준.
 
 ## 토픽 · 액션
 
@@ -12,15 +12,17 @@ planning · perception 이 붙을 때 보는 표. 이름은 팀 시뮬 브리지
 | TF `odom → base_footprint` | | swerve_controller | 50 Hz | `base_footprint → base_link` 는 URDF 고정 TF (z=0.033 m) |
 | `/lidar_front/scan` | `sensor_msgs/LaserScan` | `coin_d4_driver/multi_coin_d4_node` | `lidar_front_link` (= `base_scan_front` = `base_scan`) | `slam.launch.py` 기본 입력. SensorDataQoS |
 | `/lidar_rear/scan` | `sensor_msgs/LaserScan` | `coin_d4_driver/multi_coin_d4_node` (뒤 라이다를 켰을 때) | `lidar_rear_link` (= `base_scan_rear`) | 실물 운용 = 앞뒤 둘 다 (`NT_LIDAR_REAR` 를 주면). 안 주면 앞만 |
-| `/scan` | `sensor_msgs/LaserScan` | `bringup/scan_merger.py` | `base_footprint` | 앞 · 뒤 스캔을 고정 TF 로 합침. slam_toolbox 입력 |
-| `/map` · TF `map → odom` | | slam_toolbox (`slam.launch.py`) | | 지도 만들기 = online_async, 위치 추정 = localization (저장한 posegraph) |
+| `/scan` | `sensor_msgs/LaserScan` | `navigation/scan_merger` | `base_footprint`, 10 Hz | 앞 · 뒤 스캔을 고정 TF 로 합침 (0.5° 칸, 몸 상자 안 점 버림). 한쪽 라이다가 0.15 s 넘게 끊기면 안 냄. slam_toolbox · 앞 물체 정지 입력 |
+| `/map` · TF `map → odom` | | slam_toolbox (`navigation/slam.launch.py`) | | 지도 만들기 = online_async, 위치 찾기 = localization (저장한 posegraph) |
+| `/localization_health` | `diagnostic_msgs/DiagnosticStatus` | `navigation/pose_guard` | 5 Hz | level 0 정상 · 1 경고(느리게) · 2 정지. 지도 맞음 · SLAM 보정 · 라이다 · IMU · TF 끊김을 봄 |
+| `/imu_motion_bias` | `geometry_msgs/Vector3Stamped` | `navigation/pose_guard` → swerve_controller | 1 Hz | z = 움직일 때 자이로에 더할 회전 [rad/s]. 정상 판정일 때만 보냄, 5 s 안 오면 컨트롤러는 0 |
 | `/imu_sensor_broadcaster/imu` | `sensor_msgs/Imu` | imu_sensor_broadcaster (실물만) | `imu_link` | 주행 OpenCR 의 MPU-9250 칩 기준. 장착 yaw=+90° |
 | `/joint_states` | `sensor_msgs/JointState` | joint_state_broadcaster | | 바퀴 · 조향 `drive_*_joint` · `steer_*_joint`, 팔 `joint1~5` · `gripper_left_joint` (오른손은 URDF mimic) |
 | `/arm_task` | `interfaces/action/ArmTask` | control_master (서버) | target `PoseStamped` (보통 base_link) | HOME 은 동작. PICK · PLACE 는 아래 '아직' 참고 |
 | `/control/motion_mode` | `interfaces/msg/MotionMode` | control_master → swerve_controller | 10 Hz | 바퀴 · 팔 차례 (팔 움직이는 동안 바퀴 잠금) |
 
 손목 RealSense 설정은 `camera_namespace:=/ camera_name:=wrist_cam align_depth.enable:=true publish_tf:=false`.
-광학 TF 는 URDF 가 보내므로 드라이버 TF 를 중복해서 보내지 않는다. 이 설정으로 실물 드라이버를 띄우는 시험은 이번 작업에 포함하지 않았다.
+광학 TF 는 URDF 가 보내므로 드라이버 TF 를 중복해서 보내지 않는다.
 
 | 토픽 | header.frame_id |
 |---|---|
@@ -30,7 +32,7 @@ planning · perception 이 붙을 때 보는 표. 이름은 팀 시뮬 브리지
 
 토픽 이름에는 `/` 를 쓰고 TF 프레임 이름에는 붙이지 않는다. 광각 카메라 드라이버의 frame_id 는 `birdeye_camera_optical_frame` 으로 맞춘다.
 
-## 좌표 · 장착 TF (2026-11-01)
+## 좌표 · 장착 TF
 
 새 앞쪽은 +X, 왼쪽은 +Y. `base_footprint` 는 바닥, 팀 `base_link` 는 바닥에서 0.033 m 위이다.
 팔 검증 모델의 `base_link` 좌표를 팀 `base_link` 로 옮길 때는 **xyz 에 (0, 0, +0.039) m 를 더하고 회전은 더하지 않는다**.
@@ -41,7 +43,7 @@ planning · perception 이 붙을 때 보는 표. 이름은 팀 시뮬 브리지
 | `base_footprint → base_link` | `(0, 0, 0.033)` | `(0, 0, 0)` |
 | `base_footprint → lidar_front_link` | `(+0.1145, 0, 0.060)` | `(0, 0, π)` · 앞 스캔면 |
 | `base_footprint → lidar_rear_link` | `(-0.1145, 0, 0.060)` | `(0, 0, 0)` · 뒤 스캔면 |
-| `base_link → imu_link` | `(0.001, 0.075, 0.0948)` | `(0, 0, +π/2)` · 주행 OpenCR 칩 중심, 위치는 사진 기준 약 ±10 mm |
+| `base_link → imu_link` | `(0.035, 0.069, 0.0948)` | `(0, 0, +π/2)` · 주행 OpenCR 보드 중심, 위에서 찍은 사진으로 맞춤 (약 ±5 mm) |
 | `base_link → link1` | `(0.0225499941511, 0, 0.166512411)` | `(0, 0, -1.208484306590865)` · 팔 받침 |
 | `wrist_link → wrist_cam_color_optical_frame` | `(0.086934, -0.004296, -0.013517)` | `(-2.82003587790852, -0.00491770751513343, -2.01872902587038)` · T_5c |
 | `wrist_link → wrist_cam_depth_optical_frame` | `(0.080595, -0.017995, -0.013696)` | `(-2.81348510600011, -0.016591029457623, -2.01201857941374)` · T_5d |
@@ -52,7 +54,7 @@ planning · perception 이 붙을 때 보는 표. 이름은 팀 시뮬 브리지
 
 손눈 보정 JSON 의 `link5` 는 관절5 뒤 링크, 즉 팀 **`wrist_link`** 를 뜻한다. 팀 `link5` (관절5 이전) 와 구분한다.
 T_5c · T_5d 는 광학축 회전까지 포함하므로 optical 회전을 다시 더하지 않는다.
-`camera_link` 는 CAD 전면 프레임이고, 기존 `camera_optical_frame` 은 `wrist_cam_color_optical_frame` 과 같은 위치·방향의 별칭이다.
+`camera_link` 는 CAD 전면 프레임이고, `camera_optical_frame` · `d435_color_optical_frame` (인지 노드 · 시뮬 이름) 은 `wrist_cam_color_optical_frame` 과 같은 위치·방향의 별칭이다.
 손목 · 광각 카메라와 프로파일은 `with_accessories:=true` 일 때 들어간다.
 
 적재함 시각 프레임은 `rack_cell_A_link` ~ `rack_cell_D_link`, `rack_cell_L1_link` ~ `rack_cell_L8_link` 이다.
@@ -62,16 +64,15 @@ T_5c · T_5d 는 광학축 회전까지 포함하므로 optical 회전을 다시
 적재함도 `with_accessories:=true` 조건의 시각 링크이며 충돌·관성은 없다. 집기 보정용 `place_offset` 은 컵 프레임 위치에 더하지 않는다.
 
 스워브 관절 이름의 fl · fr · rl · rr 은 옛 이름을 유지한다. 새 좌표계에서 같은 순서의 조향축 `(x,y)` 는
-`(-0.070,+0.112)` · `(+0.060,+0.112)` · `(-0.070,-0.112)` · `(+0.060,-0.112)` m (11-01 실측: 앞뒤 조향축 130 mm, 중심이 몸체 가운데보다 5 mm 뒤),
+`(-0.070,+0.112)` · `(+0.060,+0.112)` · `(-0.070,-0.112)` · `(+0.060,-0.112)` m (실측: 앞뒤 조향축 130 mm, 중심이 몸체 가운데보다 5 mm 뒤),
 바퀴 offset 은 `(+0.0269,+0.0269,-0.0269,-0.0269)` m 로 `config/controllers.yaml` 과 같다.
 
 ## 지도 파일
 
 `tools/jetson/save_map.sh <이름>` → `~/maps/<이름>.{pgm,yaml}` (map_server · Nav2 용) + `.{posegraph,data}` (slam_toolbox 위치 추정용).
 
-## 아직 안 맞는 것 (2026-11-01)
+## 아직 안 맞는 것
 
 - **팔 PICK · PLACE**: 실물 집기 · 적재는 지금 손목 카메라로 퍽을 다시 찾아 자세를 계산하는 별도 도구(실물 시험 중). `/arm_task` 로 묶는 것은 시험이 끝난 뒤.
-- **뒤 라이다**: 11-01 부터 실물은 앞뒤 둘 다 (`run_robot.sh` 에 `NT_LIDAR_FRONT` · `NT_LIDAR_REAR`) → scan_merger 가 `/scan` (360°) 로 합침. 뒤 포트를 안 주면 앞만.
-- **외형과 설명 주석**: 스워브 조향축·offset 과 팔·카메라 TF 는 새 앞쪽 기준으로 반영했다. 차체·바퀴 부품 메시 자체의 방향 확인은 별도이다 (`config/controllers.yaml` 주석도 11-01 에 새 앞쪽 기준으로 고침).
-- **실물 카메라 연결**: 위 frame_id · `publish_tf:=false` 를 실제 RealSense 실행 설정과 대조하는 시험은 남아 있다. URDF 에 광학 프레임이 없는 문제는 이번 모델에서 해소했다.
+- **팔 적재함 넣기 · 꺼내기 (`ArmTask` STORE · RETRIEVE)**: 실물 12 칸 동작은 확인했지만 control_master 에는 아직 없음 (지금은 거절).
+- **실물 카메라 연결**: 위 frame_id · `publish_tf:=false` 를 실제 RealSense 실행 설정과 대조하는 시험은 남아 있다.

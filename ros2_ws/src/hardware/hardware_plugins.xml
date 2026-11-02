@@ -11,7 +11,7 @@
          type="hardware::MockDynamics"
          base_class_type="hardware_interface::SystemInterface">
     <description>
-      가짜 모터 + 다이나믹셀 프로파일(최고 속도 · 가속) 흉내 (2026-10-28). 조향이 도는 시간을 시뮬에 넣음.
+      가짜 모터 + 다이나믹셀 프로파일(최고 속도 · 가속) 흉내. 조향이 도는 시간을 시뮬에 넣음.
       hardware:=mock mock_dynamics:=true 일 때 (ros2_control.xacro).
     </description>
   </class>

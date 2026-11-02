@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""OpenCR 포트 이름 고정 규칙 만들기 (2026-10-29) — 허브에 여러 장치를 꽂아도 부팅마다 /dev/opencr_drive · /dev/opencr_arm 이 같은 보드.
+"""OpenCR 포트 이름 고정 규칙 만들기 — 허브에 여러 장치를 꽂아도 부팅마다 /dev/opencr_drive · /dev/opencr_arm 이 같은 보드.
 규칙 파일만 만들고 설치는 안 함 (설치는 아래 출력의 sudo 명령을 직접).
 
 순서 (보드를 하나씩 꽂으며 물어봄 — 어느 보드인지 사람이 정함):

@@ -8,11 +8,11 @@
     계산해 넘김 — 위치 모드 눈금 0~4095 에서 양 끝 steer_margin_ticks 를 뺀 구간 ∩ 선 한계(cable_*_deg). 컨트롤러는 그 안에서
     조향각 + 바퀴 정 · 역회전을 고르고, 둘 다 범위 밖이면 자르지 않고 전체 정지. 영점이 없으면(mock) 공통 steer_limit
     거부 (노드를 띄우기 전): hardware:=opencr 인데 조향 zero_tick 미확정 / 여러 바퀴(extended) 조향을 실물로
-  # 팔이 없는 로봇으로 바퀴만 (arm:=false) — 팔 컨트롤러 · control_master 를 띄우지 않음
+  # 팔 OpenCR 을 안 붙이고 바퀴만 (arm:=false, 하드웨어는 다 장착해도 됨) — 팔 컨트롤러 · control_master 를 띄우지 않음
   ros2 launch bringup robot.launch.py arm:=false hardware_map:=$(ros2 pkg prefix bringup)/share/bringup/config/hardware_map_drive_only.yaml
-    거부: 하드웨어 지도에 팔 관절이 있음. swerve_controller 에 config/drive_only.yaml 을 더 얹음 (차례 안 봄)
+    거부: 하드웨어 지도에 팔 관절이 있음. swerve_controller 는 차례(require_motion_mode) 를 보지 않음
     바퀴만 시험한 기능은 arm:=false 에서만: park_on_idle · blend_steer_drive · drive_test_params · enforce_command_limits:=false
-    hardware:=mock mock_dynamics:=true : 조향 · 바퀴에 속도 · 가속 한계가 있는 가짜 모터 (2026-10-28)
+    hardware:=mock mock_dynamics:=true : 조향 · 바퀴에 속도 · 가속 한계가 있는 가짜 모터
 """
 
 from launch import LaunchDescription
@@ -31,7 +31,7 @@ from launch_ros.substitutions import FindPackageShare
 
 CONTROLLERS = [
     "joint_state_broadcaster",
-    # swerve_controller 는 여기 없음 — swerve_setup 이 검사 · 모듈별 범위와 함께 띄움 (2026-10-29)
+    # swerve_controller 는 여기 없음 — swerve_setup 이 검사 · 모듈별 범위와 함께 띄움
     "arm_controller",
     "gripper_controller",
 ]
@@ -52,13 +52,13 @@ def steer_ranges(hw, margin_ticks=STEER_MARGIN_TICKS):
         if m.get("zero_tick") is None:
             return None
         z, sc = int(m["zero_tick"]), float(m.get("scale", 1.0))
-        if m.get("extended"):   # 여러 바퀴(확장 위치) 모드 — 범위 = 선 한계 그대로 (2026-10-28, 모의 전용, 아래에서 실물 거부)
+        if m.get("extended"):   # 여러 바퀴(확장 위치) 모드 — 범위 = 선 한계 그대로 (모의 전용, 아래에서 실물 거부)
             lo.append(math.radians(float(m["cable_min_deg"])))
             hi.append(math.radians(float(m["cable_max_deg"])))
             continue
         a = sc * (margin_ticks - z) * TICK_RAD
         b = sc * (4095 - margin_ticks - z) * TICK_RAD
-        # 선(케이블) 한계가 있으면 그 안으로만 (2026-10-28, hardware_map cable_min_deg / cable_max_deg)
+        # 선(케이블) 한계가 있으면 그 안으로만 (hardware_map cable_min_deg / cable_max_deg)
         lo.append(max(min(a, b), math.radians(float(m.get("cable_min_deg", -math.inf)))))
         hi.append(min(max(a, b), math.radians(float(m.get("cable_max_deg", math.inf)))))
         if hi[-1] - lo[-1] < math.pi:
@@ -76,11 +76,10 @@ def spawner_node(name, files, **kw):
 
 def swerve_setup(context):
     """swerve_controller 를 띄우기 전 검사 + 설정 — 안 되면 노드를 띄우기 전에 멈춤 (예외 → launch 실패).
-    2026-10-29: arm:=true(시연 · 전체)도 같은 길로. 예전에는 arm:=false 에서만 모듈별 조향 범위를 넘겨서
-    arm:=true 는 공통 ±π 로 돌았음 (rl 선 한계 170° · rr −44.5° 끝을 모름 → 선 당김 위험)
+    arm:=true(시연 · 전체)도 같은 길로 (모듈별 조향 범위를 모르면 범위 끝을 넘어 선을 당길 수 있음).
       공통      : 조향 zero_tick 미확정이면 실물 거부 · 모듈별 범위(눈금 창 ∩ 선 한계) · 조향 정책 · 여러 바퀴 모드 실물 거부
-      arm:=false: 팔 관절이 지도에 있으면 거부 · drive_only.yaml(차례 안 봄) · 정지 복귀 · 동시 조향 · 시험 파라미터 허용
-    통과하면 swerve_controller spawner (controllers.yaml [+ drive_only.yaml] + 모듈별 범위) 를 돌려줌"""
+      arm:=false: 팔 관절이 지도에 있으면 거부 · 차례 안 봄 · 정지 복귀 · 동시 조향 · 시험 파라미터 허용
+    통과하면 swerve_controller spawner (controllers.yaml + 모듈별 범위 · 정책) 를 돌려줌"""
     arm_off = context.perform_substitution(LaunchConfiguration("arm")) == "false"
     park = context.perform_substitution(LaunchConfiguration("park_on_idle"))
     if park not in ("true", "false"):
@@ -111,8 +110,6 @@ def swerve_setup(context):
             raise RuntimeError(f"hardware:=opencr 거부 — 조향 zero_tick 미확정 {missing}. "
                                "실물을 직진으로 맞춘 뒤 읽은 눈금을 하드웨어 지도에 넣을 것")
     files = [context.perform_substitution(cfg("controllers.yaml"))]
-    if arm_off:
-        files.append(context.perform_substitution(cfg("drive_only.yaml")))
     margin_ticks = int(context.perform_substitution(LaunchConfiguration("steer_margin_ticks")))
     if not 0 <= margin_ticks <= 2047:
         raise RuntimeError("steer_margin_ticks must be 0..2047")
@@ -123,8 +120,9 @@ def swerve_setup(context):
     policy = context.perform_substitution(LaunchConfiguration("steering_policy"))
     if policy not in ("nearest", "coherent"):
         raise RuntimeError("steering_policy must be nearest | coherent")
-    params = {"park_on_idle": park == "true", "steering_policy": policy}
-    if blend == "true":   # 동시 조향·구동 (2026-10-26, arm:=false 시험용). 진행 막힘 1.0 s 넘으면 구동 0
+    # 팔 OpenCR 이 없으면 control_master 도 안 뜸 → 바퀴 차례(DRIVE) 허가를 줄 노드가 없으므로 차례를 보지 않음
+    params = {"park_on_idle": park == "true", "steering_policy": policy, "require_motion_mode": not arm_off}
+    if blend == "true":   # 동시 조향·구동 (arm:=false 시험용). 진행 막힘 1.0 s 넘으면 구동 0
         params.update(blend_steer_drive=True, blend_stall_s=float(context.perform_substitution(LaunchConfiguration("blend_stall_s"))),
                       blend_margin=float(context.perform_substitution(LaunchConfiguration("blend_margin"))))
     if test_path:
@@ -170,12 +168,12 @@ def generate_launch_description():
         DeclareLaunchArgument("opencr_ports", default_value="auto",
                               description="보드마다 포트: bus_drive=/tmp/opencr_drive,bus_arm=/tmp/opencr_arm (auto = hardware_map.yaml)"),
         DeclareLaunchArgument("mock_dynamics", default_value="false",
-                              description="hardware:=mock 일 때 true = 조향 · 바퀴 속도 · 가속 한계 있는 가짜 모터 (2026-10-28)"),
+                              description="hardware:=mock 일 때 true = 조향 · 바퀴 속도 · 가속 한계 있는 가짜 모터"),
         DeclareLaunchArgument("use_rviz", default_value="false"),
         DeclareLaunchArgument("arm", default_value="true",
-                              description="false = 팔 없는 로봇으로 바퀴만 (팔 관절이 없는 hardware_map 필요, 위 설명)"),
+                              description="false = 팔 OpenCR 을 안 붙이고 바퀴만 (팔 관절이 없는 hardware_map 필요, 위 설명)"),
         DeclareLaunchArgument("steering_policy", default_value="coherent",
-                              description="coherent = 평행 이동은 공통 자세 우선 (기본, 2026-10-29 부터 arm:=true 도) | nearest = 예전 최소 이동"),
+                              description="coherent = 평행 이동은 공통 자세 우선 (기본) | nearest = 예전 최소 이동"),
         DeclareLaunchArgument("park_on_idle", default_value="false",
                               description="true = 정지 1 s 뒤 조향 0° (바퀴 바깥쪽) 로 복귀. arm:=false 에서만"),
         DeclareLaunchArgument("blend_steer_drive", default_value="false",
@@ -183,16 +181,16 @@ def generate_launch_description():
         DeclareLaunchArgument("blend_stall_s", default_value="1.0",
                               description="동시 모드에서 조향이 못 따라와 진행이 막힌 시간이 이보다 길면 구동 0 [s]"),
         DeclareLaunchArgument("blend_margin", default_value="0.7",
-                              description="동시 모드는 조향 허용 오차의 이 비율 안에서만 진행 (경계에서 게이트가 걸려 연결이 끊기는 것 방지, 2026-10-26)"),
+                              description="동시 모드는 조향 허용 오차의 이 비율 안에서만 진행 (경계에서 게이트가 걸려 연결이 끊기는 것 방지)"),
         DeclareLaunchArgument("steer_margin_ticks", default_value="20"),
         DeclareLaunchArgument("enforce_command_limits", default_value="true",
                               description="ROS target limiter; false only for drive-only performance tests"),
         DeclareLaunchArgument("drive_test_params", default_value="",
                               description="arm:=false optional performance parameter YAML"),
-        # 팔 받침 위치 — 11-01 실측 모델 값 (robot.urdf.xacro 기본값과 같음). 바꿔 볼 때만 인자로
-        DeclareLaunchArgument("arm_mount_x", default_value="0.0225499941511"),   # 11-01: URDF 실측 기본값과 같게 (0.0 이면 URDF 실측값을 덮어씀)
+        # 팔 받침 위치 — 실측 모델 값 (robot.urdf.xacro 기본값과 같음). 바꿔 볼 때만 인자로
+        DeclareLaunchArgument("arm_mount_x", default_value="0.0225499941511"),   # URDF 실측 기본값과 같게 (0.0 이면 URDF 실측값을 덮어씀)
         DeclareLaunchArgument("arm_mount_y", default_value="0.0"),
-        # 앞 라이다 장착 (base_footprint 기준, URDF lidar_front_joint) — 기본 = URDF 와 같음 (11-01: 높이 실측 60 mm · 좌우 가운데 · 앞뒤 CAD ±114.5 mm)
+        # 앞 라이다 장착 (base_footprint 기준, URDF lidar_front_joint) — 기본 = URDF 와 같음 (높이 실측 60 mm · 좌우 가운데 · 앞뒤 CAD ±114.5 mm)
         DeclareLaunchArgument("lidar_front_x", default_value="0.1145"),
         DeclareLaunchArgument("lidar_front_y", default_value="0.0"),
         DeclareLaunchArgument("lidar_front_z", default_value="0.060"),

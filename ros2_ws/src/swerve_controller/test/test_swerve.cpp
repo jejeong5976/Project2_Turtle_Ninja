@@ -585,7 +585,7 @@ TEST(GyroYaw, IgnoresNaNSamples)
   EXPECT_FALSE(g.ready(2.5));   // 마지막 진짜 샘플 2.0 s → 0.5 s 지남
 }
 
-// 5) 2026-11-01 멈춘 직후(still_hold_s 전)와 아직 도는 중(track_gate 밖)엔 바이어스를 안 따라감
+// 5) 멈춘 직후(still_hold_s 전)와 아직 도는 중(track_gate 밖)엔 바이어스를 안 따라감
 TEST(GyroYaw, TracksBiasOnlyAfterHoldAndInsideGate)
 {
   GyroYaw g(1.0, 0.2, 0.002, 1.0, 0.0087);
@@ -601,7 +601,7 @@ TEST(GyroYaw, TracksBiasOnlyAfterHoldAndInsideGate)
   EXPECT_LT(g.bias(), 0.005);
 }
 
-// 6) 2026-11-01 5 rad/s 넘는 순간 튐은 버림 (바이어스 · 회전 속도에 안 들어감), 계속 튀면 ready() = false
+// 6) 5 rad/s 넘는 순간 튐은 버림 (바이어스 · 회전 속도에 안 들어감), 계속 튀면 ready() = false
 TEST(GyroYaw, DropsSpikes)
 {
   GyroYaw g(1.0, 0.2);
@@ -614,7 +614,7 @@ TEST(GyroYaw, DropsSpikes)
   EXPECT_FALSE(g.ready(1.5));
 }
 
-// 7) 2026-11-02 GPT 검토 재현: 튐 샘플과 함께 온 '움직임' 은 버리지 않음
+// 7) 검토 재현: 튐 샘플과 함께 온 '움직임' 은 버리지 않음
 TEST(GyroYaw, InvalidSampleStillCountsMotion)
 {
   GyroYaw g(1.0, 0.2, 0.002, 1.0, 0.0087);
@@ -625,7 +625,7 @@ TEST(GyroYaw, InvalidSampleStillCountsMotion)
   EXPECT_NEAR(g.bias(), 0.0, 1e-12);
 }
 
-// 8) 2026-11-02 GPT 검토 재현: 켤 때 재는 중 움직임(튐 값) · 긴 공백이 끼면 처음부터
+// 8) 검토 재현: 켤 때 재는 중 움직임(튐 값) · 긴 공백이 끼면 처음부터
 TEST(GyroYaw, CalibrationRestartsOnInvalidMotionOrGap)
 {
   GyroYaw g(5.0, 0.2);
@@ -652,9 +652,9 @@ std::vector<swerve_controller::SteeringRange> ranges_from_zero(const int (&zero)
   for (int z : zero) {r.push_back({-(4075 - z) * k, (z - 20) * k});}
   return r;
 }
-// 모듈 위치 · offset: 새 전진 방향, 순서 fl · fr · rl · rr = 관절 이름 순서 (10-29 controllers.yaml 값. 11-01 실측 반영값은
-//   x −0.070 / +0.060 — 아래 검사는 기하에 무관한 식이라 시험 고정값은 그대로 둠, 2026-11-02 검토)
-const double kRealGeo[4][3] = {{-0.070, 0.112, 0.0269}, {0.060, 0.112, 0.0269},   // 11-01 실측 (앞 +0.060 · 뒤 −0.070)
+// 모듈 위치 · offset: 새 전진 방향, 순서 fl · fr · rl · rr = 관절 이름 순서 (이전 controllers.yaml 값. 실측 반영값은
+//   x −0.070 / +0.060 — 아래 검사는 기하에 무관한 식이라 시험 고정값은 그대로 둠, 검토)
+const double kRealGeo[4][3] = {{-0.070, 0.112, 0.0269}, {0.060, 0.112, 0.0269},   // 실측 (앞 +0.060 · 뒤 −0.070)
                                {-0.070, -0.112, -0.0269}, {0.060, -0.112, -0.0269}};
 const int kRealZero[4] = {3066, 1552, 2577, 3589};
 std::vector<ModuleGeometry> real_modules()
@@ -1002,7 +1002,7 @@ TEST(CoherentPose, DriveGatesUntilAllAlignedKeepsOffsetAndHandlesNewCommand) {
   }
   drive.set_command({0,.05,0},.01); drive.set_turn(true,1,.01);
   out=drive.update(.01,.01,m);
-  // Sideways: parallel wheels, fr/rl on the -90 branch so every wheel stays outboard (2026-10-26)
+  // Sideways: parallel wheels, fr/rl on the -90 branch so every wheel stays outboard
   const double side[4]={kPi/2,-kPi/2,-kPi/2,kPi/2};
   for (int i=0;i<4;++i) {EXPECT_NEAR(out[i].steer_angle,side[i],1e-9);}
   // A timeout during alignment holds measured pose, without starting park or rolling compensation.
@@ -1090,7 +1090,7 @@ TEST(CoherentPose, EveryPhysicalBoundaryRejectsRepeatedBranchChatter) {
 }
 
 
-// 2026-10-26: sideways driving keeps every wheel outboard (no wheel tucked under the deck)
+// sideways driving keeps every wheel outboard (no wheel tucked under the deck)
 TEST(CoherentPose, SidewaysKeepsEveryWheelOutboard) {
   auto k=coherent_geometry(); const auto mods=real_modules();
   for (double deg : {90., -90., 0., 180., 45., -135.}) {
@@ -1111,7 +1111,7 @@ TEST(CoherentPose, SidewaysKeepsEveryWheelOutboard) {
   }
 }
 
-// 2026-10-26 실물 floor_max_050: 범위 끝 여유 0(최대 시험)에서 rr 이 끝에 붙은 바깥쪽 315° 를 골라 200° 넘게 돌았음
+// 실물 floor_max_050: 범위 끝 여유 0(최대 시험)에서 rr 이 끝에 붙은 바깥쪽 315° 를 골라 200° 넘게 돌았음
 TEST(CoherentPose, OutwardIgnoredWhenItsBranchHugsRangeEnd) {
   const SwerveKinematics k(real_modules(), kR, kPi, ranges_from_zero(kRealZero), true, 0.0);
   for (double deg : {135., -45.}) {
@@ -1121,7 +1121,7 @@ TEST(CoherentPose, OutwardIgnoredWhenItsBranchHugsRangeEnd) {
   }
 }
 
-// 2026-10-26: 멈춤(바깥쪽 선호)↔이동(분기 유지) 경계에서 분기가 오락가락해 출발 못 하던 것 (모의 실행에서 발견).
+// 멈춤(바깥쪽 선호)↔이동(분기 유지) 경계에서 분기가 오락가락해 출발 못 하던 것 (모의 실행에서 발견).
 // 조향이 2.4 rad/s 로 목표를 따라가는 간단한 폐루프: 정지에서 어느 방향이든 1.5 s 안에 출발하고, 이어지는 전환도 멈추지 않음.
 TEST(CoherentPose, ClosedLoopStartsAndChainsWithoutBranchChatter) {
   const SwerveKinematics k(real_modules(), kR, kPi, ranges_from_zero(kRealZero), true, 0.0);
@@ -1159,7 +1159,7 @@ TEST(CoherentPose, ClosedLoopStartsAndChainsWithoutBranchChatter) {
   }
 }
 
-// 2026-10-26 실물(최대 시험, 끝 여유 0): rr 범위 −44.5° 라 −45° 대각에서 135° 로 177° 를 돌며 전체 정지.
+// 실물(최대 시험, 끝 여유 0): rr 범위 −44.5° 라 −45° 대각에서 135° 로 177° 를 돌며 전체 정지.
 // steer_end_slack(기본 0)을 1° 로 켜면 끝 각도로 보내고 바퀴 속도 × cos(0.5°). 범위 밖 각도는 절대 안 보냄.
 TEST(CoherentPose, EndSlackSendsNearlyReachableHeadingToRangeEnd) {
   const double d = kPi / 180;
@@ -1180,8 +1180,8 @@ TEST(CoherentPose, EndSlackSendsNearlyReachableHeadingToRangeEnd) {
   EXPECT_THROW(SwerveKinematics(real_modules(), kR, kPi, r, true, 0.0, 3.0 * d), std::invalid_argument);
 }
 
-// 2026-10-28 돌아야 할 각도 비용 (steer_travel_weight): 정면 유지 전방향 "오른쪽 → 앞오른쪽" 에서
-//   10-26 실물 · 10-28 조향 속도 모의 모두 fl 이 269.5° → −45° (314°) 를 돌아 그 구간을 거의 못 감 (진행률 0.0~0.07)
+// 돌아야 할 각도 비용 (steer_travel_weight): 정면 유지 전방향 "오른쪽 → 앞오른쪽" 에서
+//   실물 · 조향 속도 모의 모두 fl 이 269.5° → −45° (314°) 를 돌아 그 구간을 거의 못 감 (진행률 0.0~0.07)
 TEST(CoherentPose, TravelWeightAvoidsWrapAroundSwingAtRangeEnd) {
   const double d = kPi / 180;
   const std::vector<swerve_controller::SteeringRange> r = {{-90.439*d, 269.473*d}, {-223.506*d, 136.406*d}, {-133.418*d, 170.0*d}, {-44.473*d, 315.439*d}};
@@ -1217,7 +1217,7 @@ TEST(CoherentPose, TravelWeightAvoidsWrapAroundSwingAtRangeEnd) {
   }
 }
 
-// 2026-10-28 정면 유지 되먹임 (heading_hold_kp): 이동 중 차체를 한쪽으로 미는 외란(+0.05 rad/s, 자이로에 보임)
+// 정면 유지 되먹임 (heading_hold_kp): 이동 중 차체를 한쪽으로 미는 외란(+0.05 rad/s, 자이로에 보임)
 //   끄면 3 s 뒤 0.15 rad(8.6°) 틀어짐, 켜면 kp 2 → 정상 상태 오차 ≈ 외란/kp = 0.025 rad 근처에서 붙잡음
 TEST(HeadingHold, HoldsYawAgainstDisturbanceOnlyWhileTranslatingWithoutTurnCommand) {
   auto run_hold = [](double kp, const BodyTwist & cmd, double secs) {
@@ -1252,7 +1252,7 @@ TEST(HeadingHold, HoldsYawAgainstDisturbanceOnlyWhileTranslatingWithoutTurnComma
   EXPECT_NEAR(still.second, 0.0, 1e-12);
 }
 
-// 2026-10-28 정면 유지가 범위 끝 바퀴를 갈아타게 만들면 그 주기는 보정 안 함
+// 정면 유지가 범위 끝 바퀴를 갈아타게 만들면 그 주기는 보정 안 함
 //   (모의: 대각 왕복 뒤왼쪽 귀환에서 rr −44.5° 끝 + 보정 회전 → rr 이 반대 분기로 돌기 시작해 구동이 멈춤)
 TEST(HeadingHold, NeverFlipsModuleSittingAtRangeEnd) {
   const double d = kPi / 180;
@@ -1274,7 +1274,7 @@ TEST(HeadingHold, NeverFlipsModuleSittingAtRangeEnd) {
   EXPECT_LT(worst, 5 * d);   // rr 은 끝에 붙은 그대로 (갈아타기 없음)
 }
 
-// 2026-10-28 정면 유지 보정 상한을 이동 속도에 비례 (heading_hold_wz_per_speed): 느릴 때 조향이 흔들리지 않게
+// 정면 유지 보정 상한을 이동 속도에 비례 (heading_hold_wz_per_speed): 느릴 때 조향이 흔들리지 않게
 TEST(HeadingHold, CorrectionScalesWithTranslationSpeed) {
   auto max_wz_at = [](double v, double per_speed) {
       SwerveDriveConfig cfg;
@@ -1299,7 +1299,7 @@ TEST(HeadingHold, CorrectionScalesWithTranslationSpeed) {
   EXPECT_LE(max_wz_at(0.1, 0.4), 0.04 + 1e-9);           // 0.10 m/s → 0.04 rad/s
 }
 
-// 2026-10-29 가지 고르기 보강 — 10-28 실물 36 방향 왕복의 뒤집힘 (실측 범위, 끝 여유 1°)
+// 가지 고르기 보강 — 실물 36 방향 왕복의 뒤집힘 (실측 범위, 끝 여유 1°)
 namespace {
 const double kDeg = kPi / 180;
 const std::vector<swerve_controller::SteeringRange> kMeasured = {
@@ -1366,7 +1366,7 @@ TEST(BranchGuard, ZeroOptionsKeepOldOutputs) {
   }
 }
 
-// 10-28 실물 140° 왕복 귀환: 0.02 m/s · −40.5° 로 가는데 추종기 방향 보정 wz −0.015 → rr 목표 −45.6° (끝 + 여유 넘음)
+// 실물 140° 왕복 귀환: 0.02 m/s · −40.5° 로 가는데 추종기 방향 보정 wz −0.015 → rr 목표 −45.6° (끝 + 여유 넘음)
 //   끔: rr 이 반대 가지로 돌기 시작 / 켬(keep_branch_max_wz): 회전을 줄여 rr 이 −40° 근처 그대로
 TEST(BranchGuard, KeepBranchTrimsSmallTurnInsteadOfFlipping) {
   auto run_case = [](double keep) {
@@ -1395,7 +1395,7 @@ TEST(BranchGuard, KeepBranchTrimsSmallTurnInsteadOfFlipping) {
   EXPECT_LT(on.second, 1.0);                                 // 회전을 줄였음
 }
 
-// 10-29 오후 모의 12 동작 회귀 (곡선 정렬 시간 초과): 일부러 준 느린 곡선(0.02 m/s + 0.15 rad/s)은 바퀴가 기하학적으로
+// 모의 12 동작 회귀 (곡선 정렬 시간 초과): 일부러 준 느린 곡선(0.02 m/s + 0.15 rad/s)은 바퀴가 기하학적으로
 //   30° 넘게 꺾여도 같은 가지 → 회전을 깎지 않고 명령 그대로 (예전 판정은 회전을 0 근처로 깎아 곡선이 안 됨)
 TEST(BranchGuard, KeepBranchDoesNotTrimIntendedSlowArc) {
   SwerveDriveConfig cfg;
@@ -1423,7 +1423,7 @@ TEST(BranchGuard, KeepBranchDoesNotTrimIntendedSlowArc) {
   EXPECT_GT(max_turn, 30 * kDeg);   // 예전 판정이면 깎였을 크기
 }
 
-// 2026-10-29 검토: 범위 끝 벌점은 nearest 정책에도 (예전 비용식은 ?: 우선순위로 coherent 에만 붙었음)
+// 검토: 범위 끝 벌점은 nearest 정책에도 (예전 비용식은 ?: 우선순위로 coherent 에만 붙었음)
 TEST(BranchGuard, EndGuardAlsoAppliesToNearestPolicy) {
   const auto now = facing(-30 * kDeg);
   SwerveKinematics plain(real_modules(), kR, kPi, kMeasured, false, 0.0, 1.0 * kDeg);
@@ -1436,7 +1436,7 @@ TEST(BranchGuard, EndGuardAlsoAppliesToNearestPolicy) {
   expect_realizes(guard, heading(-40), b, kMeasured);
 }
 
-// 2026-10-29 검토: 생성자가 NaN · 범위 밖 값을 거름 (예전엔 루프 안 예외 또는 조용히 통과)
+// 검토: 생성자가 NaN · 범위 밖 값을 거름 (예전엔 루프 안 예외 또는 조용히 통과)
 TEST(BranchGuard, ConstructorRejectsNonFiniteGeometry) {
   EXPECT_THROW(SwerveKinematics(real_modules(), NAN, kPi), std::invalid_argument);
   EXPECT_THROW(SwerveKinematics(real_modules(), kR, NAN), std::invalid_argument);
