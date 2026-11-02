@@ -77,3 +77,19 @@ TEST(ArmKinematics, TeamCommand)
   EXPECT_NEAR(c[1], -1.4511, 1e-4);
   EXPECT_NEAR(c[2], 0.9511, 1e-4);
 }
+
+// 닫힘 방향을 직접 주면 손가락 방향(180° 주기)을 정확히 맞춤: 기본 방향 = 예전과 같은 해, 90° 돌리면 J5 가 약 90° 돎
+TEST(ArmKinematics, ExplicitCloseAxisTurnsWrist)
+{
+  const auto m = kin_data::model();
+  std::string why;
+  const double def = manipulation::default_close_rad(m, 0.2102, 0.038, -4.0) * 180.0 / M_PI;
+  const auto a = manipulation::pick_poses(m, 0.2102, 0.038, 0.058, -4.0, {40, 10, -30}, why);
+  const auto b = manipulation::pick_poses(m, 0.2102, 0.038, 0.058, -4.0, {40, 10, -30}, why, def);
+  const auto c = manipulation::pick_poses(m, 0.2102, 0.038, 0.058, -4.0, {40, 10, -30}, why, def - 90.0);
+  ASSERT_EQ(a.size(), 3u);
+  ASSERT_EQ(b.size(), 3u);
+  ASSERT_EQ(c.size(), 3u) << why;
+  for (int j = 0; j < 5; ++j) {EXPECT_EQ(a[2].ticks[j], b[2].ticks[j]);}
+  EXPECT_NEAR(std::abs(c[2].ticks[4] - a[2].ticks[4]), 1024, 80);   // 90° = 1024 틱 (손끝 위치를 맞추느라 조금 다름)
+}

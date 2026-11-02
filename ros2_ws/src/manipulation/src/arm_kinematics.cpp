@@ -24,8 +24,9 @@ Eigen::Matrix4d axis_angle(const Eigen::Vector3d & axis, double a)
 
 using Vec7 = Eigen::Matrix<double, 7, 1>;
 
-// 잔차: 손끝 위치 [mm] 3 · 접근축 [°] 3 · 닫힘축 roll [°] 1 (90° 마다 같음 — 네모 칸 · 퍽)
-Vec7 residual(const ArmModel & m, const Q5 & q, const Eigen::Vector3d & p, const Eigen::Vector3d & a, const Eigen::Vector3d & c)
+// 잔차: 손끝 위치 [mm] 3 · 접근축 [°] 3 · 닫힘축 roll [°] 1 (period 마다 같음: 90° = 네모 칸 · 퍽, 180° = 손가락 방향을 정확히)
+Vec7 residual(const ArmModel & m, const Q5 & q, const Eigen::Vector3d & p, const Eigen::Vector3d & a, const Eigen::Vector3d & c,
+  double period)
 {
   const Grip g = arm_grip(m, q);
   Vec7 r;
@@ -36,17 +37,19 @@ Vec7 residual(const ArmModel & m, const Q5 & q, const Eigen::Vector3d & p, const
   Eigen::Vector3d ct = c - c.dot(a) * a;
   ct /= ct.norm() + 1e-12;
   const double ang = std::atan2(ct.cross(cp).dot(a), ct.dot(cp));
-  r(6) = std::sin(4.0 * ang) / 4.0 * kDeg;
+  const double k = period >= 179.0 ? 1.0 : 4.0;   // 180° 주기 = sin(ang) (0 · 180° 에서만 0), 90° = 기존 계산기와 같은 sin(4 ang)/4
+  r(6) = std::sin(k * ang) / k * kDeg;
   return r;
 }
 
-IkSolution errors(const ArmModel & m, const Q5 & q, const Eigen::Vector3d & p, const Eigen::Vector3d & a, const Eigen::Vector3d & c)
+IkSolution errors(const ArmModel & m, const Q5 & q, const Eigen::Vector3d & p, const Eigen::Vector3d & a, const Eigen::Vector3d & c,
+  double period)
 {
   const Grip g = arm_grip(m, q);
   Eigen::Vector3d cp = (g.close - g.close.dot(a) * a).normalized();
   Eigen::Vector3d ct = (c - c.dot(a) * a).normalized();
   double ang = std::atan2(ct.cross(cp).dot(a), ct.dot(cp)) * kDeg;
-  ang = std::fmod(std::fmod(ang + 45.0, 90.0) + 90.0, 90.0) - 45.0;
+  ang = std::fmod(std::fmod(ang + period / 2.0, period) + period, period) - period / 2.0;
   return {q, (g.tip - p).norm() * 1000.0, std::acos(std::clamp(g.app.dot(a), -1.0, 1.0)) * kDeg, std::fabs(ang)};
 }
 
@@ -57,10 +60,11 @@ Q5 clamp_q(const ArmModel & m, Q5 q, double eps)
 }
 
 // 경계 안 Levenberg–Marquardt (수치 야코비안)
-Q5 solve_lm(const ArmModel & m, Q5 x, const Eigen::Vector3d & p, const Eigen::Vector3d & a, const Eigen::Vector3d & c)
+Q5 solve_lm(const ArmModel & m, Q5 x, const Eigen::Vector3d & p, const Eigen::Vector3d & a, const Eigen::Vector3d & c,
+  double period)
 {
   x = clamp_q(m, x, 1e-6);
-  Vec7 r = residual(m, x, p, a, c);
+  Vec7 r = residual(m, x, p, a, c, period);
   double cost = r.squaredNorm();
   double lambda = 1e-3;
   for (int it = 0; it < 400; ++it) {
@@ -70,7 +74,7 @@ Q5 solve_lm(const ArmModel & m, Q5 x, const Eigen::Vector3d & p, const Eigen::Ve
       const double h = 1e-6;
       xp[j] += h;
       xm[j] -= h;
-      J.col(j) = (residual(m, xp, p, a, c) - residual(m, xm, p, a, c)) / (2.0 * h);
+      J.col(j) = (residual(m, xp, p, a, c, period) - residual(m, xm, p, a, c, period)) / (2.0 * h);
     }
     const Eigen::Matrix<double, 5, 5> JtJ = J.transpose() * J;
     const Eigen::Matrix<double, 5, 1> g = J.transpose() * r;
@@ -82,7 +86,7 @@ Q5 solve_lm(const ArmModel & m, Q5 x, const Eigen::Vector3d & p, const Eigen::Ve
       Q5 xn = x;
       for (int j = 0; j < 5; ++j) {xn[j] += d(j);}
       xn = clamp_q(m, xn, 0.0);
-      const Vec7 rn = residual(m, xn, p, a, c);
+      const Vec7 rn = residual(m, xn, p, a, c, period);
       const double cn = rn.squaredNorm();
       if (cn < cost) {
         double step = 0.0;
@@ -124,7 +128,7 @@ Grip arm_grip(const ArmModel & m, const Q5 & q)
 
 std::vector<IkSolution> arm_ik(
   const ArmModel & m, const Eigen::Vector3d & p, const Eigen::Vector3d & a, const Eigen::Vector3d & c,
-  const std::vector<Q5> & seeds_in)
+  const std::vector<Q5> & seeds_in, double roll_period)
 {
   std::vector<Q5> seeds = seeds_in;
   if (seeds.empty()) {
@@ -141,7 +145,7 @@ std::vector<IkSolution> arm_ik(
     }
   }
   std::vector<IkSolution> out;
-  for (const auto & s : seeds) {out.push_back(errors(m, solve_lm(m, s, p, a, c), p, a, c));}
+  for (const auto & s : seeds) {out.push_back(errors(m, solve_lm(m, s, p, a, c, roll_period), p, a, c, roll_period));}
   return out;
 }
 
@@ -209,29 +213,36 @@ Q5 encoder_goal_q(const ArmModel & m, const Q5 & q_true, double held_kg)
   return q;
 }
 
-std::vector<PickPose> pick_poses(
-  const ArmModel & m, double x, double y, double top_z, double yaw_deg, const std::vector<double> & heights_mm,
-  std::string & why)
+double default_close_rad(const ArmModel & m, double x, double y, double yaw_deg)
 {
-  const Eigen::Vector3d app(0.0, 0.0, -1.0);
   const double az = std::atan2(y - m.j1_xy.y(), x - m.j1_xy.x());
-  Eigen::Vector3d close(-std::sin(az), std::cos(az), 0.0);
+  Eigen::Vector2d close(-std::sin(az), std::cos(az));
   if (std::isfinite(yaw_deg)) {   // 네모 퍽: 면 법선 4 개 중 기본 닫힘축에 가장 가까운 것
-    Eigen::Vector3d best = close;
+    Eigen::Vector2d best = close;
     double bd = -2.0;
     for (int k = 0; k < 4; ++k) {
       const double t = yaw_deg / kDeg + k * M_PI / 2.0;
-      const Eigen::Vector3d n(std::cos(t), std::sin(t), 0.0);
+      const Eigen::Vector2d n(std::cos(t), std::sin(t));
       if (n.dot(close) > bd) {bd = n.dot(close); best = n;}
     }
-    close = (best - best.dot(app) * app).normalized();
+    close = best;
   }
+  return std::atan2(close.y(), close.x());
+}
+
+std::vector<PickPose> pick_poses(
+  const ArmModel & m, double x, double y, double top_z, double yaw_deg, const std::vector<double> & heights_mm,
+  std::string & why, double close_deg)
+{
+  const Eigen::Vector3d app(0.0, 0.0, -1.0);
+  const double ca = std::isfinite(close_deg) ? close_deg / kDeg : default_close_rad(m, x, y, yaw_deg);
+  const Eigen::Vector3d close(std::cos(ca), std::sin(ca), 0.0);
   const Q5 & q0 = m.template_q;
   std::vector<PickPose> out;
   std::vector<Q5> seeds;
   for (double h : heights_mm) {
     const Eigen::Vector3d p(x, y, top_z + h / 1000.0);
-    const auto sols = arm_ik(m, p, app, close, seeds);
+    const auto sols = arm_ik(m, p, app, close, seeds, std::isfinite(close_deg) ? 180.0 : 90.0);
     const IkSolution * pick = nullptr;
     auto key = [&](const IkSolution & s) {
         const double a = std::round(std::fabs(s.q[4] - m.q5_rest) / 0.3);
