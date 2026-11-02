@@ -3,7 +3,7 @@
 <package format="3">
   <name>navigation</name>
   <version>0.1.0</version>
-  <description>라이다 2 개 합치기 · slam_toolbox 지도 만들기 / 위치 찾기 · 위치 감시</description>
+  <description>라이다 2 개 합치기 · slam_toolbox 지도 만들기 / 위치 찾기 · 위치 감시 · Nav2 실행 (설정 레포 config/nav2.yaml) · /mission/hold 속도 문 (cmd_vel_hold)</description>
   <maintainer email="team@example.com">F팀 닌자터틀</maintainer>
   <license>Apache-2.0</license>
 
@@ -16,12 +16,24 @@
   <depend>diagnostic_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
+  <depend>std_msgs</depend>
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>bringup</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>coin_d4_driver</exec_depend>   <!-- 앞 · 뒤 LDS-03, apt ros-lyrical-coin-d4-driver -->
+  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>nav2_amcl</exec_depend>
+  <exec_depend>nav2_planner</exec_depend>
+  <exec_depend>nav2_navfn_planner</exec_depend>
+  <exec_depend>nav2_controller</exec_depend>
+  <exec_depend>nav2_mppi_controller</exec_depend>
+  <exec_depend>nav2_behaviors</exec_depend>
+  <exec_depend>nav2_bt_navigator</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>nav2_collision_monitor</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>   <!-- RViz 설정 nav2_default_view.rviz -->
   <exec_depend>rviz2</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
 

@@ -6,6 +6,7 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
@@ -21,7 +22,13 @@ target_compile_features(pose_guard PRIVATE cxx_std_17)
 target_link_libraries(pose_guard rclcpp::rclcpp tf2::tf2 tf2_ros::tf2_ros
   ${sensor_msgs_TARGETS} ${nav_msgs_TARGETS} ${geometry_msgs_TARGETS} ${diagnostic_msgs_TARGETS})
 
-install(TARGETS scan_merger pose_guard DESTINATION lib/${PROJECT_NAME})
+# /mission/hold 를 받아 Nav2 속도 명령을 막는 문 (collision_monitor → cmd_vel_hold → /cmd_vel)
+add_executable(cmd_vel_hold src/cmd_vel_hold.cpp)
+target_compile_features(cmd_vel_hold PRIVATE cxx_std_17)
+target_link_libraries(cmd_vel_hold rclcpp::rclcpp ${geometry_msgs_TARGETS} ${std_msgs_TARGETS})
+
+# Nav2 설정은 레포 config/nav2.yaml (bringup 이 share/bringup/config 로 설치) -> launch/nav2.launch.py 가 찾음
+install(TARGETS scan_merger pose_guard cmd_vel_hold DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config rviz DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
