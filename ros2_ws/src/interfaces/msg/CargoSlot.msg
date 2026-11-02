@@ -7,7 +7,7 @@
 # 보내는 쪽 → 받는 쪽
 #   - mission_manager → 대시보드 · rosbag
 # note
-#   - 칸 이름은 control 과 같아야 함, planning 기본 S1–S12. 이름은 아직 control 과 미확정
+#   - 칸 이름 S1–S12 = URDF rack_cell_S1 … S12, 팔에서 먼 칸부터
 
 string slot                   # 칸 이름, 그리퍼면 "gripper"
 bool occupied                 # 퍽이 있는가

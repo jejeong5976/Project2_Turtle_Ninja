@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mission</name>
+  <version>0.1.0</version>
+  <description>발제 v5 미션 관리 노드 mission_manager: 바코드 · 신호등 점멸 기록 · 주사위 배치 계획 · 운반 계획 · 재검증 · 기록 파일. 실행은 planning Executor</description>
+  <maintainer email="jje5976@gmail.com">jje</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>interfaces</depend>
+  <depend>planning</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>yaml-cpp</depend>
+
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <!-- bringup 은 의존 안 함: 있으면 그 config/planning.yaml 쓰고, 없으면 코드 기본값 -->
+
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

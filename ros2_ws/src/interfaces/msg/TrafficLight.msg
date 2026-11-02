@@ -5,7 +5,7 @@
 # 토픽
 #   - /perception/traffic_light
 # 보내는 쪽 → 받는 쪽
-#   - perception_node → mission_manager · signal_watch
+#   - perception_node → mission_manager
 # note
 #   - 광각 영상을 처리할 때마다 발행, wide.max_hz 이하 → 끊기면 planning 이 perception 끊김으로 처리
 #   - 이번 영상에서 신호등을 못 찾으면 이전 색을 내지 않고 UNKNOWN + visible=false
