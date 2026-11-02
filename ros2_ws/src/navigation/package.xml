@@ -17,6 +17,8 @@
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
 
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <exec_depend>bringup</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>coin_d4_driver</exec_depend>   <!-- 앞 · 뒤 LDS-03, apt ros-lyrical-coin-d4-driver -->

@@ -10,11 +10,12 @@
 // 자이로 이동 치우침 (/imu_motion_bias, Vector3Stamped z [rad/s]): 움직이는 동안 자이로가 실제 회전을 덜 느끼는 만큼.
 //   BiasLearner 가 map→odom 방향 고침 속도로 배움 → swerve_controller 가 움직일 때만 자이로에 더함.
 //   판정이 정상이고 map→odom 이 살아 있을 때만 보냄 (SLAM 없이 저장값만 보내지 않음 → 컨트롤러는 5 s 뒤 0 으로).
-//   배운 값은 bias_file 에 남겨 다음에 초기값으로 씀.
+//   배운 값은 bias_file 에 1 분마다 · 끝날 때 저장해 다음에 초기값으로 씀.
 
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <deque>
 #include <fstream>
@@ -72,6 +73,7 @@ public:
     std::ifstream f(bias_file_);
     if (f >> init) {RCLCPP_INFO(get_logger(), "자이로 이동 치우침 초기값 %.4f °/s (%s)", init * 180.0 / M_PI, bias_file_.c_str());}
     bias_ = std::make_unique<BiasLearner>(init, bias_gain, bias_max, bias_window);
+    saved_bias_ = bias_->estimate();
 
     pub_health_ = create_publisher<diagnostic_msgs::msg::DiagnosticStatus>("/localization_health", 10);
     pub_bias_ = create_publisher<geometry_msgs::msg::Vector3Stamped>("/imu_motion_bias", 10);
@@ -95,14 +97,31 @@ public:
     RCLCPP_INFO(get_logger(), "위치 감시 → /localization_health%s", publish_bias_ ? " · /imu_motion_bias" : "");
   }
 
-  ~PoseGuard() override
-  {
-    if (!publish_bias_) {return;}
-    std::ofstream f(bias_file_);
-    if (f) {f << bias_->estimate() << "\n";}
-  }
+  ~PoseGuard() override {save_bias();}
 
 private:
+  // 배운 치우침 저장: 임시 파일에 쓴 뒤 이름을 바꿈 (쓰는 중에 꺼져도 예전 파일이 남음). 1 분마다 · 끝날 때
+  void save_bias()
+  {
+    if (!publish_bias_ || bias_->estimate() == saved_bias_) {return;}
+    const std::string tmp = bias_file_ + ".tmp";
+    {
+      std::ofstream f(tmp);
+      f << bias_->estimate() << "\n";
+      f.close();   // 버퍼를 실제로 써 봐야 디스크 가득 참 등을 알 수 있음 → 실패면 예전 파일을 그대로 둠
+      if (f.fail()) {
+        RCLCPP_WARN(get_logger(), "치우침 저장 실패: %s", tmp.c_str());
+        std::remove(tmp.c_str());
+        return;
+      }
+    }
+    if (std::rename(tmp.c_str(), bias_file_.c_str()) != 0) {
+      RCLCPP_WARN(get_logger(), "치우침 저장 실패: %s", bias_file_.c_str());
+      return;
+    }
+    saved_bias_ = bias_->estimate();
+  }
+
   // 단일 스레드 executor — 콜백과 타이머가 겹치지 않으므로 잠금 없음
   double mono() const {return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();}
 
@@ -272,6 +291,10 @@ private:
         pub_bias_->publish(b);
         bias_pub_t_ = now;
       }
+      if (now - bias_save_t_ >= 60.0) {
+        save_bias();
+        bias_save_t_ = now;
+      }
     }
     const std::string match_txt = m.match ? std::to_string(static_cast<int>(*m.match * 100.0)) + "%" : "-";
     RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 2000, "%s · 지도 맞음 %s · 자이로 보정 %+.3f °/s · %s",
@@ -300,7 +323,8 @@ private:
   std::deque<std::array<double, 2>> yaw_hist_;
   std::deque<double> match_hist_;
   double match_t_{0.0};
-  double last_err_{-1e9}, last_warn_{-1e9}, bias_pub_t_{-1e9};
+  double last_err_{-1e9}, last_warn_{-1e9}, bias_pub_t_{-1e9}, bias_save_t_{0.0};
+  double saved_bias_{0.0};
   int level_{0};
   std::vector<std::string> reasons_;
 

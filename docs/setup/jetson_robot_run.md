@@ -7,7 +7,7 @@
 |---|---|
 | 젯슨 | Orin Nano · JetPack 7 · Ubuntu 24.04 · 사용자 `turtle` |
 | ROS | Lyrical (`/opt/ros/lyrical`), slam_toolbox, `ros-lyrical-coin-d4-driver` (LDS-03) |
-| 포트 | 주행 OpenCR `/dev/opencr_drive`, 팔 OpenCR `/dev/opencr_arm` (3 절 udev 규칙), 앞 라이다 `/dev/serial/by-path/platform-3610000.usb-usb-0:2.4.4:1.0-port0` |
+| 포트 | 주행 OpenCR `/dev/opencr_drive`, 팔 OpenCR `/dev/opencr_arm` (3 절 udev 규칙). 앞 · 뒤 라이다는 USB 자리(`/dev/serial/by-path/…`)로 — 기본값은 `run_robot.sh` 의 `LF` · `LR` |
 | 라이다 | 앞 · 뒤 LDS-03, 스캔면 바닥에서 60 mm, 앞뒤 ±0.1145 m (URDF `lidar_front_link` · `lidar_rear_link`) |
 
 ## 1. 노트북 → 젯슨 복사
@@ -43,14 +43,17 @@ ls -l /dev/opencr_drive /dev/opencr_arm
 bash tools/jetson/run_robot.sh drive opencr   # 바퀴만 (팔 OpenCR 은 젯슨에 안 붙임). 처음엔 바퀴를 띄우고
 bash tools/jetson/run_robot.sh full  opencr   # 팔까지: 켤 때 바퀴 잠금 → 팔 HOME 성공 뒤 주행
 #   팔 HOME: ros2 action send_goal /arm_task interfaces/action/ArmTask "{task: 0}"
-bash tools/jetson/run_robot.sh slam  opencr   # 바퀴 + 라이다 2 개 + 지도 만들기 + 위치 감시
+bash tools/jetson/run_robot.sh slam  opencr   # 바퀴 + 앞 · 뒤 라이다 + 지도 만들기 + 위치 감시
+#   라이다를 다른 USB 자리에 꽂았으면: NT_LIDAR_FRONT=/dev/serial/by-path/… NT_LIDAR_REAR=/dev/serial/by-path/… bash tools/jetson/run_robot.sh slam opencr
+#   뒤 라이다 없이: NT_LIDAR_REAR=none (뒤 반원이 비어 후진 · 옆 주행에서 앞 물체 정지가 뒤를 못 봄)
 bash tools/jetson/save_map.sh arena           # 지도 저장 (slam 이 떠 있는 동안, 로봇을 세우고) → ~/maps/arena.*
 bash tools/jetson/run_robot.sh locate opencr ~/maps/arena   # 저장한 지도에서 위치 찾기 + 위치 감시
 ```
 - `slam` · `locate` 는 `navigation/slam.launch.py` 를 부르고, 위치 감시(`pose_guard`)도 같이 뜬다.
   `/localization_health` (정상 · 경고 · 정지)와 `/imu_motion_bias` (움직일 때 자이로 보정)를 낸다.
 - locate 뒤 rviz 의 2D Pose Estimate 로 시작 위치를 찍는다 (`slam_rviz:=true` 또는 노트북 rviz `navigation/rviz/slam_view.rviz`).
-- 거부되는 경우: 다른 ros2_control_node 가 떠 있음 · 권한 없음 · 포트 없음 · 주행/팔 포트가 같은 장치 · 검사하는 인자를 덧붙임.
+- 실행 중 화면에는 경고 · 오류와 위치 감시 상태(2 s 마다 정상 · 경고 · 정지)만 보이고, 전체 기록은 `runs/robot_<모드>_…/launch.log`.
+- 거부되는 경우: 다른 ros2_control_node 가 떠 있음 · 권한 없음 · 포트 없음 · 주행/팔 포트 또는 앞/뒤 라이다가 같은 장치 · 검사하는 인자를 덧붙임.
 - 노트북 rviz 로 보려면 두 기기 `ROS_DOMAIN_ID` 를 같게. 와이파이 멀티캐스트가 불안정하면 양쪽에
   `export ROS_STATIC_PEERS=<상대 주소>` (젯슨 창마다 노트북 주소, 노트북에는 젯슨 주소).
 - 젯슨 명령은 젯슨 터미널(`turtle@turtle`)에서. 노트북 창은 rviz · scp 만.

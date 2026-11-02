@@ -65,7 +65,7 @@ private:
 };
 
 // ============================================================================
-// DurationStats — 주기 함수가 시간을 얼마나 쓰나 (2026-10-16 메모리 · 시간 검토)
+// DurationStats — 주기 함수가 시간을 얼마나 쓰나 (메모리 · 시간 검토)
 //   100 Hz = 한 주기 10 ms. read/write 가 그 안에서 얼마를 쓰는지, 한도를 넘은 횟수를 셈
 //   할당 없음 (숫자 몇 개만) → 제어 주기 안에서 불러도 됨. 로그는 부르는 쪽이 가끔 (예: 10 s 마다) 찍고 reset
 // ============================================================================
@@ -101,7 +101,7 @@ struct JointSpec
   double zero_rad = 0.0;               // 관절 0 일 때의 모터값 [모터 rad] = (zero_tick − 2048) × 2π/4096. 위치 모드만 (바퀴는 0)
 };
 
-// 모터값 ↔ 관절값 (2026-10-16 조향 영점 · 방향). 모터값 = 펌웨어 rad (위치 모드: (눈금 − 2048) × 2π/4096)
+// 모터값 ↔ 관절값 (조향 영점 · 방향). 모터값 = 펌웨어 rad (위치 모드: (눈금 − 2048) × 2π/4096)
 //   관절 = (모터 − zero_rad) × scale,  모터 = 관절 / scale + zero_rad.  속도는 scale 만 (영점은 상관없음)
 //   예) 조향 영점 3596 눈금 · 모터 + = 위에서 시계 / URDF 축 +z (+ = 반시계) → scale = −1, zero_tick = 3596
 inline double motor_to_joint(const JointSpec & j, double m) {return (m - j.zero_rad) * j.scale;}
@@ -126,7 +126,7 @@ struct LinkState
   bool joints_valid = false;  // 펌웨어가 설정한 모터 수만큼 보내 줬나 (CONFIG 전에는 0 개)
 };
 
-// 보드 안 시간 측정 (DIAG, 2026-10-16) 모으기 — 펌웨어가 1 초마다 보내는 것을 합쳐 둠 (플러그인이 10 s 마다 꺼내 로그)
+// 보드 안 시간 측정 (DIAG) 모으기 — 펌웨어가 1 초마다 보내는 것을 합쳐 둠 (플러그인이 10 s 마다 꺼내 로그)
 struct DiagSummary
 {
   struct Stat
@@ -206,7 +206,7 @@ public:
   const LinkState & state() const {return state_;}
   bool has_state() const {return got_state_;}
   double seconds_since_state() const;     // 마지막 STATE 뒤 지난 시간 (없으면 아주 큰 값)
-  // i 번째 모터 값이 "지금의 측정" 인가 (2026-10-16 R3)
+  // i 번째 모터 값이 "지금의 측정" 인가 (R3)
   //   = 마지막 STATE 가 max_age_s 안 + 펌웨어가 모터 수만큼 보냄 + 이번에 그 모터를 읽었음(comm_err 비트 0)
   //   펌웨어는 못 읽은 모터의 옛날 값을 그대로 남겨 보냄 → 이걸로 걸러야 옛 값이 새 시각을 달고 나가지 않음
   bool joint_measured(std::size_t i, double max_age_s) const;

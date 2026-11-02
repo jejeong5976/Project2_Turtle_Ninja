@@ -27,27 +27,40 @@ def stop_distance(speed):
     return speed * STOP_LATENCY_S + speed * speed / (2.0 * STOP_DECEL)
 
 
+def _enters_box(px, py, ux, uy, dist, hx, hy):
+    """점이 몸 기준 (−ux·d, −uy·d) 로 d ∈ [0, dist] 만큼 옮겨질 때 반길이 hx · 반폭 hy 상자에 들어오나 (정확한 구간 계산)"""
+    lo, hi = np.zeros_like(px), np.full_like(px, dist)
+    for q, u, h in ((px, ux, hx), (py, uy, hy)):
+        if abs(u) < 1e-12:
+            out = np.abs(q) > h
+            lo = np.where(out, np.inf, lo)
+        else:
+            a, b = (q - h) / u, (q + h) / u
+            lo, hi = np.maximum(lo, np.minimum(a, b)), np.minimum(hi, np.maximum(a, b))
+    return lo <= hi
+
+
 def obstacle_hit(p, vx, vy, wz, remain=None, margin=0.09, side=0.0):
     """몸 속도 (vx, vy, wz) 로 가면 닿을 점이 있나 → 가장 가까운 거리 [m] 또는 None. p = self_mask 를 지난 몸 기준 점.
-    직진 · 대각: 그 방향 몸 끝부터 max(margin, 정지 거리) 안, 몸 폭(그 방향 직각) + side 안.
+    이동: 몸 직사각형(반폭 + side)이 가는 방향으로 max(margin, 정지 거리) 만큼 쓸고 지나가는 영역 안의 점 (정확한 구간 계산 —
+      둘러싼 큰 상자로 잡으면 옆 보정이 조금 섞일 때 27 cm 옆 벽까지 잡음).
       목표까지 남은 거리(remain)가 짧으면 그만큼만 봄 (목표 앞 벽은 안 봄 — 벽 27 cm 앞 목표에서 계속 멈추지 않게).
-    이동 + 회전: 위에 더해 SWEEP_S 동안 회전하며 움직인 몸 직사각형(+ side) 안에 들어오는 점.
+    이동 + 회전: 위에 더해 SWEEP_S 동안 회전하며 움직인 몸 직사각형 안에 들어오는 점 (10 자세, 자세 사이 모서리 이동만큼 넓힘).
     제자리 회전: 몸 모서리 원 + 1 cm 안."""
     sp = math.hypot(vx, vy)
     if sp > 0.005:
         ux, uy = vx / sp, vy / sp
-        front = BODY_HX * abs(ux) + BODY_HY * abs(uy)
-        half_w = BODY_HX * abs(uy) + BODY_HY * abs(ux)
         ahead = max(margin, stop_distance(sp))
-        reach = front + (ahead if remain is None else min(ahead, remain + 0.02))
-        al, la = p[:, 0] * ux + p[:, 1] * uy, -p[:, 0] * uy + p[:, 1] * ux
-        hit = (al > 0) & (al < reach) & (np.abs(la) < half_w + side)
+        dist = ahead if remain is None else min(ahead, remain + 0.02)
+        hit = _enters_box(p[:, 0], p[:, 1], ux, uy, dist, BODY_HX + side, BODY_HY + side)
         if abs(wz) > 0.01:
-            for t in np.linspace(0.1, SWEEP_S, 5):
+            n = 10
+            pad = (math.hypot(BODY_HX, BODY_HY) * abs(wz) + sp) * SWEEP_S / n   # 자세 사이 모서리가 움직이는 거리
+            for t in np.linspace(SWEEP_S / n, SWEEP_S, n):
                 c, s = math.cos(-wz * t), math.sin(-wz * t)
                 qx, qy = p[:, 0] - vx * t, p[:, 1] - vy * t
                 rx, ry = c * qx - s * qy, s * qx + c * qy
-                hit |= (np.abs(rx) <= BODY_HX + side) & (np.abs(ry) <= BODY_HY + side)
+                hit |= (np.abs(rx) <= BODY_HX + side + pad) & (np.abs(ry) <= BODY_HY + side + pad)
     elif abs(wz) > 0.01:
         hit = np.hypot(p[:, 0], p[:, 1]) < math.hypot(BODY_HX, BODY_HY) + 0.01
     else:

@@ -18,11 +18,11 @@ echo "== 필요한 ROS 패키지 (우리 package.xml 의존성)"
 miss=()
 for p in rosidl_default_generators std_msgs controller_interface controller_manager controller_manager_msgs hardware_interface pluginlib rclcpp rclcpp_action rclcpp_lifecycle \
          joint_state_broadcaster joint_trajectory_controller imu_sensor_broadcaster robot_state_publisher tf2_ros xacro \
-         control_msgs nav_msgs sensor_msgs geometry_msgs trajectory_msgs action_msgs lifecycle_msgs rosidl_default_runtime ament_cmake_gtest; do
+         control_msgs nav_msgs sensor_msgs geometry_msgs trajectory_msgs action_msgs lifecycle_msgs diagnostic_msgs tf2 rosidl_default_runtime ament_cmake_gtest launch launch_ros; do
   ros2 pkg prefix $p >/dev/null 2>&1 || miss+=($p)
 done
 [ ${#miss[@]} -eq 0 ] && ok "모두 있음" || no "없음: ${miss[*]}"
-python3 -c "import yaml" 2>/dev/null && ok "python3-yaml" || no "python3-yaml 없음"
+for m in yaml numpy pytest; do python3 -c "import $m" 2>/dev/null && ok "python3-$m" || no "python3-$m 없음 → sudo apt install python3-$m"; done
 echo "== 시리얼 포트 · 권한"
 id -nG | grep -qw dialout && ok "$(whoami) 가 dialout 그룹 (포트 열기 가능)" || no "$(whoami) 가 dialout 그룹이 아님 → sudo usermod -aG dialout $(whoami) 후 다시 로그인 (udev 규칙 GROUP=dialout)"
 out=$(ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null); [ -n "$out" ] && echo "$out" | sed 's/^/  /' || echo "  꽂힌 시리얼 장치 없음"

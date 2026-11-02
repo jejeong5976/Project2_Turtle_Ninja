@@ -401,11 +401,13 @@ CallbackReturn SwerveController::on_configure(const rclcpp_lifecycle::State &)
     [this](geometry_msgs::msg::TwistStamped::ConstSharedPtr m) {
       const double now = get_node()->now().seconds();
       // 보낸 시각이 있으면 나이 검사 — 큐 · 네트워크에서 늦게 도착한 옛 명령이 멈춘 바퀴를 다시 돌리지 않게.
-      //   시각 0 = 보낸 쪽이 안 적음 → 받은 시각만 씀. 보낸 쪽 시계가 많이 늦으면 모든 명령이 버려짐 (멈춤 쪽으로 실패)
+      //   보낸 쪽과 시계가 같아야 함 (젯슨 안에서 보내거나 시각 동기화된 컴퓨터). 차이가 cmd_max_age_s 를 넘으면
+      //   과거든 미래든 버림 — 시계가 어긋난 컴퓨터의 명령은 멈춤 쪽으로 실패. 시각 0 = 보낸 쪽이 안 적음 → 받은 시각만 씀
       const rclcpp::Time stamp(m->header.stamp, get_node()->get_clock()->get_clock_type());
-      if (stamp.nanoseconds() != 0 && now - stamp.seconds() > cmd_max_age_s_) {
+      if (stamp.nanoseconds() != 0 && std::fabs(now - stamp.seconds()) > cmd_max_age_s_) {
         RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 2000,
-          "/cmd_vel 이 %.2f s 늦게 옴 (> %.2f s) → 버림. 보낸 쪽 시계 · 네트워크 확인", now - stamp.seconds(), cmd_max_age_s_);
+          "/cmd_vel 보낸 시각이 지금과 %+.2f s 차이 (> %.2f s) → 버림. 보낸 쪽 시계 동기화 · 네트워크 확인",
+          now - stamp.seconds(), cmd_max_age_s_);
         return;
       }
       std::lock_guard<std::mutex> lk(cmd_mtx_);

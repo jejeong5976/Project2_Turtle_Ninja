@@ -43,7 +43,7 @@ static bool have_cmd = false;
 static bool imu_ok = false;
 static uint32_t last_cmd_ms = 0;
 static uint32_t last_tick_us = 0;
-// 보드 안 시간 측정 (DIAG, 2026-10-16): 한 바퀴 실행 시간 · 주기 초과 · 다시 잡기 → 1 초마다 TYPE_DIAG 로
+// 보드 안 시간 측정 (DIAG): 한 바퀴 실행 시간 · 주기 초과 · 다시 잡기 → 1 초마다 TYPE_DIAG 로
 static const uint32_t DIAG_PERIOD_MS = 1000;
 static TimeAcc t_loop;
 static TimeAcc t_usb;                 // USB 로 상태 · DIAG 보내기 1 회 (fail = 버퍼가 차서 버림)
@@ -51,7 +51,7 @@ static uint16_t resync_count = 0;
 static uint32_t diag_since_ms = 0;
 static uint16_t config_ms_pending = 0;   // 다음 DIAG 에 실을 CONFIG 처리 시간 [ms]
 
-// ------------------------------------------------------------------ USB 보내기 (기다리지 않음, 2026-10-16)
+// ------------------------------------------------------------------ USB 보내기 (기다리지 않음)
 // 왜: OpenCR 코어의 Serial.write(vcp_write)는 송신 버퍼(2 KB)가 모자라면 **최대 100 ms 바쁘게 기다림**.
 //     PC 가 포트를 한 번 열었다 닫으면(측정 도구를 끝낸 뒤 등) 펌웨어는 계속 쌓다가 버퍼가 차고, 그때부터 상자마다
 //     100 ms 씩 제어 루프가 멈춤 → 첫 DIAG 구간에 "10 ms 초과 3~4 회 · 최대 65535(포화)" 로 보였음.

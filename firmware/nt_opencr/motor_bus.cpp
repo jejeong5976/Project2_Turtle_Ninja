@@ -41,7 +41,7 @@ uint16_t hw_err_ = 0;        // Hardware Error Status ≠ 0 인 모터
 //   ★ 확정되면 **잠금(latched_)**: 통신이 돌아와도 다시 목표를 쓰지 않음 (예전: 다음 Sync Write 성공 때 원래 속도로 재출발)
 //     잠금을 푸는 길은 CONFIG(bus_configure) 하나 — 사람이 원인 확인 후 하드웨어를 다시 설정할 때만
 //   시간: 운전 중 모든 개별 읽기 · 쓰기에 IO_TIMEOUT_MS 를 직접 넘김 (라이브러리 기본은 100 ms → 바퀴 4개면 0.4 s)
-//   ⚠ 아래 숫자는 설계 목표. 실제 버스 · 모터에서 지키는지는 tools/hw_bench.py 로 따로 재야 함
+//   ⚠ 아래 숫자는 설계 목표. 실제 버스 · 모터에서 지키는지는 실물에서 따로 재야 함
 const uint8_t WRITE_FAIL_LIMIT = 3;           // 연속 실패 횟수 (임시 판정값 — 정지 시간 보장이 아님)
 const uint32_t WRITE_FAIL_CONFIRM_MS = 20;    // 첫 실패 뒤 이만큼 지나 또 실패하면 횟수와 상관없이 확정
 const uint32_t IO_TIMEOUT_MS = 3;             // 운전 중 개별 읽기 · 쓰기 응답 대기 (1 Mbps 응답은 0.2 ms 남짓)
@@ -188,7 +188,7 @@ uint16_t bus_configure(const ntp::Config &c)
       good = dxl.setOperatingMode(ids_[i], OP_VELOCITY) && good;
     } else if (modes_[i] == ntp::MODE_CURRENT_POSITION && c.j[i].goal_current == 0) {
       // 힘 한계 0 = 확장 위치 모드: 일반 위치 제어(PWM 출력)와 같고 여러 바퀴만 됨 — J1.
-      //   전류 기반 위치로 J1 을 돌리면 팔을 뻗은 자세에서 10 Hz ±3~6 틱 떨림 (실물 runner_20261030T202825 · 203800)
+      //   전류 기반 위치로 J1 을 돌리면 팔을 뻗은 자세에서 10 Hz ±3~6 틱 떨림 (실물 측정)
       good = dxl.setOperatingMode(ids_[i], OP_EXTENDED_POSITION) && good;
     } else if (modes_[i] == ntp::MODE_CURRENT_POSITION) {
       good = dxl.setOperatingMode(ids_[i], OP_CURRENT_BASED_POSITION) && good;

@@ -27,6 +27,9 @@ def pts(*xy):
     ('이동 + 작은 방향 보정, 옆 벽 27 cm', pts(0, 0.27, 0.2, 0.27, -0.2, 0.27), (0.05, 0, 0.03), None, False),
     ('빠른 전진 0.26 m/s, 앞 30 cm (정지 거리 14.6 cm 안)', pts(0.30, 0), (0.26, 0, 0), None, True),
     ('느린 전진 0.05 m/s, 앞 30 cm', pts(0.30, 0), (0.05, 0, 0), None, False),
+    ('끝 감속 중 옆 보정 + 작은 회전, 옆 벽 27 cm', pts(*[v for x in np.linspace(-0.4, 0.4, 41) for v in (x, 0.27)]), (0.02, 0.006, 0.03), 0.01, False),
+    ('옆으로 다가가기, 옆 벽 22 cm', pts(0, 0.22, 0.1, 0.22), (0, 0.05, 0), None, True),
+    ('회전 쓸림 경계 점 (−0.1708, 0.1881)', pts(-0.1708, 0.1881), (0.02, 0, 0.2), None, True),
 ])
 def test_obstacle_hit(name, p, cmd, remain, stop):
     assert (obstacle_hit(p, *cmd, remain=remain) is not None) == stop, name

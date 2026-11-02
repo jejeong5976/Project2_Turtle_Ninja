@@ -7,11 +7,11 @@ planning · perception 이 붙을 때 보는 표. 이름은 팀 시뮬 브리지
 
 | 이름 | 타입 | 보내는 곳 | 프레임 · 주기 | 비고 |
 |---|---|---|---|---|
-| `/cmd_vel` | `geometry_msgs/TwistStamped` | Nav2 · planning → swerve_controller | base_footprint 기준 몸 속도 | 0.3 s 끊기면 정지. 최고 0.10 m/s · 0.5 rad/s |
+| `/cmd_vel` | `geometry_msgs/TwistStamped` | Nav2 · planning → swerve_controller | base_footprint 기준 몸 속도 | 0.3 s 끊기면 정지. 최고 0.10 m/s · 0.5 rad/s. header.stamp 가 젯슨 시각과 0.3 s 넘게 다르면 버림 (젯슨 안에서 보내거나 시각 동기화 필요, stamp 0 은 받은 시각 기준) |
 | `/odom` | `nav_msgs/Odometry` | swerve_controller | `odom` → `base_footprint`, 50 Hz | 회전은 OpenCR 자이로 (`/imu_sensor_broadcaster/imu`) |
 | TF `odom → base_footprint` | | swerve_controller | 50 Hz | `base_footprint → base_link` 는 URDF 고정 TF (z=0.033 m) |
 | `/lidar_front/scan` | `sensor_msgs/LaserScan` | `coin_d4_driver/multi_coin_d4_node` | `lidar_front_link` (= `base_scan_front` = `base_scan`) | `slam.launch.py` 기본 입력. SensorDataQoS |
-| `/lidar_rear/scan` | `sensor_msgs/LaserScan` | `coin_d4_driver/multi_coin_d4_node` (뒤 라이다를 켰을 때) | `lidar_rear_link` (= `base_scan_rear`) | 실물 운용 = 앞뒤 둘 다 (`NT_LIDAR_REAR` 를 주면). 안 주면 앞만 |
+| `/lidar_rear/scan` | `sensor_msgs/LaserScan` | `coin_d4_driver/multi_coin_d4_node` | `lidar_rear_link` (= `base_scan_rear`) | 실물 운용 = 앞뒤 둘 다 (`run_robot.sh` 기본). 앞만 쓰려면 `NT_LIDAR_REAR=none` |
 | `/scan` | `sensor_msgs/LaserScan` | `navigation/scan_merger` | `base_footprint`, 10 Hz | 앞 · 뒤 스캔을 고정 TF 로 합침 (0.5° 칸, 몸 상자 안 점 버림). 한쪽 라이다가 0.15 s 넘게 끊기면 안 냄. slam_toolbox · 앞 물체 정지 입력 |
 | `/map` · TF `map → odom` | | slam_toolbox (`navigation/slam.launch.py`) | | 지도 만들기 = online_async, 위치 찾기 = localization (저장한 posegraph) |
 | `/localization_health` | `diagnostic_msgs/DiagnosticStatus` | `navigation/pose_guard` | 5 Hz | level 0 정상 · 1 경고(느리게) · 2 정지. 지도 맞음 · SLAM 보정 · 라이다 · IMU · TF 끊김을 봄 |
@@ -21,14 +21,15 @@ planning · perception 이 붙을 때 보는 표. 이름은 팀 시뮬 브리지
 | `/arm_task` | `interfaces/action/ArmTask` | control_master (서버) | target `PoseStamped` (보통 base_link) | HOME 은 동작. PICK · PLACE 는 아래 '아직' 참고 |
 | `/control/motion_mode` | `interfaces/msg/MotionMode` | control_master → swerve_controller | 10 Hz | 바퀴 · 팔 차례 (팔 움직이는 동안 바퀴 잠금) |
 
-손목 RealSense 설정은 `camera_namespace:=/ camera_name:=wrist_cam align_depth.enable:=true publish_tf:=false`.
-광학 TF 는 URDF 가 보내므로 드라이버 TF 를 중복해서 보내지 않는다.
+손목 RealSense 는 기본 이름으로 띄운다: `ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true publish_tf:=false` → `/camera/camera/*`.
+인지 노드(`config/perception.yaml`)와 팔 적재 코드가 이 토픽을 받는다. 광학 TF 는 URDF 가 보내므로 드라이버 TF 는 끈다(`publish_tf:=false`).
+드라이버 header 의 frame_id(`camera_color_optical_frame`)는 URDF 에 없으므로, 받는 쪽이 URDF 이름으로 바꿔 쓴다 (인지 노드는 `wrist.frame_id` = `d435_color_optical_frame`).
 
-| 토픽 | header.frame_id |
+| 토픽 | URDF 프레임 |
 |---|---|
-| `/wrist_cam/color/image_raw` · `/wrist_cam/color/camera_info` | `wrist_cam_color_optical_frame` |
-| `/wrist_cam/aligned_depth_to_color/image_raw` (인지 노드 기대값) | `wrist_cam_color_optical_frame` |
-| `/wrist_cam/depth/image_rect_raw` (팔 적재 코드) | `wrist_cam_depth_optical_frame` |
+| `/camera/camera/color/image_raw` · `/camera/camera/color/camera_info` | `wrist_cam_color_optical_frame` (= `d435_color_optical_frame`) |
+| `/camera/camera/aligned_depth_to_color/image_raw` (인지 노드) | `wrist_cam_color_optical_frame` |
+| `/camera/camera/depth/image_rect_raw` (팔 적재 코드) | `wrist_cam_depth_optical_frame` |
 
 토픽 이름에는 `/` 를 쓰고 TF 프레임 이름에는 붙이지 않는다. 광각 카메라 드라이버의 frame_id 는 `birdeye_camera_optical_frame` 으로 맞춘다.
 

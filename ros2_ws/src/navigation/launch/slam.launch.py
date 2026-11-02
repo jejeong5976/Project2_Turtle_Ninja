@@ -23,7 +23,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -48,7 +48,8 @@ def _lidars(context):
     """앞 · 뒤 포트 → multi_coin_d4_node + 합치기 (뒤 포트가 비면 앞만)"""
     share = FindPackageShare("navigation").perform(context)
     if LaunchConfiguration("lidar").perform(context) != "true":
-        scans, out = ["/lidar_front/scan", "/lidar_rear/scan"], []
+        rear = LaunchConfiguration("rear_scan").perform(context) == "true"
+        scans, out = ["/lidar_front/scan"] + (["/lidar_rear/scan"] if rear else []), []
     else:
         sides = [(s, LaunchConfiguration(f"lidar_{s}_port").perform(context)) for s in ("front", "rear")]
         sides = [(s, p) for s, p in sides if p]
@@ -116,21 +117,24 @@ def generate_launch_description():
                 condition=IfCondition(arg("slam_rviz")))
     return LaunchDescription([
         DeclareLaunchArgument("hardware", default_value="mock", description="mock | opencr"),
-        DeclareLaunchArgument("hardware_map", default_value=PathJoinSubstitution([FindPackageShare("bringup"), "config", "hardware_map_drive_only.yaml"])),
+        DeclareLaunchArgument("arm", default_value="false", choices=["true", "false"], description="false = 팔 OpenCR 을 안 붙이고 바퀴만"),
+        # 팔 OpenCR 을 붙이면(arm:=true) 전체 지도, 아니면 주행 보드만
+        DeclareLaunchArgument("hardware_map", default_value=PathJoinSubstitution([FindPackageShare("bringup"), "config", PythonExpression(
+            ["'hardware_map.yaml' if '", LaunchConfiguration("arm"), "' == 'true' else 'hardware_map_drive_only.yaml'"])])),
         DeclareLaunchArgument("opencr_port", default_value="auto"),
         DeclareLaunchArgument("opencr_ports", default_value="auto"),
-        DeclareLaunchArgument("arm", default_value="false", description="false = 팔 OpenCR 을 안 붙이고 바퀴만"),
-        DeclareLaunchArgument("use_rviz", default_value="false", description="로봇 모델 rviz (bringup)"),
-        DeclareLaunchArgument("slam_rviz", default_value="false", description="지도 · 스캔 rviz (rviz/slam_view.rviz)"),
+        DeclareLaunchArgument("use_rviz", default_value="false", choices=["true", "false"], description="로봇 모델 rviz (bringup)"),
+        DeclareLaunchArgument("slam_rviz", default_value="false", choices=["true", "false"], description="지도 · 스캔 rviz (rviz/slam_view.rviz)"),
         *[DeclareLaunchArgument(k, default_value=v) for k, v in LIDAR_DEFAULTS.items()],
-        DeclareLaunchArgument("robot", default_value="true", description="false = 로봇 bringup 안 띄움 (bag 재생 · 시뮬 · 이미 떠 있을 때)"),
-        DeclareLaunchArgument("lidar", default_value="true", description="false = 라이다 드라이버 안 띄움 (스캔은 밖에서, 합치기는 띄움)"),
+        DeclareLaunchArgument("robot", default_value="true", choices=["true", "false"], description="false = 로봇 bringup 안 띄움 (bag 재생 · 시뮬 · 이미 떠 있을 때)"),
+        DeclareLaunchArgument("lidar", default_value="true", choices=["true", "false"], description="false = 라이다 드라이버 안 띄움 (스캔은 밖에서, 합치기는 띄움)"),
+        DeclareLaunchArgument("rear_scan", default_value="true", choices=["true", "false"], description="lidar:=false 일 때 /lidar_rear/scan 도 받나 (앞 라이다 하나뿐인 bag 이면 false)"),
         DeclareLaunchArgument("lidar_front_port", default_value="", description="앞 라이다 시리얼 (/dev/serial/by-path/…), 비우면 안 씀"),
         DeclareLaunchArgument("lidar_rear_port", default_value="", description="뒤 라이다 시리얼, 비우면 안 씀"),
         DeclareLaunchArgument("slam_mode", default_value="mapping", description="mapping | localization"),
         DeclareLaunchArgument("map", default_value="", description="localization 때 저장한 지도 (확장자 빼고)"),
-        DeclareLaunchArgument("guard", default_value="true", description="위치 감시 pose_guard 띄움"),
-        DeclareLaunchArgument("use_sim_time", default_value="false", description="bag 재생 · 시뮬 때만 true (robot:=false 와 같이)"),
+        DeclareLaunchArgument("guard", default_value="true", choices=["true", "false"], description="위치 감시 pose_guard 띄움"),
+        DeclareLaunchArgument("use_sim_time", default_value="false", choices=["true", "false"], description="bag 재생 · 시뮬 때만 true (robot:=false 와 같이)"),
         OpaqueFunction(function=_check),
         robot,
         OpaqueFunction(function=_lidars),

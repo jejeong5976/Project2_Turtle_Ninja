@@ -11,7 +11,7 @@
 2. 제자리 회전 360° (odom 기준, 0.3 rad/s): odom · 자이로 적분 · SLAM(map) 회전량 비교 → IMU 배율 · 바퀴 회전 계산
 3. 직진 0.5 m 갔다 옴 (0.06 m/s, 막히지 않은 방향 고름): odom 거리 vs SLAM 거리 → 바퀴 지름 · 미끄러짐
 안전: 움직이기 전 /scan · /odom · IMU · map · odom TF 가 모두 와야 시작. 움직이는 동안 스캔 · TF 가
-  0.5 s 넘게 끊기면 · 시간이 넘으면 · 3 s 동안 5 mm 도 안 나가면 0 명령 · 끝. 앞 물체 = body_footprint (path_follow 와 같은 식).
+  (map TF 포함) 0.5 s 넘게 끊기면 · 시간이 넘으면 · 3 s 동안 5 mm 도 안 나가면 0 명령 · 끝. 앞 물체 = body_footprint (path_follow 와 같은 식).
   아무 키 = 정지 · 끝.
 """
 import argparse
@@ -241,10 +241,10 @@ def main():
                 if time.monotonic() > t_end:
                     halt('회전 시간 초과 (40 s)'); return
                 o, p = pose('odom'), body_pts()
-                if o is None or p is None:                              # 끊기면 0 명령, 0.5 s 넘으면 끝
+                if o is None or p is None or pose('map') is None:       # 끊기면 0 명령, 0.5 s 넘으면 끝 (map 은 비교에 꼭 필요)
                     send(); stale_since = stale_since or time.monotonic()
                     if time.monotonic() - stale_since > 0.5:
-                        halt('odom TF · 스캔 끊김'); return
+                        halt('odom · map TF · 스캔 끊김'); return
                     continue
                 stale_since = None
                 acc_yaw += wrap(o[2] - last); last = o[2]
@@ -291,10 +291,10 @@ def main():
                 if now > t_end:
                     halt('직진 시간 초과'); return
                 o, p = pose('odom'), body_pts()
-                if o is None or p is None:
+                if o is None or p is None or pose('map') is None:
                     send(); stale_since = stale_since or now
                     if now - stale_since > 0.5:
-                        halt('odom TF · 스캔 끊김'); return
+                        halt('odom · map TF · 스캔 끊김'); return
                     continue
                 stale_since = None
                 r = rel(o0, o)

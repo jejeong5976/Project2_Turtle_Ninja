@@ -109,8 +109,8 @@ def plan(shape, L, step_deg=10.0, deg=0.0):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--hardware-map", required=True)
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out", default=os.path.expanduser(time.strftime("~/path_follow_%Y%m%dT%H%M%S.json")),
+                    help="결과 JSON (기본 홈 폴더에 실행 시각 이름)")
     ap.add_argument("--raw", action="store_true")
     ap.add_argument("--yes", action="store_true", help="모의 전용: 시작 확인 생략")
     ap.add_argument("--shape", default="line", choices=SHAPES)

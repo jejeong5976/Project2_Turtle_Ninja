@@ -6,8 +6,9 @@
 #   bash tools/jetson/run_robot.sh full  opencr    팔까지 · 실물 (시연 모드: 켤 때 바퀴 잠금 → 팔 HOME 성공 뒤 주행)
 #   bash tools/jetson/run_robot.sh slam  opencr    바퀴 + 앞 · 뒤 라이다 + slam_toolbox 지도 만들기 + 위치 감시 — 지도 저장 tools/jetson/save_map.sh <이름>
 #   bash tools/jetson/run_robot.sh locate opencr ~/maps/<이름>   저장한 지도로 위치 찾기 (map→odom) + 위치 감시
-#   라이다: ROBOTIS coin_d4_driver (sudo apt install ros-lyrical-coin-d4-driver). 포트 NT_LIDAR_FRONT=/dev/serial/by-path/… NT_LIDAR_REAR=…
-#     (ls -l /dev/serial/by-path/ 로 확인. 뒤를 NT_LIDAR_REAR= 로 비우면 앞만)
+#   라이다: ROBOTIS coin_d4_driver (sudo apt install ros-lyrical-coin-d4-driver). 앞 · 뒤 둘 다 기본 (아래 LF · LR 기본값 = 실물 USB 자리).
+#     다른 자리면 NT_LIDAR_FRONT=/dev/serial/by-path/… NT_LIDAR_REAR=… (ls -l /dev/serial/by-path/ 로 확인).
+#     뒤 라이다 없이 앞만 쓰려면 NT_LIDAR_REAR=none (그러면 뒤 반원이 비어 후진 · 옆 주행의 앞 물체 정지가 뒤를 못 봄)
 #   뒤에 launch 인자를 더 붙일 수 있음 (예: steering_policy:=nearest). 단 이 스크립트가 검사하는 인자
 #   (hardware · hardware_map · arm · opencr_port(s) · lidar_*_port · slam_mode · map · use_sim_time · robot) 는 덧붙일 수 없음.
 #   실물 시작 확인을 건너뛰려면 NT_YES=1
@@ -39,10 +40,11 @@ port_ok() {   # 실제 장치를 읽고 쓸 수 있나 (udev 규칙의 그룹 ·
 PKG=bringup; LAUNCH=robot.launch.py
 if [ "$MODE" = slam ] || [ "$MODE" = locate ]; then   # navigation/slam.launch.py 가 robot.launch.py (바퀴만) 를 포함
   PKG=navigation; LAUNCH=slam.launch.py
-  LF=${NT_LIDAR_FRONT-/dev/serial/by-path/platform-3610000.usb-usb-0:2.4.4:1.0-port0}; LR=${NT_LIDAR_REAR-}
-  [ -n "$LF$LR" ] || { say "✗ 라이다 포트 없음 — NT_LIDAR_FRONT · NT_LIDAR_REAR (ls -l /dev/serial/by-path/)"; exit 4; }
-  for L in $LF $LR; do port_ok "$L" || { say "✗ 라이다 포트 $L 를 열 수 없음 (없거나 권한) — ls -l /dev/serial/by-path/"; exit 4; }; done
-  [ -n "$LR" ] || say "⚠ 뒤 라이다 없이 앞만 (NT_LIDAR_REAR)"
+  LF=${NT_LIDAR_FRONT:-/dev/serial/by-path/platform-3610000.usb-usb-0:2.4:1.0-port0}
+  LR=${NT_LIDAR_REAR:-/dev/serial/by-path/platform-3610000.usb-usb-0:2.1:1.0-port0}
+  [ "$LR" = none ] && { LR=""; say "⚠ 뒤 라이다 없이 앞만 (NT_LIDAR_REAR=none) — 뒤 반원이 비어 후진 · 옆 주행의 앞 물체 정지가 뒤를 못 봄"; }
+  for L in $LF $LR; do port_ok "$L" || { say "✗ 라이다 포트 $L 를 열 수 없음 (없거나 권한) — ls -l /dev/serial/by-path/ 로 확인 후 NT_LIDAR_FRONT · NT_LIDAR_REAR"; exit 4; }; done
+  [ -z "$LR" ] || [ "$(readlink -f "$LF")" != "$(readlink -f "$LR")" ] || { say "✗ 앞 · 뒤 라이다 포트가 같은 장치를 가리킴"; exit 4; }
   ros2 pkg prefix coin_d4_driver >/dev/null 2>&1 || { say "✗ coin_d4_driver 없음 — sudo apt install ros-lyrical-coin-d4-driver"; exit 4; }
   ARGS+=(arm:=false "hardware_map:=$SHARE/hardware_map_drive_only.yaml" "lidar_front_port:=$LF" "lidar_rear_port:=$LR")
   if [ "$MODE" = locate ]; then ARGS+=(slam_mode:=localization "map:=$MAPARG"); else ARGS+=(slam_mode:=mapping); fi
@@ -95,5 +97,6 @@ RANGES=$(grep -ao "/tmp/nt_steer_ranges_[A-Za-z0-9_]*\.yaml" "$RUN/launch.log" |
 [ -n "$RANGES" ] && cp "$RANGES" "$RUN/steer_ranges.yaml" 2>/dev/null
 ros2 param dump /swerve_controller > "$RUN/swerve_parameters.yaml" 2>/dev/null || true
 say "준비됨 — /cmd_vel (TwistStamped) 로 움직임. $( [ "$MODE" = full ] && echo '시연 모드: 팔 HOME(/arm_task task 0) 성공 전에는 바퀴 잠금')"
-say "Ctrl+C 로 끝"
+say "Ctrl+C 로 끝 — 경고 · 오류 · 위치 감시 상태는 아래에 그대로 보임 (전체 기록 $RUN/launch.log)"
+tail -n +1 -F --pid="$LP" "$RUN/launch.log" 2>/dev/null | grep --line-buffered -E "\[(WARN|ERROR)\]|\[pose_guard\]" &   # 시작부터 읽음 (켜는 중 경고도), launch 가 끝나면 같이 끝남
 wait "$LP"

@@ -76,8 +76,8 @@
   <material name="motor"><color rgba="0.10 0.10 0.10 1"/></material>
   <material name="metal"><color rgba="0.75 0.75 0.78 1"/></material>
   <material name="arm"><color rgba="0.30 0.30 0.32 1"/></material>
-  <material name="new_motor"><color rgba="0.13 0.62 0.38 1"/></material>  <!-- 초록 = 새로 더한 손목 모터 -->
-  <material name="plate_v2"><color rgba="0.93 0.55 0.15 1"/></material>   <!-- 주황 = 손목 판 v2 -->
+  <material name="wrist_motor"><color rgba="0.13 0.62 0.38 1"/></material>  <!-- 초록 = 손목 모터 -->
+  <material name="wrist_plate"><color rgba="0.93 0.55 0.15 1"/></material>   <!-- 주황 = 손목 판 -->
   <material name="frame_blue"><color rgba="0.20 0.42 0.85 1"/></material> <!-- 파란 프레임 FR12-H104 -->
   <material name="tire"><color rgba="0.55 0.22 0.12 1"/></material>
   <material name="camera"><color rgba="0.55 0.55 0.60 1"/></material>
@@ -654,8 +654,8 @@
     <collision name="profile_fixing_plate_link__collision__CAD_concave_profile_holder"><geometry><mesh filename="${mesh}/structure/collision/profile_holder.obj" scale="1 1 1" /></geometry></collision>
   </link>
   <link name="profile_link">
-    <visual name="profile_column_link__visual__v5_profile_450mm_candidate_0_12"><geometry><mesh filename="${mesh}/structure/profile_450mm.obj" /></geometry><material name="v5_profile_450mm_candidate_0_color"><color rgba="0.65 0.68 0.72 1.0" /></material></visual>
-    <collision name="profile_column_link__collision__v5_profile_450mm_candidate_0_aabb"><origin xyz="-0.110213045 -0.09580939 0.316499985" rpy="0 0 0" /><geometry><box size="0.01999999 0.02 0.44999997" /></geometry></collision>
+    <visual name="profile_column_link__visual__profile_450mm_0_12"><geometry><mesh filename="${mesh}/structure/profile_450mm.obj" /></geometry><material name="profile_450mm_0_color"><color rgba="0.65 0.68 0.72 1.0" /></material></visual>
+    <collision name="profile_column_link__collision__profile_450mm_0_aabb"><origin xyz="-0.110213045 -0.09580939 0.316499985" rpy="0 0 0" /><geometry><box size="0.01999999 0.02 0.44999997" /></geometry></collision>
     <inertial><origin xyz="-0.110258358486 -0.0956971033869 0.316499985" rpy="0 0 0" /><mass value="0.201981990747" /><inertia ixx="0.00341684145836" ixy="8.46704035452e-08" ixz="3.08743509274e-17" iyy="0.00341666638254" iyz="1.71524171819e-17" izz="1.66165620868e-05" /></inertial>
   </link>
   <link name="profile_camera_bracket_link">
@@ -778,22 +778,22 @@
   <link name="base_scan"/>
   <joint name="scan_joint" type="fixed"><parent link="lidar_front_link"/><child link="base_scan"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
   <link name="lidar_front_link">
-    <visual name="lidar_front_link__visual__unofficial_drawing_body"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_body.obj" /></geometry><material name="lidar_drawing_body"><color rgba=".22 .23 .25 1" /></material></visual>
-    <visual name="lidar_front_link__visual__unofficial_drawing_upper_optical_cylinder"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_optics.obj" /></geometry><material name="lidar_drawing_upper_optical_cylinder"><color rgba=".08 .09 .11 1" /></material></visual>
-    <visual name="lidar_front_link__visual__unofficial_drawing_ear_pair_left"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_mount_left.obj" /></geometry><material name="lidar_drawing_ear_pair_left"><color rgba=".23 .24 .26 1" /></material></visual>
-    <visual name="lidar_front_link__visual__unofficial_drawing_ear_pair_right"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_mount_right.obj" /></geometry><material name="lidar_drawing_ear_pair_right"><color rgba=".23 .24 .26 1" /></material></visual>
-    <visual name="lidar_front_link__visual__unofficial_drawing_ear_single"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_mount_single.obj" /></geometry><material name="lidar_drawing_ear_single"><color rgba=".23 .24 .26 1" /></material></visual>
+    <visual name="lidar_front_link__visual__body"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_body.obj" /></geometry><material name="lidar_drawing_body"><color rgba=".22 .23 .25 1" /></material></visual>
+    <visual name="lidar_front_link__visual__upper_optical_cylinder"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_optics.obj" /></geometry><material name="lidar_drawing_upper_optical_cylinder"><color rgba=".08 .09 .11 1" /></material></visual>
+    <visual name="lidar_front_link__visual__ear_pair_left"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_mount_left.obj" /></geometry><material name="lidar_drawing_ear_pair_left"><color rgba=".23 .24 .26 1" /></material></visual>
+    <visual name="lidar_front_link__visual__ear_pair_right"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_mount_right.obj" /></geometry><material name="lidar_drawing_ear_pair_right"><color rgba=".23 .24 .26 1" /></material></visual>
+    <visual name="lidar_front_link__visual__ear_single"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_mount_single.obj" /></geometry><material name="lidar_drawing_ear_single"><color rgba=".23 .24 .26 1" /></material></visual>
     <collision name="lidar_front_link__collision__lidar_housing_approx"><origin xyz="0 0 -0.0138" rpy="0 0 0" /><geometry><box size="0.0526 0.0452 0.0344" /></geometry></collision>
   </link>
   <joint name="lidar_front_joint" type="fixed"><parent link="base_footprint"/><child link="lidar_front_link"/><origin xyz="$(arg lidar_front_x) $(arg lidar_front_y) $(arg lidar_front_z)" rpy="0 0 $(arg lidar_front_yaw)"/></joint>
   <link name="base_scan_front"/>
   <joint name="base_scan_front_joint" type="fixed"><parent link="lidar_front_link"/><child link="base_scan_front"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
   <link name="lidar_rear_link">
-    <visual name="lidar_rear_link__visual__unofficial_drawing_body"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_body.obj" /></geometry><material name="lidar_drawing_body"><color rgba=".22 .23 .25 1" /></material></visual>
-    <visual name="lidar_rear_link__visual__unofficial_drawing_upper_optical_cylinder"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_optics.obj" /></geometry><material name="lidar_drawing_upper_optical_cylinder"><color rgba=".08 .09 .11 1" /></material></visual>
-    <visual name="lidar_rear_link__visual__unofficial_drawing_ear_pair_left"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_mount_left.obj" /></geometry><material name="lidar_drawing_ear_pair_left"><color rgba=".23 .24 .26 1" /></material></visual>
-    <visual name="lidar_rear_link__visual__unofficial_drawing_ear_pair_right"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_mount_right.obj" /></geometry><material name="lidar_drawing_ear_pair_right"><color rgba=".23 .24 .26 1" /></material></visual>
-    <visual name="lidar_rear_link__visual__unofficial_drawing_ear_single"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_mount_single.obj" /></geometry><material name="lidar_drawing_ear_single"><color rgba=".23 .24 .26 1" /></material></visual>
+    <visual name="lidar_rear_link__visual__body"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_body.obj" /></geometry><material name="lidar_drawing_body"><color rgba=".22 .23 .25 1" /></material></visual>
+    <visual name="lidar_rear_link__visual__upper_optical_cylinder"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_optics.obj" /></geometry><material name="lidar_drawing_upper_optical_cylinder"><color rgba=".08 .09 .11 1" /></material></visual>
+    <visual name="lidar_rear_link__visual__ear_pair_left"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_mount_left.obj" /></geometry><material name="lidar_drawing_ear_pair_left"><color rgba=".23 .24 .26 1" /></material></visual>
+    <visual name="lidar_rear_link__visual__ear_pair_right"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_mount_right.obj" /></geometry><material name="lidar_drawing_ear_pair_right"><color rgba=".23 .24 .26 1" /></material></visual>
+    <visual name="lidar_rear_link__visual__ear_single"><origin xyz="0 0 -0.031" rpy="0 0 0" /><geometry><mesh filename="${mesh}/lidar/lds03_mount_single.obj" /></geometry><material name="lidar_drawing_ear_single"><color rgba=".23 .24 .26 1" /></material></visual>
     <collision name="lidar_rear_link__collision__lidar_housing_approx"><origin xyz="0 0 -0.0138" rpy="0 0 0" /><geometry><box size="0.0526 0.0452 0.0344" /></geometry></collision>
   </link>
   <joint name="lidar_rear_joint" type="fixed"><parent link="base_footprint"/><child link="lidar_rear_link"/><origin xyz="$(arg lidar_rear_x) $(arg lidar_rear_y) $(arg lidar_rear_z)" rpy="0 0 $(arg lidar_rear_yaw)"/></joint>
@@ -1118,51 +1118,51 @@
 
   <!-- 젯슨 Orin Nano · 배터리 · 하판: 보기용만 (질량은 base_link 에 포함) -->
   <link name="jetson_link">
-    <visual name="jetson_link__visual__v5_orin_nano_devkit_assumed_pose_0_6">
+    <visual name="jetson_link__visual__orin_nano_devkit_0_6">
       <geometry>
         <mesh filename="${mesh}/electronics/jetson_carrier.obj" />
       </geometry>
-      <material name="planned_translucent">
+      <material name="translucent">
         <color rgba="0.2 0.8 0.3 0.45" />
       </material>
     </visual>
-    <visual name="jetson_link__visual__v5_orin_nano_devkit_assumed_pose_1_7">
+    <visual name="jetson_link__visual__orin_nano_devkit_1_7">
       <geometry>
         <mesh filename="${mesh}/electronics/jetson_module.obj" />
       </geometry>
-      <material name="planned_translucent">
+      <material name="translucent">
         <color rgba="0.2 0.8 0.3 0.45" />
       </material>
     </visual>
-    <visual name="jetson_link__visual__v5_orin_nano_devkit_assumed_pose_2_8">
+    <visual name="jetson_link__visual__orin_nano_devkit_2_8">
       <geometry>
         <mesh filename="${mesh}/electronics/jetson_heatsink.obj" />
       </geometry>
-      <material name="planned_translucent">
+      <material name="translucent">
         <color rgba="0.2 0.8 0.3 0.45" />
       </material>
     </visual>
-    <visual name="jetson_link__visual__v5_orin_nano_devkit_assumed_pose_3_9">
+    <visual name="jetson_link__visual__orin_nano_devkit_3_9">
       <geometry>
         <mesh filename="${mesh}/electronics/jetson_fan.obj" />
       </geometry>
-      <material name="planned_translucent">
+      <material name="translucent">
         <color rgba="0.2 0.8 0.3 0.45" />
       </material>
     </visual>
-    <visual name="jetson_link__visual__v5_pm991a_one_assumed_6g_0_10">
+    <visual name="jetson_link__visual__pm991a_one_6g_0_10">
       <geometry>
         <mesh filename="${mesh}/electronics/jetson_ssd.obj" />
       </geometry>
-      <material name="planned_translucent">
+      <material name="translucent">
         <color rgba="0.2 0.8 0.3 0.45" />
       </material>
     </visual>
-    <visual name="jetson_link__visual__v5_ssd_mount_assumed_2g_0_11">
+    <visual name="jetson_link__visual__ssd_mount_2g_0_11">
       <geometry>
         <mesh filename="${mesh}/electronics/jetson_ssd_mount.obj" />
       </geometry>
-      <material name="planned_translucent">
+      <material name="translucent">
         <color rgba="0.2 0.8 0.3 0.45" />
       </material>
     </visual>
@@ -1215,20 +1215,20 @@
     <origin xyz="0.099 -0.116 0.0864575" rpy="0 0 -0.087266462600" />
   </joint>
   <link name="battery_link">
-    <visual name="battery_link__visual__v5_batteries_0_2">
+    <visual name="battery_link__visual__batteries_0_2">
       <geometry>
         <mesh filename="${mesh}/electronics/battery_left.obj" />
       </geometry>
-      <material name="v5_batteries_0_color">
+      <material name="batteries_0_color">
         <color rgba="0.2 0.27 0.35 1.0" />
       </material>
       <origin xyz="0 0 0.04175" rpy="0 0 0" />
     </visual>
-    <visual name="battery_link__visual__v5_batteries_1_3">
+    <visual name="battery_link__visual__batteries_1_3">
       <geometry>
         <mesh filename="${mesh}/electronics/battery_right.obj" />
       </geometry>
-      <material name="v5_batteries_1_color">
+      <material name="batteries_1_color">
         <color rgba="0.2 0.27 0.35 1.0" />
       </material>
       <origin xyz="0 0 0.04175" rpy="0 0 0" />

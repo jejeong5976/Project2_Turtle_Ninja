@@ -639,9 +639,9 @@ TEST(GyroYaw, CalibrationRestartsOnInvalidMotionOrGap)
   EXPECT_FALSE(h.calibrated());
 }
 
-// ---------- 실물 영점으로 만든 모듈별 범위 (hardware_map_drive_only.yaml · drive_only.yaml 과 같은 값) ----------
+// ---------- 영점으로 만든 모듈별 범위 (회귀 시험 고정값 — Homing Offset 을 쓰기 전 영점, 범위 끝이 몰린 어려운 경우) ----------
 // 범위 = robot.launch.py steer_ranges() 와 같은 식: 관절 = scale × (눈금 − zero) × 2π/4096, 눈금 20 ~ 4075, 조향 scale −1.
-// 영점 11 · 12 · 13 · 14 = 3066 · 1552 · 2577 · 3589 (새 전진 방향) → 범위 [deg] fl −88.7~+267.7 · fr −221.7~+134.6 ·
+// 영점 11 · 12 · 13 · 14 = 3066 · 1552 · 2577 · 3589 → 범위 [deg] fl −88.7~+267.7 · fr −221.7~+134.6 ·
 //   rl −131.7~+224.7 · rr −42.7~+313.7. 14 번(rr)은 시계 쪽이 약 −43° 까지만.
 namespace
 {
@@ -652,8 +652,7 @@ std::vector<swerve_controller::SteeringRange> ranges_from_zero(const int (&zero)
   for (int z : zero) {r.push_back({-(4075 - z) * k, (z - 20) * k});}
   return r;
 }
-// 모듈 위치 · offset: 새 전진 방향, 순서 fl · fr · rl · rr = 관절 이름 순서 (이전 controllers.yaml 값. 실측 반영값은
-//   x −0.070 / +0.060 — 아래 검사는 기하에 무관한 식이라 시험 고정값은 그대로 둠, 검토)
+// 모듈 위치 · offset: 순서 fl · fr · rl · rr = 관절 이름 순서 (controllers.yaml 과 같은 실측값)
 const double kRealGeo[4][3] = {{-0.070, 0.112, 0.0269}, {0.060, 0.112, 0.0269},   // 실측 (앞 +0.060 · 뒤 −0.070)
                                {-0.070, -0.112, -0.0269}, {0.060, -0.112, -0.0269}};
 const int kRealZero[4] = {3066, 1552, 2577, 3589};

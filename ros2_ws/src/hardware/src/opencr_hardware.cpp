@@ -24,9 +24,9 @@
 //   - OpenCR 가 리셋돼서 모터 목록을 잃음
 //   - 토크를 켜라고 했는데 0.5 s 안에 펌웨어가 "켜짐" 을 안 알려 옴 (모터 쓰기 실패)
 //   - 펌웨어 고장 잠금(ST_FAULT_LATCHED: 목표 쓰기 실패 → 펌웨어가 바퀴를 세우고 잠금) — 바로
-//   - 배터리 전압 (2026-10-16, DIAG 1 초마다): 구간 평균이 battery_stop_v 아래로 2 번 연속 → ERROR (경고는 battery_warn_v)
+//   - 배터리 전압 (DIAG 1 초마다): 구간 평균이 battery_stop_v 아래로 2 번 연속 → ERROR (경고는 battery_warn_v)
 //
-// 복구 (2026-10-16 재검증 R6): ERROR 뒤에는 자동으로 다시 켜지 않음. 사람이 원인을 확인하고
+// 복구 (R6): ERROR 뒤에는 자동으로 다시 켜지 않음. 사람이 원인을 확인하고
 //   팔을 받친 뒤(CONFIG 가 모든 모터 토크를 끔 → 팔 처짐) 하드웨어를 다시 configure · activate → CONFIG 가 펌웨어 잠금을 풂
 //   → control_master 는 그동안 STOP 이고, HOME + 접힘 실측이 다시 성공해야 DRIVE
 //
@@ -91,7 +91,7 @@ private:
   bool comm_failing_ = false;
   std::chrono::steady_clock::time_point comm_fail_since_{};
   bool write_failing_ = false;           // 펌웨어가 목표 쓰기 실패(ST_WRITE_FAIL)를 알려 오는 중 (R5)
-  // 배터리 (와플파이 3셀 리튬폴리머 11.1 V, 2026-10-16). ⚠ 잠정값 — 실측(부하 중 처짐)으로 정할 것
+  // 배터리 (와플파이 3셀 리튬폴리머 11.1 V). ⚠ 잠정값 — 실측(부하 중 처짐)으로 정할 것
   //   셀당 3.6 V(10.8) 경고 · 3.4 V(10.2) 정지. XM430 입력 하한이 약 10 V 라 그 전에 멈추려는 값
   double battery_warn_v_ = 10.8;
   double battery_stop_v_ = 10.2;
@@ -189,7 +189,7 @@ CallbackReturn OpenCRHardware::on_init(const hardware_interface::HardwareCompone
         RCLCPP_ERROR(get_logger(), "%s: id 또는 scale 이 비었음 (ros2_control.xacro · hardware_map.yaml 확인)", j.name.c_str());
         return CallbackReturn::ERROR;
       }
-      // 영점 눈금 (2026-10-16): 관절 0 일 때 모터 눈금. 기본 2048 = 예전과 같음. 위치 모드 한 바퀴(0~4095) 안이어야 함.
+      // 영점 눈금: 관절 0 일 때 모터 눈금. 기본 2048 = 예전과 같음. 위치 모드 한 바퀴(0~4095) 안이어야 함.
       //   바퀴(속도 모드)는 위치가 여러 바퀴 누적이라 영점이 의미 없음 → 2048 이 아니면 거부
       const int zero_tick = std::stoi(param(p, "zero_tick", "2048"));
       if (zero_tick < 0 || zero_tick > 4095 || (s.mode == ntp::MODE_VELOCITY && zero_tick != 2048)) {
@@ -476,7 +476,7 @@ void OpenCRHardware::report_timing()
   read_time_.reset();
   write_time_.reset();
   stats_since_ = now;
-  // 보드 안 시간 (DIAG, 2026-10-16) — 펌웨어가 micros() 로 잰 값. PC · USB 시간은 안 섞임
+  // 보드 안 시간 (DIAG) — 펌웨어가 micros() 로 잰 값. PC · USB 시간은 안 섞임
   const DiagSummary d = link_->take_diag();
   if (d.before_config_packets) {
     // CONFIG 전 구간: 측정과 섞지 않고 따로 한 줄 (포트를 열기 전 USB 버림 · 설정 전 루프)
@@ -512,7 +512,7 @@ void OpenCRHardware::report_timing()
 void OpenCRHardware::publish_states()
 {
   const auto & s = link_->state();
-  // (2026-10-16 R3) "지금의 측정" 이 아닌 관절은 NaN 으로 내보냄
+  // (R3) "지금의 측정" 이 아닌 관절은 NaN 으로 내보냄
   //   - 이번 STATE 에서 그 모터를 못 읽음 (comm_err 비트) — 펌웨어는 옛 값을 그대로 실어 보냄
   //   - STATE 자체가 measure_max_age_s 넘게 안 옴
   //   예전에는 comm_err 유예(motor_fail_timeout_s, 0.2 s) 동안 옛 값을 그대로 내보냈고, swerve_controller 가 그걸

@@ -438,7 +438,7 @@ TEST(OpenCRLink, DetectsStaleState)
   EXPECT_GT(link.seconds_since_state(), 0.2);
 }
 
-// 5) (2026-10-16 R3) 못 읽은 모터 · 끊긴 상태는 "지금의 측정" 이 아님 → 플러그인이 NaN 으로 내보냄
+// 5) (R3) 못 읽은 모터 · 끊긴 상태는 "지금의 측정" 이 아님 → 플러그인이 NaN 으로 내보냄
 //    (예전: comm_err 유예 0.2 s 동안 옛 값을 그대로 내보내 컨트롤러가 새 시각의 odom 으로 포장했음 — Codex 재현)
 TEST(OpenCRLink, JointMeasuredFollowsCommErrAndAge)
 {
@@ -498,7 +498,7 @@ TEST(OpenCRLink, DiagIsCollectedAndDoesNotDisturbState)
   EXPECT_TRUE(link.state().joints_valid);
 }
 
-// (2026-10-16 v2) 첫 판 DIAG(53 B)도 읽음 — 새 칸은 0. 길이가 둘 다 아니면 거부
+// 첫 판 DIAG(53 B)도 읽음 — 새 칸은 0. 길이가 둘 다 아니면 거부
 TEST(Packet, DiagV1StillDecodes)
 {
   ntp::Diag g{};
@@ -541,7 +541,7 @@ TEST(OpenCRLink, DiagBeforeConfigKeptSeparate)
   EXPECT_EQ(s.before_usb_tx.fail, 54u);
 }
 
-// (2026-10-16) 조향 영점 · 방향: 모터 + = 위에서 시계, URDF 조향축 +z (+ = 반시계) → scale −1, zero_tick = 직진 눈금
+// 조향 영점 · 방향: 모터 + = 위에서 시계, URDF 조향축 +z (+ = 반시계) → scale −1, zero_tick = 직진 눈금
 TEST(JointConvert, SteerZeroAndSignFollowUrdf)
 {
   const double k = 2.0 * M_PI / 4096.0;

@@ -33,11 +33,10 @@ buses:
 # scale · zero_tick: 관절 = (모터 rad − (zero_tick − 2048) × 2π/4096) × scale. 기본 scale 1 · zero_tick 2048 (= 예전과 같음)
 #   조향은 모터 + 가 위에서 시계라 scale −1, zero_tick = 직진 눈금 (실측, 새 앞쪽 기준 — 아래 motors)
 #   zero_tick 은 위치 모드만 (바퀴 속도 모드는 2048 그대로여야 함 — 플러그인이 거부)
-# Homing Offset (조향 모터 EEPROM, steer_probe_20261028/steer_homing.py): 눈금 창을 직진 가운데로 —
-#   fl −1018 · fr +496 · rl −529 · rr −1024 (위치 모드 한계 ±1024 라 rr 은 덜 옮김) → zero_tick 3066 · 1552 · 2577 · 3589 → 2048 · 2048 · 2048 · 2565,
-#   범위 fl · fr · rl ±180° · rr −133~+225° (공통 177° → 311°, 시뮬 36 방향 뒤집힘 30 → 15). 모터로 양 끝 확인 (steer_probe 10:02, 전류 ≤ 8 mA).
-#   ⚠ 모터를 바꾸면(교체 · 공장 초기화) Homing 이 0 으로 → 이 영점과 어긋남. steer_probe.sh homing read 로 확인.
-# 선(케이블) 한계 cable_min_deg / cable_max_deg: hardware_map_drive_only.yaml 설명과 같음. 선을 늘린 뒤로는 제한 없음
+# Homing Offset (조향 모터 EEPROM): 눈금 창의 가운데가 직진이 되게 맞춰 둠 — fl −1018 · fr +496 · rl −529 · rr −1024
+#   (위치 모드 한계 ±1024 라 rr 은 덜 옮김) → zero_tick 2048 · 2048 · 2048 · 2565, 범위 fl · fr · rl ±180° · rr −133 ~ +225°.
+#   ⚠ 모터를 바꾸면(교체 · 공장 초기화) Homing 이 0 으로 돌아가 이 영점과 어긋남 → DYNAMIXEL Wizard 로 Homing Offset 을 위 값으로 다시 쓸 것.
+# 선(케이블) 한계 cable_min_deg / cable_max_deg: hardware_map_drive_only.yaml 설명과 같음 (지금은 적지 않음)
 #   (모터로 네 바퀴 소프트웨어 양 끝까지 전류 상승 없음 · 손으로 돌린 선 범위 모두 한 바퀴 넘음 → 지금은 눈금 창이 범위)
 # initial: 가짜 하드웨어(mock)로 켰을 때의 시작 각도 [rad] — 팔이 접힌 자세로 보이게
 # profile_vel · profile_acc: 모터가 스스로 지키는 속도 · 가속 한계 (D16 "느리게" — 순간 전류를 모터 안에서 한 번 더 줄임)
@@ -58,15 +57,15 @@ motors:
   steer_rl_joint: {id: 13, model: XM430-W350, mode: position, profile_vel: 200, profile_acc: 60, scale: -1.0, zero_tick: 2048}
   steer_rr_joint: {id: 14, model: XM430-W350, mode: position, profile_vel: 200, profile_acc: 60, scale: -1.0, zero_tick: 2565}
   # 조향 = XM430-W350 (CAD 부품 이름 *_Steer_XM430_W350), 주행 = W210 (CAD *_Drive_XM430_W210)
-  joint1:             {id: 11, model: XM430-W350, mode: gripper, initial: -0.0061, goal_current: 0, zero_tick: 4088}  # 2차: fw_ext3의 확장 위치 표기·실측 영점; initial 유지
-  joint2:             {id: 12, model: XM430-W350, mode: position, initial: -1.4511, zero_tick: 2048}  # 2차: arm_only와 유효 영점 일치; mode·initial 유지
-  joint3:             {id: 13, model: XM430-W350, mode: position, initial: 0.9511, zero_tick: 2048}  # 2차: arm_only와 유효 영점 일치; mode·initial 유지
-  joint4:             {id: 14, model: XM430-W350, mode: position, initial: -0.1181, zero_tick: 2048}  # 2차: arm_only와 유효 영점 일치; mode·initial 유지
-  joint5:             {id: 16, model: XM430-W350, mode: position, initial: 0.0230, zero_tick: 2048}  # 2차: arm_only와 유효 영점 일치; mode·initial 유지
+  joint1:             {id: 11, model: XM430-W350, mode: gripper, initial: -0.0061, goal_current: 0, zero_tick: 4088}  # 그리퍼 모드 + goal_current 0 = 펌웨어가 확장 위치 모드로 씀 (여러 바퀴 · 떨림 없음)
+  joint2:             {id: 12, model: XM430-W350, mode: position, initial: -1.4511, zero_tick: 2048}
+  joint3:             {id: 13, model: XM430-W350, mode: position, initial: 0.9511, zero_tick: 2048}
+  joint4:             {id: 14, model: XM430-W350, mode: position, initial: -0.1181, zero_tick: 2048}
+  joint5:             {id: 16, model: XM430-W350, mode: position, initial: 0.0230, zero_tick: 2048}
   # 그리퍼: 모터 rad → 손가락 m 는 scale 배 (ROBOTIS 공식값 0.000017626621790 m/눈금 × 4096/2π = 0.01149 m/rad)
   #   ⚠ 부호(벌림이 + 인지)는 책상 시험에서 확인. ROBOTIS 설정은 Drive Mode 5(반대 방향) 라서 반대면 -0.01149 로
   #   goal_current: 쥐는 힘 한계 (눈금 2.69 mA → 200 ≈ 0.54 A), OpenManipulator-X 공식 값
-  gripper_left_joint: {id: 15, model: XM430-W350, mode: gripper,  initial: 0.0, goal_current: 200, scale: 0.01149, zero_tick: 3549}  # 2차: arm_only와 유효 영점 일치; mode·initial 유지
+  gripper_left_joint: {id: 15, model: XM430-W350, mode: gripper,  initial: 0.0, goal_current: 200, scale: 0.01149, zero_tick: 3549}
 
 # 모터 경비견 (Bus Watchdog): 단위 20 ms. 15 = 300 ms (펌웨어 경비견과 같은 값)
 # 펌웨어가 켤 때(CONFIG) 모터에 씀 = 안전장치 3겹째 (펌웨어까지 멈춰도 모터가 스스로 섬)

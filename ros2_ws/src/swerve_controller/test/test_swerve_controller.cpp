@@ -62,7 +62,7 @@ protected:
     controller->assign_interfaces(std::move(command_loans), std::move(state_loans));
   }
 
-  void publish_command(double vx = 0.009, double vy = 0.0008, double stamp_age_s = -1.0)
+  void publish_command(double vx = 0.009, double vy = 0.0008, double stamp_age_s = NAN)
   {
     auto node = std::make_shared<rclcpp::Node>("rate_test_sender",
       rclcpp::NodeOptions().use_intra_process_comms(true));
@@ -77,7 +77,7 @@ protected:
     }
     ASSERT_GT(pub->get_subscription_count(), 0u);
     geometry_msgs::msg::TwistStamped cmd;
-    if (stamp_age_s >= 0.0) {
+    if (std::isfinite(stamp_age_s)) {   // 양수 = 과거, 음수 = 미래
       cmd.header.stamp = controller->get_node()->now() - rclcpp::Duration::from_seconds(stamp_age_s);
     }
     cmd.twist.linear.x = vx;
@@ -126,11 +126,14 @@ TEST_F(SwerveControllerTest, PositionInterfaceCompensationAndInvalidEstimateStop
   for (int i = 4; i < 8; ++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(), 0.0);}
 }
 
-TEST_F(SwerveControllerTest, StaleStampedCommandIsDropped)
+TEST_F(SwerveControllerTest, StaleOrFutureStampedCommandIsDropped)
 {
   configure("position");
   ASSERT_EQ(controller->on_activate(rclcpp_lifecycle::State()), CallbackReturn::SUCCESS);
   publish_command(0.05, 0.0, 2.0);   // 2 s 전에 보낸 명령이 늦게 도착 → 버림
+  for (int k = 0; k < 5; ++k) {update();}
+  for (int i = 4; i < 8; ++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(), 0.0);}
+  publish_command(0.05, 0.0, -3.0);  // 보낸 쪽 시계가 3 s 앞섬 → 버림
   for (int k = 0; k < 5; ++k) {update();}
   for (int i = 4; i < 8; ++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(), 0.0);}
   publish_command(0.05, 0.0, 0.0);   // 방금 보낸 명령은 받음
