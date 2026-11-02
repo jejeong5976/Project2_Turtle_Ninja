@@ -53,13 +53,16 @@ struct GripperValues
 };
 
 // start 에서 nodes 를 차례로 멈추지 않고 지나가는 시간표 (start 는 넣지 않음). 길이가 0 이면 마지막 점 하나를 0.3 s 에
+//   출력 = dt 간격 점 + 경유점마다 그 도착 시각의 점 (JTC 가 점 사이를 직선으로 이어도 검사한 꺾은선 그대로)
 std::vector<TrajPoint> time_path(
   const std::vector<double> & start, const std::vector<PathNode> & nodes, const PathTiming & timing);
 
 // 경로 → 동작 목록. 첫 경유점 = 출발 자세 (지금 팔이 거기 있어야 함 — path_start_ok 로 확인)
 //   last_pose: 마지막 팔 동작의 pose 이름 (ends_home 이면 "home" → ArmRunner 가 접힘 실측 확인)
+//   q_now: 지금 실측 관절값. 주면 첫 구간을 첫 경유점 대신 여기서 출발해 계산 (허용 오차만큼 어긋난 시작도 같은 속도 · 가속 한계로)
 std::vector<ArmAction> path_actions(
-  const ArmPath & path, const PathTiming & timing, const GripperValues & grip);
+  const ArmPath & path, const PathTiming & timing, const GripperValues & grip,
+  const std::vector<double> & q_now = {});
 
 // 지금 관절값이 경로 첫 점에서 관절마다 tol 안인가 (NaN · 관절 수 다름 = 아님)
 bool path_start_ok(const ArmPath & path, const std::vector<double> & q_now, double tol, std::string & why);

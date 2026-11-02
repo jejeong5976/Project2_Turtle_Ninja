@@ -66,7 +66,8 @@ std::vector<TrajPoint> time_path(
   for (std::size_t k = 0; k < segs; ++k) {
     double vmax = nodes[k].stand ? timing.stand_speed_dps : timing.speed_dps;
     if (nodes[k].speed_dps > 0.0) {vmax = std::min(vmax, nodes[k].speed_dps);}
-    const auto n = static_cast<std::size_t>(std::max(1.0, std::ceil(L[k] / kGridDeg)));
+    // 0 이 아니면 2 칸 이상: 1 칸이면 양 끝 속도 0 이라 평균 속도가 0 (0.1° 이하 미세 이동이 수십 초가 됨)
+    const auto n = L[k] > 0.0 ? static_cast<std::size_t>(std::max(2.0, std::ceil(L[k] / kGridDeg))) : std::size_t{1};
     starts.push_back(grid.size());
     for (std::size_t j = 0; j < n; ++j) {grid.push_back({k, static_cast<double>(j) / n, vmax, L[k] / n});}
   }
@@ -90,11 +91,25 @@ std::vector<TrajPoint> time_path(
     T.push_back(T.back() + grid[i - 1].len / std::max((v[i - 1] + v[i]) / 2.0, 1e-3));
   }
 
-  std::vector<TrajPoint> out;
+  // 출력 시각 = dt 간격 + 경유점 도착 시각 (경유점에서 dt/4 안의 등간격 점은 뺌)
   const auto n = static_cast<std::size_t>(std::max(1.0, std::ceil(T.back() / timing.dt_s)));
-  std::size_t i = 0;
+  std::vector<double> corner_t;
+  for (std::size_t k = 1; k < segs; ++k) {corner_t.push_back(T[starts[k]]);}
+  std::vector<double> times;
+  std::size_t c = 0;
   for (std::size_t m = 1; m <= n; ++m) {
     const double t = T.back() * static_cast<double>(m) / static_cast<double>(n);
+    while (c < corner_t.size() && corner_t[c] <= t) {
+      if (corner_t[c] > 0.0 && (times.empty() || corner_t[c] > times.back())) {times.push_back(corner_t[c]);}
+      ++c;
+    }
+    const double last = times.empty() ? 0.0 : times.back();
+    if ((t - last > 0.25 * timing.dt_s) || (m == n && t > last)) {times.push_back(t);}
+  }
+
+  std::vector<TrajPoint> out;
+  std::size_t i = 0;
+  for (const double t : times) {
     while (i + 2 < T.size() && T[i + 1] < t) {++i;}
     const double w = T[i + 1] <= T[i] ? 0.0 : std::min(1.0, (t - T[i]) / (T[i + 1] - T[i]));
     const std::size_t k = grid[i].seg;
@@ -108,11 +123,14 @@ std::vector<TrajPoint> time_path(
   return out;
 }
 
-std::vector<ArmAction> path_actions(const ArmPath & path, const PathTiming & timing, const GripperValues & grip)
+std::vector<ArmAction> path_actions(
+  const ArmPath & path, const PathTiming & timing, const GripperValues & grip, const std::vector<double> & q_now)
 {
   std::vector<ArmAction> out;
   if (path.nodes.size() < 2) {return out;}
-  std::vector<double> from = path.nodes.front().q;
+  bool measured = q_now.size() == path.nodes.front().q.size();
+  for (double v : q_now) {measured = measured && std::isfinite(v);}
+  std::vector<double> from = measured ? q_now : path.nodes.front().q;
   std::vector<PathNode> seg;
   auto flush = [&](const PathNode & last, bool is_last) {
       ArmAction a{"", false, "", 0.0};
