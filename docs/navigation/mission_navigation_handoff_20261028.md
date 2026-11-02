@@ -1,10 +1,498 @@
-# Handoff: Desktop dual-LiDAR, carpet drift and staged maze mapping
+# Handoff: Main integration review, map sharing and offline LiDAR calibration
 
-Prepared: 2026-10-28. Updated: **2026-11-02, Asia/Seoul**, after E1 save-fault
-recovery, D3/D4 closure and the user's D3–H2 / A–D2 staged-map plan. The original filename is
-retained as the single entry point. Workspace: `/home/pa4/git/Project2_Turtle_Ninja`.
+Prepared: 2026-10-28. Updated: **2026-11-02, Asia/Seoul**, after confirming that
+fetched main is not integrated and validating an unapplied relative LiDAR
+calibration candidate offline. The original filename is retained as the single entry point.
+Workspace: `/home/pa4/git/Project2_Turtle_Ninja`.
 
-## Start here — current November 2 checkpoint
+## Resume here — review main, then evaluate existing stationary captures
+
+**Latest agreed direction:** main already contains LiDAR integration. There is
+currently no demonstrated need to add our older integration implementation.
+Preserve the existing work, assist the user with integrating main, evaluate its
+LiDAR processing against existing stationary captures, and resume offline
+calibration. Propose a focused PR only for a reproducible defect, missing
+capability or evidence-supported calibration correction. A PR is not a required
+deliverable. Earlier proposals to add another integration stack are superseded.
+
+**The user reconfirmed that fetched main is not integrated:** `feat/dual-lidar`
+is still `302dceb`, while `origin/main` is `3e4e466`. Local `main` at `87fc8d7`
+is behind 18 commits and checked out in the simulator worktree. No new branch,
+merge, push or PR was performed by the assistant. A relative calibration
+candidate has now been fitted and validated offline, but **not installed**.
+Start with the new checkpoint below; older dated sections are evidence, not
+instructions to resume hardware mapping.
+
+### Resumed offline checkpoint — 2026-11-02
+
+- Evidence and reproducible analysis:
+  `output/lidar_stationary_calibration_20261102_v1/REVIEW.md`,
+  `candidate.yaml`, `calibration_results.json`, `verification.json`,
+  `main_frame_comparison.json` and `calibration_comparison.png`.
+- Nine November 2 runs, 49 stops. Fit runs D3/D4/F1/G2; held-out runs
+  E1/F2/G3/H1/H2. G1 and the repeated D3 endpoint were excluded. Outer-wall
+  correspondences were selected before fitting; movable shelves were excluded.
+  Seven raw scans and their processed counterparts were removed after an event
+  audit found nominal ray times before READY in E1_030 and G3_120. There are
+  1,959 accepted scans per representation. No training observation was affected.
+- Holding the front sensor fixed, the relative rear correction is approximately
+  X −7.17 mm, Y +0.11 mm and yaw −0.750° relative to the **recorded** geometry.
+  Y is consistent with zero under sensitivity analysis. Held-out mean stop
+  point-to-line RMS improves from **16.30 to 8.83 mm**, and mean absolute
+  relative wall angle from **0.790° to 0.347°**. Every held-out run improves on
+  average; three of 47 individual held-out wall comparisons regress, by up to
+  5.8 mm. This is relative consistency, not surveyed accuracy.
+- The separate F2_030/east_upper_h check was unused in fitting; its raw RMS
+  decreases from 49.59 to 7.04 mm. Raw and processed fits are close. The selected
+  geometry constrains all three planar parameters numerically; single-wall
+  synthetic data correctly exposes an unconstrained translation.
+- Main's preserved projection/binning header passed its five existing tests
+  with warnings as errors and UBSan. An offline adapter emitted all 983 front
+  triggers in the original two-second export windows with zero out-of-range
+  finite bins. This did not run the node, driver, live graph or hardware and
+  does not establish freshness behavior or downstream correctness.
+- **Do not copy the −7.17 mm X delta directly into main.** Main already assumes
+  9 mm greater relative sensor separation. Expressing the same candidate in
+  main's planar convention gives approximately +1.83 mm rear X, +0.11 mm rear
+  Y and −0.750° yaw, but physical mount/height epoch compatibility is unresolved.
+  Main's nominal planar model gives 14.88 mm held-out RMS on these recordings.
+- All 72 selected bag/configuration/log input hashes matched before and after
+  analysis. All nine processed exports reproduced the earlier exporter.
+  Production source/configuration, retained runtime, captures, sealed maps and
+  simulator edits were left unchanged. Only this handoff and the new analysis
+  directory were written; all assistant work remains unstaged and uncommitted.
+- **No production PR is proposed yet.** Preserve the old branch as evidence.
+  After a selective user-created checkpoint, prefer a separate user-created
+  worktree based directly on refreshed `origin/main`; local main need not be
+  updated first. Do not merge the older integration stack wholesale. Next,
+  reconcile main's mount epoch and qualify independent October 31 observations
+  before deciding on a focused calibration change. No new hardware capture is
+  requested by default.
+
+### Authorization and working boundaries
+
+- The user executes **all Git commands, including read-only Git, and all hardware
+  commands**. The assistant may inspect local files, edit documentation/code,
+  compile isolated offline analysis and read closed recordings without ROS
+  initialization. Do not run Git, create worktrees through tools, launch ROS
+  nodes, replay onto a graph, access devices, control motors or deploy firmware.
+- Communicate in English. Preserve prior decisions; ask only for material missing
+  information. Use C++ for project implementation and native analysis, with
+  minimal Python glue or scientific inspection where appropriate.
+- Preserve the user's simulator edits, captures, sealed maps and retained
+  runtime. Do not stage, commit, publish, broadly clean files or refresh baseline
+  hashes to bypass a failed integrity check. No message to teammates or new chat
+  has been created by this handoff.
+- A new ChatGPT session may lack this filesystem and tools. Attach this document
+  if local access is unavailable. Have the user supply the specific evidence
+  needed; do not claim to inspect inaccessible files or Git state.
+
+### Last user-reported Git state
+
+| Item | Last evidence; recheck through user-run commands |
+|---|---|
+| Remote | `origin`: `git@github.com:jejeong5976/Project2_Turtle_Ninja.git` |
+| Working branch | `feat/dual-lidar`, HEAD `302dceb`; no upstream shown |
+| Fetched main | `origin/main` and `origin/HEAD`: `3e4e466`, merge of PR #13 |
+| Local main | `87fc8d7`, checked out at `/home/pa4/git/Project2_Turtle_Ninja-sim-fix` |
+| Modified tracked files | This handoff and `sim/robot_sim/sim_core/turtleninja_maze_env.py` |
+| Untracked source | `sim/robot_sim/robot_description/config/__init__.py` |
+| Other local material | `.codex-attachments/` and many `output/` captures, reports and archives, including new occupancy packages |
+
+The handoff now includes additional uncommitted documentation changes. Actual
+current staging and tracking classifications are not independently verified.
+The assistant has not executed Git. Suggested reports were not yet received:
+`/tmp/project2-pre-pull-inventory-20261102/git-status.txt` was absent at handoff.
+
+The earlier user-run merge preview reported content conflicts in `.gitignore`,
+`ros2_ws/src/bringup/launch/robot.launch.py` and
+`ros2_ws/src/description/urdf/robot.urdf.xacro`, plus an add/add conflict in
+`config/hardware_map_drive_only.yaml`. That preview **preceded the latest fetch**;
+it is not an exhaustive conflict list for `3e4e466`. The shared
+`ros2_control.xacro` auto-merged textually, but compatibility checks exposed a
+semantic problem described below.
+
+The user generated `/tmp/dual-lidar-main-incoming.patch` with
+`git diff --no-ext-diff --no-textconv HEAD...origin/main`. Its SHA-256 is
+`387300d772889f556398e1697666dd9d64d43f1a8fea75b8e8482c322c3760eb`.
+It describes incoming changes since the merge base, not a complete working-tree
+or final PR diff. File-only reconstruction under `/tmp/dual-lidar-main-review/`
+contains `manifest.json`, selected `incoming/` source files, `patches/`,
+`reconstruction.json`, `compatibility_checks.json` and `profile_comparison.json`.
+The review counted 467 file records, including 354 meshes, and reconstructed
+110 source files with blob-hash checks. This is a cached snapshot, not live remote
+state. These `/tmp` paths may disappear or be inaccessible in another session.
+
+### Main already provides the integration
+
+The inspected main snapshot contains dual sensor startup, configurable mount
+geometry, body filtering, a C++ `navigation/scan_merger`, SLAM launch/configuration,
+pose monitoring and projection/binning tests. Its navigation launch starts
+`coin_d4_driver/multi_coin_d4_node`, reads the front/rear scan topics, and emits a
+body-centered `/scan`. It also adds drive tools, perception changes, reorganized
+meshes and simulator import/cache fixes. Do not restore our old full URDF,
+configuration or simulator workaround merely to preserve the feature branch.
+
+Keep the older branch and evidence for reference. Transfer a behavior only after
+showing that main lacks it and that it is useful. The standalone stationary
+PointCloud2 merger preserves sensor source IDs and serves a different diagnostic
+purpose, but no need to add it to main has been established. Offline replay and
+timing tools are possible independent contributions, not an automatic PR scope.
+
+One **unimplemented candidate**: main's inspected merger tests inter-sensor stamp
+skew, while the older stationary merger also tests stamp age against the current
+ROS clock and receipt age against a steady clock. Two equally old stamps can
+pass a skew-only check. Main has downstream monitoring; this observation is not
+an established end-to-end safety failure. Reproduce the missing behavior, inspect
+consumer checks and account for simulated time/bag replay before proposing a fix.
+No new freshness regression test or production patch has been written.
+
+Another review candidate is finite/consistent metadata and configuration
+validation. Existing tests in main already cover several geometry/binning cases;
+avoid duplicating them. Do not change the navigation observation representation
+or copy stationary-only timestamp semantics without a separate evidence-backed
+design and tests.
+
+If a useful PR emerges, base a clean user-created branch on updated `origin/main`
+and transfer only the needed implementation, dependencies, tests and concise
+documentation. A PR from `feat/dual-lidar` would include all remaining committed
+branch differences; selectively staging a final commit does not narrow that
+history. The user performs branch/worktree creation, cherry-picks, commits and
+publishing. No PR branch has been created or selected.
+
+### Compatibility findings to preserve during integration
+
+- Recorded capture geometry is front/rear X ±0.110 m, Y +0.005 m, scan height
+  0.0545 m, yaw π/0. Incoming main configures X ±0.1145 m, Y 0, height 0.060 m,
+  yaw π/0; main comments describe the height as measured and X as CAD-derived.
+  These are different configuration epochs. Reproduce captures with their
+  recorded transforms first; do not silently replace them with main defaults or
+  treat either set as fully calibrated truth.
+- Combining the old `drive_only.urdf.xacro` with the incoming shared control macro
+  failed because `mock_dynamics` was undefined. Adding its false default in a
+  scratch file passed expansion. This was **not applied to repository source**.
+- The old drive-only launcher/validator requires IMU disabled, margin 20 ticks
+  and torque-off-on-deactivate enabled. Main's profile enables IMU and omits the
+  latter keys, so it fails those older checks. This is an interface mismatch,
+  not proof main's profile is wrong.
+- Old source steering zeroes are `[3066,1552,2577,3589]`. The actual retained
+  capture overlay and incoming main both use `[2048,2048,2048,2565]`; they still
+  differ in IMU and motion-profile settings. The capture overlay uses steering
+  velocity/acceleration 40/10 and drive acceleration 20; main uses 200/60 and 40.
+  Do not overwrite team defaults with historical capture settings.
+- The old full URDF references 12 meshes removed/renamed by main. Keeping it
+  wholesale can break model loading despite resolved text conflicts.
+- `output/steering_review_20261031/startup_files.sha256` covers repository
+  configuration/firmware as well as retained artifacts. Main integration may
+  intentionally invalidate that historical startup gate even if installed
+  binaries remain unchanged. Review the change; do not regenerate checksums
+  merely to make the launcher accept it. No runtime launch is needed for this task.
+
+### Finished three-resolution sharing package and shelf correction
+
+The current sharing derivative is
+`output/A1_H2_occupancy_1cm_2p5cm_5cm_20261102_v2.zip` (613,697 bytes), SHA-256
+`9c0ec8251bd111d09a59b43e7abc17096e1d32db5691ca51c17ea4269813fabb`.
+Its adjacent `.zip.sha256`, `_archive_validation.json` and extracted directory
+are retained. There is no confirmed upload, push or teammate delivery.
+
+The user selected **1 cm, 2.5 cm and 5 cm** cells. Each `maps_*` directory contains
+`map.yaml`, `map.pgm` and a preview. Keep YAML and PGM together. All resolutions
+were rendered from saved scans, not enlarged from the 5 cm image. Finer cells do
+not increase measurement accuracy. The package contains comparison images,
+provenance, reproduction sources and `README.txt`/`SHARE_MESSAGE.txt`.
+
+The user disliked the gray strip along the lower outer-left boundary. Sharing
+revision 2 extends the earlier-observation preference to X [-2.40,-2.05),
+Y [-0.65,1.65) m, copying earlier states including unknown. It changes 208/127/72
+cells at 1/2.5/5 cm respectively and leaves every outside cell unchanged from
+sharing revision 1. No wall was drawn or poses refitted. The sealed source
+`output/A1_H2_merged_20261102_v2` remains unchanged; distinguish that source
+bundle from the later occupancy-sharing revision with its fourth preference region.
+
+**User correction:** the investigated gray regions correspond to L1/L2/L3
+shelves whose positions and orientations can change. Do not label these unknown
+areas calibration failures or automatically fill them as free. The static-obstacle
+priority interpretation in `output/A1_H2_unknown_area_review_20261102_v1` is
+superseded by this correction; those diagnostic files were not rewritten.
+No exact mapping from numbered review regions to shelf IDs was provided.
+Cross-date disagreement may reflect different shelf layouts. Prefer confirmed
+unchanged wall faces for calibration; any shelf use must establish appropriate
+same-face/same-stop geometry rather than assume cross-date stability. The combined
+map is a historical occupancy reference, not proof of the present shelf layout.
+
+Map-work directories are `output/A1_H2_occupancy_20261102_v1_work`,
+`output/A1_H2_occupancy_20261102_v2_work`, both corresponding sharing packages,
+`output/A1_H2_lower_left_review_20261102_v1` and the unknown-area review above.
+The v2 work directory has three evidence symlinks into v1 work; preserve those
+dependencies. Compact sharing ZIPs do not contain the raw captures.
+
+### Project inventory and checks actually completed
+
+The full file-only inventory is under
+`/tmp/project2-pre-pull-inventory-20261102/`: `source-tree.txt` (compact project
+structure), `project-tree-full.txt`, `directory-tree.txt`, `all-files.txt`,
+`all-files.jsonl` and `summary.json`. It includes ignored/hidden files but does
+not establish their Git tracking status. At that snapshot there were about
+46.8 GB of logical file sizes excluding `.git`; `output/` accounted for 44.6 GB,
+including LiDAR captures 19.1 GB, selected mapping submaps 15.7 GB and synthetic
+mapping experiments 7.6 GB. Counts can include multiple paths to identical data.
+
+The main source areas are `config/`, `firmware/nt_opencr/`, `ros2_ws/src/`,
+`tools/`, `sim/robot_sim/`, `docs/` and `yolo/`. Capture data are in `output/`
+and `datasets/`; retained isolated workspaces are in `build/`. Root `output/`
+is not globally ignored by the inspected branch rules. Avoid broad staging,
+blanket untracked-file stashes or cleanup of the capture workspace.
+
+Checks completed during this session, distinct from future calibration:
+
+- Map production verification reconstructed 54 per-run and 12 composed rasters,
+  checked the regional change boundaries and reproduced all three final maps
+  with the packaged native sources. Source inputs and exclusions were preserved.
+- During this handoff, both source TAR and sharing ZIP hashes/sizes matched;
+  all 302 source manifest entries and 45 sharing-package manifest entries matched,
+  and ZIP CRC validation passed. The package has 46 files including its manifest.
+  File-only recheck record: `/tmp/handoff_integrity_recheck_20261102.json`.
+- The angular replay executable compiled and `test_angle_grid` passed with
+  warnings as errors and UndefinedBehaviorSanitizer. Binaries are in
+  `/tmp/partial-pr-lidar-review-2g5g_9jo`. This validates those offline cases only;
+  it is not a post-merge integration test or physical calibration.
+- No hardware commands, ROS node launches or Git commands were executed by the
+  assistant. Production source/configuration was not changed by the map/PR
+  assessment. This handoff edit is documentation work.
+
+### Ordered starting actions for the new session
+
+1. Read applicable instructions and verify local evidence availability. Establish
+   whether the user has since integrated main. If fresh state is needed, have
+   the user run the following commands and return the output; do not run them:
+
+   ```bash
+   cd /home/pa4/git/Project2_Turtle_Ninja
+   git fetch origin
+   git --no-optional-locks status --short --branch
+   git --no-optional-locks branch -vv
+   git --no-optional-locks log --oneline --left-right HEAD...origin/main
+   git --no-optional-locks diff --no-ext-diff --no-textconv \
+     HEAD...origin/main > /tmp/dual-lidar-main-incoming.patch
+   ```
+
+   Fetch refreshes remote-tracking references; it does not merge main. If the
+   patch changes, the existing reconstructed review is stale and must be rebuilt.
+   If HEAD already contains origin/main, an empty incoming patch is expected;
+   inspect the resolved checkout instead. Do not assume all old branch code
+   should remain in a final main-based implementation.
+2. Before user-controlled integration, account for tracked edits, local source
+   additions and capture preservation. Prefer explicit fetch/review/merge steps
+   over a blind pull on this divergent branch. Refresh the merge preview if
+   needed and review semantic compatibility as well as conflict markers.
+   An isolated user-created worktree may help retain the evidence workspace;
+   ignored data and installed artifacts will not automatically appear there.
+3. Evaluate main's relevant processing offline against selected existing captures.
+   Inventory bag topics, frames, clocks, configuration epoch and stationary
+   intervals first. Separate raw rays from processed mapping scans. Do not feed
+   a derived mapping scan through the raw-driver conversion again or treat an
+   algorithm replay as an end-to-end hardware test. Use new output directories.
+4. Follow the retained calibration plan below: qualify same-face geometry, reserve
+   independent stops/runs for validation, establish observability, and fit only
+   supported relative parameters. Account for movable shelves and configuration
+   changes. Preserve the sealed map, original observations and retained runtime.
+5. Deliver either an unapplied calibration candidate with held-out evidence or a
+   clear statement of what the recordings cannot constrain. If a main defect is
+   reproduced, prepare the smallest fix and meaningful regression tests. If no
+   worthwhile change is established, report that and do not manufacture a PR.
+
+## Retained calibration plan — existing stationary captures
+
+**Standing calibration decision:** “I will use earlier stationary captures to calibrate.”
+Prepare an offline, evidence-backed relative dual-LiDAR calibration candidate
+using already recorded data. New stationary hardware captures are not the first
+step. Inventory the existing captures and establish what parameters they can
+actually constrain before fitting. The resumed checkpoint above now records an
+unapplied candidate from the November 2 epoch; no calibration has been installed.
+The map, source bags, retained runtime and hardware configuration remain unchanged.
+
+The current resume section above controls the work order. This calibration plan
+and the final continuation prompt supersede older hardware “next step”
+instructions below. The dated checkpoints remain historical evidence. H2 is
+closed; the earlier statement that E2 through H2 are uncaptured is obsolete.
+E2 alone was not captured. Do not resume mapping from an old route prompt.
+
+### Boundaries and current checkpoint
+
+- The user executes **all hardware and all Git commands, including read-only
+  Git**. Assistant work may inspect local files, document, compile isolated
+  native analysis and read closed recordings without ROS initialization.
+  Do not open devices, start ROS nodes, replay onto the live graph, energize
+  motors, change firmware, stop processes or run Git.
+- Explain in English; keep necessary questions short. Preserve existing user
+  decisions instead of asking for them again.
+- User terminal output confirms commit **`302dceb`** on **`feat/dual-lidar`**:
+  `docs: checkpoint refined A1-H2 map and trail exclusions`. It contains this
+  handoff as it existed then, the v2 archive, archive checksum and validation
+  JSON. This is user-reported Git evidence; no Git command was run to recheck it.
+  No push was reported. This new handoff update is subsequent, unstaged work.
+- Last user-provided status also contained unrelated modifications to
+  `sim/robot_sim/sim_core/turtleninja_maze_env.py`, untracked
+  `sim/robot_sim/robot_description/config/__init__.py`, `.codex-attachments/`
+  and remaining `output/` files. Preserve them. Current index/worktree state
+  has not been independently inspected.
+- Sealed source map remains `output/A1_H2_merged_20261102_v2/maps_5cm/map.yaml`
+  with its adjacent PGM; `maps_2p5cm/` is diagnostic detail. It is a static
+  occupancy candidate, not a newly optimized resumable SLAM pose graph or
+  a surveyed calibration target.
+- Archive: `output/A1_H2_merged_20261102_v2.tar.gz`, 35,957,299 bytes;
+  SHA-256 `573d828b536275c1c8f8ef88c62317639f97ce2e212a2a198a20b03d153eede3`.
+  Its validation record reports 302 manifest entries / 303 archive members.
+  The user independently ran the archive checksum successfully before committing.
+
+### What today's evidence supports
+
+All numbers below are calculated from recorded measurements, not surveyed
+accuracy. Read the linked local reports and underlying tables before reusing
+them. Their completed checks were reviewed for this handoff; fitting and map
+generation were not rerun merely to write it.
+
+| Observation | Evidence and inference boundary |
+|---|---|
+| Persistent relative angle bias | November 2 long common wall spans: front-minus-rear median −0.748° stopped and −0.745° moving. October 31 stopped comparisons also have a negative median, about −0.65°, under a different selection. This motivates relative geometry checks; it does not identify which sensor is wrong or justify blindly subtracting 0.75°. |
+| Generally small gaps, with local exceptions | November 2 stopped normal gap median 0.71 cm / p95 2.72 cm across 229 comparisons; F2_030 has a roughly 4.8 cm gap on one surface. Investigate range, incidence, surface shape and visibility dependence, not just one global yaw. |
+| Wheel yaw misses substantial motion | E1: wheel −0.13°, front wall angles −6.15°, rear −6.33°. Both LiDARs support turning; slip versus steering/kinematic error remains unresolved. Both processed streams share wheel-based deskew, so their agreement is not fully independent. |
+| D3's duplicate wall accumulated within the run | Identical wall rays span 9.18 cm originally, 3.69 cm after masked sequential re-estimation, and 2.15 cm in the selected refinement. No single-scan deletion solved the original spread. Scan 0 is a reference, not ground truth. |
+| Robot-relative trails differ from fixed walls | D3: 1,206 audited rays excluded; H1: 75 rays across 42 scans. Exclusion removes the entire ray, including clearing. H1 v2 removal did not refit poses. Physical self-return sources remain unverified. |
+| Map consistency is not sensor calibration | Front scans alone entered saved SLAM/occupancy. Rear scans supported diagnostic/selection checks. A rear correction alone cannot repair already accumulated front-only map distortion. |
+
+Authoritative reports: `output/run_diagnostics_D3_H2_20261102_v1/REVIEW.md`,
+`output/D3_scan_attribution_20261102_v1/REVIEW.md`,
+`output/D3_reestimate_20261102_v1/REVIEW.md`,
+`output/D3_H2_refined_20261102_v1/REVIEW.md`,
+`output/A1_D2_refined_20261102_v1/REVIEW.md` and
+`output/A1_H2_merged_20261102_v2/REVIEW.md`.
+
+### Existing capture inventory for calibration
+
+All paths are local to this workspace. Do not assume that ignored bags or
+temporary analysis dependencies exist in another checkout. Treat these as
+candidate sources, not a claim that all have adequate common geometry.
+
+| Source | What is available / how to use it |
+|---|---|
+| October 31 selected runs | `output/A1_D2_refined_20261102_v1/capture_inventory.json`, `runs.json`, `diagnostics/<RUN>/stationary_scans.csv` and `diagnostics/wall_review.json`. The review identifies 48 distinct physical stops / 1,926 front+rear scans. Raw sources are `output/lidar_workbench/physical_20261031_XX/`. |
+| November 2 selected runs | `output/run_diagnostics_D3_H2_20261102_v1/runs.json`, `<RUN>/selected_events.csv`, `<RUN>/stationary_scans.csv`, `wall_review.json`; 57 save windows / 2,287 scans. Raw sources are `output/lidar_workbench/physical_20261102_01` through `_10`. Repeated D3 endpoint saves are correlated repeats, not extra independent placements. |
+| Earlier desktop stopped trials | `output/lidar_workbench/physical_20261029_{09,10,11,12,13,14}/` and corresponding `_stationary_review/` results, where present. Trial 14 has five stopped windows. Inspect original bag topics, device identity, mount logs and configuration before pooling across dates. October 29 USB-role tables differ from later confirmed port roles. |
+| Dedicated setup / historical timing | October 31 `_02/maps/setup_stationary.*` and its capture; `datasets/timing/20261028-stationary-v1/{capture.tar.gz,review.cpp,results.txt,SHA256SUMS}`. The October 28 capture concerns front timing; do not assume a rear stream or common dual-LiDAR geometry without inspecting its metadata. |
+| Unused repeat witnesses | October 31 run03 A1 and run07 B2 were separate witnesses rather than final map inputs. Preserve them as possible independent validation, after checking mount/configuration compatibility. |
+
+**Important input distinction:** the existing `export_stationary_scans.cpp`
+reads `/lidar_front/scan_mapping` and `/lidar_rear/scan_mapping`; its CSVs are
+already processed/deskewed sensor-frame endpoints. They are useful for
+reproduction and comparison, but must not be relabeled raw measurements.
+The inspected D3 bag metadata includes both `/lidar_front/raw_rays` and
+`/lidar_rear/raw_rays` (`sensor_msgs/msg/PointCloud2`), corrected `/rays`, mapping
+scans, status, `/odom`, `/tf_static`, `/tf` and commands. Verify equivalent
+availability per candidate bag. Inspect PointCloud2 fields, frame IDs, units,
+beam/range provenance and timestamp semantics before using raw rays. Avoid
+applying the mount twice or using map-transformed endpoints as sensor coordinates.
+
+For the November 2 review, windows are the two seconds before each save request;
+wheel-reported maximum motion over them was 0.168 mm and 0.0054°. This supports
+stopped selection but is not independent proof of no physical motion. Reconfirm
+using event ordering and within-window scan stability. Exclude motion/settling,
+failed startup, uncertain relocation and duplicated windows from independent
+sample counts. Keep D4_180 and G1's later uncertain relocation outside accepted
+mapping data; do not quietly repurpose them for fitting without a separate audit.
+
+### Baseline and frame conventions to preserve
+
+- Retained install: `build/lidar_workbench_20261029_pairing_review`;
+  launcher: `output/steering_review_20261031/startup_review.sh`;
+  baseline manifest: `output/steering_review_20261031/startup_files.sha256`.
+  Current repository source differs from that install. Do not rebuild or
+  overwrite it as routine preparation.
+- Recorded mounts in `base_footprint`: front `(0.110, 0.005, 0.0545)` m,
+  yaw π; rear `(−0.110, 0.005, 0.0545)` m, yaw 0. Plate x/y/yaw are zero.
+  Positive X forward, Y left, yaw counterclockwise. These are configured values;
+  actual scan-plane height/level and chassis alignment are not surveyed here.
+- Workbench static publishers own the sensor TF edges; wheel feedback owns
+  `odom → base_footprint`; SLAM owns `map → odom`. ROS 2 Lyrical,
+  SLAM Toolbox 2.10.0, historical live domain 215. No live graph is needed.
+- Nominal timing, assumed delay zero, `acquisition_time_valid=0`. Earlier
+  transport-latency measurements do not establish optical acquisition time.
+  Stationary observations cannot identify motion-dependent timing/deskew errors.
+- Preserve D3 and H1 exclusion audits and all v2 earlier-wall regions. Exact
+  saved scan/beam/range masks do not automatically transfer to raw streams or
+  become universal body masks. Trace correspondence or define a separately
+  audited selection when using different representations.
+
+### Ordered next work and acceptance criteria
+
+1. **Inventory and seal inputs.** Verify relevant manifests; record bag paths,
+   dates, topics, frame IDs, mount/configuration hashes and stop intervals.
+   Check for remounts or source-identity differences. Stratify by configuration
+   epoch before considering a single correction. Keep originals read-only and
+   create a new analysis directory, such as `output/lidar_stationary_calibration_20261102_v1`.
+2. **Qualify geometry and select validation data first.** Find simultaneous
+   front/rear observations of the same physical face, across varied ranges,
+   incidence angles and at least two nonparallel surface directions where
+   available. Do not pair opposite faces of a thick wall as one surface.
+   Keep whole stops/runs out of fitting; adjacent rays or repeated scans from
+   the same stop are correlated. Existing data may constrain only part of the
+   transform; report that explicitly rather than forcing an answer.
+3. **Fit a relative planar transform.** Use robust same-face point-to-line
+   residuals and recorded nominal geometry as a starting point. Check Jacobian
+   rank/conditioning and parameter correlations. A single infinite wall cannot
+   constrain translation along itself. Fix one sensor as the mathematical
+   reference; this choice does not prove its chassis alignment. Compare a yaw
+   candidate with a full x/y/yaw candidate only where data constrain both.
+   Do not fit both free sensor mounts against a freely moving map and claim
+   unique calibration. Absolute base-frame alignment, z/roll/pitch and intrinsic
+   range/angle correction require additional evidence.
+4. **Test the candidate on held-out observations.** Report before/after angular
+   residuals and normal gaps by stop, wall, range, incidence and date. Use
+   equal-stop/run summaries rather than overweighting dense repeated scans.
+   Inspect F2's large-gap surface, leave-one-stop/run-out sensitivity and the
+   difference between raw and processed stationary inputs. A consistent fit
+   must improve unused geometry without systematic regressions; a lower
+   training residual or prettier raster is insufficient. No user-specified
+   absolute accuracy tolerance exists; do not invent one.
+5. **Deliver a reviewable, unapplied candidate.** Save parameter conventions,
+   provenance, input hashes, fitting/validation membership, figures, sensitivity
+   results and a separate candidate configuration/patch. Preserve the runtime
+   baseline and v2 map. If existing captures are underconstrained, deliver the
+   observable correction and precise missing evidence instead of requesting
+   new hardware as the default first action.
+6. **Keep later validation separate.** Motion timing/deskew and wheel/steering
+   kinematics remain separate experiments. RealSense D435, bird-eye camera and
+   the two OpenCRs were not recorded as independent motion references in these
+   runs. Future sensor compensation must account for shared dependencies and
+   uncertainty; no compensation architecture is implemented by this handoff.
+
+The offline deliverable is a supported relative calibration proposal or a clear
+observability limit, not an installed correction. Runtime deployment, physical
+validation, remapping and new hardware trials are subsequent user-controlled work.
+
+### Learning-note publication
+
+Published under **Project 2**:
+[2026-11-02 Maze mapping — separating drift, self-returns and calibration](https://app.notion.com/p/40c3980c8a4481aea417e115806a2d67).
+Readback verified the parent, full content through the ending, and five stored
+image blocks. Source figures were visually inspected; full Notion browser
+rendering was not checked. No figure was omitted.
+
+Current file-only recheck: all 302 v2 manifest entries and 50 retained-baseline
+entries matched, and the archive hash/size matched the recorded checkpoint.
+See the learning package `integrity_check.json`. No fitting or rendering was
+rerun and no Git or hardware command was executed.
+
+The November 2 learning note covers D3–H2 acquisition/review, the reanalysis of
+October 31 A1–D2 data, ray exclusions, cross-date source selection, the map
+checkpoint and the decision to reuse stationary captures. Publication details
+and local evidence ledger are in `output/learning_notes/20261102_mapping_calibration/`.
+Other recently updated same-folder chats were checked for actual turn dates;
+their retrieved work was October 27/30, not additional November 2 experiments.
+Coverage does not claim access to unseen/offline learning or unrelated folders.
+
+## Completed mapping checkpoint — November 2 (before calibration)
 
 **Current map: revised A1–H2 v2, with H1's trail removed and earlier geometry selected at the three large-offset walls.**
 The user confirmed H2 closed. No further hardware action is pending.
@@ -2135,34 +2623,21 @@ are described in the current checkpoint above.
 ## Prompt for the next session
 
 > Read `/home/pa4/git/Project2_Turtle_Ninja/docs/navigation/mission_navigation_handoff_20261028.md`,
-> especially the current November 2 checkpoint and staged mapping plan in
-> `output/mapping_batch_D3_H2_20261102/README.txt`. D3 session
-> `physical_20261102_01` ended at 2.10 m, with 96 scans / 123 edges, verified
-> normal wheel shutdown, bag integrity and portable archive. Final live walls
-> at D3_210 were not explicitly reported; last confirmation was D3_180. Preserve
-> the first-motion steering-limit and shutdown-only SLAM SIGINT −2 notes.
-> D4 session `physical_20261102_02` is also closed. Select `D4_150` at 1.50 m,
-> 69 scans / 89 edges; exclude the sixth 0.30 m segment, `D4_180` and later
-> snapshots. Preserve all raw data and the selection record. Closed bag integrity
-> passed: 301,932 messages / 18 topics. Keep the initial 87 USB-send failures
-> (69 later windows zero), steering-limit, RViz and SLAM shutdown notes. Selected
-> snapshot hashes and all 50 baseline hashes match. E1 session `physical_20261102_03`
-> is closed and archived at 1.20 m. Its live final save timed out after map-saver
-> DDS errors and a cleanup segfault; E1_120 was recovered offline (55 scans / 62
-> edges), with E1_090 as fallback. The bag (129,993 messages / 18 topics), saved
-> graph/data pairs and archive pass integrity checks; final live alignment was
-> not reported. Preserve all fault evidence and the original runtime. No further
-> hardware work is issued. Assess optional E2 and remaining routes only when I
-> request resumption, with fresh power-off placement, connections,
-> stationary walls, full robot/arm/cable clearance and cable reach checks.
-> Build a separate D3–H2 map once adequate captures exist, then test registration
-> and create a new combined map alongside the preserved A–D2 result. E2 through
-> H2 have not been captured here; E2/H1/H2 are conditional. Keep original ranges,
-> one final snapshot per run, observed overlap, rigid transforms, held-out checks
-> and uncertainty. Preserve the October 31 corner-sensitivity findings and all
-> historical caveats. L2 is solid to floor, 20.5 cm square. Keep retained runtime,
-> calibration and guards, 0.025 m/s, 30-minute cap and 0.30 m segments. Continue
-> despite drift while walls stay coherent and actual swept space is clear.
-> Explain in English and keep questions short. I execute all hardware and ALL
-> Git commands, including read-only Git. Do not change firmware or deploy the
-> proposed sensor-compensation architecture as part of routine mapping.
+> especially “Resume here — review main, then evaluate existing stationary
+> captures” and the retained calibration plan. Main already contains LiDAR
+> integration; do not add our older integration stack or create a PR without a
+> demonstrated improvement. First establish whether I have integrated main since
+> the last reported state (feat/dual-lidar at 302dceb; fetched main at 3e4e466).
+> Help me preserve pending work and resolve integration if it remains unfinished.
+> Then evaluate main's processing offline using existing stationary captures and
+> resume evidence-backed relative LiDAR calibration. Distinguish raw rays from
+> processed scan_mapping data, retain each capture's original configuration,
+> reserve independent validation stops and report observability limits. L1/L2/L3
+> shelves can change pose; their gray map regions are not automatically defects
+> or fixed cross-date calibration references. Preserve the sealed source map,
+> the three-resolution occupancy-sharing v2 package, exclusions and runtime.
+> Deliver an unapplied candidate or a clear evidence limit; propose a focused
+> PR only for a reproduced defect or supported improvement. Recheck applicable
+> instructions. Explain in English. I execute ALL Git commands, including reads,
+> and all hardware commands. Do not launch ROS, access devices or deploy changes.
+> If you cannot access local files, tell me which evidence to provide.
