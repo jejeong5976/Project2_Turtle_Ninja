@@ -1,0 +1,70 @@
+#usda 1.0
+(
+    defaultPrim = "Barcode"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "Barcode" (
+    prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+    customData = {
+        string code128 = "P2-04"
+        double2 size_m = (0.07, 0.024)
+    }
+)
+{
+    bool physics:kinematicEnabled = 1
+
+    def Mesh "plate" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        uniform bool doubleSided = 0
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        rel material:binding = </Barcode/Looks/barcode_3>
+        normal3f[] normals = [(1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0)] (
+            interpolation = "vertex"
+        )
+        point3f[] points = [(0.0002, -0.035, -0.012), (0.0002, 0.035, -0.012), (0.0002, 0.035, 0.012), (0.0002, -0.035, 0.012)]
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+    }
+
+    def "Looks"
+    {
+        def Material "barcode_3"
+        {
+            token outputs:surface.connect = </Barcode/Looks/barcode_3/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </Barcode/Looks/barcode_3/tex.outputs:rgb>
+                float inputs:metallic = 0
+                float inputs:roughness = 0.7
+                token outputs:surface
+            }
+
+            def Shader "st"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                token inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "tex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./tex/barcode_3.png@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </Barcode/Looks/barcode_3/st.outputs:result>
+                token inputs:wrapS = "clamp"
+                token inputs:wrapT = "clamp"
+                float3 outputs:rgb
+            }
+        }
+    }
+}
+

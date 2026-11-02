@@ -1,0 +1,119 @@
+{
+ "note": "그리퍼 크랭크·링크 막대 보이는 모양 움직임 자료 → config/crank_linkage.json, meshes/generated/crank_anim_*.obj (보이는 것만, 물리 무관).",
+ "hide_visuals": [
+  "arm_link5_wrist_roll__visual__gripper_crank_visual_4",
+  "arm_link5_wrist_roll__visual__gripper_crank_visual_5"
+ ],
+ "meshes": {
+  "crank": "meshes/generated/crank_anim_crank.obj",
+  "rod_a": "meshes/generated/crank_anim_rod_a.obj",
+  "rod_b": "meshes/generated/crank_anim_rod_b.obj"
+ },
+ "colors": {
+  "crank": [
+   0.62,
+   0.66,
+   0.7
+  ],
+  "rod_a": [
+   0.95,
+   0.8,
+   0.15
+  ],
+  "rod_b": [
+   0.95,
+   0.8,
+   0.15
+  ]
+ },
+ "axis": [
+  -0.617467443,
+  0.293127179,
+  0.729938637
+ ],
+ "center_m": [
+  0.02546193,
+  -0.012080441,
+  -0.047656644
+ ],
+ "sign": -1,
+ "tick_table_mm": [
+  [
+   1045,
+   79.0
+  ],
+  [
+   2270,
+   29.0
+  ],
+  [
+   2658,
+   16.0
+  ]
+ ],
+ "gap0_mm": 58.50723799617533,
+ "tick_cad": 1547.07,
+ "rod_pin_end_m": {
+  "a": [
+   0.035832152,
+   -0.012589056,
+   -0.03868005
+  ],
+  "b": [
+   0.015091708,
+   -0.011571827,
+   -0.056633239
+  ]
+ },
+ "rod_finger_end_m": {
+  "a": [
+   0.047391102,
+   0.037049939,
+   -0.04882469
+  ],
+  "b": [
+   0.003532757,
+   -0.06121082,
+   -0.046488599
+  ]
+ },
+ "finger_axis": {
+  "a": [
+   0.428628063,
+   0.903481036,
+   -2.48981564e-05
+  ],
+  "b": [
+   -0.428628063,
+   -0.903481036,
+   2.48981564e-05
+  ]
+ },
+ "rod_length_cad_mm": [
+  51.97,
+  51.97
+ ],
+ "crank_radius_cad_mm": 13.73,
+ "rod_end_error_mm": {
+  "gap 79.0 mm": {
+   "a": 0.73,
+   "b": 0.73
+  },
+  "gap 58.5 mm": {
+   "a": 0.0,
+   "b": 0.0
+  },
+  "gap 29.0 mm": {
+   "a": 1.7,
+   "b": 1.7
+  },
+  "gap 16.0 mm": {
+   "a": 5.72,
+   "b": 5.72
+  }
+ },
+ "max_error_both_signs_mm": {
+  "1": 31.53,
+  "-1": 5.72
+ }
+}

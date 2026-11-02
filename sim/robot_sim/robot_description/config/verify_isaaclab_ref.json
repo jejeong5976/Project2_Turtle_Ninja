@@ -1,0 +1,135 @@
+{
+ "usd": "/home/pa25/Documents/Codex/2026-10-23/nt_urdf_release_20261027_layout/usd/robot/robot.usda",
+ "joints": {
+  "steer_fl_joint": {
+   "start": 0.0,
+   "after_2s": -9e-06,
+   "parked": 0.0
+  },
+  "steer_fr_joint": {
+   "start": 0.0,
+   "after_2s": 4e-06,
+   "parked": 0.0
+  },
+  "steer_rl_joint": {
+   "start": -0.0,
+   "after_2s": 4e-06,
+   "parked": 0.0
+  },
+  "steer_rr_joint": {
+   "start": -0.0,
+   "after_2s": -1.1e-05,
+   "parked": 0.0
+  },
+  "arm_joint1": {
+   "start": -0.0,
+   "after_2s": -1.558393,
+   "parked": -1.65193
+  },
+  "drive_fl_joint": {
+   "start": 0.0,
+   "after_2s": 0.003761,
+   "parked": 0.0
+  },
+  "drive_fr_joint": {
+   "start": 0.0,
+   "after_2s": -0.002787,
+   "parked": 0.0
+  },
+  "drive_rl_joint": {
+   "start": 0.0,
+   "after_2s": -0.015791,
+   "parked": 0.0
+  },
+  "drive_rr_joint": {
+   "start": 0.0,
+   "after_2s": 0.015749,
+   "parked": 0.0
+  },
+  "arm_joint2": {
+   "start": -0.0,
+   "after_2s": -1.62641,
+   "parked": -1.62157
+  },
+  "arm_joint3": {
+   "start": 0.0,
+   "after_2s": -1.527952,
+   "parked": -1.605556
+  },
+  "arm_joint4": {
+   "start": -0.0,
+   "after_2s": 0.10171,
+   "parked": 0.104838
+  },
+  "arm_joint5": {
+   "start": 0.0,
+   "after_2s": -0.059512,
+   "parked": -0.060621
+  },
+  "gripper_finger_a_joint": {
+   "start": 0.0,
+   "after_2s": -0.011497,
+   "parked": -0.021254
+  },
+  "gripper_finger_b_joint": {
+   "start": 0.0,
+   "after_2s": -0.011495,
+   "parked": -0.021254
+  }
+ },
+ "gripper_gap_mm_after_2s": 35.52,
+ "base_above_ground_mm": 144.0,
+ "scan_plane_above_ground_mm": 132.0,
+ "arm_max_abs_err_deg": 5.359,
+ "arm_bodies_rel_base_m": {
+  "arm_link1": [
+   0.0225,
+   -0.0005,
+   0.1275
+  ],
+  "arm_link2": [
+   0.0204,
+   -0.0195,
+   0.168
+  ],
+  "arm_link3": [
+   -0.0992,
+   0.0325,
+   0.2056
+  ],
+  "arm_link4_wrist": [
+   0.0004,
+   -0.0172,
+   0.2721
+  ],
+  "arm_link5_wrist_roll": [
+   0.045,
+   -0.0032,
+   0.2263
+  ],
+  "gripper_finger_a": [
+   0.0773,
+   0.0306,
+   0.1815
+  ],
+  "gripper_finger_b": [
+   0.0658,
+   -0.0416,
+   0.1786
+  ]
+ },
+ "arm_body_origins_inside_jetson_box": [],
+ "wheel_body_z_above_ground_mm": {
+  "v5_fl_wheel_link_0": 33.0,
+  "v5_fr_wheel_link_0": 33.0,
+  "v5_rl_wheel_link_0": 33.0,
+  "v5_rr_wheel_link_0": 33.0
+ },
+ "projected_gravity_b": [
+  0.0,
+  -0.0,
+  -1.0
+ ],
+ "root_z_raw_m": 0.072,
+ "note": "Jetson 판정은 팔 링크 원점 기준(형상 전체 아님). 팔판(base z 82.5 mm) 위에 팔이 있고 Jetson 상자 위끝 81.27 mm."
+}

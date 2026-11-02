@@ -1,0 +1,12 @@
+robot_description/meshes/
+robot_description/meshes_followup/
+robot_description/parts/
+robot_description/images/
+
+usd/robot/
+real_photos/
+source/maze_parts_R3_R5_M4/
+pack_large_files.sh
+results/
+__pycache__/
+rl/logs/

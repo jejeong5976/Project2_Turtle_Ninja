@@ -1,0 +1,45 @@
+# 손목 D435 퍽 분할 (YOLO-seg) 학습 설정. scripts/train.py 가 읽음
+# 클래스: data.yaml 을 따름 (sim_to_seg.py --classes 8 = 색 × 모양 × 선/누움, 4 = 색 × 모양)
+common:
+  model: yolo26n-seg.pt
+  imgsz: 640            # D435 컬러 640×480 그대로 (학습은 정사각형 640, 추론 640×480)
+  batch: 24
+  workers: 4
+  optimizer: AdamW
+  warmup_bias_lr: 0.0
+  patience: 30
+  seed: 42
+  overlap_mask: true
+  # augmentation
+  hsv_h: 0.01           # 색상: 작게 (클래스에 red/green 들어감)
+  hsv_s: 0.3            # 채도 ±30 %. 0.5 는 빨강을 분홍으로 만들어버림
+  hsv_v: 0.3
+  degrees: 10.0         # 손목은 팔 자세 따라 기울어짐
+  translate: 0.1
+  scale: 0.3            # 관찰 거리 0.2–0.45 m
+  fliplr: 0.5
+  mosaic: 0.0
+
+# data augmentation
+albu:
+  white_balance: {p: 0.5, kelvin: [4000, 8000]}
+  exposure: {p: 0.4, brightness: 0.25, contrast: 0.2}
+  gamma: {p: 0.3, range: [70, 140]}
+  blur: {p: 0.3, motion: [3, 9], defocus: [1, 3]}     # 팔이 움직이는 중 흔들림, 가까운 거리 초점
+  vignette: {p: 0.0, intensity: [0.05, 0.2]}          # D435 는 주변부가 어두운 부분이 거의 없음
+  # 아래 순서로 걸림: ... blur -> shadow -> tint -> lighting
+  shadow: {p: 0.15, intensity: [0.1, 0.2]}            # 한쪽만 어두움 (부분 밝기 기울기, Illumination darken, 최대 0.2 = albumentations 한계)
+  tint: {p: 0.1, shift: [8, 25]}                      # 신호등 빛 섞임: 빨강 또는 초록 쪽으로 물듦 (RGB 0–255 더함). 클래스에 색이 있어 작게
+  lighting:                                           # 조명 단계: 장면마다 하나 고름 (w = 비중), 나머지 1 - p = 불 다 켠 기본 상태
+    p: 0.35
+    dim:     {w: 2, gamma: [150, 220], noise: [0.01, 0.03]}   # 적당히 어둡게 (평균 밝기 약 0.5–0.7 배)
+    dark:    {w: 1, gamma: [200, 300], noise: [0.02, 0.05]}   # 완전 어둡게 (노출 못 올린 사진). 400 까지는 퍽이 안 보일만큼 어두움
+    dark_ae: {w: 2, contrast: [-0.35, -0.15], saturation: [0.6, 0.85], noise: [0.04, 0.09]}   # 어두운 방 + D435 자동 노출: 밝기는 비슷, 대비와 채도 낮고 노이즈 큼
+
+stages:                 # common.model(yolo26n-seg.pt)로 학습 진행
+  sim:                  # 합성(시뮬) 데이터만으로 학습 · 검증
+    data: datasets/sim_seg/data.yaml
+    epochs: 150
+    lr0: 0.0005
+    close_mosaic: 0
+    name: seg8_sim

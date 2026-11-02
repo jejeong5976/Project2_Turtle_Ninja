@@ -1,0 +1,53 @@
+# 닌자터틀 스워브 주행 설정 — 학습·시뮬용 (2026-10-27)
+# 계산 코드: swerve/nt_swerve.py (팀 nt_control/swerve.cpp 2026-10-27 로컬 판과 같은 규칙, 일치 검사 tools/check_swerve_port.py)
+# 근거 표시: [레지스터] 모터에서 읽은 값 · [데이터시트] XM430 12 V · [실측] 실물 시험 · [계산] 위 값에서 계산 · [추정] 시험 전 판단
+
+joints:                     # URDF 관절 이름 = 팀 swerve_controller 이름
+  module_names: [fl, fr, rl, rr]
+  steer: [steer_fl_joint, steer_fr_joint, steer_rl_joint, steer_rr_joint]
+  drive: [drive_fl_joint, drive_fr_joint, drive_rl_joint, drive_rr_joint]
+
+geometry:                   # 팀 nt_bringup/config/drive_only.yaml (2026-10-19 새 전진 방향) 과 같음. URDF 조향축 위치와도 같음
+  module_x: [-0.064, 0.064, -0.064, 0.064]      # [m] 조향축 x (앞 +)
+  module_y: [0.112, 0.112, -0.112, -0.112]      # [m] 조향축 y (왼 +)
+  module_offset: [0.0269, 0.0269, -0.0269, -0.0269]   # [m] 바퀴 접지점 ↔ 조향축 (조향 링크 y 방향)
+  wheel_radius: 0.033                           # [m] [실측] 10-26 바닥 300 mm 시험 오차 −2~+0.5 cm 안 → 변경 없음
+
+# 조향 범위 = 위치 모드 엔코더 창 0~4095 전체(끝 여유 0). 영점 눈금 3066/1552/2577/3589, 부호 −1 (hardware_map_drive_only.yaml)
+#   선 길이 때문에 한 바퀴(360°)를 넘게 돌 수 없음(사용자 확인 10-26). URDF 조향 관절 limit 도 같은 값.
+steer_range_rad:
+  min: [-1.578466, -3.900913, -2.328583, -0.776194]   # fl −90.4° · fr −223.5° · rl −133.4° · rr −44.5°
+  max: [4.703185, 2.380738, 3.953068, 5.505457]       # fl 269.5° · fr 136.4° · rl 226.5° · rr 315.4°
+
+hardware_max:               # 모터가 낼 수 있는 끝 (학습에서 이보다 크게 줄 이유 없음)
+  wheel_speed: 7.9137       # [rad/s] [레지스터] 구동 모터 Velocity Limit 330 × 0.229 rpm (10-26 8개 모두 읽음). 데이터시트 무부하 77 rpm(8.06 rad/s)
+  steer_speed: 4.7962       # [rad/s] [레지스터] 조향 모터 Velocity Limit 200 × 0.229 rpm (≈275°/s). 데이터시트 무부하 46 rpm(4.82)
+  wheel_torque: 3.0         # [N·m] [데이터시트] XM430-W210 정지 토크 12 V
+  steer_torque: 4.1         # [N·m] [데이터시트] XM430-W350 정지 토크 12 V
+  body_linear: 0.2612       # [m/s] [계산] wheel_speed × wheel_radius
+  body_angular: 1.675       # [rad/s] [계산] wheel_speed × r / (모듈 반경 0.1290 + offset 0.0269) — 제자리 회전 끝
+
+limits_for_training:        # 학습 환경에 넣을 값 (시험용 제한 없음 — 하드웨어 끝 + 실물이 따라갈 수 있는 가속)
+  max_linear: 0.2612        # = hardware_max.body_linear. 조합 명령은 아래 max_wheel_speed 로 비율 유지한 채 자동으로 줄어듦
+  max_angular: 1.675        # = hardware_max.body_angular
+  max_wheel_speed: 7.9137   # 어느 바퀴든 넘으면 네 바퀴를 같은 비율로 줄임(방향 유지)
+  max_linear_accel: 1.0     # [m/s²] [추정] 0→최고 0.26 s. 바퀴 힘(3 N·m/0.033 m = 91 N/바퀴)·접지(μ≈0.6 → ≈6 m/s²)는 훨씬 여유
+  max_angular_accel: 6.0    # [rad/s²] [추정] 같은 바퀴 가속을 회전으로 환산(1.0 / 0.156 m ≈ 6.4)
+  # 실물에서 확인한 범위: 0.13 m/s(50%)·0.2 m/s²·조향 140°/s 까지 (10-26). 0.26 m/s·1 m/s² 는 실물 미확인 → 확인 전 sim-to-real 차이 가능
+
+controller:                 # 실물 swerve_controller 와 같은 규칙 (10-26 마지막 실물 판)
+  steering_policy: coherent # 평행 이동 때 네 바퀴 같은 선 위
+  steer_branch_margin: 0.0  # [rad] 끝 여유 0 (최대 시험과 같음)
+  steer_end_slack: 0.017453 # [rad] 1°: 끝에서 1° 안으로 모자라면 끝 각도로 보냄(rr −45° 처럼 0.5° 모자라 반대로 도는 것 방지)
+  cosine_scale: true
+  steer_then_drive: true    # 조향 오차 > steer_tolerance 면 구동 대기
+  steer_tolerance: 0.17     # [rad]
+  roll_while_steering: true # 조향 도는 동안 offset 만큼 바퀴 보상
+  blend_steer_drive: true   # 움직이는 중 방향 전환은 멈추지 않고 이어감
+  blend_margin: 0.7
+  blend_stall_s: 1.0        # 조향이 실제로 안 도는 상태가 1 s 이어지면 구동 0
+  cmd_timeout_s: 0.3
+
+sim_actuators:              # 시뮬 관절 구동 권장 (tools/sim_drive_check.py 에서 확인한 값)
+  steer: {mode: position, velocity_limit: 4.7962, effort_limit: 4.1}
+  drive: {mode: velocity, velocity_limit: 7.9137, effort_limit: 3.0}

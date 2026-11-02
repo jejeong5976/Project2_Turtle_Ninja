@@ -1,0 +1,237 @@
+{
+ "source_urdf": "/home/pa25/Documents/Codex/2026-10-23/task-2/audit_work/holders6_20261024/inside_plate_proposal/side_columns_adjustment/full_review_h4_followup/candidate/simulation/robot_sim_candidate.urdf",
+ "source_sha256": "7d482f2162004e786269409e84a9ca510d6eec4c2ef3227d03defd22e728de1d",
+ "joints": {
+  "arm_joint1": {
+   "limit_deg": [
+    -290.03,
+    149.87
+   ],
+   "from_ticks": [
+    1306,
+    6311
+   ],
+   "limit_rad": [
+    -5.062,
+    2.6157
+   ],
+   "old_urdf_deg": [
+    -180.0,
+    180.0
+   ],
+   "basis": "손 측정(POSE_20261026T024707Z·025459Z) + 실제 실행 틱",
+   "effort_Nm": 4.1,
+   "velocity_rad_s": 4.8171,
+   "effort_velocity_basis": "XM430-W350 데이터시트 12 V(무부하 46 rpm, 멈춤 4.1 N·m)"
+  },
+  "arm_joint2": {
+   "limit_deg": [
+    -126.93,
+    88.68
+   ],
+   "from_ticks": [
+    710,
+    3163
+   ],
+   "limit_rad": [
+    -2.2153,
+    1.5477
+   ],
+   "old_urdf_deg": [
+    -99.3,
+    80.7
+   ],
+   "basis": "손 측정(POSE_20261026T024707Z·025459Z) + 실제 실행 틱",
+   "effort_Nm": 4.1,
+   "velocity_rad_s": 4.8171,
+   "effort_velocity_basis": "XM430-W350 데이터시트 12 V(무부하 46 rpm, 멈춤 4.1 N·m)"
+  },
+  "arm_joint3": {
+   "limit_deg": [
+    -125.04,
+    82.04
+   ],
+   "from_ticks": [
+    691,
+    3047
+   ],
+   "limit_rad": [
+    -2.1824,
+    1.4318
+   ],
+   "old_urdf_deg": [
+    -126.1,
+    53.9
+   ],
+   "basis": "손 측정(POSE_20261026T024707Z·025459Z) + 실제 실행 틱 · 위치 모드 엔코더 32~4063",
+   "effort_Nm": 4.1,
+   "velocity_rad_s": 4.8171,
+   "effort_velocity_basis": "XM430-W350 데이터시트 12 V(무부하 46 rpm, 멈춤 4.1 N·m)"
+  },
+  "arm_joint4": {
+   "limit_deg": [
+    -163.97,
+    51.8
+   ],
+   "from_ticks": [
+    32,
+    2487
+   ],
+   "limit_rad": [
+    -2.8619,
+    0.9041
+   ],
+   "old_urdf_deg": [
+    -163.7,
+    16.3
+   ],
+   "basis": "손 측정(POSE_20261026T024707Z·025459Z) + 실제 실행 틱 · 위치 모드 엔코더 32~4063",
+   "effort_Nm": 4.1,
+   "velocity_rad_s": 4.8171,
+   "effort_velocity_basis": "XM430-W350 데이터시트 12 V(무부하 46 rpm, 멈춤 4.1 N·m)"
+  },
+  "arm_joint5": {
+   "limit_deg": [
+    -179.7,
+    113.16
+   ],
+   "from_ticks": [
+    731,
+    4063
+   ],
+   "limit_rad": [
+    -3.1363,
+    1.975
+   ],
+   "old_urdf_deg": [
+    -90.0,
+    90.0
+   ],
+   "basis": "손 측정(POSE_20261026T024707Z·025459Z) + 실제 실행 틱 · 위치 모드 엔코더 32~4063",
+   "effort_Nm": 4.1,
+   "velocity_rad_s": 4.8171,
+   "effort_velocity_basis": "XM430-W350 데이터시트 12 V(무부하 46 rpm, 멈춤 4.1 N·m)"
+  }
+ },
+ "gripper": {
+  "finger_limit_m": [
+   -0.021254,
+   0.010246
+  ],
+  "gap_mm": [
+   16.0,
+   79.0
+  ],
+  "basis": "사용자 실측 패드 간격16~79mm; q=(gap-58.50723799617533)/2000. 하드웨어 제한/틱 지도 변경 없음. 모델 접촉 정합은 미완료.",
+  "old_m": [
+   -0.0194393656,
+   0.00649013437
+  ],
+  "effort_velocity": "원본 유지(미측정)"
+ },
+ "park_stand": {
+  "sx": 0.053,
+  "sy": 0.05,
+  "h": 0.033,
+  "wall": 0.003,
+  "floor": 0.006,
+  "cx": 0.1003,
+  "cy": 0.0,
+  "z0": 0.0915,
+  "basis": "사용자 사진 실측(stand_photos_20261026): 앞면이 상판 앞 돌기 끝에서 약 6 mm 안쪽, 좌우 가운데(±10 mm)",
+  "old": "50×50×30 mm, 중심 (0.086, 0, 0.1065)",
+  "known_issue": "받침 자세에서 모델 집게가 로봇 쪽 벽을 1~2 cm 파고듦(실물은 벽 테두리에 기대는 정상 접촉). 충돌 제외로 숨기지 말 것. 수정 장착/16mm에서 잔여 앞벽 교차가 있어 물리 초기화 미검증"
+ },
+ "mass": {
+  "model_total_before_kg": 3.861978,
+  "measured_total_kg": 3.9,
+  "base_link_kg": [
+   2.253167,
+   2.291189
+  ],
+  "basis": "사용자 체중계 3.9 kg(로봇 전체, 홀더의 퍽 6개 포함 — 모델의 test_puck 6개와 같은 조건). 차이는 출처 미확정 → 여러 부품 합산 링크인 base_link 에 배분, 질량중심 유지·관성은 질량 비율로",
+  "robot_authored_mass_sum_kg": 3.81,
+  "removed_example_payload_mass_kg": 0.09
+ },
+ "fixed_example_pucks": {
+  "included": false,
+  "removed_links": [
+   "test_puck_H1",
+   "test_puck_H2",
+   "test_puck_H3",
+   "test_puck_H4",
+   "test_puck_H5",
+   "test_puck_H6"
+  ],
+  "removed_fixed_joints": [
+   "test_puck_H1_mount",
+   "test_puck_H2_mount",
+   "test_puck_H3_mount",
+   "test_puck_H4_mount",
+   "test_puck_H5_mount",
+   "test_puck_H6_mount"
+  ],
+  "removed_payload_mass_kg": 0.09,
+  "payload_composition": "three cuboids at17g and three cylinders at13g",
+  "robot_authored_mass_sum_kg": 3.81,
+  "base_link_inertial_unchanged_by_removal": true,
+  "basis": "User requests robot without fixed example pucks. 3.9kg is the prior loaded measurement; 3.81kg is model payload subtraction, not a new empty-robot measurement.",
+  "independent_dynamic_objects": "Not created here; spawn separately in the learning environment.",
+  "holder_and_stand_preserved": true
+ },
+ "wheel_joint_names": {
+  "rule": "팀 swerve_controller.cpp: steer_<fl|fr|rl|rr>_joint / drive_<..>_joint",
+  "from": "Codex fl_steer_joint / fl_wheel_joint"
+ },
+ "fixed_J1_body_orientation": {
+  "body_local_rotation_about_shaft_rad": 3.141592653589793,
+  "scope": "arm_base_link rigid body reversal plus derived arm_mount_fixed X; stand and actuated joints unchanged",
+  "actuated_joint_origins_axes_limits_zero_changed": false,
+  "arm_mount_x_m": [
+   -0.0042503559,
+   0.0225499941511227
+  ],
+  "arm_mount_delta_x_m": 0.0268003500511227,
+  "motor_front_from_axis_m": 0.0112500058488773,
+  "measured_motor_front_to_stand_rear_m": 0.04,
+  "stand_rear_x_m": 0.0738,
+  "basis_formula": "axis_x = stand_rear_x - measured_face_gap - CAD_corrected_front_offset",
+  "body_center_shift_m": 0.0028003500511227,
+  "lateral_height_yaw_preserved": true,
+  "fastener_hole_correspondence": "not independently quantified; measured exterior-face placement and confirmed orientation used",
+  "basis": "User-confirmed output-shaft-forward installation and 40mm housing-face-to-stand-rear measurement; 2026-10-26 correction",
+  "old_unflipped_URDF_face_gap_mm": 42.80035026080132,
+  "old_face_gap_status": "superseded: calculated with incorrect housing orientation; not the corrected model",
+  "derived_USD_status": "existing USD not regenerated by this URDF-only builder"
+ },
+ "lidar_housing_orientation": {
+  "local_visual_collision_yaw_delta_rad": 1.5707963267948966,
+  "world_housing_yaw_deg": {
+   "front": 180,
+   "rear": 360
+  },
+  "basis": "IMG_9624.jpg / IMG_9625.jpg: lateral paired ears toward exterior; single ear inward. Provided CAD ear arrangement.",
+  "mount_positions_and_scan_transforms_changed": false,
+  "actual_device_scan_zero_confirmed": false
+ },
+ "jetson_height": {
+  "mount_dz_m": -0.007616999999999999,
+  "bottom_z_m": [
+   0.054117,
+   0.0465
+  ],
+  "top_z_m": [
+   0.088883,
+   0.081266
+  ],
+  "support_plate_top_z_m": 0.0465,
+  "arm_plate_lower_z_m": 0.0825,
+  "upper_vertical_clearance_m": 0.001234,
+  "basis": "User requests lower placement on OpenCR third layer; mesh underside aligned to CAD plate top, not bbox centre. Ground-relative measured120mm kept separate from base_link Z46.5mm.",
+  "standoff_height": "not specified; no invented spacer",
+  "mass_inertia": "no standalone inertial on this link; no new mass or assumed inertia applied",
+  "full_mount_and_contact_validation": false
+ },
+ "meshes_copied": 177,
+ "output_sha256": "e8bd147277a021fbe9990ca36935b80c0596f4711293d05ba679bc6a15e46c91"
+}

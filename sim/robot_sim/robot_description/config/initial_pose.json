@@ -1,0 +1,189 @@
+{
+  "name": "parked",
+  "positions": {
+    "arm_joint1": -1.651929693332629,
+    "arm_joint2": -1.6215696641437671,
+    "arm_joint3": -1.6055560224723997,
+    "arm_joint4": 0.10483777480543958,
+    "arm_joint5": -0.06062122390435288,
+    "gripper_finger_a_joint": -0.021253618998087663
+  },
+  "units": "arm radians; gripper metres",
+  "note": "시각화 기본 parked는 실제 A9F5 OFF precheck 기록을 사용. P0는 pose:=p0. 개도16mm 표시. 큰 틈/잔여 메시 교차 해결 및 물리 안정 시작 검증은 미완료. 하드웨어 명령 없음.",
+  "poses": {
+    "C1_P0": {
+      "ticks": {
+        "11": 4139,
+        "12": 1194,
+        "13": 2362,
+        "14": 2029,
+        "15": 2658,
+        "16": 2059
+      },
+      "q_rad": {
+        "arm_joint1": -1.73016,
+        "arm_joint2": -1.47277,
+        "arm_joint3": -1.13156,
+        "arm_joint4": 0.20148,
+        "arm_joint5": -0.06216
+      }
+    },
+    "C2": {
+      "ticks": {
+        "11": 4070,
+        "12": 2103,
+        "13": 1868,
+        "14": 1757,
+        "15": 1708,
+        "16": 2059
+      },
+      "q_rad": {
+        "arm_joint1": -1.62432,
+        "arm_joint2": -0.07838,
+        "arm_joint3": -0.37377,
+        "arm_joint4": -0.21576,
+        "arm_joint5": -0.06216
+      }
+    },
+    "C3": {
+      "ticks": {
+        "11": 4241,
+        "12": 2612,
+        "13": 1716,
+        "14": 1403,
+        "15": 1708,
+        "16": 2059
+      },
+      "q_rad": {
+        "arm_joint1": -1.88663,
+        "arm_joint2": 0.70241,
+        "arm_joint3": -0.1406,
+        "arm_joint4": -0.75879,
+        "arm_joint5": -0.06216
+      }
+    },
+    "C4": {
+      "ticks": {
+        "11": 4270,
+        "12": 2449,
+        "13": 1913,
+        "14": 1894,
+        "15": 2276,
+        "16": 2058
+      },
+      "q_rad": {
+        "arm_joint1": -1.93111,
+        "arm_joint2": 0.45237,
+        "arm_joint3": -0.4428,
+        "arm_joint4": -0.00561,
+        "arm_joint5": -0.06062
+      }
+    },
+    "C5": {
+      "ticks": {
+        "11": 4730,
+        "12": 1516,
+        "13": 2374,
+        "14": 1968,
+        "15": 2276,
+        "16": 2059
+      },
+      "q_rad": {
+        "arm_joint1": -2.63675,
+        "arm_joint2": -0.97883,
+        "arm_joint3": -1.14996,
+        "arm_joint4": 0.10791,
+        "arm_joint5": -0.06216
+      }
+    },
+    "받침_최신": {
+      "ticks": {
+        "11": 4088,
+        "12": 1100,
+        "13": 2659,
+        "14": 1960,
+        "15": 2658,
+        "16": 2057
+      },
+      "q_rad": {
+        "arm_joint1": -1.65193,
+        "arm_joint2": -1.61697,
+        "arm_joint3": -1.58715,
+        "arm_joint4": 0.09563,
+        "arm_joint5": -0.05909
+      }
+    },
+    "A9F5_OFF_precheck": {
+      "ticks": {
+        "11": 4088,
+        "12": 1097,
+        "13": 2671,
+        "14": 1966,
+        "15": 2660,
+        "16": 2058
+      },
+      "q_rad": {
+        "arm_joint1": -1.651929693332629,
+        "arm_joint2": -1.6215696641437671,
+        "arm_joint3": -1.6055560224723997,
+        "arm_joint4": 0.10483777480543958,
+        "arm_joint5": -0.06062122390435288
+      },
+      "source": "ARM_20261026T023249Z/03_session.jsonl:10",
+      "torque": 0
+    },
+    "LOOK_PUCK": {
+      "ticks": {
+        "11": 4030,
+        "12": 1965,
+        "13": 1728,
+        "14": 2233,
+        "16": 1974,
+        "15": 1045
+      },
+      "q_rad": {
+        "arm_joint1": -1.5628,
+        "arm_joint2": -0.2894,
+        "arm_joint3": -0.1595,
+        "arm_joint4": 0.5144,
+        "arm_joint5": 0.0689
+      },
+      "note": "2026-10-29 손목 D435 관찰 자세 후보 (sim/robot_sim/tools/find_look_pose.py, 경첩 −12° URDF 기준). 로봇 앞 0.26 m 선반 면을 0.29 m 에서 광축 9° 로 봄, 차체 가림 0, 관절 여유 0.39 rad, Isaac 렌더 확인. 틱 = config/joint_map.json 역변환, 그리퍼 15 = 1045 (최대 79 mm). 실물 미확인"
+    }
+  },
+  "parked_gripper_display": {
+    "measured_gap_mm": 16,
+    "display_gap_mm": 16,
+    "joint_position_m": -0.021253618998087663,
+    "limit_changed": true,
+    "scope": "URDF geometry/display only; hardware mapping unchanged"
+  },
+  "previous_default_positions": {
+    "arm_joint1": -1.65193,
+    "arm_joint2": -1.61697,
+    "arm_joint3": -1.58715,
+    "arm_joint4": 0.09563,
+    "arm_joint5": -0.05909,
+    "gripper_finger_a_joint": -0.021253618998087663
+  },
+  "display_pose_evidence": {
+    "selection": "A9F5 torque OFF precheck recorded parked",
+    "run": "ARM_20261026T023249Z",
+    "log": "03_session.jsonl",
+    "line": 10,
+    "present_ticks": {
+      "11": 4088,
+      "12": 1097,
+      "13": 2671,
+      "14": 1966,
+      "15": 2660,
+      "16": 2058
+    },
+    "torque": 0,
+    "joint_map_sha256": "3df66e3472edf3a51f939dc7634673b19314100d078ef0180eeedd71c49327fa",
+    "scope": "display startup selection only; no hardware or calibration mapping change",
+    "photo_same_instant_confirmed": false,
+    "gap_and_contact_resolved": false,
+    "previous_default": "10/25 final torque ON tick-derived pose; preserved in previous_default_positions and poses/받침_최신"
+  }
+}

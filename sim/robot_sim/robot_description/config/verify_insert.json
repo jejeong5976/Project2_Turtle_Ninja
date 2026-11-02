@@ -1,0 +1,19 @@
+{
+ "phases": {
+  "out": {
+   "max_track_err_deg": 0.431
+  },
+  "hold_p0": {
+   "max_track_err_deg": 0.295
+  },
+  "in": {
+   "max_track_err_deg": 2.015
+  },
+  "hold_park": {
+   "max_track_err_deg": 2.01
+  }
+ },
+ "end_arm_err_deg": 1.99,
+ "end_gripper_gap_mm": 16.93,
+ "finite": true
+}

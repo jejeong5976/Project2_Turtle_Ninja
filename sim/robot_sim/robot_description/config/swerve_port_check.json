@@ -1,0 +1,17 @@
+{
+ "inverse_cases": 6000,
+ "inverse_mismatch": 0,
+ "inverse_max_abs_diff": 4.992095625766524e-11,
+ "drive_steps": 4290,
+ "drive_mismatch": 0,
+ "drive_max_abs_diff": 4.993339075554104e-12,
+ "sequences": [
+  "S자",
+  "ㄹ자",
+  "전방향",
+  "회전→전진",
+  "곡선",
+  "옆+회전·끊김",
+  "정지·재출발"
+ ]
+}

@@ -52,13 +52,15 @@ Project2_Turtle_Ninja/
 │       ├── perception/          # YOLO 추론, 바코드 판독, 퍽 AprilTag · 색, 신호등
 │       └── mission/             # 바코드 → task 변환, 미션 순서 관리
 ├── yolo/
-│   ├── datasets/            # 생성·수집한 데이터셋 (git 제외)
-│   ├── train/               # 학습·평가·.onnx 변환
-│   └── models/              # .pt / .onnx / .engine (git 제외)
+│   ├── wide/                # 광각 상자 YOLO (퍽·바코드·신호등) 학습·평가·변환
+│   └── wrist/               # 손목 D435 퍽 seg + 깊이 자세 추정
+│                            #   (각 폴더의 datasets/ · runs/ · 가중치는 git 제외)
 ├── sim/
 │   └── robot_sim/           # Isaac Sim 로봇 주행 시뮬레이션 (ROS 2 연동)
 ├── tools/                   # ROS 밖에서 단독 실행하는 개발 도구
-│   └── camera_calib/        # 카메라 캘리브레이션 사진 수집 (OpenCV)
+│   ├── camera_calib/        # 카메라 캘리브레이션 사진 수집 (OpenCV)
+│   ├── d435_viewer/         # 손목 D435 실시간 퍽 자세 보기 · 사진 저장
+│   └── wrist_calib/         # 손목 D435 장착 자세 (핸드-아이) 캘리브레이션
 └── docs/                    # 설치 기록, 설계 문서, 가이드 (코드 X, 문서·이미지만)
 ```
 

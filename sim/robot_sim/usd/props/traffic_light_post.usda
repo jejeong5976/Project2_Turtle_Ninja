@@ -1,0 +1,235 @@
+#usda 1.0
+(
+    defaultPrim = "TrafficLightPost"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "TrafficLightPost" (
+    prepend apiSchemas = ["PhysicsRigidBodyAPI"]
+    customData = {
+        double2 tower_z_m = (0.33, 0.45)
+    }
+)
+{
+    bool physics:kinematicEnabled = 1
+
+    def Cube "profile" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </TrafficLightPost/Looks/aluminum>
+        color3f[] primvars:displayColor = [(0.7, 0.71, 0.73)]
+        double size = 1
+        float3 xformOp:scale = (0.02, 0.02, 0.45)
+        double3 xformOp:translate = (0, 0, 0.225)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+    }
+
+    def "Looks"
+    {
+        def Material "aluminum"
+        {
+            token outputs:surface.connect = </TrafficLightPost/Looks/aluminum/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.7, 0.71, 0.73)
+                float inputs:metallic = 0.8
+                float inputs:roughness = 0.4
+                token outputs:surface
+            }
+        }
+
+        def Material "cap"
+        {
+            token outputs:surface.connect = </TrafficLightPost/Looks/cap/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.55, 0.55, 0.55)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.5
+                token outputs:surface
+            }
+        }
+
+        def Material "div0"
+        {
+            token outputs:surface.connect = </TrafficLightPost/Looks/div0/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.02, 0.02, 0.02)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.9
+                token outputs:surface
+            }
+        }
+
+        def Material "red"
+        {
+            token outputs:surface.connect = </TrafficLightPost/Looks/red/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.45, 0.04, 0.04)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.4
+                token outputs:surface
+            }
+        }
+
+        def Material "div1"
+        {
+            token outputs:surface.connect = </TrafficLightPost/Looks/div1/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.02, 0.02, 0.02)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.9
+                token outputs:surface
+            }
+        }
+
+        def Material "yellow"
+        {
+            token outputs:surface.connect = </TrafficLightPost/Looks/yellow/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.5, 0.38, 0.04)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.4
+                token outputs:surface
+            }
+        }
+
+        def Material "div2"
+        {
+            token outputs:surface.connect = </TrafficLightPost/Looks/div2/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.02, 0.02, 0.02)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.9
+                token outputs:surface
+            }
+        }
+
+        def Material "green"
+        {
+            token outputs:surface.connect = </TrafficLightPost/Looks/green/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.04, 0.32, 0.1)
+                float inputs:metallic = 0
+                float inputs:roughness = 0.4
+                token outputs:surface
+            }
+        }
+    }
+
+    def Cylinder "cap" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        uniform token axis = "Z"
+        double height = 0.012
+        rel material:binding = </TrafficLightPost/Looks/cap>
+        color3f[] primvars:displayColor = [(0.55, 0.55, 0.55)]
+        double radius = 0.02
+        double3 xformOp:translate = (0.03, 0, 0.444)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Cylinder "div0" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        uniform token axis = "Z"
+        double height = 0.001
+        rel material:binding = </TrafficLightPost/Looks/div0>
+        color3f[] primvars:displayColor = [(0.02, 0.02, 0.02)]
+        double radius = 0.02
+        double3 xformOp:translate = (0.03, 0, 0.4375)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Cylinder "red" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        uniform token axis = "Z"
+        double height = 0.035
+        rel material:binding = </TrafficLightPost/Looks/red>
+        color3f[] primvars:displayColor = [(0.45, 0.04, 0.04)]
+        double radius = 0.02
+        double3 xformOp:translate = (0.03, 0, 0.4195)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Cylinder "div1" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        uniform token axis = "Z"
+        double height = 0.001
+        rel material:binding = </TrafficLightPost/Looks/div1>
+        color3f[] primvars:displayColor = [(0.02, 0.02, 0.02)]
+        double radius = 0.02
+        double3 xformOp:translate = (0.03, 0, 0.4015)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Cylinder "yellow" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        uniform token axis = "Z"
+        double height = 0.035
+        rel material:binding = </TrafficLightPost/Looks/yellow>
+        color3f[] primvars:displayColor = [(0.5, 0.38, 0.04)]
+        double radius = 0.02
+        double3 xformOp:translate = (0.03, 0, 0.3835)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Cylinder "div2" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        uniform token axis = "Z"
+        double height = 0.001
+        rel material:binding = </TrafficLightPost/Looks/div2>
+        color3f[] primvars:displayColor = [(0.02, 0.02, 0.02)]
+        double radius = 0.02
+        double3 xformOp:translate = (0.03, 0, 0.3655)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Cylinder "green" (
+        prepend apiSchemas = ["PhysicsCollisionAPI", "MaterialBindingAPI"]
+    )
+    {
+        uniform token axis = "Z"
+        double height = 0.035
+        rel material:binding = </TrafficLightPost/Looks/green>
+        color3f[] primvars:displayColor = [(0.04, 0.32, 0.1)]
+        double radius = 0.02
+        double3 xformOp:translate = (0.03, 0, 0.3475)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}
+
