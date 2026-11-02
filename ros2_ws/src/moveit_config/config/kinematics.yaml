@@ -1,0 +1,12 @@
+# 팔 IK — 5 축 (joint1 ~ joint5) 이라 위치 + 방향 6 개를 다 맞출 수 없는 목표가 많음 → pick_ik (방향 가중치로 일부만 맞춤)
+arm:
+  kinematics_solver: pick_ik/PickIkPlugin
+  kinematics_solver_timeout: 0.05
+  mode: global                  # 처음 추정에서 멀어도 찾음 (팔이 접힌 home 에서 출발하는 경우가 많음)
+  position_scale: 1.0
+  rotation_scale: 0.5           # 방향은 반만 중요 (5 축이라 손목 한 방향은 못 맞춤)
+  position_threshold: 0.002     # [m] 2 mm
+  orientation_threshold: 0.05   # [rad] ≈ 3°
+  cost_threshold: 0.001
+  minimal_displacement_weight: 0.0
+  gd_step_size: 0.0001

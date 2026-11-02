@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--This does not replace URDF, and is not an extension of URDF.
+    This is a format for representing semantic information about the robot structure.
+    A URDF file must exist for this robot as well, where the joints and the links that are referenced are defined
+-->
+<!-- 닌자터틀 팔 MoveIt 의미 정보. 관절 · 링크 이름은 description/urdf/robot.urdf.xacro 와 같음.
+     자세 값은 config/control.yaml poses · gripper_open/close 와 같음 (q = (틱 − 영점) · 2π/4096).
+     disable_collisions 는 collisions_updater 로 계산 (인접 · 기본 · 1 만 번 무작위 자세에서 한 번도 안 닿는 쌍).
+     URDF 를 바꾸면 moveit_setup_assistant 의 collisions_updater 로 다시 계산 (인자: default · always · trials 10000 · keep, 사용법은 README)
+     바퀴 · 조향 관절은 팔 계획에 쓰지 않음 (차체 고정) → passive_joint -->
+<robot name="ninja_turtle">
+    <!--GROUPS: Representation of a set of joints and links. This can be useful for specifying DOF to plan for, defining arms, end effectors, etc-->
+    <!--LINKS: When a link is specified, the parent joint of that link (if it exists) is automatically included-->
+    <!--JOINTS: When a joint is specified, the child link of that joint (which will always exist) is automatically included-->
+    <!--CHAINS: When a chain is specified, all the links along the chain (including endpoints) are included in the group. Additionally, all the joints that are parents to included links are also included. This means that joints along the chain and the parent joint of the base link are included in the group-->
+    <!--SUBGROUPS: Groups can also be formed by referencing to already defined group names-->
+    <group name="arm">
+        <chain base_link="link1" tip_link="end_effector_link"/>
+    </group>
+    <group name="gripper">
+        <link name="gripper_left_link"/>
+        <link name="gripper_right_link"/>
+        <link name="gripper_crank_link"/>
+        <link name="gripper_left_rod_link"/>
+        <link name="gripper_right_rod_link"/>
+        <joint name="gripper_left_joint"/>
+    </group>
+    <!--GROUP STATES: Purpose: Define a named state for a particular group, in terms of joint values. This is useful to define states like 'folded arms'-->
+    <!-- 팔 자세 = 실물에서 검사 · 실행한 grasp_pick.checked.json 값 (틱 → rad). pick_* 의 J1 은 그 시험의 퍽 위치 기준 -->
+    <group_state name="home" group="arm">
+        <joint name="joint1" value="-0.0061"/>
+        <joint name="joint2" value="-1.4511"/>
+        <joint name="joint3" value="0.9511"/>
+        <joint name="joint4" value="-0.1181"/>
+        <joint name="joint5" value="0.023"/>
+    </group_state>
+    <group_state name="drive" group="arm">
+        <joint name="joint1" value="-0.0061"/>
+        <joint name="joint2" value="-1.3775"/>
+        <joint name="joint3" value="0.6274"/>
+        <joint name="joint4" value="-0.0215"/>
+        <joint name="joint5" value="0.023"/>
+    </group_state>
+    <group_state name="pick_above" group="arm">
+        <joint name="joint1" value="0.1749"/>
+        <joint name="joint2" value="0.5952"/>
+        <joint name="joint3" value="-0.8299"/>
+        <joint name="joint4" value="0.27"/>
+        <joint name="joint5" value="0.1565"/>
+    </group_state>
+    <group_state name="pick_down" group="arm">
+        <joint name="joint1" value="0.1749"/>
+        <joint name="joint2" value="0.566"/>
+        <joint name="joint3" value="-0.5354"/>
+        <joint name="joint4" value="0.0061"/>
+        <joint name="joint5" value="0.1565"/>
+    </group_state>
+    <group_state name="pick_grasp" group="arm">
+        <joint name="joint1" value="0.1749"/>
+        <joint name="joint2" value="0.6213"/>
+        <joint name="joint3" value="-0.3467"/>
+        <joint name="joint4" value="-0.2393"/>
+        <joint name="joint5" value="0.1565"/>
+    </group_state>
+    <group_state name="open" group="gripper">
+        <joint name="gripper_left_joint" value="0.0164"/>
+    </group_state>
+    <group_state name="close" group="gripper">
+        <joint name="gripper_left_joint" value="-0.0016"/>
+    </group_state>
+    <!--END EFFECTOR: Purpose: Represent information about an end effector.-->
+    <end_effector name="hand" parent_link="end_effector_link" group="gripper" parent_group="arm"/>
+    <!--PASSIVE JOINT: Purpose: this element is used to mark joints that are not actuated-->
+    <!-- 기구 종속 관절: manipulation/arm_state_publisher 가 손가락 위치로 계산 (joint_states_corrected → TF) -->
+    <passive_joint name="gripper_crank_joint"/>
+    <passive_joint name="gripper_left_rod_joint"/>
+    <passive_joint name="gripper_right_rod_joint"/>
+    <passive_joint name="steer_fl_joint"/>
+    <passive_joint name="steer_fr_joint"/>
+    <passive_joint name="steer_rl_joint"/>
+    <passive_joint name="steer_rr_joint"/>
+    <passive_joint name="drive_fl_joint"/>
+    <passive_joint name="drive_fr_joint"/>
+    <passive_joint name="drive_rl_joint"/>
+    <passive_joint name="drive_rr_joint"/>
+    <!--DISABLE COLLISIONS: By default it is assumed that any link of the robot could potentially come into collision with any other link in the robot. This tag disables collision checking between a specified pair of links. -->
+    <!-- 그리퍼 연결 막대: 핀으로 직접 연결된 접촉쌍 -->
+    <disable_collisions link1="wrist_link" link2="gripper_crank_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_crank_link" link2="gripper_left_rod_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_crank_link" link2="gripper_right_rod_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_left_rod_link" link2="gripper_left_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_right_rod_link" link2="gripper_right_link" reason="Adjacent"/>
+    <!-- 그리퍼 닫힘(−1.6 mm)에서 충돌용 단순 메시끼리만 겹침 (실제 메시는 막대 사이 0.46 mm). 손가락 위치로만 움직여 MoveIt 이 피할 수 없음 -->
+    <disable_collisions link1="gripper_crank_link" link2="gripper_left_link" reason="Default"/>
+    <disable_collisions link1="gripper_crank_link" link2="gripper_right_link" reason="Default"/>
+    <disable_collisions link1="gripper_left_rod_link" link2="gripper_right_rod_link" reason="Default"/>
+    <disable_collisions link1="base_link" link2="birdeye_camera_link" reason="Never"/>
+    <disable_collisions link1="base_link" link2="gripper_park_stand_link" reason="Adjacent"/>
+    <disable_collisions link1="base_link" link2="lidar_front_link" reason="Adjacent"/>
+    <disable_collisions link1="base_link" link2="lidar_rear_link" reason="Adjacent"/>
+    <disable_collisions link1="base_link" link2="link1" reason="Adjacent"/>
+    <disable_collisions link1="base_link" link2="link2" reason="Never"/>
+    <disable_collisions link1="base_link" link2="link3" reason="Never"/>
+    <disable_collisions link1="base_link" link2="profile_camera_bracket_link" reason="Never"/>
+    <disable_collisions link1="base_link" link2="profile_fixing_plate_link" reason="Adjacent"/>
+    <disable_collisions link1="base_link" link2="profile_link" reason="Never"/>
+    <disable_collisions link1="base_link" link2="steer_fl_link" reason="Adjacent"/>
+    <disable_collisions link1="base_link" link2="steer_fr_link" reason="Adjacent"/>
+    <disable_collisions link1="base_link" link2="steer_rl_link" reason="Adjacent"/>
+    <disable_collisions link1="base_link" link2="steer_rr_link" reason="Adjacent"/>
+    <disable_collisions link1="base_link" link2="wheel_fl_link" reason="Never"/>
+    <disable_collisions link1="base_link" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="base_link" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="base_link" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="gripper_park_stand_link" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="lidar_front_link" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="lidar_rear_link" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="link1" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="link2" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="link3" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="link4" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="link5" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="profile_camera_bracket_link" reason="Adjacent"/>
+    <disable_collisions link1="birdeye_camera_link" link2="profile_fixing_plate_link" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="profile_link" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="steer_fl_link" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="steer_fr_link" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="steer_rl_link" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="steer_rr_link" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="wheel_fl_link" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="birdeye_camera_link" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="gripper_left_link" link2="gripper_right_link" reason="Default"/>
+    <disable_collisions link1="gripper_left_link" link2="link4" reason="Never"/>
+    <disable_collisions link1="gripper_left_link" link2="link5" reason="Never"/>
+    <disable_collisions link1="gripper_left_link" link2="wrist_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="lidar_front_link" reason="Never"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="lidar_rear_link" reason="Never"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="link1" reason="Never"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="link2" reason="Never"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="link3" reason="Never"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="profile_camera_bracket_link" reason="Never"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="profile_fixing_plate_link" reason="Never"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="profile_link" reason="Never"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="steer_fl_link" reason="Never"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="steer_fr_link" reason="Never"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="steer_rl_link" reason="Never"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="steer_rr_link" reason="Never"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="wheel_fl_link" reason="Never"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="gripper_right_link" link2="link4" reason="Never"/>
+    <disable_collisions link1="gripper_right_link" link2="link5" reason="Never"/>
+    <disable_collisions link1="gripper_right_link" link2="wrist_link" reason="Adjacent"/>
+    <disable_collisions link1="lidar_front_link" link2="lidar_rear_link" reason="Adjacent"/>
+    <disable_collisions link1="lidar_front_link" link2="link1" reason="Never"/>
+    <disable_collisions link1="lidar_front_link" link2="link2" reason="Never"/>
+    <disable_collisions link1="lidar_front_link" link2="link3" reason="Never"/>
+    <disable_collisions link1="lidar_front_link" link2="link4" reason="Never"/>
+    <disable_collisions link1="lidar_front_link" link2="profile_camera_bracket_link" reason="Never"/>
+    <disable_collisions link1="lidar_front_link" link2="profile_fixing_plate_link" reason="Never"/>
+    <disable_collisions link1="lidar_front_link" link2="profile_link" reason="Never"/>
+    <disable_collisions link1="lidar_front_link" link2="steer_fl_link" reason="Never"/>
+    <disable_collisions link1="lidar_front_link" link2="steer_fr_link" reason="Never"/>
+    <disable_collisions link1="lidar_front_link" link2="steer_rl_link" reason="Never"/>
+    <disable_collisions link1="lidar_front_link" link2="steer_rr_link" reason="Never"/>
+    <disable_collisions link1="lidar_front_link" link2="wheel_fl_link" reason="Never"/>
+    <disable_collisions link1="lidar_front_link" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="lidar_front_link" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="lidar_front_link" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="lidar_rear_link" link2="link1" reason="Never"/>
+    <disable_collisions link1="lidar_rear_link" link2="link2" reason="Never"/>
+    <disable_collisions link1="lidar_rear_link" link2="link3" reason="Never"/>
+    <disable_collisions link1="lidar_rear_link" link2="link4" reason="Never"/>
+    <disable_collisions link1="lidar_rear_link" link2="profile_camera_bracket_link" reason="Never"/>
+    <disable_collisions link1="lidar_rear_link" link2="profile_fixing_plate_link" reason="Never"/>
+    <disable_collisions link1="lidar_rear_link" link2="profile_link" reason="Never"/>
+    <disable_collisions link1="lidar_rear_link" link2="steer_fl_link" reason="Never"/>
+    <disable_collisions link1="lidar_rear_link" link2="steer_fr_link" reason="Never"/>
+    <disable_collisions link1="lidar_rear_link" link2="steer_rl_link" reason="Never"/>
+    <disable_collisions link1="lidar_rear_link" link2="steer_rr_link" reason="Never"/>
+    <disable_collisions link1="lidar_rear_link" link2="wheel_fl_link" reason="Never"/>
+    <disable_collisions link1="lidar_rear_link" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="lidar_rear_link" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="lidar_rear_link" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="link1" link2="link2" reason="Adjacent"/>
+    <disable_collisions link1="link1" link2="link3" reason="Never"/>
+    <disable_collisions link1="link1" link2="profile_camera_bracket_link" reason="Never"/>
+    <disable_collisions link1="link1" link2="profile_fixing_plate_link" reason="Never"/>
+    <disable_collisions link1="link1" link2="profile_link" reason="Never"/>
+    <disable_collisions link1="link1" link2="steer_fl_link" reason="Never"/>
+    <disable_collisions link1="link1" link2="steer_fr_link" reason="Never"/>
+    <disable_collisions link1="link1" link2="steer_rl_link" reason="Never"/>
+    <disable_collisions link1="link1" link2="steer_rr_link" reason="Never"/>
+    <disable_collisions link1="link1" link2="wheel_fl_link" reason="Never"/>
+    <disable_collisions link1="link1" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="link1" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="link1" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="link2" link2="link3" reason="Adjacent"/>
+    <disable_collisions link1="link2" link2="profile_camera_bracket_link" reason="Never"/>
+    <disable_collisions link1="link2" link2="profile_fixing_plate_link" reason="Never"/>
+    <disable_collisions link1="link2" link2="profile_link" reason="Never"/>
+    <disable_collisions link1="link2" link2="steer_fl_link" reason="Never"/>
+    <disable_collisions link1="link2" link2="steer_fr_link" reason="Never"/>
+    <disable_collisions link1="link2" link2="steer_rl_link" reason="Never"/>
+    <disable_collisions link1="link2" link2="steer_rr_link" reason="Never"/>
+    <disable_collisions link1="link2" link2="wheel_fl_link" reason="Never"/>
+    <disable_collisions link1="link2" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="link2" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="link2" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="link3" link2="link4" reason="Adjacent"/>
+    <disable_collisions link1="link3" link2="profile_camera_bracket_link" reason="Never"/>
+    <disable_collisions link1="link3" link2="steer_fl_link" reason="Never"/>
+    <disable_collisions link1="link3" link2="steer_fr_link" reason="Never"/>
+    <disable_collisions link1="link3" link2="steer_rl_link" reason="Never"/>
+    <disable_collisions link1="link3" link2="steer_rr_link" reason="Never"/>
+    <disable_collisions link1="link3" link2="wheel_fl_link" reason="Never"/>
+    <disable_collisions link1="link3" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="link3" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="link3" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="link4" link2="link5" reason="Adjacent"/>
+    <disable_collisions link1="link4" link2="profile_camera_bracket_link" reason="Never"/>
+    <disable_collisions link1="link4" link2="steer_fl_link" reason="Never"/>
+    <disable_collisions link1="link4" link2="steer_fr_link" reason="Never"/>
+    <disable_collisions link1="link4" link2="steer_rl_link" reason="Never"/>
+    <disable_collisions link1="link4" link2="steer_rr_link" reason="Never"/>
+    <disable_collisions link1="link4" link2="wheel_fl_link" reason="Never"/>
+    <disable_collisions link1="link4" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="link4" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="link4" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="link4" link2="wrist_link" reason="Never"/>
+    <disable_collisions link1="link5" link2="profile_camera_bracket_link" reason="Never"/>
+    <disable_collisions link1="link5" link2="wrist_link" reason="Adjacent"/>
+    <disable_collisions link1="profile_camera_bracket_link" link2="profile_fixing_plate_link" reason="Never"/>
+    <disable_collisions link1="profile_camera_bracket_link" link2="profile_link" reason="Adjacent"/>
+    <disable_collisions link1="profile_camera_bracket_link" link2="steer_fl_link" reason="Never"/>
+    <disable_collisions link1="profile_camera_bracket_link" link2="steer_fr_link" reason="Never"/>
+    <disable_collisions link1="profile_camera_bracket_link" link2="steer_rl_link" reason="Never"/>
+    <disable_collisions link1="profile_camera_bracket_link" link2="steer_rr_link" reason="Never"/>
+    <disable_collisions link1="profile_camera_bracket_link" link2="wheel_fl_link" reason="Never"/>
+    <disable_collisions link1="profile_camera_bracket_link" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="profile_camera_bracket_link" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="profile_camera_bracket_link" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="profile_fixing_plate_link" link2="profile_link" reason="Adjacent"/>
+    <disable_collisions link1="profile_fixing_plate_link" link2="steer_fl_link" reason="Never"/>
+    <disable_collisions link1="profile_fixing_plate_link" link2="steer_fr_link" reason="Never"/>
+    <disable_collisions link1="profile_fixing_plate_link" link2="steer_rl_link" reason="Never"/>
+    <disable_collisions link1="profile_fixing_plate_link" link2="steer_rr_link" reason="Never"/>
+    <disable_collisions link1="profile_fixing_plate_link" link2="wheel_fl_link" reason="Never"/>
+    <disable_collisions link1="profile_fixing_plate_link" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="profile_fixing_plate_link" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="profile_fixing_plate_link" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="profile_link" link2="steer_fl_link" reason="Never"/>
+    <disable_collisions link1="profile_link" link2="steer_fr_link" reason="Never"/>
+    <disable_collisions link1="profile_link" link2="steer_rl_link" reason="Never"/>
+    <disable_collisions link1="profile_link" link2="steer_rr_link" reason="Never"/>
+    <disable_collisions link1="profile_link" link2="wheel_fl_link" reason="Never"/>
+    <disable_collisions link1="profile_link" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="profile_link" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="profile_link" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="steer_fl_link" link2="steer_fr_link" reason="Never"/>
+    <disable_collisions link1="steer_fl_link" link2="steer_rl_link" reason="Never"/>
+    <disable_collisions link1="steer_fl_link" link2="steer_rr_link" reason="Never"/>
+    <disable_collisions link1="steer_fl_link" link2="wheel_fl_link" reason="Adjacent"/>
+    <disable_collisions link1="steer_fl_link" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="steer_fl_link" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="steer_fl_link" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="steer_fr_link" link2="steer_rl_link" reason="Never"/>
+    <disable_collisions link1="steer_fr_link" link2="steer_rr_link" reason="Never"/>
+    <disable_collisions link1="steer_fr_link" link2="wheel_fl_link" reason="Never"/>
+    <disable_collisions link1="steer_fr_link" link2="wheel_fr_link" reason="Adjacent"/>
+    <disable_collisions link1="steer_fr_link" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="steer_fr_link" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="steer_rl_link" link2="steer_rr_link" reason="Never"/>
+    <disable_collisions link1="steer_rl_link" link2="wheel_fl_link" reason="Never"/>
+    <disable_collisions link1="steer_rl_link" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="steer_rl_link" link2="wheel_rl_link" reason="Adjacent"/>
+    <disable_collisions link1="steer_rl_link" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="steer_rr_link" link2="wheel_fl_link" reason="Never"/>
+    <disable_collisions link1="steer_rr_link" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="steer_rr_link" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="steer_rr_link" link2="wheel_rr_link" reason="Adjacent"/>
+    <disable_collisions link1="wheel_fl_link" link2="wheel_fr_link" reason="Never"/>
+    <disable_collisions link1="wheel_fl_link" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="wheel_fl_link" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="wheel_fr_link" link2="wheel_rl_link" reason="Never"/>
+    <disable_collisions link1="wheel_fr_link" link2="wheel_rr_link" reason="Never"/>
+    <disable_collisions link1="wheel_rl_link" link2="wheel_rr_link" reason="Never"/>
+    <!-- 접힌 자세(주행 자세)에서 늘 닿아 있는 쌍: 그리퍼가 거치대에 얹히고 link2 와 손목이 맞닿음 -->
+    <disable_collisions link1="gripper_left_link" link2="gripper_park_stand_link" reason="Default"/>
+    <disable_collisions link1="gripper_park_stand_link" link2="gripper_right_link" reason="Default"/>
+    <disable_collisions link1="link2" link2="wrist_link" reason="Default"/>
+</robot>
