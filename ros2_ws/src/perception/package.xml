@@ -2,8 +2,8 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>perception</name>
-  <version>0.2.0</version>
-  <description>YOLO 추론(ONNX Runtime), 바코드 판독, 퍽 AprilTag · 색, 신호등</description>
+  <version>0.3.0</version>
+  <description>인지 노드 하나(perception): 광각 상자 검출(퍽 · 신호등 · 바코드), 손목 D435 퍽 분할 + 깊이 기하, 벽 1D 바코드. 추론 = TensorRT</description>
   <maintainer email="team@example.com">F팀 닌자터틀</maintainer>
   <license>Apache-2.0</license>
 
@@ -13,12 +13,20 @@
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
   <depend>std_srvs</depend>
+  <depend>geometry_msgs</depend>
   <depend>cv_bridge</depend>
+  <depend>message_filters</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
   <depend>interfaces</depend>
+  <depend>eigen</depend>
   <depend>libopencv-dev</depend>
-  <!-- onnxruntime C++ 는 rosdep 키가 없어서 따로 설치 (README 참고) -->
+  <!-- 바코드 Code128: zxing-cpp (apt libzxing-dev, rosdep 키 확인 전이라 depend 안 씀 — README 설치 목록) -->
+  <!-- TensorRT · CUDA 는 Jetson JetPack 것 (rosdep 키 없음) -->
 
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <!-- bringup 은 의존 안 함: perception.launch.py 는 있으면 그 config/perception.yaml 쓰고, 없으면 코드 기본값 -->
 
   <test_depend>ament_cmake_gtest</test_depend>
 
