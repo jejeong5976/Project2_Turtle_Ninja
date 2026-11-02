@@ -87,7 +87,9 @@ mission_manager:
     read_timeout_s: 5.0               # 바코드 지점 도착 뒤 읽기 대기
 
     # ---- 재고 (적재함 · 그리퍼)
-    cargo_slots: [S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12]   # URDF rack_cell_S* 이름, 팔에서 먼 칸부터 = 채우는 순서. dice 는 11 칸 이상 필요
+    # 채우는 순서 = 11-01 실물 적재 시험 순서 (칸마다 그때 찬 칸 조건 그대로 성공한 순서). dice 는 11 칸 이상 필요
+    #   먼 칸부터(S1 →) 채우면 S10 을 넣을 때 S5 퍽에 손가락이 닿음 (pose_safety, 11-02). 빼기 제약은 config/rack_cells.yaml
+    cargo_slots: [S12, S7, S9, S4, S3, S8, S11, S6, S10, S5, S1, S2]   # URDF rack_cell_S* 이름
     cargo_file: ""                    # 재고 기록 파일 (빈 문자열 = 저장 안 함)
     cargo_restore: false              # 시작할 때 파일에서 복원 (노드 재시작 때만 true)
 
