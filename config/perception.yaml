@@ -1,64 +1,71 @@
-# perception.yaml — perception 노드 (광각 · 손목 · 신호등 · 바코드) 설정
-# - 위치: 레포 최상위 config/ → bringup 이 share/bringup/config 로 설치
-# - 코드(declare_parameter) 기본값과 지금은 동일 (model 만 비어 있음 → launch 인자 wide_model:= · wrist_model:= 로 줌)
-# - 토픽 · 메시지 = planning 합의안 (docs/planning/planning_interfaces.md)
-#     /perception/wide/detections  DetectionArray (광각 퍽, 위치 NaN — 지금 받는 노드 없음)
-#     /perception/wrist/detections DetectionArray (손목 퍽, 3D 자세 — planning 이 받음)
-#     /perception/traffic_light  TrafficLight (RED / YELLOW / GREEN / OFF / UNKNOWN + visible)
-#     /perception/task_text      TaskText (바코드 원문, 켜져 있는 동안 확정될 때마다)
-# - 판정 상수(선/누움 4.5 cm · 발자국 4.8 cm 등)는 Python 판과 같게 코드(puck_geometry.hpp)에 둠
-# [확인 필요] 표시 값은 실측 후 갱신. 거리 m, 각도 °, 시간 s
+# perception.yaml — perception 노드 설정: 광각 · 손목 · 신호등 · 바코드
+#
+# 역할
+#   - perception_node 파라미터. 값은 지금 코드 기본값과 같고, model 만 비어 있음
+# 출력 토픽
+#   - /perception/wide/detections   DetectionArray  광각 퍽, 위치 NaN → RViz · 디버깅용
+#   - /perception/wrist/detections  DetectionArray  손목 퍽, 3D 자세 → planning 이 받음
+#   - /perception/traffic_light     TrafficLight    RED · YELLOW · GREEN · OFF · UNKNOWN + visible
+#   - /perception/task_text         TaskText        바코드 원문, 켜져 있는 동안 확정될 때마다
+# 실행
+#   ros2 launch perception perception.launch.py wide_model:=<광각>.engine wrist_model:=<손목>.engine
+# note
+#   - 레포 최상위 config/ → bringup 이 share/bringup/config 로 설치, launch 가 자동으로 읽음
+#   - 모델 .engine 은 Jetson trtexec --fp16 으로 만들고, 옆에 같은 이름 .names.txt 필수
+#   - 퍽 판정 상수는 yaml 이 아니라 코드 wrist_pose.hpp 에 있음, Python 판과 같은 값
+#   - [확인 필요] 표시 값은 실측 후 갱신
+#   - 단위: 거리 m, 각도 °, 시간 s
 
 perception:
   ros__parameters:
-    wide:                                # 광각 Arducam UC-684 (아래 40°)
+    wide:                                # 광각 Arducam UC-684, 아래 40°
       image_topic: /wide_cam/image_raw
-      image_qos: reliable                # reliable | best_effort (큰 이미지는 best_effort 면 프로세스 사이에서 유실)
-      frame_id: birdeye_camera_optical_frame   # 출력 header.frame_id (배포판 URDF 이름). "" = 드라이버 이미지 header
-      model: ""                          # .engine (Jetson trtexec --fp16). 옆에 같은 이름 .names.txt 필수. launch 인자 wide_model:= 로 줌
-      conf: 0.5                          # planning 기준
+      image_qos: reliable                # reliable | best_effort. 큰 영상을 best_effort 로 받으면 프로세스 사이에서 유실
+      frame_id: birdeye_camera_optical_frame   # 출력 header.frame_id = 배포판 URDF 이름. "" 면 드라이버 영상 header 그대로
+      model: ""                          # 광각 .engine, launch 인자 wide_model:= 로 줌
+      conf: 0.5                          # 검출 신뢰도 기준
       iou: 0.7
-      max_hz: 15.0                       # 이보다 빠른 영상은 탐지 건너뜀 (바코드 넘기기는 함)
-      enabled: true                      # ~/wide/enable 로 켜고 끔 (탐지 · 신호등)
-      read_tags: false                   # 퍽 태그 16 mm 는 광각에서 거의 안 읽힘 (1 m 에서 칸당 2 px 미만). 광각 퍽은 받는 노드도 없어 끔 (2026-11-02) → 출력 id 는 늘 ""
-      tag_min_side_px: 60                # 잘라 낸 상자가 이보다 작으면 키워서 태그 검출. 퍽 태그 ID 0–11 만 받음 (장소 12–14 버림)
+      max_hz: 15.0                       # 이보다 빨리 오는 영상은 검출 건너뜀, 바코드 넘기기는 함
+      enabled: true                      # ~/wide/enable 로 켜고 끔, 검출 · 신호등
+      read_tags: false                   # 16 mm 퍽 태그는 광각 1 m 에서 칸당 2 px 미만이라 거의 안 읽힘 → 끔, 출력 id 는 늘 ""
+      tag_min_side_px: 60                # 잘라 낸 상자가 이보다 작으면 키워서 태그 검출. 퍽 태그 ID 0–11 만 받음
       puck_classes: [red_cyl, green_cyl, red_box, green_box]
 
     traffic_light:                       # 광각 상자 중 신호등 → 칸 밝기 판정 + 다수결
       enabled: true
       class: traffic_light
-      red: [0.10, 0.40]                  # [확인 필요] 상자 높이 대비 칸 위치 (위→아래). 실물 신호등으로 다시 잴 것
+      red: [0.10, 0.40]                  # [확인 필요] 상자 높이 대비 칸 위치, 위 → 아래. 실물 신호등으로 다시 잴 것
       yellow: [0.40, 0.70]
       green: [0.70, 1.00]
-      v_margin: 40.0                     # 가장 밝은 칸이 나머지보다 이만큼 밝아야 켜짐 (아니면 OFF)
-      window: 5                          # 최근 이 장 중
-      need: 3                            # 이 장 같으면 확정
-      timeout: 1.0                       # 이 시간 동안 못 찾으면 다수결 비움 (못 찾은 영상은 바로 UNKNOWN + visible=false)
+      v_margin: 40.0                     # 가장 밝은 칸이 나머지보다 이만큼 밝아야 켜짐, 아니면 OFF
+      window: 5                          # 최근 이 장 수 중
+      need: 3                            #   이 장 수가 같으면 확정
+      timeout: 1.0                       # 이 시간 동안 못 찾으면 다수결 비움. 못 찾은 영상 자체는 바로 UNKNOWN + visible=false
 
-    wrist:                               # 손목 D435 (realsense2_camera, align_depth.enable:=true)
-      model: ""                          # .engine (Jetson trtexec --fp16). 옆에 같은 이름 .names.txt 필수. launch 인자 wrist_model:= 로 줌
-      conf: 0.5                          # 분할 신뢰도 기준 (Python wrist_detector.SEG_CONF 와 같음)
-      iou: 0.7                           # one2many head NMS (ultralytics 기본)
+    wrist:                               # 손목 D435, realsense2_camera align_depth.enable:=true
+      model: ""                          # 손목 .engine, launch 인자 wrist_model:= 로 줌
+      conf: 0.5                          # 분할 신뢰도 기준, Python wrist_detector.SEG_CONF 와 같음
+      iou: 0.7                           # one2many head NMS, ultralytics 기본
       window: 5                          # 최근 이 장 수 안에서
-      min_hits: 3                        #   이 장 이상 보이면 확정
+      min_hits: 3                        #   이 장 수 이상 보이면 확정
       match_m: 0.02                      # 같은 퍽으로 묶는 카메라 좌표 거리
       enabled: true                      # ~/wrist/enable 로 켜고 끔
-      frame_id: d435_color_optical_frame # 출력 frame_id · TF 조회 이름 (URDF 이름. 드라이버 camera_color_optical_frame 아님)
-      world_frame: odom                  # z = 위쪽인 프레임 (위쪽 · 카메라 움직임 판단)
+      frame_id: d435_color_optical_frame # 출력 frame_id · TF 조회 이름 = URDF 이름, 드라이버 camera_color_optical_frame 아님
+      world_frame: odom                  # z = 위쪽인 프레임, 위쪽 · 카메라 움직임 판단에 씀
       tf_timeout_s: 0.05
-      reset_move_m: 0.01                 # 카메라가 장 사이 이보다 움직이면 묶음 지움
+      reset_move_m: 0.01                 # 장 사이 카메라가 이보다 움직이면 묶음 지움
       reset_rot_deg: 2.0
       depth_scale: 0.001                 # 16UC1 깊이 단위 → m
-      publish_debug: false               # /perception/wrist_debug_image
+      publish_debug: false               # true 면 /perception/wrist_debug_image
       color_topic: /camera/camera/color/image_raw
       depth_topic: /camera/camera/aligned_depth_to_color/image_raw
       info_topic: /camera/camera/color/camera_info
-      image_qos: reliable                # reliable | best_effort (컬러 · 깊이 구독. 큰 영상은 best_effort 면 장이 빠짐)
+      image_qos: reliable                # reliable | best_effort. 컬러 · 깊이 구독, best_effort 면 장이 빠짐
 
-    barcode:                             # 벽 1D 바코드 (OpenCV, EAN/UPC 만 → Code128 은 못 읽음, 교체 필요)
-      camera: wrist                      # wide | wrist. 이 카메라 컬러 영상에서 읽음 (어느 카메라로 읽을지 미확정)
-      enabled: false                     # 기본 꺼짐. planning 이 READ_BARCODE 단계에서 ~/barcode/enable 로 켜고 나가면 끔
-      max_hz: 10.0                       # 켜져 있는 동안 이 주기로 한 장씩 (카메라 콜백 안에서)
+    barcode:                             # 벽 1D 바코드, zxing-cpp 로 Code128 판독
+      camera: wrist                      # wide | wrist. 이 카메라 컬러 영상에서 읽음
+      enabled: false                     # 기본 꺼짐. planning 이 READ_BARCODE 단계에서 ~/barcode/enable 로 켜고 끝나면 끔
+      max_hz: 10.0                       # 켜져 있는 동안 이 주기로 한 장씩, 카메라 콜백 안에서
       class: barcode                     # camera=wide 면 같은 영상의 이 클래스 상자를 먼저 확대해서 읽음
       roi_pad: 0.3
       roi_scale: 2.0
