@@ -8,12 +8,17 @@ find_package(geometry_msgs REQUIRED)
 
 # .msg / .action 파일 → C++ · Python 코드 자동 생성
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/MissionStatus.msg"
-  "msg/MotionMode.msg"
-  "msg/PuckDetection.msg"
+  "msg/Detection.msg"
   "msg/DetectionArray.msg"
   "msg/TaskText.msg"
-  "msg/SignalState.msg"
+  "msg/TrafficLight.msg"
+  "msg/SignalRecord.msg"
+  "msg/VerifyPuck.msg"
+  "msg/VerifyRecord.msg"
+  "msg/CargoSlot.msg"
+  "msg/CargoState.msg"
+  "msg/MissionStatus.msg"
+  "msg/MotionMode.msg"
   "action/ArmTask.action"
   DEPENDENCIES std_msgs geometry_msgs
 )
