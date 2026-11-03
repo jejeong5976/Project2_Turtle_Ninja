@@ -34,4 +34,4 @@ ls -l /dev/serial/by-path/ 2>/dev/null | sed 's/^/  /'   # 앞 · 뒤 라이다 
 r=$(ulimit -r); [ "$r" != 0 ] && ok "실시간 우선순위 한도 rtprio=$r" || no "rtprio 0 — 제어 루프가 보통 우선순위로 돎 (필요하면 /etc/security/limits.d 에 rtprio, 사람이 직접)"
 echo "== 다른 ROS 실행 중인지"
 out=$(pgrep -af "lib/controller_manager/ros2_control_[n]ode|ros2 [l]aunch"); [ -n "$out" ] && echo "$out" | sed 's/^/  /' || ok "없음"
-echo "  ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-(없음=0)}"
+echo "  ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-(없음=0)}  (팀 로봇 = 17, run_robot.sh 기본) · discovery=${ROS_AUTOMATIC_DISCOVERY_RANGE:-기본} (LOCALHOST 면 노트북과 안 보임)"

@@ -16,6 +16,7 @@
 #   NT_DRIVE_PORT=/dev/serial/by-path/… NT_ARM_PORT=/dev/serial/by-path/… (젯슨에서 주행 보드 = …usb-0:2.4.3:1.0)
 # 기록: runs/robot_<모드>_<hw>_<시각>/ (launch.log · 컨트롤러 파라미터 · 조향 범위). 끝내기 Ctrl+C (명령이 0.3 s 끊기면 바퀴는 스스로 멈춤)
 set -uo pipefail
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-17}"   # 팀 로봇 도메인 (11-03 고정). 다르게 쓰려면 실행 전에 export
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MODE=${1:-}; HW=${2:-}; shift 2 2>/dev/null || true
 case "$MODE/$HW" in drive/mock|drive/opencr|full/mock|full/opencr|slam/opencr|locate/opencr) ;; *) sed -n 2,15p "$0"; exit 2;; esac
@@ -72,7 +73,7 @@ for x in "$@"; do   # 위에서 검사한 값을 뒤 인자로 덮어쓰지 못�
   esac
 done
 ARGS+=("$@")
-say "ros2 launch $PKG $LAUNCH ${ARGS[*]}  (ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}) → $RUN"
+say "ros2 launch $PKG $LAUNCH ${ARGS[*]}  (ROS_DOMAIN_ID=$ROS_DOMAIN_ID) → $RUN"
 # 별도 프로세스 그룹으로 띄우고 그룹 전체에 SIGINT (백그라운드 명령은 SIGINT 를 무시한 채 시작하므로 $! 에만 보내면 안 꺼짐)
 set -m
 RCUTILS_COLORIZED_OUTPUT=0 ros2 launch "$PKG" "$LAUNCH" "${ARGS[@]}" > "$RUN/launch.log" 2>&1 &

@@ -7,7 +7,7 @@
              --drop P       P 확률로 UNKNOWN + not visible (못 찾음)
              --latency S    S 초 늦게 반영 (영상 처리 지연)
 실행 (navigation · interfaces 빌드한 워크스페이스 source 뒤):
-  ROS_DOMAIN_ID=17 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST python3 scripts/fake_traffic_light.py --ambiguous 0.05
+  ROS_DOMAIN_ID=18 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST python3 scripts/fake_traffic_light.py --ambiguous 0.05
 """
 import argparse
 import collections
