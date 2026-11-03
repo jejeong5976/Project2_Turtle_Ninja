@@ -4,7 +4,7 @@
 
 | 파이프라인 | 받는 것 | 보내는 것 |
 |---|---|---|
-| 광각 `WidePipeline` | 광각 컬러 (Arducam UC-684) | `/perception/wide/detections` (퍽 상자 · 색 · 모양 · 퍽 태그 ID, 위치 NaN), `/perception/traffic_light` |
+| 광각 `WidePipeline` | 광각 컬러 (Arducam UC-684) | `/perception/wide/detections` (퍽 상자 · 색 · 모양 · 퍽 태그 ID, 위치 NaN), `/perception/traffic_light`, `/perception/wide_debug_image` (선택) |
 | 손목 `WristPipeline` | D435 컬러 + 정렬 깊이 + camera_info, TF `odom ← d435_color_optical_frame` | `/perception/wrist/detections` (퍽 중심 · 자세 · 선/누움 · ID), `/perception/wrist_debug_image` (선택) |
 | 바코드 `BarcodeStage` | `barcode.camera` (wide / wrist) 카메라 콜백 안에서, 켜져 있을 때만 | `/perception/task_text` |
 

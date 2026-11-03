@@ -12,6 +12,8 @@
 //       label = 색, shape = cylinder · box, pose = 모름, id = "" ← wide.read_tags 기본 false
 //   - /perception/traffic_light  interfaces/TrafficLight, traffic_light.enabled 일 때 처리한 영상마다
 //       state = RED · YELLOW · GREEN · OFF · UNKNOWN, visible
+//   - /perception/wide_debug_image  sensor_msgs/Image, wide.publish_debug 일 때만 · 구독자 있을 때만
+//       검출 상자 전부 + 신호등 칸 경계 · 칸별 밝기(V 90 분위) · 흰색 비율 · 이번 장 판정 · 확정 상태
 // 실행
 //   - perception_node 가 만듦. ~/wide/enable 로 켜고 끔
 // note
@@ -27,6 +29,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -66,8 +69,20 @@ private:
   // 상자 검출 → 퍽 · 신호등 발행. 같은 영상의 barcode 상자는 barcode_boxes 로
   void detect_and_publish(
     const cv::Mat & img, const std_msgs::msg::Header & header, Clock::time_point now, std::vector<wide::Box> & barcode_boxes);
-  void publish_traffic_light(
-    const cv::Mat & img, const std_msgs::msg::Header & header, const wide::BoxDetection * best, Clock::time_point now);
+  // 신호등 확인용 값: 상자 · 이번 장 판정 · 칸별 밝기
+  struct LightDebug
+  {
+    cv::Rect roi;
+    std::string label;
+    std::map<std::string, TrafficLightScore> score;
+  };
+  // → 발행한 state. dbg 를 넘기면 이번 장 값을 채움
+  uint8_t publish_traffic_light(
+    const cv::Mat & img, const std_msgs::msg::Header & header, const wide::BoxDetection * best, Clock::time_point now,
+    LightDebug * dbg);
+  void publish_debug(
+    const cv::Mat & img, const std_msgs::msg::Header & header, const std::vector<wide::BoxDetection> & dets,
+    const LightDebug & light, uint8_t light_state);
 
   rclcpp::Node & node_;
   BarcodeStage * barcode_;   // barcode.camera = wide 일 때만
@@ -75,11 +90,12 @@ private:
 
   // 설정
   std::string frame_id_, light_class_;
-  double conf_{0.5}, iou_{0.7}, max_hz_{15.0};
-  bool read_tags_{true}, light_enabled_{true};
+  double conf_{0.5}, iou_{0.7}, max_hz_{30.0};
+  bool read_tags_{true}, light_enabled_{true}, publish_debug_{false};
   std::set<std::string> puck_classes_;
   std::vector<TrafficLightTier> tiers_;
-  double v_margin_{40.0}, light_timeout_{1.0};
+  TrafficLightRule light_rule_;
+  double light_timeout_{1.0};
 
   // 상태 (광각 콜백 그룹 안에서만 바뀜)
   wide::PuckTagReader tag_reader_;
@@ -91,6 +107,7 @@ private:
 
   rclcpp::Publisher<interfaces::msg::DetectionArray>::SharedPtr det_pub_;
   rclcpp::Publisher<interfaces::msg::TrafficLight>::SharedPtr light_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr debug_pub_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
 };
 

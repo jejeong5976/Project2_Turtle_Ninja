@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include <map>
+#include <string>
 #include <vector>
 
 #include <opencv2/core/version.hpp>
@@ -137,9 +139,25 @@ TEST(Tag, Missing)
 
 namespace
 {
+using perception::TrafficLightRule;
+using perception::TrafficLightScore;
 using perception::TrafficLightTier;
 using perception::classify_traffic_light;
 const std::vector<TrafficLightTier> TIERS{{"red", 0.10, 0.40}, {"yellow", 0.40, 0.70}, {"green", 0.70, 1.00}};
+const TrafficLightRule RULE{};
+
+// 실측 (2026-11-03) 처럼 포화된 탑: 꺼진 렌즈도 V 255 · 색 진함, 켜진 칸만 흰색
+cv::Mat saturated_tower(const std::string & lit)
+{
+  const std::map<std::string, cv::Scalar> off{
+    {"red", {101, 115, 250}}, {"yellow", {100, 210, 240}}, {"green", {120, 250, 140}}};
+  cv::Mat img(100, 30, CV_8UC3, cv::Scalar::all(60));
+  for (const auto & t : TIERS) {
+    img.rowRange(static_cast<int>(t.top * 100), static_cast<int>(t.bottom * 100)) =
+      t.name == lit ? cv::Scalar(250, 255, 245) : off.at(t.name);
+  }
+  return img;
+}
 
 cv::Mat tower(const std::string & lit)
 {
@@ -154,17 +172,41 @@ cv::Mat tower(const std::string & lit)
 TEST(TrafficLight, LitTier)
 {
   for (const std::string s : {"red", "yellow", "green"}) {
-    EXPECT_EQ(classify_traffic_light(tower(s), TIERS, 40), s);
+    EXPECT_EQ(classify_traffic_light(tower(s), TIERS, RULE), s);
   }
 }
 
 TEST(TrafficLight, AllOffIsOff)
 {
-  EXPECT_EQ(classify_traffic_light(tower(""), TIERS, 40), "off");
+  EXPECT_EQ(classify_traffic_light(tower(""), TIERS, RULE), "off");
 }
 
 TEST(TrafficLight, EmptyRoiIsUnknown)
 {
   // 상자를 못 잘랐으면 꺼짐(OFF)으로 보지 않음
-  EXPECT_EQ(classify_traffic_light(cv::Mat(), TIERS, 40), "unknown");
+  EXPECT_EQ(classify_traffic_light(cv::Mat(), TIERS, RULE), "unknown");
+}
+
+TEST(TrafficLight, SaturatedLitTierByWhite)
+{
+  // 모든 칸 V 255 → 밝기로는 못 고름, 흰색 비율로 고름
+  for (const std::string s : {"red", "yellow", "green"}) {
+    std::map<std::string, TrafficLightScore> score;
+    EXPECT_EQ(classify_traffic_light(saturated_tower(s), TIERS, RULE, &score), s);
+    EXPECT_GT(score.at(s).white, 0.9);
+  }
+}
+
+TEST(TrafficLight, SaturatedAllOffIsOff)
+{
+  // 꺼진 렌즈만 (색 진함, V 포화) → 흰색 없음 · 밝기 차이 작음 → OFF
+  EXPECT_EQ(classify_traffic_light(saturated_tower(""), TIERS, RULE), "off");
+}
+
+TEST(TrafficLight, WhiteTooSmallFallsBackToV)
+{
+  // 흰색 비율이 white_min 미만이면 밝기 비교로 넘어감 (회색 켜짐 230 은 흰 화소 아님)
+  std::map<std::string, TrafficLightScore> score;
+  EXPECT_EQ(classify_traffic_light(tower("yellow"), TIERS, RULE, &score), "yellow");
+  EXPECT_DOUBLE_EQ(score.at("yellow").white, 0.0);
 }
