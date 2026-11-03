@@ -324,22 +324,36 @@ private:
   std::string mode_reason_;
   double last_mode_s_ = -1.0;
   double last_odom_s_ = -1.0;
-  double odom_x_ = 0.0, odom_y_ = 0.0;
-  double odom_fresh_s_ = -1.0;               // 측정 시각이 앞으로 간 /odom 을 받은 때 (같은 · 옛 시각은 안 셈)
-  rclcpp::Time odom_stamp_{0, 0, RCL_ROS_TIME};
+  double odom_x_ = 0.0, odom_y_ = 0.0, odom_yaw_ = 0.0;
+  rclcpp::Time odom_stamp_{0, 0, RCL_ROS_TIME};   // 마지막 새 /odom 의 측정 시각 (신선도는 이 시각의 나이로 봄)
   struct OdomSample {double t, x, y;};
-  std::deque<OdomSample> odom_hist_;        // 최근 odom (스캔 측정 시각의 위치를 맞추려고, 약 1 s)
+  std::deque<OdomSample> odom_hist_;        // 최근 odom (스캔 측정 시각의 위치를 맞추려고, 마지막보다 kOdomHistS 앞까지 덮음)
+  static constexpr double kOdomHistS = 1.0;
   rclcpp::Time scan_stamp_{0, 0, RCL_ROS_TIME};
-  double travel_at(double t) const;          // 측정 시각 t 의 직진 거리 (odom_hist_ 사이 보간)
+  double travel_at(double t) const;          // 측정 시각 t 의 직진 거리 (odom_hist_ 사이 보간, 기록보다 옛 시각이면 NaN)
 
   // 박스 앞 마지막 접근 (approach.hpp)
   ApproachConfig approach_cfg_;
   double approach_half_width_m_ = 0.06;      // 박스 면으로 보는 좁은 띠 (몸 중심선 ±)
   double approach_body_half_m_ = 0.18;       // 다른 물체를 보는 차체 폭 띠 (몸 반폭 0.16 + 여유)
-  double approach_timeout_s_ = 8.0, approach_sensor_max_age_s_ = 0.3;
-  struct ApproachRun {bool active = false; double start_s = 0.0, x0 = 0.0, y0 = 0.0; ApproachState st;} approach_;
-  double front_scan_s_ = -1.0;               // 접근 중 앞쪽 라이다를 마지막으로 받은 때
-  double approach_travel() const {return std::hypot(odom_x_ - approach_.x0, odom_y_ - approach_.y0);}
+  double approach_timeout_s_ = 8.0, approach_sensor_max_age_s_ = 0.3;   // odom 측정 나이 상한
+  double approach_scan_max_age_s_ = 0.4;     // 앞쪽 스캔 측정 나이 상한 (10 Hz 한 주기 + 전달 지연)
+  static constexpr double kStampFutureS = 0.1;   // 측정 시각이 지금보다 이만큼 넘게 미래면 버림 (시계 어긋남)
+  static constexpr double kApproachYawTol = 5.0 * M_PI / 180.0;   // 접근 중 몸 방향이 시작보다 이만큼 넘게 틀어지면 멈춤
+  // 시작점 (x0, y0, yaw0) 은 Nav2 가 끝난 뒤 측정된 신선한 odom 으로만 잡음 (origin), t0 = 그 odom 측정 시각 (이전 스캔은 버림)
+  struct ApproachRun
+  {
+    bool active = false, origin = false;
+    double start_s = 0.0, t0 = 0.0, x0 = 0.0, y0 = 0.0, yaw0 = 0.0;
+    ApproachState st;
+  } approach_;
+  double front_scan_s_ = -1.0;               // 접근 중 관측에 쓴 앞쪽 스캔의 측정 시각 (신선도는 이 나이로 봄)
+  // 시작 자세 앞 방향으로 간 거리 (부호 있음) · 시작점에서 직선 거리 (안전 상한용)
+  double approach_forward(double x, double y) const
+  {
+    return (x - approach_.x0) * std::cos(approach_.yaw0) + (y - approach_.y0) * std::sin(approach_.yaw0);
+  }
+  double approach_dist() const {return std::hypot(odom_x_ - approach_.x0, odom_y_ - approach_.y0);}
 
   // 액션
   uint64_t gen_ = 0;

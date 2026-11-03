@@ -94,6 +94,15 @@ Executor::Executor(rclcpp::Node & node)
   approach_body_half_m_ = node_.declare_parameter<double>("approach_body_half_m", 0.18);
   approach_cfg_.min_clear_m = node_.declare_parameter<double>("approach_min_clear_m", 0.175);
   approach_timeout_s_ = node_.declare_parameter<double>("approach_timeout_s", 8.0);
+  approach_scan_max_age_s_ = node_.declare_parameter<double>("approach_scan_max_age_s", 0.4);
+  // NaN · 무한이면 시간 초과 · 스캔 신선도 검사가 늘 거짓 → 기본값. 스캔 나이는 odom 기록 (미래 시각 허용분 빼고) 안이어야 그때 위치를 맞춤
+  if (!(approach_timeout_s_ > 0.0 && approach_timeout_s_ <= 60.0) ||
+    !(approach_scan_max_age_s_ > 0.0 && approach_scan_max_age_s_ <= kOdomHistS - kStampFutureS))
+  {
+    RCLCPP_ERROR(logger(), "approach_timeout_s · approach_scan_max_age_s 설정이 잘못됨 → 기본값 (8 · 0.4)");
+    approach_timeout_s_ = 8.0;
+    approach_scan_max_age_s_ = 0.4;
+  }
 
   puck_standoff_m_ = node_.declare_parameter<double>("puck_standoff_m", 0.30);
   pick_fresh_s_ = node_.declare_parameter<double>("pick_fresh_s", 2.0);
@@ -144,22 +153,29 @@ Executor::Executor(rclcpp::Node & node)
       last_odom_s_ = now_s();
       const rclcpp::Time stamp(m->header.stamp, RCL_ROS_TIME);
       const auto & p = m->pose.pose.position;
-      if (stamp > odom_stamp_ && std::isfinite(p.x) && std::isfinite(p.y)) {   // 새 측정만 (같은 · 옛 시각 · NaN 은 안 셈)
+      const auto & q = m->pose.pose.orientation;
+      // 새 측정만 (같은 · 옛 시각 · NaN · 깨진 자세는 안 셈). 미래 시각도 버림: 한 번 받으면 뒤의 정상 측정이 다 '옛 시각' 이 됨
+      if (stamp > odom_stamp_ && (stamp - node_.now()).seconds() <= kStampFutureS &&
+        std::isfinite(p.x) && std::isfinite(p.y) && valid_quaternion(q.x, q.y, q.z, q.w))
+      {
         odom_stamp_ = stamp;
         odom_x_ = p.x;
         odom_y_ = p.y;
-        odom_fresh_s_ = now_s();
+        odom_yaw_ = yaw_from_quaternion(q.x, q.y, q.z, q.w);
         odom_hist_.push_back({stamp.seconds(), p.x, p.y});
-        while (odom_hist_.size() > 2 && odom_hist_.back().t - odom_hist_.front().t > 1.0) {odom_hist_.pop_front();}
+        // 둘째 점이 kOdomHistS 앞이면 맨 앞을 버림 → 경계 앞 점 하나는 남아 kOdomHistS 전 스캔도 보간됨
+        while (odom_hist_.size() > 2 && odom_hist_.back().t - odom_hist_[1].t >= kOdomHistS) {odom_hist_.pop_front();}
       }
     });
   // 앞쪽 라이다 → 몸 앞 면 거리 (몸 중심 기준 x, 좌우 approach_half_width_m 안의 가장 가까운 점)
   sub_front_scan_ = node_.create_subscription<sensor_msgs::msg::LaserScan>(
     node_.declare_parameter<std::string>("approach_scan_topic", "/lidar_front/scan"), rclcpp::SensorDataQoS(),
     [this](sensor_msgs::msg::LaserScan::ConstSharedPtr m) {
-      if (!approach_.active) {return;}
+      if (!approach_.active || !approach_.origin) {return;}
       const rclcpp::Time stamp(m->header.stamp, RCL_ROS_TIME);
-      if (stamp <= scan_stamp_ || (node_.now() - stamp).seconds() > approach_sensor_max_age_s_) {return;}   // 같은 · 옛 · 늦은 스캔은 버림
+      const double age = (node_.now() - stamp).seconds();
+      if (stamp <= scan_stamp_ || age > approach_scan_max_age_s_ || age < -kStampFutureS) {return;}   // 같은 · 옛 · 늦은 · 미래 스캔은 버림
+      if (stamp.seconds() < approach_.t0) {return;}   // 시작점 측정보다 먼저 찍힌 스캔 (그때 위치를 모름)
       scan_stamp_ = stamp;
       geometry_msgs::msg::TransformStamped t;
       try {
@@ -181,8 +197,10 @@ Executor::Executor(rclcpp::Node & node)
         if (std::fabs(y) <= approach_half_width_m_ && !(x >= face)) {face = x;}
         if (std::fabs(y) <= approach_body_half_m_ && !(x >= front)) {front = x;}
       }
-      approach_observe(approach_.st, face, front, travel_at(stamp.seconds()));   // 새 스캔 · 그 측정 시각의 직진 거리
-      front_scan_s_ = now_s();
+      const double travel = travel_at(stamp.seconds());   // 그 측정 시각의 직진 거리 (odom 기록 밖이면 그때 위치를 모름 → 버림)
+      if (!std::isfinite(travel)) {return;}
+      approach_observe(approach_.st, approach_cfg_, face, front, travel);
+      front_scan_s_ = stamp.seconds();
     });
   last_scan_s_.assign(scan_topics_.size(), -1.0);
   for (std::size_t i = 0; i < scan_topics_.size(); ++i) {
@@ -718,9 +736,7 @@ StepResult Executor::run_navigate(const Step & s, double now)
   if (r == StepResult::Success && s.approach_m > 0.0) {   // Nav2 는 물러난 자리에 섬 → 마지막 접근
     approach_ = ApproachRun{};
     approach_.active = true;
-    approach_.start_s = now;
-    approach_.x0 = odom_x_;
-    approach_.y0 = odom_y_;
+    approach_.start_s = now;   // 시작점은 run_approach 가 신선한 odom 으로 잡음
     front_scan_s_ = -1.0;
     RCLCPP_INFO(logger(), "%s: 박스 앞 마지막 접근 (면까지 %.3f m 에서 멈춤)", s.name.c_str(), s.approach_face_m);
     return StepResult::Running;
@@ -740,20 +756,38 @@ StepResult Executor::run_approach(const Step & s, double now)
     };
   if (now - approach_.start_s > approach_timeout_s_) {
     stop_approach();
-    detail_ = approach_.st.have_face ? "박스 접근 시간 초과" : "박스 접근: 앞쪽 라이다로 박스 면을 못 봄";
+    detail_ = !approach_.origin ? "박스 접근: 새 odom 을 못 받음" :
+      approach_.st.have_face ? "박스 접근 시간 초과" : "박스 접근: 앞쪽 라이다로 박스 면을 못 봄";
     return StepResult::Fail;
+  }
+  // odom 신선도 = 측정 시각의 나이 (밀려서 늦게 온 옛 측정은 안 셈, 유효한 odom 을 한 번도 못 받았으면 아님)
+  const double odom_age = now - odom_stamp_.seconds();
+  const bool odom_fresh = !odom_hist_.empty() && odom_age >= -kStampFutureS && odom_age <= approach_sensor_max_age_s_;
+  // 시작점은 Nav2 가 끝난 뒤 측정된 odom 으로 (끝나기 전 마지막 제자리 회전 중 자세를 기준으로 삼지 않게)
+  if (!approach_.origin && odom_fresh && odom_stamp_.seconds() >= approach_.start_s) {
+    approach_.origin = true;
+    approach_.t0 = odom_stamp_.seconds();
+    approach_.x0 = odom_x_;
+    approach_.y0 = odom_y_;
+    approach_.yaw0 = odom_yaw_;
   }
   // 차례 DRIVE · 새 odom · 새 앞쪽 스캔이 다 있어야 움직임 (하나라도 없으면 0 으로 기다림, 시간 초과는 위에서)
   if ((require_motion_mode_ && !(have_mode_ && mode_ == interfaces::msg::MotionMode::DRIVE)) ||
-      now - odom_fresh_s_ > approach_sensor_max_age_s_ || now - front_scan_s_ > approach_sensor_max_age_s_) {
+      !approach_.origin || !odom_fresh || now - front_scan_s_ > approach_scan_max_age_s_) {
     send(0.0);
     return StepResult::Running;
+  }
+  // 직진 거리는 시작 방향으로 잼 → 몸이 돌면 거리를 적게 셈. 많이 돌았으면 멈춤
+  if (std::fabs(std::remainder(odom_yaw_ - approach_.yaw0, 2.0 * M_PI)) > kApproachYawTol) {
+    stop_approach();
+    detail_ = "박스 접근: 몸 방향이 틀어짐";
+    return StepResult::Fail;
   }
   ApproachConfig c = approach_cfg_;
   c.target_face_m = s.approach_face_m;
   c.max_travel_m = s.approach_m + 0.04;
-  const double travel = approach_travel();
-  const ApproachCmd cmd = approach_step(approach_.st, c, travel);
+  const double travel = approach_forward(odom_x_, odom_y_);
+  const ApproachCmd cmd = approach_step(approach_.st, c, travel, approach_dist());
   if (cmd.fail) {
     stop_approach();
     detail_ = cmd.why;
@@ -768,21 +802,22 @@ StepResult Executor::run_approach(const Step & s, double now)
   return StepResult::Running;
 }
 
-// 측정 시각 t 의 접근 직진 거리: odom 기록 두 점 사이 보간 (기록 밖이면 가장 가까운 끝)
+// 측정 시각 t 의 접근 직진 거리 (부호 있음): odom 기록 두 점 사이 보간
+//   기록보다 새 스캔이면 마지막 odom (덜 간 것으로 봄 → 남은 거리를 작게 잡아 일찍 멈춤)
+//   기록보다 옛 스캔이면 NaN (맨 앞 odom 을 쓰면 더 간 것으로 봐 지나침)
 double Executor::travel_at(double t) const
 {
-  if (odom_hist_.empty()) {return approach_travel();}
-  auto dist = [this](const OdomSample & o) {return std::hypot(o.x - approach_.x0, o.y - approach_.y0);};
-  if (t <= odom_hist_.front().t) {return dist(odom_hist_.front());}
+  if (odom_hist_.empty() || t < odom_hist_.front().t) {return std::numeric_limits<double>::quiet_NaN();}
+  auto fwd = [this](const OdomSample & o) {return approach_forward(o.x, o.y);};
   for (std::size_t i = 1; i < odom_hist_.size(); ++i) {
     const auto & a = odom_hist_[i - 1];
     const auto & b = odom_hist_[i];
     if (t <= b.t) {
       const double k = b.t > a.t ? (t - a.t) / (b.t - a.t) : 1.0;
-      return dist(a) + k * (dist(b) - dist(a));
+      return fwd(a) + k * (fwd(b) - fwd(a));
     }
   }
-  return dist(odom_hist_.back());
+  return fwd(odom_hist_.back());
 }
 
 void Executor::stop_approach()

@@ -378,6 +378,13 @@ TEST(Health, CovarianceStd)
   EXPECT_FALSE(covariance_std(c).has_value());
 }
 
+// 첫 면은 연속 두 스캔이 맞아야 받음 → 같은 관측 두 번
+static void see_face(planning::ApproachState & st, const planning::ApproachConfig & c, double face, double front, double travel)
+{
+  planning::approach_observe(st, c, face, front, travel);
+  planning::approach_observe(st, c, face, front, travel);
+}
+
 // 박스 앞 마지막 접근: Nav2 목표는 보는 방향 반대로 물러남, 그 뒤 라이다 면 거리로 멈춤 (가까워져 안 보이면 마지막 관측 + odom)
 TEST(Approach, BackedOffAndStopsAtFace)
 {
@@ -391,17 +398,17 @@ TEST(Approach, BackedOffAndStopsAtFace)
   c.target_face_m = 0.191;
   c.max_travel_m = 0.14;
   planning::ApproachState st;
-  planning::approach_observe(st, 0.291, 0.291, 0.0);   // 10 cm 남음 → 최고 속도
-  auto a = planning::approach_step(st, c, 0.0);
+  see_face(st, c, 0.291, 0.291, 0.0);   // 10 cm 남음 → 최고 속도
+  auto a = planning::approach_step(st, c, 0.0, 0.0);
   EXPECT_FALSE(a.done);
   EXPECT_NEAR(a.vx, c.speed, 1e-9);
-  planning::approach_observe(st, std::nan(""), std::nan(""), 0.090);   // 가까워져 안 보임 → 관측 기준 그대로
-  a = planning::approach_step(st, c, 0.095);   // 0.291 − 0.095 − 0.191 = 5 mm
+  planning::approach_observe(st, c, std::nan(""), std::nan(""), 0.090);   // 가까워져 안 보임 → 관측 기준 그대로
+  a = planning::approach_step(st, c, 0.095, 0.095);   // 0.291 − 0.095 − 0.191 = 5 mm
   EXPECT_NEAR(a.remaining, 0.005, 1e-9);
-  a = planning::approach_step(st, c, 0.097);
+  a = planning::approach_step(st, c, 0.097, 0.097);
   EXPECT_TRUE(a.done);
   EXPECT_DOUBLE_EQ(a.vx, 0.0);
-  a = planning::approach_step(st, c, 0.096);   // 같은 관측을 여러 주기 써도 기준점은 안 바뀜
+  a = planning::approach_step(st, c, 0.096, 0.096);   // 같은 관측을 여러 주기 써도 기준점은 안 바뀜
   EXPECT_NEAR(a.remaining, 0.004, 1e-9);
 }
 
@@ -411,23 +418,104 @@ TEST(Approach, WaitsForFaceAndStopsForObstacles)
   c.target_face_m = 0.191;
   c.max_travel_m = 0.14;
   planning::ApproachState st;   // 면을 본 적 없음 → 움직이지 않음
-  planning::approach_observe(st, std::nan(""), 0.5, 0.0);
-  auto a = planning::approach_step(st, c, 0.0);
+  planning::approach_observe(st, c, std::nan(""), 0.5, 0.0);
+  auto a = planning::approach_step(st, c, 0.0, 0.0);
   EXPECT_TRUE(a.waiting);
   EXPECT_DOUBLE_EQ(a.vx, 0.0);
   planning::ApproachState st2;
-  planning::approach_observe(st2, 0.18, 0.18, 0.0);   // 이미 목표보다 가까움 → 바로 끝 (뒤로 안 감)
-  EXPECT_TRUE(planning::approach_step(st2, c, 0.0).done);
+  see_face(st2, c, 0.18, 0.18, 0.0);   // 이미 목표보다 가까움 → 바로 끝 (뒤로 안 감)
+  EXPECT_TRUE(planning::approach_step(st2, c, 0.0, 0.0).done);
   planning::ApproachState st3;   // 차체 폭 띠에 박스 면보다 가까운 물체 → 멈춤
-  planning::approach_observe(st3, 0.29, 0.24, 0.0);
-  EXPECT_TRUE(planning::approach_step(st3, c, 0.0).fail);
+  see_face(st3, c, 0.29, 0.24, 0.0);
+  EXPECT_TRUE(planning::approach_step(st3, c, 0.0, 0.0).fail);
   planning::ApproachState st5;   // 면이 사라진 뒤 보인 앞 물체는 마지막 면 관측 기준으로 (이동량을 두 번 빼지 않음)
-  planning::approach_observe(st5, 0.29, 0.29, 0.0);
-  planning::approach_observe(st5, std::nan(""), 0.26, 0.03);
-  a = planning::approach_step(st5, c, 0.03);
+  see_face(st5, c, 0.29, 0.29, 0.0);
+  planning::approach_observe(st5, c, std::nan(""), 0.26, 0.03);
+  a = planning::approach_step(st5, c, 0.03, 0.03);
   EXPECT_FALSE(a.fail);
   EXPECT_NEAR(a.remaining, 0.29 - 0.03 - 0.191, 1e-9);
   planning::ApproachState st4;   // 많이 가면 실패
-  planning::approach_observe(st4, 0.40, 0.40, 0.0);
-  EXPECT_TRUE(planning::approach_step(st4, c, 0.15).fail);
+  see_face(st4, c, 0.40, 0.40, 0.0);
+  EXPECT_TRUE(planning::approach_step(st4, c, 0.15, 0.15).fail);
+}
+
+// 면을 본 뒤 먼 배경으로 뛴 면은 버리고 (마지막 면 + odom 으로 이어감), 가까워진 면은 받음
+TEST(Approach, IgnoresFarJumpAfterFace)
+{
+  planning::ApproachConfig c;
+  c.target_face_m = 0.191;
+  c.max_travel_m = 0.14;
+  planning::ApproachState st;
+  see_face(st, c, 0.29, 0.29, 0.0);
+  planning::approach_observe(st, c, 0.70, 0.70, 0.06);   // 박스 반사가 사라지고 옆 배경 (예측 0.23)
+  EXPECT_DOUBLE_EQ(st.face_m, 0.29);
+  EXPECT_DOUBLE_EQ(st.front_m, 0.29);                     // 안전용 앞 거리도 먼 값으로 안 덮음
+  auto a = planning::approach_step(st, c, 0.06, 0.06);
+  EXPECT_FALSE(a.fail);
+  EXPECT_NEAR(a.remaining, 0.29 - 0.06 - 0.191, 1e-9);
+  EXPECT_LT(a.vx, c.speed);                               // 0.70 기준 최고 속도가 아님
+  planning::approach_observe(st, c, 0.245, 0.245, 0.06);  // 예측 0.23 + 1.5 cm (잡음 안) → 받음
+  EXPECT_DOUBLE_EQ(st.face_m, 0.245);
+  planning::approach_observe(st, c, 0.20, 0.20, 0.08);    // 예측보다 가까움 → 받음 (일찍 멈출 뿐)
+  EXPECT_DOUBLE_EQ(st.face_m, 0.20);
+  EXPECT_DOUBLE_EQ(st.travel_m, 0.08);
+}
+
+// 첫 면은 연속 두 스캔이 맞아야 받음: 첫 스캔이 튀었으면 (실제 0.29 인데 0.24) 그 값으로 움직이지 않음
+TEST(Approach, FirstFaceNeedsTwoScans)
+{
+  planning::ApproachConfig c;
+  c.target_face_m = 0.191;
+  c.max_travel_m = 0.14;
+  planning::ApproachState st;
+  planning::approach_observe(st, c, 0.29, 0.29, 0.0);     // 면 → 면 없음 → 같은 면: 연속이 아님 → 아직 면 아님
+  planning::approach_observe(st, c, std::nan(""), std::nan(""), 0.0);
+  planning::approach_observe(st, c, 0.29, 0.29, 0.0);
+  EXPECT_TRUE(planning::approach_step(st, c, 0.0, 0.0).waiting);
+  planning::approach_observe(st, c, 0.24, 0.24, 0.0);     // 튄 값 → 아직 면 아님
+  EXPECT_TRUE(planning::approach_step(st, c, 0.0, 0.0).waiting);
+  planning::approach_observe(st, c, 0.29, 0.29, 0.0);     // 5 cm 다름 → 이것을 다음 비교 대상으로
+  EXPECT_TRUE(planning::approach_step(st, c, 0.0, 0.0).waiting);
+  planning::approach_observe(st, c, 0.288, 0.288, 0.0);   // 맞음 → 받음
+  const auto a = planning::approach_step(st, c, 0.0, 0.0);
+  EXPECT_FALSE(a.waiting);
+  EXPECT_NEAR(a.remaining, 0.288 - 0.191, 1e-9);
+}
+
+// 한 스캔만 튄 가까운 면 (잡음 · 지나간 물체) 뒤 실제 면은 그 앞 면 예측에 맞아 받음 → 일찍 끝내지 않음
+TEST(Approach, RecoversAfterOneCloseGlitch)
+{
+  planning::ApproachConfig c;
+  c.target_face_m = 0.191;
+  c.max_travel_m = 0.14;
+  planning::ApproachState st;
+  see_face(st, c, 0.29, 0.29, 0.0);
+  planning::approach_observe(st, c, 0.24, 0.24, 0.01);    // 튄 값 (예측 0.28) → 일단 받음
+  planning::approach_observe(st, c, 0.27, 0.27, 0.02);    // 예측 0.23 보다 4 cm 멂, 그 앞 면 (0.29) 예측 0.27 에 맞음 → 받음
+  EXPECT_DOUBLE_EQ(st.face_m, 0.27);
+  auto a = planning::approach_step(st, c, 0.055, 0.055);
+  EXPECT_FALSE(a.done);
+  EXPECT_NEAR(a.remaining, 0.27 - 0.035 - 0.191, 1e-9);
+  planning::approach_observe(st, c, 0.70, 0.70, 0.06);    // 그 뒤 먼 배경은 둘 다에 안 맞음 → 버림
+  EXPECT_DOUBLE_EQ(st.face_m, 0.27);
+  planning::ApproachState st2;   // 앞 면 0.35 · 지금 면 0.23 (가까운 물체) 뒤 0.28: 지금보다 5 cm 멀고 앞 면보다 7 cm 가까움 → 버림
+  see_face(st2, c, 0.35, 0.35, 0.0);
+  planning::approach_observe(st2, c, 0.23, 0.23, 0.0);
+  planning::approach_observe(st2, c, 0.28, 0.28, 0.0);
+  EXPECT_DOUBLE_EQ(st2.face_m, 0.23);
+  EXPECT_DOUBLE_EQ(st2.front_m, 0.23);                    // 안전용 앞 거리도 그대로
+}
+
+// 직진 거리는 부호 있음 (시작점보다 뒤에서 찍힌 스캔), 안전 상한은 직선 거리로 따로
+TEST(Approach, SignedTravelAndStraightLineLimit)
+{
+  planning::ApproachConfig c;
+  c.target_face_m = 0.191;
+  c.max_travel_m = 0.14;
+  planning::ApproachState st;
+  see_face(st, c, 0.31, 0.31, -0.02);   // 시작점 2 cm 뒤에서 찍힘 → 시작점에서는 0.29
+  auto a = planning::approach_step(st, c, 0.0, 0.0);
+  EXPECT_NEAR(a.remaining, 0.31 - 0.02 - 0.191, 1e-9);
+  a = planning::approach_step(st, c, 0.05, 0.15);          // 앞으로는 5 cm 지만 시작점에서 15 cm 벗어남 → 실패
+  EXPECT_TRUE(a.fail);
 }
