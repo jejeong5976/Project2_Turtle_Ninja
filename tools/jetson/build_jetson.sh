@@ -15,7 +15,8 @@ echo "빌드: $ROOT/ros2_ws · ROS $DISTRO · $(uname -m) · 남은 메모리 ${
 MAKEFLAGS=-j2 colcon build --executor sequential --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=$TEST 2>&1 | tee build_jetson.log
 if [ "$TEST" = ON ]; then
   fail=0
-  colcon test --packages-select swerve_controller hardware manipulation navigation --executor sequential > test_jetson.log 2>&1 || fail=1
+  # 시험 노드가 켜져 있는 로봇(도메인 17)과 섞이지 않게 시험 전용 도메인 · 이 기기 안에서만 (README.md 시험과 같은 방식)
+  ROS_DOMAIN_ID=181 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST colcon test --packages-select swerve_controller hardware manipulation navigation --executor sequential > test_jetson.log 2>&1 || fail=1
   colcon test-result --all | tail -3 || fail=1
   python3 -m pytest -q "$ROOT/tools/drive" || fail=1
   [ $fail = 0 ] || { echo "✗ 시험 실패 있음 — ros2_ws/test_jetson.log"; exit 1; }

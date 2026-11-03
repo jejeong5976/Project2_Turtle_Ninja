@@ -163,11 +163,11 @@ $ISAACLAB_PY scripts/view_dice.py --viz kit --keyboard --real               # �
 
 ```bash
 # 터미널 1: 시뮬 + ROS 브리지 (물리 CPU, 실제 시간에 맞춤). 창 보려면 --viz kit --camera --real
-ROS_DOMAIN_ID=17 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST scripts/sim_nav_bridge.sh
+ROS_DOMAIN_ID=18 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST scripts/sim_nav_bridge.sh
 
 # 터미널 2: navigation 패키지 빌드 후 robot_state_publisher + Nav2 + RViz
 cd ../../ros2_ws && colcon build --packages-select navigation && source install/setup.bash && cd ../sim/robot_sim
-ROS_DOMAIN_ID=17 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST ros2 launch scripts/sim_nav2.launch.py
+ROS_DOMAIN_ID=18 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST ros2 launch scripts/sim_nav2.launch.py
 ```
 
 - RViz 의 `Nav2 Goal` 로 목표를 찍으면 감. AMCL 은 출발 자세로 시작 (`initial_pose:=x,y,yaw°`, 기본 = `dice_layout.json` 출발점)
@@ -178,7 +178,7 @@ ROS_DOMAIN_ID=17 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST ros2 launch scripts/sim
 - Isaac 파이썬에서 시스템 Lyrical `rclpy` 를 씀 (`.sh` 가 ROS 경로와 순수 파이썬 모듈 `em` · `lark` 만 덧붙임, 시스템 패키지 `python3-empy` · `python3-lark` 필요)
 - 지도 = `maps/maze_dice_map.yaml`: 경기장 배치에서 라이다 높이(60 mm) 단면을 그린 것 (`python3 tools/layout_to_occupancy.py --maze dice`). 실제 경기는 Cartographer 지도로 바꿈 (`map:=`)
 - Nav2 설정 = 레포 `config/nav2.yaml` (스워브: AMCL `OmniMotionModel`, MPPI `omni`), 실행 = `ros2_ws/src/navigation`
-- `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` 필수: 같은 망에서 같은 도메인의 실물 로봇이 켜져 있으면 시뮬 `/cmd_vel` 이 실물로 갈 수 있음
+- `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` 필수: 같은 망에서 같은 도메인의 실물 로봇이 켜져 있으면 시뮬 `/cmd_vel` 이 실물로 갈 수 있음. 도메인도 실물(17)과 다르게 (예 18)
 - 확인 (2026-10-28): 출발점 -> L1 접근 지점 (3230, 950) mm, 시작 박스 1 을 돌아 21 s, 위치 오차 12 mm. 홀로노믹이라 진행 방향과 관계없이 몸 방향을 둔 채 이동하고 도착 때 돌아섬
 
 ## 3. 폴더

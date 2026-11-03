@@ -54,8 +54,11 @@ bash tools/jetson/run_robot.sh locate opencr ~/maps/arena   # 저장한 지도�
 - locate 뒤 rviz 의 2D Pose Estimate 로 시작 위치를 찍는다 (`slam_rviz:=true` 또는 노트북 rviz `navigation/rviz/slam_view.rviz`).
 - 실행 중 화면에는 경고 · 오류와 위치 감시 상태(2 s 마다 정상 · 경고 · 정지)만 보이고, 전체 기록은 `runs/robot_<모드>_…/launch.log`.
 - 거부되는 경우: 다른 ros2_control_node 가 떠 있음 · 권한 없음 · 포트 없음 · 주행/팔 포트 또는 앞/뒤 라이다가 같은 장치 · 검사하는 인자를 덧붙임.
-- 노트북 rviz 로 보려면 두 기기 `ROS_DOMAIN_ID` 를 같게. 와이파이 멀티캐스트가 불안정하면 양쪽에
-  `export ROS_STATIC_PEERS=<상대 주소>` (젯슨 창마다 노트북 주소, 노트북에는 젯슨 주소).
+- 팀 로봇 도메인 = **17** (11-03 고정). `run_robot.sh` · `save_map.sh` 는 기본 17 이지만 **다른 터미널** (`ros2 action send_goal` · `ros2 topic` ·
+  `tools/drive` · `tools/diagnostics` · 노트북 rviz) 은 먼저 `export ROS_DOMAIN_ID=17` (안 하면 도메인 0 이라 아무것도 안 보임). 젯슨 `~/.bashrc` 에 넣어 두면 편함 (사람이 직접).
+- 젯슨 주소 = `turtle@10.2.10.132` (11-03 기준 · 바뀌면 젯슨에서 `hostname -I`).
+- 노트북 rviz: 두 기기 `ROS_DOMAIN_ID=17`, `ROS_AUTOMATIC_DISCOVERY_RANGE` 는 `LOCALHOST` 가 아니어야 함 (시뮬 창에서 쓰던 값이 남아 있으면 안 보임).
+  와이파이 멀티캐스트가 불안정하면 양쪽에 `export ROS_STATIC_PEERS=<상대 주소>` (젯슨 창마다 노트북 주소, 노트북에는 `10.2.10.132`).
 - 젯슨 명령은 젯슨 터미널(`turtle@turtle`)에서. 노트북 창은 rviz · scp 만.
 
 ## 5. 경로 주행 · 점검 도구 (`tools/`)
