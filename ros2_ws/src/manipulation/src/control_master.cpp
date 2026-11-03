@@ -111,7 +111,22 @@ public:
       timing_ = PathTiming{};
     }
     path_start_tol_ = declare_parameter<double>("path_start_tolerance", 0.15);   // ≥ arm_controller 목표 허용(0.12): 앞 작업 성공 자세에서 다음 작업이 거절되지 않게
+    lazy_fold_ = declare_parameter<bool>("lazy_fold", false);   // 나중에 접기 (아래 '작업 → 동작 목록')
     load_paths();
+    if (lazy_fold_) {
+      const auto fold = paths_.find("fold");
+      const auto unfold = paths_.find("unfold");
+      // P0 가 fold · unfold 에서 같고, 받침과 출발 허용 × 2 넘게 달라야 켬
+      bool same_p0 = fold != paths_.end() && unfold != paths_.end() && !fold->second.nodes.empty() && !unfold->second.nodes.empty() &&
+        fold->second.nodes.front().q.size() == unfold->second.nodes.back().q.size();
+      for (std::size_t j = 0; same_p0 && j < fold->second.nodes.front().q.size(); ++j) {
+        same_p0 = std::fabs(fold->second.nodes.front().q[j] - unfold->second.nodes.back().q[j]) < 1e-9;
+      }
+      if (!same_p0 || !p0_distinct(fold->second, unfold->second, 2.0 * path_start_tol_)) {
+        RCLCPP_ERROR(get_logger(), "lazy_fold: fold · unfold 의 P0 가 다르거나 P0 와 받침이 출발 허용 × 2 안이라 구분 못 함 → 끔");
+        lazy_fold_ = false;
+      }
+    }
     // ---- 집기 · 놓기 (실물 집기 계산기와 같은 기구학, config/arm_kinematics.yaml) ----
     staging_ = declare_parameter<std::vector<double>>("staging_pose", std::vector<double>{});
     // 쥐기 −40 mm = 11-01 실물 넣기 시험 때 쥔 깊이. 칸 경로(arm_paths)가 이 깊이로 쥔 퍽 기준 — 얕게 쥐면 쥔 퍽이 그만큼 낮게 지나가
@@ -119,7 +134,7 @@ public:
     pick_heights_ = declare_parameter<std::vector<double>>("pick_heights_mm", {40.0, 10.0, -40.0});
     place_heights_ = declare_parameter<std::vector<double>>("place_heights_mm", {40.0, 10.0, -23.0});   // 마지막 = 쥔 깊이 모를 때만
     place_clear_mm_ = declare_parameter<double>("place_bottom_clear_mm", 2.0);      // 놓을 때 퍽 바닥 ↔ 놓을 면
-    retrieve_depth_mm_ = declare_parameter<double>("retrieve_grip_depth_mm", 25.0); // 칸에서 꺼낸 퍽을 쥔 깊이 (11-01 실물 빼기 계획 unload_cell.py, 실물 확인 전)
+    retrieve_depth_mm_ = declare_parameter<double>("retrieve_grip_depth_mm", 25.0); // 칸에서 꺼낸 퍽을 쥔 깊이 (11-01 실물 빼기 때 쓴 깊이, unload_cell.py)
     tilted_depth_mm_ = declare_parameter<double>("pick_tilted_depth_mm", 30.0);     // 손을 10° 넘게 기울인 PICK 의 쥐는 깊이 (퍽 무게중심)
     surface_z_ = declare_parameter<double>("puck_surface_z", 0.037);
     puck_h_ = declare_parameter<double>("puck_height", 0.060);
@@ -297,18 +312,20 @@ private:
 
   // ======================================================================== 작업 → 동작 목록
   // STORE · RETRIEVE · LOOK 류 · 접기는 실물에서 검사 · 실행한 경로(config/arm_paths.yaml) 그대로. 팔이 경로 출발 자세에 있어야 함
-  //   STORE <칸>   : 박스 위 들기(퍽 쥠) → 칸에 넣기 → 받침 (주행 허용)
+  //   STORE <칸>   : 박스 위 들기(퍽 쥠) → 칸에 넣기 → 받침 (주행 허용). lazy_fold 면 P0 (아래)
   //   RETRIEVE <칸>: 받침 → 칸에서 꺼내기 → 박스 위 들기 (퍽 쥠, 바퀴 잠금 유지 — 이어서 PLACE). LOOK 자세면 복귀 경로로 받침을 거쳐 감
   //   LOOK · LOOK_BARCODE: 받침 → 관찰 자세 (그 자세 유지). 이미 그 자세면 그대로
   //   HOME: 접혀 있으면 home 한 점, 아니면 지금 자세에서 출발하는 검사된 복귀 경로(home_from_*), 없으면 home 한 점
   //   PICK: 받침 → 펼치기 → 퍽 위 40 열기 → 10 → 쥐기 −40 닫기 → 10 → 40 → 박스 위 기준점 (퍽 쥠, 바퀴 잠금 유지 — 이어서 STORE)
   //     손을 10° 넘게 기울여야 하면 (적재함에 못 넣는 먼 퍽) pick_tilted_depth_mm (30) = 퍽 무게중심을 쥠 — 더 깊으면 원기둥이 손가락 사이에서 굴러 넘어짐 (11-03 시뮬)
   //     LOOK · LOOK_BARCODE 자세에서 받으면 앞에 검사된 복귀 경로(home_from_*)를 붙여 받침을 거쳐 감
-  //   PLACE: 기준점(퍽 쥠) → 놓을 자리 위 40 → 10 → 놓기 열기 → 10 → 40 닫기 → P0 → 접기 → 받침 (주행 허용)
+  //   PLACE: 기준점(퍽 쥠) → 놓을 자리 위 40 → 10 → 놓기 열기 → 10 → 40 닫기 → P0 → 접기 → 받침 (주행 허용). lazy_fold 면 P0 (아래)
   //     놓기 높이: 놓는 순간 퍽의 가장 낮은 모서리가 놓을 면 위 place_bottom_clear_mm (drop_height_mm) — 수직이면 2 − 쥔 깊이:
   //     RETRIEVE 뒤 (retrieve_grip_depth_mm 25) −23, PICK 뒤 (40) −38. 다른 기울임으로 풀리면 그 기울임으로 높이를 다시 계산해 한 번 더 풂
   //     목표 = ArmTask.target (base_link) = planning 약속 (planning_interfaces.md 6 절): 그리퍼 중심이 갈 점 = 퍽 중심 + 쥘 끝(위) 방향 × grasp_offset_m,
   //       방향 z 축 = 쥘 끝, x 축 = 네모 퍽 면. 서 있는 퍽만 (누운 퍽은 실물 시험 전이라 거절). z = 0 이면 박스 위 기본 높이 (손 시험용)
+  //   나중에 접기 (lazy_fold): STORE · PLACE 는 P0 (받침 바로 위) 에서 끝나 바퀴 잠금 유지.
+  //     다음 PICK · RETRIEVE · LOOK 은 P0 에서 바로 (모두 검사된 경로의 일부), HOME 은 fold 경로로 접은 뒤 주행 허용
   // 빈 목록 = 거절 (why 에 이유)
   std::vector<ArmAction> build_plan(const ArmTask::Goal & goal, std::string & why)
   {
@@ -348,8 +365,9 @@ private:
     const auto it = paths_.find(name);
     if (it == paths_.end()) {why = "경로 " + name + " 없음 (config/arm_paths.yaml)"; return {};}
     ArmPath path = it->second;
+    if (cut_fold_tail(path)) {RCLCPP_INFO(get_logger(), "%s: P0 에서 멈춤 (나중에 접기, 주행 전 HOME 이 접음)", name.c_str());}
     if (!path_start_ok(path, joint_buf_, path_start_tol_, why)) {
-      if (!from_look || !join_from_look(path, name.c_str())) {
+      if (!join_from_p0(path, name.c_str()) && (!from_look || !join_from_look(path, name.c_str()))) {
         if (from_look) {why += " — 받침(HOME) 또는 LOOK 자세에서 시작해야 함";}
         return {};
       }
@@ -358,13 +376,47 @@ private:
     return path_actions(path, timing_, grip_, joint_buf_);
   }
 
+  // lazy_fold 면: 끝이 fold 경로면 P0 에서 끝냄 (주행 허용 없이 끝남)
+  bool cut_fold_tail(ArmPath & path) const
+  {
+    const auto fold = paths_.find("fold");
+    return lazy_fold_ && fold != paths_.end() && manipulation::cut_fold_tail(path, fold->second);
+  }
+
+  // lazy_fold 면: 앞이 unfold 경로면 P0 에서 시작
+  bool skip_unfold(ArmPath & path) const
+  {
+    const auto unfold = paths_.find("unfold");
+    return lazy_fold_ && unfold != paths_.end() && manipulation::skip_unfold(path, unfold->second);
+  }
+
+  // 지금 P0 면 받침 출발 경로를 P0 에서 시작
+  bool join_from_p0(ArmPath & path, const char * what)
+  {
+    ArmPath p = path;
+    std::string dummy;
+    if (!skip_unfold(p) || !path_start_ok(p, joint_buf_, path_start_tol_, dummy)) {return false;}
+    path = p;
+    RCLCPP_INFO(get_logger(), "%s: P0 에서 바로 (나중에 접기, 펼치기 생략)", what);
+    return true;
+  }
+
   // 지금 LOOK · LOOK_BARCODE 끝 자세면 그 복귀 경로(home_from_*) 뒤에 path 를 이어 붙임 (path 첫 점 = 받침 = 복귀 경로 끝)
+  //   lazy_fold 면 복귀 경로를 P0 에서 끊고 이어 붙임
   bool join_from_look(ArmPath & path, const char * what)
   {
     for (const char * name : {"home_from_look", "home_from_look_barcode"}) {
       const auto back = paths_.find(name);
       std::string dummy;
       if (back == paths_.end() || !path_start_ok(back->second, joint_buf_, path_start_tol_, dummy)) {continue;}
+      ArmPath to_p0 = back->second;
+      ArmPath rest = path;
+      if (cut_fold_tail(to_p0) && skip_unfold(rest)) {
+        to_p0.nodes.insert(to_p0.nodes.end(), rest.nodes.begin() + 1, rest.nodes.end());
+        path.nodes = to_p0.nodes;
+        RCLCPP_INFO(get_logger(), "%s: 관찰 자세 → P0 에서 바로 (나중에 접기)", what);
+        return true;
+      }
       std::vector<PathNode> nodes = back->second.nodes;
       nodes.insert(nodes.end(), path.nodes.begin() + 1, path.nodes.end());
       path.nodes = nodes;
@@ -396,11 +448,15 @@ private:
   //   force (slot "force"): 사람이 팔 주변을 보고 안전하다고 판단했을 때만 — 위 거절을 건너뜀 (시험 중 도중 정지 복구용)
   std::vector<ArmAction> home_plan(std::string & why, bool force = false)
   {
+    home_was_path_ = false;
     if (!fold_->confirmed(now().seconds())) {
+      if (carrying_ && !force) {why = "퍽을 쥔 채 HOME 안 함 — STORE · PLACE 로 끝내거나 사람이 퍽을 빼고 HOME force"; return {};}
       for (const auto & [name, path] : paths_) {
         std::string dummy;
-        if (name.rfind("home_from_", 0) == 0 && path.ends_home && path_start_ok(path, joint_buf_, path_start_tol_, dummy)) {
+        const bool home_path = name.rfind("home_from_", 0) == 0 || name == "fold";   // fold = P0 → 받침
+        if (home_path && path.ends_home && path_start_ok(path, joint_buf_, path_start_tol_, dummy)) {
           RCLCPP_INFO(get_logger(), "HOME: 경로 %s", name.c_str());
+          home_was_path_ = true;
           return path_actions(path, timing_, grip_, joint_buf_);
         }
       }
@@ -642,7 +698,7 @@ private:
     path.nodes.push_back(model_node("lift", P[0].enc, slow_dps_));
     path.nodes.push_back({"staging", staging_, false, slow_dps_, "", false});
     std::string look_why;
-    if (!path_start_ok(path, joint_buf_, path_start_tol_, look_why) && !join_from_look(path, "PICK")) {
+    if (!path_start_ok(path, joint_buf_, path_start_tol_, look_why) && !join_from_p0(path, "PICK") && !join_from_look(path, "PICK")) {
       why = look_why + " — 받침(HOME) 또는 LOOK 자세에서 시작해야 함";
       return {};
     }
@@ -685,6 +741,7 @@ private:
     path.nodes.push_back(model_node("up", P[1].enc, slow_dps_));
     path.nodes.push_back(model_node("clear", P[0].enc, slow_dps_, "close"));
     for (const auto & n : fold->second.nodes) {path.nodes.push_back(n);}
+    if (cut_fold_tail(path)) {RCLCPP_INFO(get_logger(), "PLACE: P0 에서 멈춤 (나중에 접기, 주행 전 HOME 이 접음)");}
     if (!path_start_ok(path, joint_buf_, path_start_tol_, why)) {why += " — 퍽을 쥐고 박스 위 기준점에 있어야 함 (PICK · RETRIEVE 뒤)"; return {};}
     return path_actions(path, timing_, grip_, joint_buf_);
   }
@@ -830,9 +887,10 @@ private:
           auto result = std::make_shared<ArmTask::Result>();
           result->success = c.end == ArmEnd::SUCCEEDED;
           result->message = c.message;
-          // 경로 작업(HOME 말고)이 도중에 끝나면 팔이 칸 · 박스 근처 경로 중간일 수 있음 → HOME 직행 막음 (home_plan)
+          // 경로 작업 (HOME 의 fold · home_from_* 경로 포함) 이 도중에 끝나면 팔이 경로 중간일 수 있음 → HOME 직행 막음 (home_plan)
           const auto task = arm_goal_->get_goal()->task;
-          arm_off_path_ = c.end != ArmEnd::SUCCEEDED && task != ArmTask::Goal::HOME
+          const bool path_task = task != ArmTask::Goal::HOME || home_was_path_;
+          arm_off_path_ = c.end != ArmEnd::SUCCEEDED && path_task
             ? true : (c.end == ArmEnd::SUCCEEDED ? false : arm_off_path_);
           if (c.end == ArmEnd::SUCCEEDED) {   // 퍽을 쥐고 끝나는 작업 / 놓고 끝나는 작업
             if (task == ArmTask::Goal::PICK || task == ArmTask::Goal::RETRIEVE) {carrying_ = true;}
@@ -979,6 +1037,7 @@ private:
   double gripper_time_s_{1.2};
   PathTiming timing_;                        // 실물 실행기와 같은 속도 규칙
   double path_start_tol_{0.1};               // 경로 출발 자세 허용 [rad]
+  bool lazy_fold_{false};                    // 나중에 접기
   std::map<std::string, ArmPath> paths_;     // 실물 경로 (config/arm_paths.yaml)
   std::vector<ArmAction> pending_plan_;      // 받기 판단 때 만든 동작 목록 → 받은 뒤 그대로 시작
   ArmModel model_;                           // 실물 집기 계산기와 같은 팔 기구학
@@ -1006,6 +1065,7 @@ private:
   rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr sub_dets_;
   double home_near_tol_{0.2};           // [rad] 받침에서 이만큼 안이면 HOME 한 점 직행 허용
   bool arm_off_path_{false};            // 경로 작업이 도중에 멈춤 (성공한 작업 · HOME 뒤 지움)
+  bool home_was_path_{false};           // 지금 HOME 이 검사된 경로 (fold · home_from_*) 로 감
   bool carrying_{false};                // PICK · RETRIEVE 성공 뒤 퍽을 쥐고 있음 (STORE · PLACE · HOME 성공 뒤 지움)
   std::unique_ptr<FoldCheck> fold_;          // 접힘 실측 확인 (R1)
   std::unique_ptr<HardwareWatch> hw_;        // 하드웨어 측정 살아 있나 (재검증 R6 · 보드 2장)

@@ -145,6 +145,7 @@ control_master 동작에 맞춘 규칙 [구현]
 | HOME 실패 → 바퀴 못 풂 | HOME 실패 = FAULT |
 | `ready=false`면 ArmTask 거절 | `ready=true`일 때만 보냄 |
 | 바퀴는 DRIVE일 때만 움직임 | Navigate는 DRIVE일 때만 진행 (대기 원인 DRIVE_LOST). `drive_wait_s`(10 s) 넘으면 HOME 끼워 넣음. DRIVE 받기 전 두 번째 HOME이면 FAULT |
+| LOOK 류 뒤 그 자세 유지, `lazy_fold` 면 STORE · PLACE 뒤 P0 (바퀴 잠금 유지) | 그 작업들 뒤 Navigate 앞에 바로 HOME 끼워 넣음 (이미 DRIVE 면 건너뜀) |
 | 팔 진행 feedback `phase` | `/mission/status.arm_phase`에 표시 |
 
 ---

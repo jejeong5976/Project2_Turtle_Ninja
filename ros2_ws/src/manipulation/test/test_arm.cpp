@@ -487,7 +487,7 @@ TEST(ArmRunner, RejectOrFailAbortsAndLocks)
   EXPECT_EQ(m.arbiter.turn(), Turn::STOP);
 }
 
-// 마지막 동작이 접기가 아닌 계획은 성공해도 DRIVE 로 못 감 (안전장치 — 지금 계획들은 모두 home 으로 끝남)
+// 마지막 동작이 접기가 아닌 계획은 성공해도 DRIVE 로 못 감 (PICK · RETRIEVE · LOOK, lazy_fold 의 STORE · PLACE)
 TEST(ArmRunner, SuccessNotFoldedStaysLocked)
 {
   ArmRunner r(2.0, 7.0, 2.0);

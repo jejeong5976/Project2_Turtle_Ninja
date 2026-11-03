@@ -67,4 +67,12 @@ std::vector<ArmAction> path_actions(
 // 지금 관절값이 경로 첫 점에서 관절마다 tol 안인가 (NaN · 관절 수 다름 = 아님)
 bool path_start_ok(const ArmPath & path, const std::vector<double> & q_now, double tol, std::string & why);
 
+// 나중에 접기 (lazy_fold) 도우미. 바꿨으면 true
+//   cut_fold_tail: 끝이 fold 경로와 같으면 P0 에서 끝냄 (ends_home = false)
+//   skip_unfold: 앞이 unfold 경로와 같으면 P0 에서 시작
+//   p0_distinct: P0 와 받침이 관절 하나라도 tol 넘게 다른가 (같으면 둘을 구분 못 함)
+bool cut_fold_tail(ArmPath & path, const ArmPath & fold);
+bool skip_unfold(ArmPath & path, const ArmPath & unfold);
+bool p0_distinct(const ArmPath & fold, const ArmPath & unfold, double tol);
+
 }  // namespace manipulation

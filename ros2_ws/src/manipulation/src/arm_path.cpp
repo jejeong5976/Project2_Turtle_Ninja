@@ -176,4 +176,60 @@ bool path_start_ok(const ArmPath & path, const std::vector<double> & q_now, doub
   return true;
 }
 
+namespace
+{
+bool same_nodes(const std::vector<PathNode> & a, std::size_t from, const std::vector<PathNode> & ref)
+{
+  if (ref.empty() || from + ref.size() > a.size()) {return false;}
+  for (std::size_t i = 0; i < ref.size(); ++i) {
+    const auto & p = a[from + i].q;
+    const auto & r = ref[i].q;
+    if (p.size() != r.size()) {return false;}
+    for (std::size_t j = 0; j < p.size(); ++j) {
+      if (std::fabs(p[j] - r[j]) > 1e-9) {return false;}
+    }
+  }
+  return true;
+}
+
+// 잘라내도 되는 점: 그리퍼 동작 · 멈춤이 없음 (잘라내면 그 동작이 사라지므로)
+bool plain(const std::vector<PathNode> & a, std::size_t from, std::size_t to)
+{
+  for (std::size_t i = from; i < to && i < a.size(); ++i) {
+    if (!a[i].grip.empty() || a[i].stop) {return false;}
+  }
+  return true;
+}
+}  // namespace
+
+bool cut_fold_tail(ArmPath & path, const ArmPath & fold)
+{
+  if (path.nodes.size() <= fold.nodes.size()) {return false;}
+  const std::size_t k = path.nodes.size() - fold.nodes.size();
+  if (!same_nodes(path.nodes, k, fold.nodes) || !plain(path.nodes, k + 1, path.nodes.size())) {return false;}
+  path.nodes.resize(k + 1);
+  path.ends_home = false;
+  return true;
+}
+
+bool skip_unfold(ArmPath & path, const ArmPath & unfold)
+{
+  if (path.nodes.size() <= unfold.nodes.size() || !same_nodes(path.nodes, 0, unfold.nodes) ||
+      !plain(path.nodes, 0, unfold.nodes.size())) {return false;}   // P0 (새 출발점) 까지 그리퍼 동작 없어야
+  path.nodes.erase(path.nodes.begin(), path.nodes.begin() + static_cast<std::ptrdiff_t>(unfold.nodes.size() - 1));
+  return true;
+}
+
+bool p0_distinct(const ArmPath & fold, const ArmPath & unfold, double tol)
+{
+  if (fold.nodes.empty() || unfold.nodes.empty()) {return false;}
+  const auto & p0 = fold.nodes.front().q;
+  const auto & rest = unfold.nodes.front().q;
+  if (p0.size() != rest.size()) {return false;}
+  for (std::size_t j = 0; j < p0.size(); ++j) {
+    if (std::fabs(p0[j] - rest[j]) > tol) {return true;}
+  }
+  return false;
+}
+
 }  // namespace manipulation

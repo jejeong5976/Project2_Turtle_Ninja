@@ -79,18 +79,20 @@ STORE · RETRIEVE 경로는 11-01 실물 적재함 12 칸 시험에서 성공한
 
 | 작업 | 시작 자세 | 하는 일 | 끝 자세 | 다음 | 가짜 로봇 시간 |
 |---|---|---|---|---|---|
-| HOME | 아무 자세 | 접기 (LOOK 자세면 정해진 복귀 경로) | 받침 (주행 가능) | | 5 s |
-| PICK | 받침 또는 LOOK 자세 (LOOK 이면 검사된 복귀 경로로 받침을 거쳐 감) | target 퍽 위 40 mm → 10 → −40 mm 에서 쥠 (11-01 실물 넣기 때 깊이, 칸 경로 기준) → 들기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | STORE 또는 PLACE | 16 s (LOOK 에서 24 s) |
-| STORE | 박스 위 기준점 (PICK 뒤) | slot 칸에 놓기 | 받침 (주행 가능) | | 19~31 s |
-| RETRIEVE | 받침 또는 LOOK 자세 (LOOK 이면 복귀 경로로 받침을 거쳐 감) | slot 칸에서 꺼내기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | PLACE | 19~32 s |
-| PLACE | 박스 위 기준점 (PICK · RETRIEVE 뒤) | target 위 40 → 10 → 놓기 (퍽 바닥이 면 위 2 mm: RETRIEVE 뒤 −23 · PICK 뒤 −38 mm) → 들기 | 받침 (주행 가능) | | 17 s |
-| LOOK · LOOK_BARCODE | 받침 | 손목 카메라 관찰 자세 | 그 자세 유지 | HOME | |
+| HOME | 아무 자세 | 접기 (LOOK 자세면 정해진 복귀 경로, P0 면 fold 경로) | 받침 (주행 가능) | | 5 s |
+| PICK | 받침 · P0 · LOOK 자세 (P0 면 펼치기 생략, LOOK 이면 검사된 복귀 경로로 P0 를 거쳐 감) | target 퍽 위 40 mm → 10 → −40 mm 에서 쥠 (11-01 실물 넣기 때 깊이, 칸 경로 기준) → 들기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | STORE 또는 PLACE | 16 s (P0 에서 11 s, LOOK 에서 14 s) |
+| STORE | 박스 위 기준점 (PICK 뒤) | slot 칸에 놓기 | **P0** (받침 바로 위, 바퀴 잠금 유지) | PICK · RETRIEVE · LOOK 또는 HOME | 14~26 s |
+| RETRIEVE | 받침 · P0 · LOOK 자세 (P0 면 펼치기 생략, LOOK 이면 복귀 경로로 P0 를 거쳐 감) | slot 칸에서 꺼내기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | PLACE | 19~32 s (P0 에서 14~27 s) |
+| PLACE | 박스 위 기준점 (PICK · RETRIEVE 뒤) | target 위 40 → 10 → 놓기 (퍽 바닥이 면 위 2 mm: RETRIEVE 뒤 −23 · PICK 뒤 −38 mm) → 들기 | **P0** (바퀴 잠금 유지) | PICK · RETRIEVE · LOOK 또는 HOME | 12 s |
+| LOOK · LOOK_BARCODE | 받침 · P0 | 손목 카메라 관찰 자세 | 그 자세 유지 | HOME · PICK · RETRIEVE | |
 
 - **target** (PICK · PLACE): `docs/planning/planning_interfaces.md` 6 절 약속 그대로 — `base_link` 기준 **그리퍼 중심이 갈 점** = 퍽 중심 + 쥘 끝(위) 방향 × `grasp_offset_m` (0.015) — control 은 이 값으로 퍽 윗면을 알아내고, 실제로는 윗면 40 mm 아래 (`pick_heights_mm`) 를 쥠, 방향 z 축 = 쥘 끝 · x 축 = 네모 퍽 면. 서 있는 퍽만 (누운 퍽은 실물 시험 전이라 거절). `base_link` 가 아닌 프레임 · NaN 은 거절. `z = 0` 이면 박스 위 기본 높이 (손 시험용). 팔이 닿지 않는 자리면 거절(이유가 result.message).
 - **slot** (STORE · RETRIEVE): `S1` ~ `S12`. 시작 자세가 맞지 않으면 거절 (예: PICK 없이 STORE).
 - 실패 · 취소 · 시간 초과 뒤에는 STOP 잠금, HOME 이 성공해야 다시 주행.
 - HOME 이 검사된 복귀 경로 없이 받침으로 곧장 가는 건 받침 근처이거나 (켤 때 등) 팔이 경로 중간이 아닐 때만. **퍽을 쥔 채 · 경로 작업이 도중에 멈춘 뒤에는 HOME 거절** (칸 · 박스 안에서 직선으로 쓸고 나올 수 있음) → STORE · PLACE 로 끝내거나 사람이 팔을 받침 근처로 옮긴 뒤 HOME.
 - 퍽을 쥔 채 주행은 없음 (PICK 뒤에는 STORE 또는 PLACE).
+- **나중에 접기** (`config/control.yaml` `lazy_fold: true`): STORE · PLACE 는 P0 (받침 바로 위) 에서 끝나고 바퀴 잠금 유지. 같은 자리 다음 팔 작업은 P0 에서 바로 시작 (접기 · 펼치기 약 10 s 절약).
+  **주행 전에는 HOME** (fold 경로로 접은 뒤 DRIVE) — planning 실행기가 끼움. 모든 구간이 검사된 경로의 일부라 새 움직임은 없음. `false` 면 예전처럼 받침에서 끝남.
 - 사람이 팔 주변을 보고 안전하다고 판단했을 때만 `{task: 0, slot: force}` 로 위 HOME 거절을 건너뜀 (시험 중 도중 정지 복구용).
 - **닿는 거리**: 수직 손은 박스 위 퍽을 차체 앞 약 24 cm 까지. 더 멀면 손을 10° 씩 바깥으로 기울임 (`pick_max_tilt_deg`, 기본 30° → 약 34~36 cm, 10-27 실물 34 cm 집기와 같은 범위).
   5 축 팔이라 기울이는 방향은 J1 → 퍽 방향뿐 → 네모 퍽은 면이 그 방향에서 10° 안일 때만 기울임 (손가락이 닫히며 맞춤). 기울인 손은 실물 확인 전.
