@@ -12,7 +12,8 @@
               모터 14개 + OpenCR 내장 IMU 를 USB 한 줄로. 패킷 정의 = firmware/nt_opencr/nt_packet.h
   ★ 이 한 줄만 바뀌고, 컨트롤러 · 스워브 노드 · MoveIt · Nav2 는 전부 그대로다.
 
-  맨 아래 관성 · 충돌 상자 매크로 ⚠ 질량 · 관성은 추정. 실측 물성이 아님
+  맨 아래 관성 · 충돌 상자 매크로 (조향 모듈이 씀). 총질량 3.81 kg 실측. 질량 출처는 robot.urdf.xacro:
+  팔 = OpenManipulator-X(ROBOTIS) · CAD, 몸체 = 공개 부품 무게 합 + 나머지, 바퀴 = TurtleBot3
 
   xacro 에는 for 문이 없어서 "자기 자신을 부르면서 목록을 한 칸씩 줄이는" 방식(재귀)으로 반복한다.
 -->
@@ -129,7 +130,7 @@
     </xacro:if>
   </xacro:macro>
 
-  <!-- ===================== 관성 · 충돌 상자 매크로 (robot.urdf.xacro 가 씀). 질량 · 관성은 추정값 ===================== -->
+  <!-- ===================== 관성 · 충돌 상자 매크로 (조향 모듈). 관성 = 상자 모양 ===================== -->
   <xacro:macro name="box_inertia" params="mass sx sy sz xyz:='0 0 0'">
     <inertial>
       <origin xyz="${xyz}"/><mass value="${mass}"/>

@@ -86,7 +86,14 @@
   <!-- ===================== 몸통 (와플파이 3층 + 조향 모터 4개) ===================== -->
   <link name="base_footprint"/>
   <link name="base_link">
-    <xacro:box_inertia mass="2.264" sx="0.274" sy="0.267" sz="0.11" xyz="0.004 0 0.08"/>
+    <!-- 질량 2.270004 kg = 총질량 3.81 kg 실측 − 팔 · 조향 모듈 · 바퀴 · 프로파일 · 위 카메라. 무게중심 · 관성 = 부품 합:
+         공개 무게: 조향 모터 XM430-W350 82 g × 4 (ROBOTIS), Jetson Orin Nano 개발 키트 176 g (NVIDIA), OpenCR 1.0 60 g × 2,
+         배터리 LB-012 106 g, LDS-03 42 g × 2 (ROBOTIS) — 각 링크 자리에 상자 / 나머지 1.4560 kg (판 · 지지대 · 나사 · 배선) = 몸통 상자 -->
+    <inertial>
+      <origin xyz="-0.000338 -0.000726 0.065100"/>
+      <mass value="2.270004"/>
+      <inertia ixx="0.017098623" ixy="-0.000516406" ixz="-0.000282214" iyy="0.015236433" iyz="-0.000169549" izz="0.027398245"/>
+    </inertial>
     <!-- 배터리 받침 1층: 앞뒤로 긴 배치, 판과 체결물을 함께 배치하고 배터리 방향은 유지 -->
     <visual name="clean_waffle_fl1_01"><origin xyz="-0.064 0.032 0.0434574542149" rpy="1.57079632679 0 1.57079632679"/><geometry><mesh filename="${mesh}/base/waffle_plate.obj"/></geometry><material name="waffle"/></visual>
     <visual name="clean_waffle_fl1_02"><origin xyz="-0.064 -0.032 0.0434574542149" rpy="1.57079632679 0 4.71238898038"/><geometry><mesh filename="${mesh}/base/waffle_plate.obj"/></geometry><material name="waffle"/></visual>
@@ -757,6 +764,7 @@
   <!-- 구동 모터 혼과 바퀴 허브의 체결면이 서로 향하도록 visual 방향을 맞춘다. 관절축은 그대로다. -->
   <xacro:macro name="swerve_module" params="name x y off visual_yaw:=0">
     <link name="steer_${name}_link">
+      <!-- 구동 모터 XM430-W210 82 g (ROBOTIS) + 브래킷 · 혼 약 18 g -->
       <xacro:box_physics mass="0.10" sx="0.029" sy="0.043" sz="0.054" xyz="0 0 0.016"/>
       <visual>
         <xacro:if value="${visual_yaw != 0}"><origin rpy="0 0 ${visual_yaw}"/></xacro:if>
@@ -789,10 +797,9 @@
     </joint>
 
     <link name="wheel_${name}_link">
-      <!-- 바퀴 회전축은 y. 원통 관성도 같은 축을 사용한다. -->
-      <inertial><mass value="0.03"/>
-        <inertia ixx="${0.03*(3*wheel_r*wheel_r+0.02*0.02)/12}" ixy="0" ixz="0"
-          iyy="${0.03*wheel_r*wheel_r/2}" iyz="0" izz="${0.03*(3*wheel_r*wheel_r+0.02*0.02)/12}"/>
+      <!-- TurtleBot3 바퀴 (turtlebot3_description waffle_pi wheel_left_link 질량 · 관성). 그쪽 회전축 z = 여기 y 라 iyy · izz 를 바꿔 넣음 -->
+      <inertial><mass value="0.0284989"/>
+        <inertia ixx="1.1175580e-05" ixy="0" ixz="0" iyy="2.0712558e-05" iyz="0" izz="1.1192413e-05"/>
       </inertial>
       <visual>
         <xacro:if value="${visual_yaw != 0}"><origin rpy="0 0 ${visual_yaw}"/></xacro:if>
