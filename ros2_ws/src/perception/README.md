@@ -6,11 +6,13 @@
 |---|---|---|
 | 광각 `WidePipeline` | 광각 컬러 (Arducam UC-684) | `/perception/wide/detections` (퍽 상자 · 색 · 모양 · 퍽 태그 ID, 위치 NaN), `/perception/traffic_light`, `/perception/wide_debug_image` (선택) |
 | 손목 `WristPipeline` | D435 컬러 + 정렬 깊이 + camera_info, TF `odom ← d435_color_optical_frame` | `/perception/wrist/detections` (퍽 중심 · 자세 · 선/누움 · ID), `/perception/wrist_debug_image` (선택) |
+| 손목 적재함 (`WristPipeline` 안) | D435 컬러 + camera_info, TF `base_link ← d435_color_optical_frame` | `/perception/rack/cells` (칸 바닥 중심 · yaw), `/perception/rack_debug_image` (선택) |
 | 바코드 `BarcodeStage` | `barcode.camera` (wide / wrist) 카메라 콜백 안에서, 켜져 있을 때만 | `/perception/task_text` |
 
 | 토픽 | 타입 | 내용 |
 |---|---|---|
 | `/perception/wide/detections` · `/perception/wrist/detections` | `interfaces/DetectionArray` | 퍽만. 카메라마다 토픽 따로 (2026-11-02, 예전 한 토픽 `/perception/detections`). 처리한 영상마다, 못 찾으면 빈 배열 (= 그 카메라에서 못 찾음). 광각은 위치 NaN, planning 은 손목만 받음 |
+| `/perception/rack/cells` | `interfaces/DetectionArray` | 적재함 칸. 컵 바닥 AprilTag ID 20–31 (36h11, 검은 테두리 26 mm), 칸 ↔ ID 는 `rack.cell_tag_ids` 표 (실물은 위치 순서로 붙여 S 번호 순서와 다름). `frame_id` = `base_link`, `kind` = `rack_cell`, `label` = 칸 이름, `id` = 태그 ID, pose = 칸 바닥 중심 + yaw (x = 로봇 앞, xacro `rack_cell_<칸>_link` 와 같은 축). 카메라가 멈춘 장만 셈, 칸마다 5 장 중 3 장이면 중앙값. `~/rack/enable` 로 켜고 끔 |
 | `/perception/traffic_light` | `interfaces/TrafficLight` | RED / YELLOW / GREEN / OFF / UNKNOWN + `visible`. 이번 영상에서 못 찾으면 UNKNOWN + `visible=false` |
 | `/perception/task_text` | `interfaces/TaskText` | 바코드 원문 `raw_text`. **기본 꺼짐**, planning 이 READ_BARCODE 단계에서 `~/barcode/enable` 로 켜고 나가면 끔. 켜져 있는 동안 최근 5 장 중 3 장 같고 이번 장도 그 값이면 보냄. 못 읽은 장도 다수결에 들어가 안 보이면 확정이 풀림 |
 
@@ -34,7 +36,8 @@ perception/
 │   ├── wide_tag_reader.hpp         # 광각: 퍽 상자 안 태그 ID
 │   ├── wrist_seg.hpp               # 손목: letterbox · 출력 해석 · 마스크 + 실행 (SegModel)
 │   ├── wrist_pose.hpp              # 손목: 마스크 + 깊이 → 퍽 자세
-│   └── wrist_tracker.hpp           # 손목: 여러 장 확정
+│   ├── wrist_tracker.hpp           # 손목: 여러 장 확정
+│   └── wrist_rack.hpp              # 손목: 적재함 컵 바닥 태그 → 칸 중심 · yaw + 다수결
 ├── src/
 │   ├── perception_node.cpp         # 노드 조립 · 서비스 · main (MultiThreadedExecutor 3 스레드)
 │   ├── wide_pipeline.{hpp,cpp}     # 광각 처리 (퍽 · 신호등)
@@ -42,12 +45,12 @@ perception/
 │   ├── barcode.{hpp,cpp}           # 바코드 판독기 (zxing) + 단계: 다수결 · 발행 (카메라 콜백 안에서)
 │   ├── msg_utils.hpp               # planning 메시지 규칙 (NaN · 0 쿼터니언 · ID · 신호등 상수)
 │   └── (include 헤더와 같은 이름의 .cpp)
-└── test/  test_wide · test_barcode · test_common · test_wrist_pose · test_wrist_seg
+└── test/  test_wide · test_barcode · test_common · test_wrist_pose · test_wrist_seg · test_wrist_rack
 ```
 
 | 대상 | 내용 | 빌드 조건 |
 |---|---|---|
-| `perception_core` | ROS 없음: `common` · `wide_detector` · `wide_tag_reader` · `traffic_light` · `wrist_pose` · `wrist_tracker` · `wrist_seg` | 항상 (개발 PC 테스트) |
+| `perception_core` | ROS 없음: `common` · `wide_detector` · `wide_tag_reader` · `traffic_light` · `wrist_pose` · `wrist_tracker` · `wrist_seg` · `wrist_rack` | 항상 (개발 PC 테스트) |
 | ↳ TensorRT 부분 | `trt_engine.cpp` 추가 + `PERCEPTION_HAVE_TRT` → `BoxDetector` · `SegModel` 구현이 켜짐 | TensorRT 있을 때 (Jetson) |
 | `perception_barcode` | `barcode` (판독기 + 단계, ROS · zxing 씀) | 항상 (개발 PC 테스트) |
 | `perception_node` | 노드 · 파이프라인 3개 | TensorRT 있을 때 |
