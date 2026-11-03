@@ -587,7 +587,7 @@ TEST(DiceSteps, BoxStopsUseFinalApproach)
 {
   DiceMap a;
   ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
-  ASSERT_GT(a.box_approach_m, 0.0);
+  a.box_approach_m = 0.10;   // 저장소 설정은 꺼 둠 (0) — 켰을 때 값으로 시험
   int boxes = 0;
   for (const auto & s : collect_steps(a, {1, 2, 6, 3, 4, 5})) {
     if (s.type != StepType::Navigate) {continue;}
