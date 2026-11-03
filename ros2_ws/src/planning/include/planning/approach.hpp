@@ -2,6 +2,7 @@
 //   Nav2 의 비용 지도는 2.5 cm 칸 · 위치 추정 오차가 수 cm 라 박스에서 2 cm 떨어진 목표에 정확히 서지 못하고 바퀴가 계속 움직임
 //   → 목표를 back_m 앞에 두고, 그 뒤는 라이다로 잰 면 거리로 몸 x 방향만 움직임
 //   면을 한 번도 못 봤으면 움직이지 않음. 본 뒤에 가까워져 라이다에서 사라지면 그 관측 + odom 직진 거리로 이어감
+//   직진 거리 = 접근 시작 자세의 앞 방향으로 간 거리 (부호 있음). 안전 상한은 시작점에서 직선 거리로 따로 봄
 #pragma once
 
 #include "planning/types.hpp"
@@ -22,15 +23,18 @@ struct ApproachConfig
   double min_speed = 0.015;      // 최저 (조향 · 마찰로 안 움직이지 않게) [m/s]
   double gain = 1.0;             // [1/s] 남은 거리 → 속도
   double tol_m = 0.005;          // 이 안이면 도착
+  double face_jump_m = 0.03;     // 새 면이 예측 (마지막 면 − 그 뒤 직진) 보다 이만큼 넘게 멀면 같은 박스로 안 봄
 };
 
-// 라이다 관측 하나 (새 스캔이 왔을 때만 갱신). travel_m = 그 스캔을 받았을 때의 직진 거리 (odom)
+// 라이다 관측 하나 (새 스캔이 왔을 때만 갱신). travel_m = 그 스캔 측정 시각의 직진 거리 (odom)
 struct ApproachState
 {
   bool have_face = false;
   double face_m = 0.0;           // 박스 면 (좁은 띠: 몸 중심선 근처)
   double front_m = 0.0;          // 차체 폭 띠의 가장 가까운 점 (NaN = 없음)
   double travel_m = 0.0;
+  bool have_prev = false;        // 그 앞에 받은 면 (면을 받기 전에는 확인 기다리는 첫 면)
+  double prev_face_m = 0.0, prev_travel_m = 0.0;
 };
 
 struct ApproachCmd
@@ -44,9 +48,12 @@ struct ApproachCmd
 };
 
 // 새 스캔 관측을 기록 (face_m · front_m 은 NaN = 그 띠에 점 없음)
-void approach_observe(ApproachState & st, double face_m, double front_m, double travel_m);
+//   첫 면은 연속 두 스캔이 face_jump_m 안에서 맞아야 받음 (그 전에는 have_face = false → 움직이지 않음)
+//   면을 본 뒤 갑자기 먼 면 (face_jump_m 넘게) = 박스 반사가 사라지고 옆으로 지난 먼 배경 → 면이 안 보인 것으로 침
+//   단 그 앞에 받은 면의 예측 ± face_jump_m 안이면 받음 (바로 전 면이 잡음 · 지나간 물체로 한 번 가까웠던 것)
+void approach_observe(ApproachState & st, const ApproachConfig & c, double face_m, double front_m, double travel_m);
 
-// travel_m: 지금 직진 거리 (odom, 새 측정일 때만 바뀜)
-ApproachCmd approach_step(const ApproachState & st, const ApproachConfig & c, double travel_m);
+// travel_m: 지금 직진 거리 (부호 있음), dist_m: 시작점에서 직선 거리 (max_travel_m 검사). 둘 다 새 odom 측정일 때만 바뀜
+ApproachCmd approach_step(const ApproachState & st, const ApproachConfig & c, double travel_m, double dist_m);
 
 }  // namespace planning
