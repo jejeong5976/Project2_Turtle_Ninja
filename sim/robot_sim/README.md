@@ -181,12 +181,25 @@ ROS_DOMAIN_ID=18 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST ros2 launch scripts/sim
 - `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` 필수: 같은 망에서 같은 도메인의 실물 로봇이 켜져 있으면 시뮬 `/cmd_vel` 이 실물로 갈 수 있음. 도메인도 실물(17)과 다르게 (예 18)
 - 확인 (2026-10-28): 출발점 -> L1 접근 지점 (3230, 950) mm, 시작 박스 1 을 돌아 21 s, 위치 오차 12 mm. 홀로노믹이라 진행 방향과 관계없이 몸 방향을 둔 채 이동하고 도착 때 돌아섬
 
+### 2-11. 팀 URDF 로봇 (실물, `TN_ROBOT=team`)
+
+```bash
+source /opt/ros/lyrical/setup.bash && source ../../ros2_ws/install/setup.bash     # ros2_ws 를 colcon build 한 뒤
+OMNI_KIT_ACCEPT_EULA=YES $ISAACLAB_PY tools/convert_team_robot.py    # 한 번 (팀 URDF 가 바뀌면 다시)
+export TN_ROBOT=team                                                 # 이후 모든 스크립트 · 학습에 적용
+OMNI_KIT_ACCEPT_EULA=YES $ISAACLAB_PY tools/check_team_robot.py     # 확인
+```
+
+- 관절 이름: `joint1~5`, `gripper_left/right_joint`, 바퀴 링크 `wheel_<fl|fr|rl|rr>_link`. 바뀌는 값은 `sim_core/team_robot.py` 맨 위.
+- 학습 태스크 cfg 는 `super().__post_init__()` 을 불러야 팀 로봇이 적용됨.
+- 아직 팀 로봇에서 안 되는 것: `scripts/make_wrist_dataset.py`, `scripts/make_yolo_dataset.py`, `tools/find_look_pose.py`, `sim_core/arm_poses.py`, `scripts/view_maze.py` 팔 움직이기 (예전 관절 이름), `scripts/sim_nav_bridge.py` (odom 을 base_link 로 냄 — 팀 URDF 는 base_footprint).
+
 ## 3. 폴더
 
 | 폴더 | 내용 |
 |---|---|
 | `scripts/` | 실행 스크립트 (위 실습), Nav2 시험 브리지 · launch (`sim_nav_bridge.*`, `sim_nav2.launch.py`) |
-| `sim_core/` | 환경 정의: 로봇·스워브 제어·미로·소품·카메라 (`turtleninja_maze_env.py`), 배치 고정 (`fixed_layout.py`), 팔 무작위 · 관찰 자세 (`arm_poses.py`), 주사위 미션 경기장 · 신호등 점멸 (`dice_mission.py`) |
+| `sim_core/` | 환경 정의: 로봇·스워브 제어·미로·소품·카메라 (`turtleninja_maze_env.py`), 배치 고정 (`fixed_layout.py`), 팔 무작위 · 관찰 자세 (`arm_poses.py`), 주사위 미션 경기장 · 신호등 점멸 (`dice_mission.py`), 팀 URDF 로봇 (`team_robot.py`) |
 | `usd/` | 시뮬레이션용 3D 파일: 로봇 (`robot/`), 미로 (`maze_real.usd`, 무작위 미로 `mazes/`), 카펫 바닥, 소품 (`props/`: 퍽·태그·바코드·신호등), 배경 텍스처 (`textures/`) |
 | `robot_description/` | 로봇 URDF·설정·스워브·RViz 보기 (팀 최종 배포판 `nt_urdf_release_20261027_layout`, 메시 경로만 상대 경로로 바꾼 `robot.urdf`. 배포판 `usd/` · ROS 패키지 파일은 안 넣음) |
 | `maps/` | Nav2 시험용 지도 (`tools/layout_to_occupancy.py`) |
@@ -201,6 +214,7 @@ ROS_DOMAIN_ID=18 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST ros2 launch scripts/sim
 | 바뀐 것 | 명령 | 필요한 것 |
 |---|---|---|
 | 로봇 배포판 | 새 배포판 폴더를 `robot_description/` 에 복사, 배포판 `urdf/robot.urdf` 에서 `package://<패키지>/` 를 지워 `robot.urdf` 로 저장 (ROS 패키지 파일 · `urdf/` 는 지움) -> `$ISAACLAB_PY tools/urdf_to_robot_usd.py` | Isaac Lab |
+| 팀 URDF (`ros2_ws/src/description`) | 위 2-11 `tools/convert_team_robot.py` -> `robot_description/team/`, `usd/team_robot/` (GitHub 에 안 올림) | ROS (xacro), Isaac Lab |
 | 미로 배치 (`source/*.json`) | `python3 tools/layout_to_maze_usd.py` | `pip install usd-core` |
 | 무작위 미로 (YOLO 데이터용) | `python3 tools/random_maze.py --count 8 --seed 0` -> `mazes/`, `usd/mazes/` | usd-core (또는 `$ISAACLAB_PY`) |
 | 태그·바코드·소품 | `python3 tools/make_tag_barcode_images.py` 후 `python3 tools/make_props_usd.py` | OpenCV, usd-core |
