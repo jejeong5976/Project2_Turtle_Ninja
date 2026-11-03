@@ -17,6 +17,7 @@
 // note
 //   - 설계 docs/planning/transfer_planner_design.md, A안 = 돌면서 12 개 다 싣기
 //   - 한 정차 안 팔 동작은 이어서 보내고 HOME 은 안 넣음, 마지막 접기는 control 이 판단
+//   - rack_look: STORE 마다 바로 앞에 LOOK_RACK (같은 칸 · 같은 퍽) → 실행기가 칸 측정을 STORE target 에 넣음
 //   - PLACE 목표 = Target::Custom + kTargetDiceCell → 노드가 dice_cell_point 로 지도 점을 구해 base_link 로 바꿈
 //   - Step.kind · ref 약속은 common.hpp
 
@@ -38,11 +39,11 @@ namespace mission
 // COLLECT 단계 목록. order = 박스 방문 순서 (1–6, 중복 없이). 잘못되면 빈 목록 + error
 std::vector<Step> collect_steps(const DiceMap & arena, const std::vector<int> & order, std::string * error = nullptr);
 
-// 팔 동작 목록 → Arm 단계 (Look · Pick · Store · Retrieve · Place)
-std::vector<Step> arm_steps(const std::vector<ArmAction> & actions);
+// 팔 동작 목록 → Arm 단계 (Look · Pick · Store · Retrieve · Place). rack_look 이면 STORE 앞에 LOOK_RACK (같은 칸)
+std::vector<Step> arm_steps(const std::vector<ArmAction> & actions, const DiceMap & arena, bool rack_look = false);
 
 // 운반 계획 → DELIVER 단계 (move 인 정차는 이동 먼저)
-std::vector<Step> transfer_steps(const TransferPlan & plan, const DiceMap & arena);
+std::vector<Step> transfer_steps(const TransferPlan & plan, const DiceMap & arena, bool rack_look = false);
 
 // 재검증 단계 (verify_order 순서로 장소마다 이동 → LOOK → Plan(Verify))
 std::vector<Step> verify_steps(const std::array<int, kNumPlaces> & verify_order, const DiceMap & arena);

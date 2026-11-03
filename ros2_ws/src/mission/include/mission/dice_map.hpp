@@ -11,8 +11,9 @@
 //   - start: [x, y, yaw]          출발 자세 = 복귀 지점
 //   - barcode_view: [x, y, yaw]   바코드 읽는 자세, 출발 구역 안
 //   - boxes:  B1 … B6: {center: [x, y], stop: [x, y, yaw]}
-//   - places: L1 … L3: {center: [x, y], stop: [x, y, yaw], top_z: 0.07}
+//   - places: L1 … L3: {center: [x, y], stop: [x, y, yaw], top_z: 0.07, look: near}
 //       center = 주사위 격자 중심, 보는 방향 = stop yaw
+//       look = near (팔 LOOK, 기본) | far (팔 LOOK_FAR, 격자가 정차점에서 먼 장소 = L2)
 //   - box_radius: 0.15            박스 LOOK 때 이 반경 안 퍽 = 그 박스 퍽, m
 // 출력
 //   - DiceMap: 정차 자세 · 장소 중심 · 박스 중심, map 프레임
@@ -45,6 +46,7 @@ struct ArenaPlace
   Pose2D stop;                      // map
   std::array<double, 2> view_dir{{1.0, 0.0}};   // 보는 방향 단위 벡터 (stop yaw), map
   double top_z = 0.07;              // 놓는 면 높이 [m]
+  bool look_far = false;            // true = 관찰에 팔 LOOK_FAR (격자가 정차점에서 멂)
 };
 
 struct DiceMap

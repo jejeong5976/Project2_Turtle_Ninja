@@ -119,7 +119,7 @@ perception ──────/perception/traffic_light┤  (신호등 최종 상
 | 이름 | 타입 | 서버 | 상태 |
 |---|---|---|---|
 | `navigate_to_pose` | `nav2_msgs/action/NavigateToPose` | Nav2 | [구현] 목표 frame `map` |
-| `/arm_task` | `interfaces/action/ArmTask` | control_master | [구현] HOME · PICK · PLACE · STORE · RETRIEVE · LOOK · LOOK_BARCODE (control 은 HOME · PICK · PLACE 만 구현) |
+| `/arm_task` | `interfaces/action/ArmTask` | control_master | [구현] HOME · PICK · PLACE · STORE · RETRIEVE · LOOK · LOOK_BARCODE · LOOK_FAR (control 은 HOME · PICK · PLACE 만 구현) |
 | `/approach` | `Approach.action` | 미정 | [계획] 정밀 정렬 |
 | `/perception/check_slot` | `CheckSlot.srv` | perception | [계획, 선택] 적재함 칸 확인 |
 
@@ -326,8 +326,10 @@ ArmTask 확장 요청 [계획, control 합의 필요]
 | 추가 | 쓰는 곳 |
 |---|---|
 | `STORE=3`, `RETRIEVE=4` + `string slot` | 적재함 넣기 · 꺼내기 (planning 재고 전환은 구현됨) |
-| `PUSH=5` | 퍽 치기 (밀어 넘어뜨리기) |
-| `LOOK=6` | 바코드 · 퍽 관찰 자세 |
+| `LOOK=5` | 박스 · L1 · L3 관찰 자세 (격자 중심이 정차점 앞 0.29 m). 시뮬 자세 `initial_pose.json` LOOK_PUCK (2026-11-02) |
+| `LOOK_BARCODE=6` | 출발 구역 벽 바코드 정면 보기 |
+| `LOOK_FAR=7` | L2 관찰 자세 (중앙 받침대, 격자 중심이 정차점 앞 0.40 m). 시뮬 자세 LOOK_L2. 장소별 선택 = `dice_map.yaml` places `look: far` |
+| `PUSH` (번호 미정) | 퍽 치기 (밀어 넘어뜨리기) |
 | 결과 `uint8 error` (UNREACHABLE · NO_OBJECT · HW_FAULT …) | 실패 이유별 처리 (다시 서기 / 포기 / FAULT) |
 | 결과 `bool holding` | PICK 성공 확인 |
 
@@ -381,7 +383,7 @@ STANDBY 준비 확인 (`wait_reasons` 표시 이름, 움직이지 않는 확인�
 | `OBSERVE_SIGNAL` | 출발 구역에서 점멸 기록 끝까지 대기 | 완전 → `COLLECT` / 불완전 · 시간 초과 → `RETURN_HOME` |
 | `COLLECT` | 박스마다 이동 → LOOK → Plan(CollectBox) = 본 퍽 [STORE] PICK 끼워 넣기, 마지막 박스 뒤 Plan(Delivery) = 할당 · 운반 계획 | `DELIVER` |
 | `DELIVER` | 운반 계획대로 [RETRIEVE] PLACE (목표 = 장소 중심 + 주사위 눈 오프셋) | `VERIFY` |
-| `VERIFY` | 장소마다 이동 → LOOK → Plan(Verify) 판정 · 기록 (`/planning/verify_record`, verify.yaml) | `RETURN_HOME` |
+| `VERIFY` | 장소마다 이동 → LOOK (L2 = LOOK_FAR) → Plan(Verify) 판정 · 기록 (`/planning/verify_record`, verify.yaml) | `RETURN_HOME` |
 | `RETURN_HOME` | `start_pose`로 이동 | 도착 → `DONE`(COMPLETED) / 실패 → `DONE`(RETURN_FAILED) |
 
 대기 원인 (RUNNING, 동시에 여러 개 가능, 차단 범위는 코드 한 곳 `nav_blocked` · `pick_blocked`)

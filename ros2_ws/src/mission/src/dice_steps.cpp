@@ -22,14 +22,16 @@ Step nav_step(const Pose2D & p, const std::string & name, int node)
   return s;
 }
 
-Step look_step(int box, int place)
+// 관찰 자세: 박스 · 보통 장소 = LOOK, dice_map look: far 인 장소 (L2) = LOOK_FAR
+Step look_step(int box, int place, const DiceMap & arena)
 {
   Step s;
   s.type = StepType::Arm;
-  s.arm_task = kArmLook;
+  const bool far = box <= 0 && place >= 0 && place < kNumPlaces && arena.places[place].look_far;
+  s.arm_task = far ? kArmLookFar : kArmLook;
   box_of(s) = box;
   place_of(s) = place;
-  s.name = "arm:LOOK:" + (box > 0 ? "B" + std::to_string(box) : "L" + std::to_string(place + 1));
+  s.name = std::string(far ? "arm:LOOK_FAR:" : "arm:LOOK:") + (box > 0 ? "B" + std::to_string(box) : "L" + std::to_string(place + 1));
   return s;
 }
 }  // namespace
@@ -51,7 +53,7 @@ std::vector<Step> collect_steps(const DiceMap & arena, const std::vector<int> & 
   for (std::size_t i = 0; i < order.size(); ++i) {
     const int b = order[i];
     steps.push_back(nav_step(arena.boxes[b - 1].stop, "B" + std::to_string(b), b));
-    steps.push_back(look_step(b, -1));
+    steps.push_back(look_step(b, -1, arena));
     Step plan;
     plan.type = StepType::Custom;
     plan.kind = i + 1 == order.size() ? kPlanDelivery : kPlanCollectBox;
@@ -62,7 +64,7 @@ std::vector<Step> collect_steps(const DiceMap & arena, const std::vector<int> & 
   return steps;
 }
 
-std::vector<Step> arm_steps(const std::vector<ArmAction> & actions)
+std::vector<Step> arm_steps(const std::vector<ArmAction> & actions, const DiceMap & arena, bool rack_look)
 {
   std::vector<Step> steps;
   for (const auto & a : actions) {
@@ -71,7 +73,7 @@ std::vector<Step> arm_steps(const std::vector<ArmAction> & actions)
     s.puck_id = a.puck_id;
     switch (a.op) {
       case ArmOp::Look:
-        steps.push_back(look_step(a.box, a.place));
+        steps.push_back(look_step(a.box, a.place, arena));
         continue;
       case ArmOp::Pick:
         s.arm_task = kArmPick;
@@ -80,6 +82,13 @@ std::vector<Step> arm_steps(const std::vector<ArmAction> & actions)
         s.name = "arm:PICK:" + a.puck_id;
         break;
       case ArmOp::Store:
+        if (rack_look) {   // 퍽 쥔 채 그 칸 관찰 → 칸 측정
+          Step look = s;
+          look.arm_task = kArmLookRack;
+          look.slot = a.slot;
+          look.name = "arm:LOOK_RACK:" + a.slot;
+          steps.push_back(look);
+        }
         s.arm_task = kArmStore;
         s.slot = a.slot;
         s.name = "arm:STORE:" + a.puck_id + ">" + a.slot;
@@ -103,12 +112,12 @@ std::vector<Step> arm_steps(const std::vector<ArmAction> & actions)
   return steps;
 }
 
-std::vector<Step> transfer_steps(const TransferPlan & plan, const DiceMap & arena)
+std::vector<Step> transfer_steps(const TransferPlan & plan, const DiceMap & arena, bool rack_look)
 {
   std::vector<Step> steps;
   for (const auto & st : plan.stops) {
     if (st.move) {steps.push_back(nav_step(node_stop(arena, st.node), node_name(st.node), st.node));}
-    auto arm = arm_steps(st.actions);
+    auto arm = arm_steps(st.actions, arena, rack_look);
     steps.insert(steps.end(), arm.begin(), arm.end());
   }
   return steps;
@@ -121,7 +130,7 @@ std::vector<Step> verify_steps(const std::array<int, kNumPlaces> & verify_order,
     if (p < 0 || p >= kNumPlaces) {continue;}
     auto nav = nav_step(arena.places[p].stop, "verify:L" + std::to_string(p + 1), place_node(p));
     steps.push_back(nav);
-    steps.push_back(look_step(-1, p));
+    steps.push_back(look_step(-1, p, arena));
     Step v;
     v.type = StepType::Custom;
     v.kind = kPlanVerify;

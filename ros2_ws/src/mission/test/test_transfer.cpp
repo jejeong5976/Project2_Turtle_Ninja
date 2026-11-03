@@ -531,6 +531,10 @@ TEST(DiceMap, LoadsRepoFileWithStartOrigin)
   EXPECT_NEAR(a.places[0].view_dir[0], -1.0, 1e-3);
   EXPECT_NEAR(a.places[0].top_z, 0.07, 1e-9);
   EXPECT_NEAR(a.box_radius, 0.15, 1e-9);
+  // 관찰 자세: L2 만 far (받침대가 커서 격자가 정차점 앞 0.40 m)
+  EXPECT_FALSE(a.places[0].look_far);
+  EXPECT_TRUE(a.places[1].look_far);
+  EXPECT_FALSE(a.places[2].look_far);
 }
 
 TEST(DiceMap, ExplicitTransformAndInverse)
@@ -601,7 +605,7 @@ TEST(DiceSteps, Q1CollectThenDeliverSteps)
     std::string err;
     const auto acts = collect_box_actions(at_box(order[i]), cargo, &err);
     ASSERT_FALSE(acts.empty()) << err;
-    const auto st = arm_steps(acts);
+    const auto st = arm_steps(acts, a);
     ASSERT_EQ(st.size(), acts.size());
     for (const auto & a2 : acts) {   // 팔이 성공했다고 보고 기록 반영
       const auto & p = *std::find_if(all.begin(), all.end(), [&](const TransferPuck & q) {return q.id == a2.puck_id;});
@@ -653,6 +657,10 @@ TEST(DiceSteps, Q1CollectThenDeliverSteps)
   EXPECT_EQ(steps.front().type, StepType::Arm);   // 이동 없이 B5 퍽 집기부터
   const auto ver = verify_steps(tp->verify_order, a);
   EXPECT_EQ(ver.size(), 9u);   // 장소마다 이동 · LOOK · Verify
+  for (size_t i = 0; i < 3; ++i) {   // L2 만 LOOK_FAR (dice_map look: far)
+    const int p = place_of(ver[3 * i + 1]);
+    EXPECT_EQ(ver[3 * i + 1].arm_task, p == 1 ? kArmLookFar : kArmLook) << "L" << p + 1;
+  }
   EXPECT_FALSE(dice_cell_point(*dp, a, 0, 99).has_value());
 }
 
@@ -892,4 +900,33 @@ TEST(DiceRecord, AllocationAndSignalJson)
   EXPECT_NE(sj.find("\"sequence\": \"RGRRGRGGYGYG\""), std::string::npos) << sj;
   EXPECT_NE(sj.find("\"status\": \"DONE\""), std::string::npos) << sj;
   EXPECT_NE(sj.find("\"n\": 12"), std::string::npos);
+}
+
+TEST(DiceSteps, RackLookBeforeStore)
+{
+  // rack_look: STORE 마다 바로 앞에 같은 칸 LOOK_RACK, 꺼 두면 지금과 같음
+  DiceMap a;
+  ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
+  std::vector<TransferPuck> box1;
+  for (const auto & p : q1_pucks()) {if (p.box == 1) {box1.push_back(p);}}
+  Cargo cargo(slot_names(12));
+  std::string err;
+  const auto acts = collect_box_actions(box1, cargo, &err);
+  ASSERT_FALSE(acts.empty()) << err;
+  const int stores = static_cast<int>(std::count_if(acts.begin(), acts.end(), [](const ArmAction & x) {return x.op == ArmOp::Store;}));
+  ASSERT_GT(stores, 0);
+  EXPECT_EQ(arm_steps(acts, a).size(), acts.size());
+  const auto st = arm_steps(acts, a, true);
+  ASSERT_EQ(st.size(), acts.size() + static_cast<size_t>(stores));
+  int looks = 0;
+  for (size_t i = 0; i < st.size(); ++i) {
+    if (st[i].arm_task == kArmStore) {
+      ASSERT_GT(i, 0u);
+      EXPECT_EQ(st[i - 1].arm_task, kArmLookRack);
+      EXPECT_EQ(st[i - 1].slot, st[i].slot);
+      EXPECT_EQ(st[i - 1].puck_id, st[i].puck_id);
+    }
+    if (st[i].arm_task == kArmLookRack) {++looks;}
+  }
+  EXPECT_EQ(looks, stores);
 }

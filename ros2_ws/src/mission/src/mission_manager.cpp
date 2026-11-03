@@ -14,6 +14,8 @@
 //         HOME           start 승인 뒤 · 복구 뒤 항상 여기부터. 출발 전에는 안 움직임
 //         READ_BARCODE   이동 → LOOK_BARCODE → 읽기 → HOME. 이 단계 동안만 perception 바코드 판독을 켬
 //         OBSERVE_SIGNAL 출발 구역에 선 채 12 점멸 기록 끝까지 기다림, signal_wait_s 넘으면 불완전으로 진행
+//                        불완전 ('?' · 개수 · 끊김 · 횟수 규칙) 이면 signal_retries 번까지 기록을 비우고 다음 시퀀스를 다시 기록
+//                        (운영자가 12 점멸 + 3 s 소등 뒤 다시 틀어 줌)
 //         COLLECT        기록이 완전하고 횟수 규칙에 맞아야 시작, 아니면 복귀. 박스마다 이동 → LOOK → Plan
 //         DELIVER        운반 계획대로 [RETRIEVE] PLACE, 목표 = 장소 중심 + 주사위 눈 오프셋
 //         VERIFY         재검증 순서로 장소마다 이동 → LOOK → Plan Verify
@@ -35,7 +37,7 @@
 //   - /planning/verify_record  interfaces/VerifyRecord   transient_local
 //   - 서비스 호출 barcode_enable_service std_srvs/SetBool, 기본 /perception/barcode/enable
 //   - 실행기 출력: navigate_to_pose · /arm_task · /mission/cargo · /planning/markers
-//   - 기록 파일 <record_dir>/run_<시각>/ signal.json · allocation.json · allocation_rev<N>.json · verify.yaml
+//   - 기록 파일 <record_dir>/run_<시각>/ signal.json · signal_attempt<N>.json (다시 기록 전 불완전 기록) · allocation.json · allocation_rev<N>.json · verify.yaml
 // 실행
 //   ros2 launch mission mission.launch.py
 // note
@@ -153,7 +155,7 @@ public:
         return dice_cell_target(s, out, detail);
       });
     exec_->set_arm_sent_hook([this](const Step & s, double now) {
-        if (s.arm_task != kArmLook) {return;}
+        if (!is_look_task(s.arm_task)) {return;}
         if (box_of(s) >= 1 && box_of(s) <= kNumBoxes) {look_started_[box_of(s) - 1] = now;}
         if (place_of(s) >= 0 && place_of(s) < kNumPlaces) {look_place_started_[place_of(s)] = now;}
       });
@@ -182,6 +184,8 @@ public:
     max_replans_ = declare_parameter<int>("max_replans", 6);
     // 바코드는 손목으로 읽음: READ_BARCODE = 이동 → LOOK_BARCODE → 읽기 → HOME
     barcode_look_ = declare_parameter<bool>("barcode_look", true);
+    // 적재함: STORE 앞에 LOOK_RACK (퍽 쥔 채 그 칸을 손목으로 봄 → perception 칸 측정 → STORE target)
+    rack_look_ = declare_parameter<bool>("rack_look", false);
     read_timeout_s_ = declare_parameter<double>("read_timeout_s", 5.0);
     tick_hz_ = declare_parameter<double>("tick_hz", 10.0);
     time_limit_s_ = declare_parameter<double>("time_limit_s", 0.0);
@@ -191,7 +195,9 @@ public:
     // 신호등 점멸 기록 (발제 v5). 값 설명은 signal_recorder.hpp
     signal_timeout_s_ = declare_parameter<double>("signal_timeout_s", 1.0);
     signal_record_ = declare_parameter<bool>("signal_record", true);
-    signal_wait_s_ = declare_parameter<double>("signal_wait_s", 90.0);   // OBSERVE_SIGNAL 최대 대기 (넘으면 불완전으로 진행)
+    signal_wait_s_ = declare_parameter<double>("signal_wait_s", 90.0);   // OBSERVE_SIGNAL 최대 대기 (넘으면 불완전, 다시 기록할 때마다 새로 셈)
+    // 기록이 불완전하면 비우고 다음 시퀀스를 다시 기록하는 횟수 (운영자가 다시 틀어 줌). 0 = 바로 포기 · 복귀
+    signal_retries_ = declare_parameter<int>("signal_retries", 2);
     SignalRecorderConfig sc;
     sc.expected = declare_parameter<int>("signal_expected", sc.expected);
     sc.min_on_s = declare_parameter<double>("signal_min_on_s", sc.min_on_s);
@@ -481,6 +487,7 @@ private:
   // 기록 끝 (또는 시간 초과) → 결과 남기고 읽어 둔 task 실행. 불완전해도 색을 추정해 채우지 않음
   void end_observe(double now)
   {
+    if (!signal_.finished() && retry_signal(now, "signal_wait_s 안에 안 끝남")) {return;}
     if (!signal_.finished()) {
       RCLCPP_WARN(get_logger(), "신호등 기록 %.0f s 안에 안 끝남 (%s, %s) → 불완전으로 진행",
         now - observe_start_s_, signal_status_name(signal_.status()), signal_.sequence().c_str());
@@ -839,7 +846,7 @@ private:
         detail = "B" + std::to_string(box) + " 집기 계획 실패: " + err;
         return StepResult::Fail;
       }
-      exec_->insert_after_current(arm_steps(actions));
+      exec_->insert_after_current(arm_steps(actions, dice_map_, rack_look_));
       return StepResult::Success;
     }
     return plan_from_state(true, now) ? StepResult::Success : StepResult::Fail;   // kPlanDelivery
@@ -970,7 +977,7 @@ private:
       RCLCPP_WARN(get_logger(), "배달 계획: 채울 수 있는 장소 없음 (남은 퍽 %d, %s)", avail, err.c_str());
       delivery_steps_.clear();
     } else {
-      delivery_steps_ = transfer_steps(*best, dice_map_);
+      delivery_steps_ = transfer_steps(*best, dice_map_, rack_look_);
       RCLCPP_INFO(get_logger(), "배달 계획: %s (%d 곳), 남은 퍽 %d, Y 모양 %s, 예상 %.0f s, 정차 %zu",
         chosen.c_str(), best_n, avail, best->yellow_shape.c_str(), best->cost_s, best->stops.size());
     }
@@ -1013,6 +1020,7 @@ private:
           exec_->mark_puck(f.puck_id, "skipped");
           break;
         case kArmStore:
+        case kArmLookRack:   // 퍽 쥔 채 관찰 자세에서 멈춤 = STORE 실패와 같이 봄
           exec_->cargo_drop_gripper();
           exec_->mark_puck(f.puck_id, "lost");
           break;
@@ -1355,10 +1363,33 @@ private:
     if (signal_.status() != before) {
       if (signal_.finished()) {
         log_signal();
+        if (signal_.status() == SignalStatus::Incomplete && retry_signal(t, "불완전")) {return;}
         write_signal_record();
       }
       publish_signal();
     }
+  }
+
+  // 불완전 기록 → signal_retries 남았으면 signal_attempt<N>.json 으로 남기고 비운 뒤 다음 시퀀스를 기다림 (true)
+  //   발제: 12 점멸 뒤 3 s 소등 = 끝, 운영자가 그 뒤 다시 틀어 줌. 끝 판정이 소등 2.5 s 라 다음 시퀀스 앞부분은 안 놓침
+  //   불명 색을 추정해 채우지 않음 — 새 시퀀스를 처음부터 다시 봄
+  bool retry_signal(double now, const char * why)
+  {
+    if (signal_attempt_ >= signal_retries_) {return false;}
+    ++signal_attempt_;
+    signal_prev_ = signal_.sequence();
+    const auto path = write_record("signal_attempt" + std::to_string(signal_attempt_) + ".json",
+        signal_to_json(signal_, node_start_s_, !signal_.finished()));
+    RCLCPP_WARN(get_logger(), "신호등 기록 %s (%s) → 비우고 다음 시퀀스 다시 기록 %d/%d%s%s", why, signal_prev_.c_str(),
+      signal_attempt_, signal_retries_, path.empty() ? "" : ", 앞 기록 ", path.c_str());
+    signal_.reset();
+    signal_timed_out_ = false;
+    observe_start_s_ = now;
+    if (phase_ == Phase::OBSERVE_SIGNAL) {
+      detail_ = "신호등 다시 기록 " + std::to_string(signal_attempt_) + "/" + std::to_string(signal_retries_) + " (앞 기록 " + signal_prev_ + ")";
+    }
+    publish_signal();
+    return true;
   }
 
   void publish_signal()
@@ -1378,6 +1409,9 @@ private:
     m.count_green = u8(signal_.count('G'));
     m.count_unknown = u8(signal_.count('?'));
     m.issues = signal_.issues();
+    if (signal_attempt_ > 0) {
+      m.issues.push_back("다시 기록 " + std::to_string(signal_attempt_) + "/" + std::to_string(signal_retries_) + " 번째 (앞 기록 " + signal_prev_ + ")");
+    }
     if (signal_timed_out_ && !signal_.finished()) {
       m.status = SignalRecord::INCOMPLETE;
       m.issues.push_back("signal_wait_s 안에 기록이 안 끝남");
@@ -1459,6 +1493,7 @@ private:
   double verify_radius_m_ = 0.18, verify_cell_tol_m_ = 0.03, verify_vote_ratio_ = 0.7;
   int transfer_max_remaining_ = 4, max_replans_ = 6;
   bool auto_start_ = false, barcode_look_ = true;
+  bool rack_look_ = false;                   // STORE 앞에 LOOK_RACK (적재함 칸 측정 → STORE target)
   std::vector<int> collect_order_;
 
   // 경기장
@@ -1496,6 +1531,9 @@ private:
   bool signal_record_ = true;
   double signal_timeout_s_ = 1.0, signal_wait_s_ = 90.0;
   double observe_start_s_ = 0.0;
+  int signal_retries_ = 2;
+  int signal_attempt_ = 0;                   // 다시 기록한 횟수 (불완전 기록은 signal_attempt<N>.json 으로 남김)
+  std::string signal_prev_;                  // 바로 앞 불완전 기록 순서 (상태 · 발행용)
   bool signal_timed_out_ = false;            // OBSERVE_SIGNAL 시간 초과 (불완전으로 진행, reset_signal 전까지 다시 안 봄)
   double last_light_s_ = -1.0;
 

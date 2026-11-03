@@ -88,6 +88,9 @@ Executor::Executor(rclcpp::Node & node)
   pick_retries_ = node_.declare_parameter<int>("pick_retries", 2);
   place_retries_ = node_.declare_parameter<int>("place_retries", 1);
   require_motion_mode_ = node_.declare_parameter<bool>("require_motion_mode", true);
+  // ---- 적재함 칸 측정 (LOOK_RACK 뒤 기다리는 시간, STORE 에 쓸 수 있는 측정 나이)
+  rack_wait_s_ = node_.declare_parameter<double>("rack_wait_s", 2.0);
+  rack_fresh_s_ = node_.declare_parameter<double>("rack_fresh_s", 30.0);
 
   // ---- 재고: 칸 이름 (팔이 닿는 칸만), 기록 파일 (빈 문자열 = 저장 안 함)
   cargo_ = Cargo(node_.declare_parameter<std::vector<std::string>>("cargo_slots",
@@ -114,6 +117,9 @@ Executor::Executor(rclcpp::Node & node)
     sub_det_.push_back(node_.create_subscription<DetectionArray>(
       t, 10, [this](DetectionArray::ConstSharedPtr m) {on_detections(*m);}));
   }
+  sub_rack_ = node_.create_subscription<DetectionArray>(
+    node_.declare_parameter<std::string>("rack_topic", "/perception/rack/cells"), 10,
+    [this](DetectionArray::ConstSharedPtr m) {on_rack(*m);});
   sub_mode_ = node_.create_subscription<MotionMode>(
     "/control/motion_mode", rclcpp::QoS(1).reliable().transient_local(),
     [this](MotionMode::ConstSharedPtr m) {
@@ -306,7 +312,7 @@ ExecEvent Executor::step(double now)
   // 대기 원인으로 막힌 단계는 시작 · 진행 안 함
   const Step & cur = steps_[step_i_];
   const bool drive_step = cur.type == StepType::Navigate;
-  // LOOK · LOOK_BARCODE 뒤 팔이 펴진 채 이동하려 함 → 기다리지 않고 바로 HOME (control 은 접힘 실측 뒤에만 DRIVE)
+  // LOOK · LOOK_FAR · LOOK_BARCODE 뒤 팔이 펴진 채 이동하려 함 → 기다리지 않고 바로 HOME (control 은 접힘 실측 뒤에만 DRIVE)
   if (drive_step && arm_unfolded_ && !step_running_ && require_motion_mode_) {
     arm_unfolded_ = false;
     insert_home_at_current("LOOK 뒤 이동 전 접기");
@@ -344,6 +350,41 @@ ExecEvent Executor::step(double now)
     on_fail(ev);
   }
   return ev;
+}
+
+// LOOK_RACK 성공 뒤: 팔 결과 뒤 촬영한 그 칸 측정을 rack_wait_s 동안 기다림
+//   - perception 은 카메라가 멈춘 장만 세고 5 장 중 3 장이면 확정 → 결과 뒤 0.3–0.5 s 면 옴
+//   - 못 받아도 단계는 성공 (STORE 는 녹화 경로 그대로), 팔은 퍽 쥔 채 관찰 자세 = 펴진 LOOK 류로 안 봄 (다음이 STORE)
+StepResult Executor::wait_rack(const Step & s, double now)
+{
+  if (rack_wait_start_ < 0.0) {
+    rack_wait_start_ = now;
+    rack_meas_.erase(s.slot);
+  }
+  const auto it = rack_seen_.find(s.slot);
+  const bool got = it != rack_seen_.end() && it->second.stamp >= rack_wait_start_;
+  if (!got && now - rack_wait_start_ <= rack_wait_s_) {return StepResult::Running;}
+  if (got) {
+    rack_meas_[s.slot] = it->second;
+    RCLCPP_INFO(logger(), "%s: 칸 측정 받음 (%.1f s)", s.name.c_str(), now - rack_wait_start_);
+  } else {
+    RCLCPP_WARN(logger(), "%s: %.1f s 안에 칸 측정 못 받음 → 측정 없이 STORE", s.name.c_str(), rack_wait_s_);
+  }
+  rack_wait_start_ = -1.0;
+  arm_unfolded_ = false;
+  return StepResult::Success;
+}
+
+void Executor::on_rack(const DetectionArray & msg)
+{
+  for (const auto & d : msg.detections) {
+    if (d.kind != "rack_cell" || d.label.empty()) {continue;}
+    RackSeen r;
+    r.pose.header = d.header.frame_id.empty() ? msg.header : d.header;
+    r.pose.pose = d.pose;
+    r.stamp = rclcpp::Time(r.pose.header.stamp).seconds();
+    rack_seen_[d.label] = r;
+  }
 }
 
 // 단계 실패 → 재시도 또는 StepFailed 사건 (순번은 그 단계에 그대로)
@@ -399,6 +440,7 @@ void Executor::set_steps(std::vector<Step> steps)
   w_drive_ = false;
   retries_.assign(steps_.size(), 0);
   pending_after_.clear();
+  rack_wait_start_ = -1.0;
 }
 
 void Executor::erase_steps(std::size_t a, std::size_t b)
@@ -581,6 +623,7 @@ std::vector<std::string> Executor::ready_reasons(double now)
 void Executor::stop()
 {
   waiting_drive_ = false;
+  rack_wait_start_ = -1.0;
   arm_timeout_wait_ = false;   // 늦은 성공은 update() 가 재고에 반영
   cancel_nav();
   cancel_arm();
@@ -676,7 +719,7 @@ bool Executor::navigate_goal(const Step & s, Pose2D & goal)
 // 이 팔 작업이 성공하면 팔이 펴진 채 남나 (control 은 LOOK 류만 그 자세 유지, 그 밖은 home 으로 끝냄)
 bool Executor::leaves_arm_unfolded(const Step & s)
 {
-  return s.type == StepType::Arm && (s.arm_task == kArmLook || s.arm_task == kArmLookBarcode);
+  return s.type == StepType::Arm && (is_look_task(s.arm_task) || s.arm_task == kArmLookBarcode);
 }
 
 StepResult Executor::run_arm(const Step & s, double now)
@@ -703,6 +746,12 @@ StepResult Executor::run_arm(const Step & s, double now)
     step_running_ = true;
     step_start_s_ = now;
     return StepResult::Running;
+  }
+  // LOOK_RACK 거절 (control 구현 전 등) → 측정 없이 STORE 로 넘어감, 팔은 안 움직였음
+  if (arm_.done && arm_.rejected && s.arm_task == kArmLookRack) {
+    RCLCPP_WARN(logger(), "%s 거절 (%s) → 칸 측정 없이 STORE", s.name.c_str(), arm_.message.c_str());
+    rack_meas_.erase(s.slot);
+    return StepResult::Success;
   }
   // 거절 → action_retry_s 뒤 다시 보냄 (켤 때 팔 재생기 준비 기다리기)
   if (arm_.done && arm_.rejected) {
@@ -745,6 +794,7 @@ StepResult Executor::run_arm(const Step & s, double now)
     detail_ = "팔 작업 실패: " + arm_.message;
     return StepResult::Fail;
   }
+  if (s.arm_task == kArmLookRack) {return wait_rack(s, now);}
   // 성공 → 퍽 기록부 · 재고 갱신 (팔 결과로만 바꿈)
   arm_unfolded_ = leaves_arm_unfolded(s);
   update_cargo(s);
@@ -771,6 +821,7 @@ void Executor::update_cargo(const Step & s)
         break;
       }
     case kArmStore:
+      rack_meas_.erase(s.slot);   // 한 번 쓰면 버림 (다음엔 다시 잼)
       ok = cargo_.on_store(s.slot, &err);
       registry_.set_state(s.puck_id, "in_cargo:" + s.slot);
       break;
@@ -798,7 +849,25 @@ bool Executor::arm_target(const Step & s, geometry_msgs::msg::PoseStamped & targ
   target.pose.orientation.w = 0.0;   // (0,0,0,0) = 방향 모름 (msg 기본값은 w = 1 이라 직접 0 으로)
   target.header.frame_id = base_frame_;
   target.header.stamp = node_.get_clock()->now();
-  if (s.arm_task == kArmHome || s.arm_task == kArmLook || s.arm_task == kArmLookBarcode || s.arm_task == kArmStore ||
+  if (s.arm_task == kArmStore) {
+    // LOOK_RACK 으로 잰 칸 바닥 중심 + yaw. 없으면 빈 프레임 (= 녹화 경로 그대로)
+    target.header.frame_id = "";
+    const auto it = rack_meas_.find(s.slot);
+    if (it == rack_meas_.end() || now - it->second.stamp > rack_fresh_s_) {return true;}
+    geometry_msgs::msg::PoseStamped base;
+    if (it->second.pose.header.frame_id == base_frame_) {
+      base = it->second.pose;
+    } else if (!to_base(it->second.pose, true, base)) {
+      RCLCPP_WARN(logger(), "%s: 칸 측정을 %s 로 못 바꿈 → 측정 없이", s.name.c_str(), base_frame_.c_str());
+      return true;
+    }
+    target = base;
+    const auto & q = target.pose.orientation;
+    RCLCPP_INFO(logger(), "%s: 칸 측정 (%.4f, %.4f, %.4f) yaw %.1f° → target", s.name.c_str(), target.pose.position.x,
+      target.pose.position.y, target.pose.position.z, yaw_from_quaternion(q.x, q.y, q.z, q.w) * 180.0 / M_PI);
+    return true;
+  }
+  if (s.arm_task == kArmHome || is_look_task(s.arm_task) || s.arm_task == kArmLookBarcode || s.arm_task == kArmLookRack ||
     s.arm_task == kArmRetrieve)
   {
     return true;   // 목표 없음 (자세 · 칸 이름만)

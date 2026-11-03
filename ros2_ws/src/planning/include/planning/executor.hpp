@@ -8,6 +8,7 @@
 //   - ArmTask target 계산: PICK = 퍽 집기 점 · 방향, Custom 목표 = 미션이 준 점 → base_link
 // 입력
 //   - detection_topics     interfaces/DetectionArray  퍽, 촬영 시각 TF 로 map · odom 변환. 기본 /perception/wrist/detections
+//   - rack_topic           interfaces/DetectionArray  적재함 칸 (kind rack_cell, label = 칸 이름, base_link). 기본 /perception/rack/cells
 //   - /control/motion_mode interfaces/MotionMode      주행은 DRIVE 일 때만, 팔 작업은 ready 일 때만
 //   - /odom                nav_msgs/Odometry          제어 생존 확인
 //   - scan_topics          sensor_msgs/LaserScan      라이다마다 생존 확인만, 기본 /lidar_front/scan · /lidar_rear/scan
@@ -33,7 +34,9 @@
 //   - 팔 시간 초과는 취소 결과까지 기다려 판정, 결국 성공이면 단계 성공
 //   - FAULT 등으로 취소한 팔 작업이 결국 성공하면 update() 가 재고에 반영. 취소한 팔 작업은 HOME 필요로 봄
 //   - 미션 판단으로 단계 목록을 바꿀 때는 arm_busy() 가 false 일 때만, 팔 결과 처리 전 교체 방지
-//   - 팔이 LOOK · LOOK_BARCODE 로 펴진 채 이동 단계가 오면 HOME 을 먼저 끼움 (control 은 접힘 실측 뒤에만 DRIVE → 기다리면 drive_wait_s 손해)
+//   - 팔이 LOOK · LOOK_FAR · LOOK_BARCODE 로 펴진 채 이동 단계가 오면 HOME 을 먼저 끼움 (control 은 접힘 실측 뒤에만 DRIVE → 기다리면 drive_wait_s 손해)
+//   - LOOK_RACK: 성공 뒤 그 칸 측정을 rack_wait_s 동안 기다림 (팔 결과 뒤 촬영분만) → 다음 STORE target 에 넣음
+//       못 받거나 LOOK_RACK 이 거절되면 단계는 성공으로 넘기고 STORE target 은 빈 프레임 (= 녹화 경로 그대로)
 
 #pragma once
 
@@ -198,6 +201,11 @@ private:
     std_msgs::msg::Header header;
     std::optional<geometry_msgs::msg::TransformStamped> tf;
   };
+  struct RackSeen                            // 적재함 칸 측정 (perception /perception/rack/cells)
+  {
+    geometry_msgs::msg::PoseStamped pose;    // 칸 바닥 중심 + yaw
+    double stamp = 0.0;                      // 촬영 시각 [s]
+  };
   struct LifecycleCheck                      // Nav2 lifecycle_manager is_active
   {
     std::string name;
@@ -230,6 +238,8 @@ private:
   bool insert_home_counted(const std::string & why, ExecEvent & ev);
   void insert_home_at_current(const std::string & why);
   bool update_drive_reason(double now, bool drive_step, ExecEvent & ev);
+  StepResult wait_rack(const Step & s, double now);   // LOOK_RACK 성공 뒤 칸 측정 기다리기
+  void on_rack(const interfaces::msg::DetectionArray & msg);
   void stop_blocked_nav();
   bool pick_blocked() const;
 
@@ -267,6 +277,7 @@ private:
   double puck_standoff_m_, pick_fresh_s_, puck_half_height_m_, grasp_offset_m_;
   double pick_fresh_override_ = -1.0;
   int nav_retries_, pick_retries_, place_retries_;
+  double rack_wait_s_, rack_fresh_s_;
 
   // 미션 함수
   CustomRunner custom_;
@@ -278,6 +289,9 @@ private:
   std::unordered_map<std::string, LocalSeen> local_seen_;
   std::deque<ObsRecord> raw_obs_;
   Cargo cargo_;
+  std::unordered_map<std::string, RackSeen> rack_seen_;   // 칸 이름 → 마지막 측정
+  std::unordered_map<std::string, RackSeen> rack_meas_;   // LOOK_RACK 으로 받은 측정 → 다음 STORE target
+  double rack_wait_start_ = -1.0;            // LOOK_RACK 성공 뒤 측정 기다리기 시작 (-1 = 안 기다림)
   std::string cargo_file_;
   std::string task_id_;
 
@@ -300,7 +314,7 @@ private:
   double drive_wait_start_ = -1.0;
   int recover_homes_ = 0;                    // DRIVE 받기 전까지 끼운 복구 HOME 수
   bool arm_needs_home_ = false;              // 팔이 움직였는데 성공으로 안 끝남
-  bool arm_unfolded_ = false;                // 마지막 팔 작업이 LOOK · LOOK_BARCODE 로 끝남 = 팔이 펴진 채 (control 은 접힘 실측 뒤에만 DRIVE)
+  bool arm_unfolded_ = false;                // 마지막 팔 작업이 LOOK · LOOK_FAR · LOOK_BARCODE 로 끝남 = 팔이 펴진 채 (control 은 접힘 실측 뒤에만 DRIVE)
   ConditionMonitor scan_mon_, det_mon_, loc_mon_;
   std::vector<std::string> scan_topics_;
   std::vector<double> last_scan_s_;          // scan_topics_ 와 같은 순서, -1 = 아직 못 받음
@@ -336,6 +350,7 @@ private:
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   std::vector<rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr> sub_det_;
+  rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr sub_rack_;
   rclcpp::Subscription<interfaces::msg::MotionMode>::SharedPtr sub_mode_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_odom_;
   std::vector<rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr> sub_scan_;
