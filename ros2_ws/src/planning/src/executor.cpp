@@ -78,6 +78,22 @@ Executor::Executor(rclcpp::Node & node)
   nav_timeout_s_ = node_.declare_parameter<double>("nav_timeout_s", 60.0);
   arm_timeout_s_ = node_.declare_parameter<double>("arm_timeout_s", 60.0);
   drive_wait_s_ = node_.declare_parameter<double>("drive_wait_s", 10.0);
+  // 박스 앞 마지막 접근 (dice_map box_approach_m > 0 인 정차): Nav2 대신 앞쪽 라이다 · odom 으로 몸 x 방향만 천천히
+  approach_cfg_.speed = node_.declare_parameter<double>("approach_speed", 0.04);
+  approach_cfg_.min_speed = node_.declare_parameter<double>("approach_min_speed", 0.015);
+  approach_cfg_.gain = node_.declare_parameter<double>("approach_gain", 1.0);
+  approach_cfg_.tol_m = node_.declare_parameter<double>("approach_tol_m", 0.005);
+  if (!(approach_cfg_.speed > 0.0 && approach_cfg_.speed <= 0.10) || !(approach_cfg_.min_speed >= 0.0) || !(approach_cfg_.tol_m > 0.0)) {
+    RCLCPP_ERROR(logger(), "approach_speed · min_speed · tol 설정이 잘못됨 → 기본값 (0.04 · 0.015 · 0.005)");
+    approach_cfg_.speed = 0.04;
+    approach_cfg_.min_speed = 0.015;
+    approach_cfg_.tol_m = 0.005;
+  }
+  approach_cfg_.min_speed = std::min(approach_cfg_.min_speed, approach_cfg_.speed);
+  approach_half_width_m_ = node_.declare_parameter<double>("approach_half_width_m", 0.06);
+  approach_body_half_m_ = node_.declare_parameter<double>("approach_body_half_m", 0.18);
+  approach_cfg_.min_clear_m = node_.declare_parameter<double>("approach_min_clear_m", 0.175);
+  approach_timeout_s_ = node_.declare_parameter<double>("approach_timeout_s", 8.0);
 
   puck_standoff_m_ = node_.declare_parameter<double>("puck_standoff_m", 0.30);
   pick_fresh_s_ = node_.declare_parameter<double>("pick_fresh_s", 2.0);
@@ -124,7 +140,50 @@ Executor::Executor(rclcpp::Node & node)
       last_mode_s_ = now_s();
     });
   sub_odom_ = node_.create_subscription<nav_msgs::msg::Odometry>(
-    "/odom", 10, [this](nav_msgs::msg::Odometry::ConstSharedPtr) {last_odom_s_ = now_s();});
+    "/odom", 10, [this](nav_msgs::msg::Odometry::ConstSharedPtr m) {
+      last_odom_s_ = now_s();
+      const rclcpp::Time stamp(m->header.stamp, RCL_ROS_TIME);
+      const auto & p = m->pose.pose.position;
+      if (stamp > odom_stamp_ && std::isfinite(p.x) && std::isfinite(p.y)) {   // 새 측정만 (같은 · 옛 시각 · NaN 은 안 셈)
+        odom_stamp_ = stamp;
+        odom_x_ = p.x;
+        odom_y_ = p.y;
+        odom_fresh_s_ = now_s();
+        odom_hist_.push_back({stamp.seconds(), p.x, p.y});
+        while (odom_hist_.size() > 2 && odom_hist_.back().t - odom_hist_.front().t > 1.0) {odom_hist_.pop_front();}
+      }
+    });
+  // 앞쪽 라이다 → 몸 앞 면 거리 (몸 중심 기준 x, 좌우 approach_half_width_m 안의 가장 가까운 점)
+  sub_front_scan_ = node_.create_subscription<sensor_msgs::msg::LaserScan>(
+    node_.declare_parameter<std::string>("approach_scan_topic", "/lidar_front/scan"), rclcpp::SensorDataQoS(),
+    [this](sensor_msgs::msg::LaserScan::ConstSharedPtr m) {
+      if (!approach_.active) {return;}
+      const rclcpp::Time stamp(m->header.stamp, RCL_ROS_TIME);
+      if (stamp <= scan_stamp_ || (node_.now() - stamp).seconds() > approach_sensor_max_age_s_) {return;}   // 같은 · 옛 · 늦은 스캔은 버림
+      scan_stamp_ = stamp;
+      geometry_msgs::msg::TransformStamped t;
+      try {
+        t = tf_buffer_->lookupTransform(base_frame_, m->header.frame_id, tf2::TimePointZero);
+      } catch (const tf2::TransformException &) {
+        return;
+      }
+      const auto & q = t.transform.rotation;
+      const double yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+      const double nan = std::numeric_limits<double>::quiet_NaN();
+      double face = nan, front = nan;   // 좁은 띠 (박스 면) · 차체 폭 띠 (다른 물체) 의 가장 가까운 x
+      for (std::size_t i = 0; i < m->ranges.size(); ++i) {
+        const double r = m->ranges[i];
+        if (!std::isfinite(r) || r < m->range_min || r > m->range_max) {continue;}
+        const double a = m->angle_min + i * m->angle_increment + yaw;
+        const double x = t.transform.translation.x + r * std::cos(a);
+        const double y = t.transform.translation.y + r * std::sin(a);
+        if (x <= 0.0) {continue;}
+        if (std::fabs(y) <= approach_half_width_m_ && !(x >= face)) {face = x;}
+        if (std::fabs(y) <= approach_body_half_m_ && !(x >= front)) {front = x;}
+      }
+      approach_observe(approach_.st, face, front, travel_at(stamp.seconds()));   // 새 스캔 · 그 측정 시각의 직진 거리
+      front_scan_s_ = now_s();
+    });
   last_scan_s_.assign(scan_topics_.size(), -1.0);
   for (std::size_t i = 0; i < scan_topics_.size(); ++i) {
     sub_scan_.push_back(node_.create_subscription<sensor_msgs::msg::LaserScan>(
@@ -153,6 +212,9 @@ Executor::Executor(rclcpp::Node & node)
   // ---------------------------------------------------------------- 보내기 · 액션
   pub_cargo_ = node_.create_publisher<CargoState>("/mission/cargo", 10);
   pub_markers_ = node_.create_publisher<visualization_msgs::msg::MarkerArray>("/planning/markers", 10);
+  // 비상 정지 (collision_monitor) 뒤 · hold 앞: 박스 바로 앞이라 collision_monitor 를 거치면 멈춤, hold 는 그대로 지킴
+  pub_approach_ = node_.create_publisher<geometry_msgs::msg::TwistStamped>(
+    node_.declare_parameter<std::string>("approach_cmd_topic", "cmd_vel_safe"), 10);
   nav_client_ = rclcpp_action::create_client<Nav>(&node_, "navigate_to_pose");
   arm_client_ = rclcpp_action::create_client<ArmTask>(&node_, "/arm_task");
 
@@ -502,6 +564,7 @@ bool Executor::update_drive_reason(double now, bool drive_step, ExecEvent & ev)
 // 이동 차단 → Nav2 목표 취소. 풀리면 목표를 다시 계산해서 보냄
 void Executor::stop_blocked_nav()
 {
+  stop_approach();   // 마지막 접근 중이면 (Nav2 는 이미 끝남) 여기서 0
   if (nav_.active) {cancel_nav();}
   if (step_i_ < steps_.size() && steps_[step_i_].type == StepType::Navigate) {step_running_ = false;}
   server_wait_start_ = -1.0;
@@ -637,6 +700,7 @@ StepResult Executor::run_step(const Step & s, double now)
 StepResult Executor::run_navigate(const Step & s, double now)
 {
   if (!step_running_) {
+    stop_approach();
     Pose2D goal;
     if (!navigate_goal(s, goal)) {return StepResult::Fail;}
     if (cancel_blocked()) {   // 취소한 목표 결과 대기 → server_wait_s 넘으면 실패
@@ -649,7 +713,88 @@ StepResult Executor::run_navigate(const Step & s, double now)
     step_running_ = true;
     return StepResult::Running;
   }
-  return poll_nav(now, s.timeout_s > 0.0 ? s.timeout_s : nav_timeout_s_);
+  if (approach_.active) {return run_approach(s, now);}
+  const StepResult r = poll_nav(now, s.timeout_s > 0.0 ? s.timeout_s : nav_timeout_s_);
+  if (r == StepResult::Success && s.approach_m > 0.0) {   // Nav2 는 물러난 자리에 섬 → 마지막 접근
+    approach_ = ApproachRun{};
+    approach_.active = true;
+    approach_.start_s = now;
+    approach_.x0 = odom_x_;
+    approach_.y0 = odom_y_;
+    front_scan_s_ = -1.0;
+    RCLCPP_INFO(logger(), "%s: 박스 앞 마지막 접근 (면까지 %.3f m 에서 멈춤)", s.name.c_str(), s.approach_face_m);
+    return StepResult::Running;
+  }
+  return r;
+}
+
+// 박스 앞 마지막 접근: 몸 x 방향으로만, DRIVE 일 때만. 끝 · 실패 · 시간 초과면 0 을 보내고 끝냄
+StepResult Executor::run_approach(const Step & s, double now)
+{
+  auto send = [this](double vx) {
+      geometry_msgs::msg::TwistStamped m;
+      m.header.stamp = node_.now();
+      m.header.frame_id = base_frame_;
+      m.twist.linear.x = vx;
+      pub_approach_->publish(m);
+    };
+  if (now - approach_.start_s > approach_timeout_s_) {
+    stop_approach();
+    detail_ = approach_.st.have_face ? "박스 접근 시간 초과" : "박스 접근: 앞쪽 라이다로 박스 면을 못 봄";
+    return StepResult::Fail;
+  }
+  // 차례 DRIVE · 새 odom · 새 앞쪽 스캔이 다 있어야 움직임 (하나라도 없으면 0 으로 기다림, 시간 초과는 위에서)
+  if ((require_motion_mode_ && !(have_mode_ && mode_ == interfaces::msg::MotionMode::DRIVE)) ||
+      now - odom_fresh_s_ > approach_sensor_max_age_s_ || now - front_scan_s_ > approach_sensor_max_age_s_) {
+    send(0.0);
+    return StepResult::Running;
+  }
+  ApproachConfig c = approach_cfg_;
+  c.target_face_m = s.approach_face_m;
+  c.max_travel_m = s.approach_m + 0.04;
+  const double travel = approach_travel();
+  const ApproachCmd cmd = approach_step(approach_.st, c, travel);
+  if (cmd.fail) {
+    stop_approach();
+    detail_ = cmd.why;
+    return StepResult::Fail;
+  }
+  if (cmd.done) {
+    stop_approach();
+    RCLCPP_INFO(logger(), "%s: 박스 앞 도착 (직진 %.3f m, 남은 %.3f m)", s.name.c_str(), travel, cmd.remaining);
+    return StepResult::Success;
+  }
+  send(cmd.vx);
+  return StepResult::Running;
+}
+
+// 측정 시각 t 의 접근 직진 거리: odom 기록 두 점 사이 보간 (기록 밖이면 가장 가까운 끝)
+double Executor::travel_at(double t) const
+{
+  if (odom_hist_.empty()) {return approach_travel();}
+  auto dist = [this](const OdomSample & o) {return std::hypot(o.x - approach_.x0, o.y - approach_.y0);};
+  if (t <= odom_hist_.front().t) {return dist(odom_hist_.front());}
+  for (std::size_t i = 1; i < odom_hist_.size(); ++i) {
+    const auto & a = odom_hist_[i - 1];
+    const auto & b = odom_hist_[i];
+    if (t <= b.t) {
+      const double k = b.t > a.t ? (t - a.t) / (b.t - a.t) : 1.0;
+      return dist(a) + k * (dist(b) - dist(a));
+    }
+  }
+  return dist(odom_hist_.back());
+}
+
+void Executor::stop_approach()
+{
+  if (!approach_.active) {return;}
+  approach_.active = false;
+  for (int i = 0; i < 2; ++i) {   // 0 을 두 번 (한 번 빠져도 swerve 0.3 s 끊김 정지 전에 멈추게)
+    geometry_msgs::msg::TwistStamped m;
+    m.header.stamp = node_.now();
+    m.header.frame_id = base_frame_;
+    pub_approach_->publish(m);
+  }
 }
 
 // 단계 목표 → 지도 위 자세
@@ -657,7 +802,7 @@ bool Executor::navigate_goal(const Step & s, Pose2D & goal)
 {
   switch (s.target) {
     case Target::Fixed:
-      goal = s.pose;
+      goal = s.approach_m > 0.0 ? backed_off(s.pose, s.approach_m) : s.pose;   // 박스: 물러난 곳까지만 Nav2
       return true;
     case Target::Puck: {
         const auto rec = registry_.find(s.puck_id);
@@ -1041,6 +1186,7 @@ StepResult Executor::poll_nav(double now, double timeout_s)
 // 취소: 진행 중이던 목표는 최종 결과(또는 거절)를 받을 때까지 *_cancel_pending_ 으로 추적 (resume 조건)
 void Executor::cancel_nav()
 {
+  stop_approach();
   if (nav_.active) {
     nav_cancel_gen_ = nav_.gen;
     nav_cancel_pending_ = true;

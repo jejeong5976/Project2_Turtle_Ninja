@@ -8,6 +8,7 @@
 #include <map>
 #include <set>
 
+#include "planning/approach.hpp"
 #include "planning/cargo.hpp"
 #include "planning/grasp.hpp"
 #include "planning/health.hpp"
@@ -375,4 +376,58 @@ TEST(Health, CovarianceStd)
   EXPECT_FALSE(covariance_std(c).has_value());
   c[7] = std::nan("");
   EXPECT_FALSE(covariance_std(c).has_value());
+}
+
+// 박스 앞 마지막 접근: Nav2 목표는 보는 방향 반대로 물러남, 그 뒤 라이다 면 거리로 멈춤 (가까워져 안 보이면 마지막 관측 + odom)
+TEST(Approach, BackedOffAndStopsAtFace)
+{
+  const planning::Pose2D stop{1.0, 2.0, M_PI / 2};
+  const auto g = planning::backed_off(stop, 0.10);
+  EXPECT_NEAR(g.x, 1.0, 1e-9);
+  EXPECT_NEAR(g.y, 1.9, 1e-9);
+  EXPECT_NEAR(g.yaw, M_PI / 2, 1e-9);
+
+  planning::ApproachConfig c;
+  c.target_face_m = 0.191;
+  c.max_travel_m = 0.14;
+  planning::ApproachState st;
+  planning::approach_observe(st, 0.291, 0.291, 0.0);   // 10 cm 남음 → 최고 속도
+  auto a = planning::approach_step(st, c, 0.0);
+  EXPECT_FALSE(a.done);
+  EXPECT_NEAR(a.vx, c.speed, 1e-9);
+  planning::approach_observe(st, std::nan(""), std::nan(""), 0.090);   // 가까워져 안 보임 → 관측 기준 그대로
+  a = planning::approach_step(st, c, 0.095);   // 0.291 − 0.095 − 0.191 = 5 mm
+  EXPECT_NEAR(a.remaining, 0.005, 1e-9);
+  a = planning::approach_step(st, c, 0.097);
+  EXPECT_TRUE(a.done);
+  EXPECT_DOUBLE_EQ(a.vx, 0.0);
+  a = planning::approach_step(st, c, 0.096);   // 같은 관측을 여러 주기 써도 기준점은 안 바뀜
+  EXPECT_NEAR(a.remaining, 0.004, 1e-9);
+}
+
+TEST(Approach, WaitsForFaceAndStopsForObstacles)
+{
+  planning::ApproachConfig c;
+  c.target_face_m = 0.191;
+  c.max_travel_m = 0.14;
+  planning::ApproachState st;   // 면을 본 적 없음 → 움직이지 않음
+  planning::approach_observe(st, std::nan(""), 0.5, 0.0);
+  auto a = planning::approach_step(st, c, 0.0);
+  EXPECT_TRUE(a.waiting);
+  EXPECT_DOUBLE_EQ(a.vx, 0.0);
+  planning::ApproachState st2;
+  planning::approach_observe(st2, 0.18, 0.18, 0.0);   // 이미 목표보다 가까움 → 바로 끝 (뒤로 안 감)
+  EXPECT_TRUE(planning::approach_step(st2, c, 0.0).done);
+  planning::ApproachState st3;   // 차체 폭 띠에 박스 면보다 가까운 물체 → 멈춤
+  planning::approach_observe(st3, 0.29, 0.24, 0.0);
+  EXPECT_TRUE(planning::approach_step(st3, c, 0.0).fail);
+  planning::ApproachState st5;   // 면이 사라진 뒤 보인 앞 물체는 마지막 면 관측 기준으로 (이동량을 두 번 빼지 않음)
+  planning::approach_observe(st5, 0.29, 0.29, 0.0);
+  planning::approach_observe(st5, std::nan(""), 0.26, 0.03);
+  a = planning::approach_step(st5, c, 0.03);
+  EXPECT_FALSE(a.fail);
+  EXPECT_NEAR(a.remaining, 0.29 - 0.03 - 0.191, 1e-9);
+  planning::ApproachState st4;   // 많이 가면 실패
+  planning::approach_observe(st4, 0.40, 0.40, 0.0);
+  EXPECT_TRUE(planning::approach_step(st4, c, 0.15).fail);
 }

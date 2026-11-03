@@ -31,6 +31,7 @@ add_library(planning_core STATIC
   src/grasp.cpp
   src/cargo.cpp
   src/health.cpp
+  src/approach.cpp
 )
 set_target_properties(planning_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(planning_core PUBLIC

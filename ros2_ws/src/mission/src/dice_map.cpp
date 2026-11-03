@@ -78,6 +78,8 @@ bool load_dice_map(const std::string & path, DiceMap & out, std::string * error)
     a.start = arena_to_map(T, start_arena);
     a.barcode_view = arena_to_map(T, barcode_arena);
     a.box_radius = y["box_radius"].as<double>(a.box_radius);
+    a.box_size = y["box_size"].as<double>(a.box_size);
+    a.box_approach_m = y["box_approach_m"].as<double>(a.box_approach_m);
 
     for (int i = 0; i < 6; ++i) {
       const std::string key = "B" + std::to_string(i + 1);

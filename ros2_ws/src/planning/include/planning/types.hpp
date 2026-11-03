@@ -86,6 +86,9 @@ struct Step
   std::array<int, 3> ref{{-1, -1, -1}};   // 미션이 정하는 번호 (뜻은 미션 쪽에서 정함). 실행기는 해석 안 함
   double timeout_s = 0.0;       // 0 = 설정 기본값 사용
   std::string name;             // 상태 표시용 이름
+  // Navigate 마지막 접근 (박스): approach_m > 0 이면 pose 에서 그만큼 물러난 곳까지 Nav2, 그 뒤 앞쪽 라이다로 재며 똑바로 붙음
+  double approach_m = 0.0;
+  double approach_face_m = 0.0; // 멈출 때 몸 중심 → 앞 물체 면 거리 [m]
 };
 
 // ArmTask 상수 (interfaces/action/ArmTask 와 같은 값)
