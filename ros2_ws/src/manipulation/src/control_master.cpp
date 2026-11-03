@@ -126,6 +126,9 @@ public:
     nb_min_clear_ = declare_parameter<double>("grasp_min_clear", 0.002);
     nb_target_clear_ = declare_parameter<double>("grasp_target_clear", 0.003);
     odom_frame_ = declare_parameter<std::string>("odom_frame", "odom");
+    // 수직 손이 안 닿는 먼 퍽 · 자리: 손을 10° 씩 바깥으로 기울여 봄 (20° ≈ 31 cm). 0 = 수직 손만
+    //   기울여 집은 퍽은 손 안에서 그만큼 기울어 있음 → STORE 는 10° 까지, PLACE 는 쥘 때 기울임과 20° 안으로 놓음 (넘어지지 않게)
+    max_tilt_deg_ = declare_parameter<double>("pick_max_tilt_deg", 20.0);
     tf_buf_ = std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listen_ = std::make_unique<tf2_ros::TransformListener>(*tf_buf_);
     sub_dets_ = create_subscription<interfaces::msg::DetectionArray>(
@@ -290,7 +293,7 @@ private:
   // ======================================================================== 작업 → 동작 목록
   // STORE · RETRIEVE · LOOK 류 · 접기는 실물에서 검사 · 실행한 경로(config/arm_paths.yaml) 그대로. 팔이 경로 출발 자세에 있어야 함
   //   STORE <칸>   : 박스 위 들기(퍽 쥠) → 칸에 넣기 → 받침 (주행 허용)
-  //   RETRIEVE <칸>: 받침 → 칸에서 꺼내기 → 박스 위 들기 (퍽 쥠, 바퀴 잠금 유지 — 이어서 PLACE)
+  //   RETRIEVE <칸>: 받침 → 칸에서 꺼내기 → 박스 위 들기 (퍽 쥠, 바퀴 잠금 유지 — 이어서 PLACE). LOOK 자세면 복귀 경로로 받침을 거쳐 감
   //   LOOK · LOOK_BARCODE: 받침 → 관찰 자세 (그 자세 유지). 이미 그 자세면 그대로
   //   HOME: 접혀 있으면 home 한 점, 아니면 지금 자세에서 출발하는 검사된 복귀 경로(home_from_*), 없으면 home 한 점
   //   PICK: 받침 → 펼치기 → 퍽 위 40 열기 → 10 → 쥐기 −30 닫기 → 10 → 40 → 박스 위 기준점 (퍽 쥠, 바퀴 잠금 유지 — 이어서 STORE)
@@ -304,9 +307,15 @@ private:
     using G = ArmTask::Goal;
     switch (goal.task) {
       case G::STORE:
+        if (held_tilt_ > 10.0 + 1e-6) {   // 적재함 경로는 수직 퍽으로 검증됨
+          char buf[160];
+          std::snprintf(buf, sizeof(buf), "손을 %.0f° 기울여 집은 퍽은 적재함에 못 넣음 (10° 까지) — 가까운 자리에 놓고 다시 집기", held_tilt_);
+          why = buf;
+          return {};
+        }
         return path_plan("store_" + goal.slot, why);
       case G::RETRIEVE:
-        return path_plan("retrieve_" + goal.slot, why);
+        return path_plan("retrieve_" + goal.slot, why, true);
       case G::LOOK:
         return look_plan("look", why);
       case G::LOOK_BARCODE:
@@ -325,12 +334,36 @@ private:
     }
   }
 
-  std::vector<ArmAction> path_plan(const std::string & name, std::string & why)
+  // from_look: 받침에서 시작하는 경로를 LOOK · LOOK_BARCODE 자세에서 받으면 검사된 복귀 경로로 받침을 거쳐 감 (RETRIEVE)
+  std::vector<ArmAction> path_plan(const std::string & name, std::string & why, bool from_look = false)
   {
     const auto it = paths_.find(name);
     if (it == paths_.end()) {why = "경로 " + name + " 없음 (config/arm_paths.yaml)"; return {};}
-    if (!path_start_ok(it->second, joint_buf_, path_start_tol_, why)) {return {};}
-    return path_actions(it->second, timing_, grip_, joint_buf_);
+    ArmPath path = it->second;
+    if (!path_start_ok(path, joint_buf_, path_start_tol_, why)) {
+      if (!from_look || !join_from_look(path, name.c_str())) {
+        if (from_look) {why += " — 받침(HOME) 또는 LOOK 자세에서 시작해야 함";}
+        return {};
+      }
+      why.clear();
+    }
+    return path_actions(path, timing_, grip_, joint_buf_);
+  }
+
+  // 지금 LOOK · LOOK_BARCODE 끝 자세면 그 복귀 경로(home_from_*) 뒤에 path 를 이어 붙임 (path 첫 점 = 받침 = 복귀 경로 끝)
+  bool join_from_look(ArmPath & path, const char * what)
+  {
+    for (const char * name : {"home_from_look", "home_from_look_barcode"}) {
+      const auto back = paths_.find(name);
+      std::string dummy;
+      if (back == paths_.end() || !path_start_ok(back->second, joint_buf_, path_start_tol_, dummy)) {continue;}
+      std::vector<PathNode> nodes = back->second.nodes;
+      nodes.insert(nodes.end(), path.nodes.begin() + 1, path.nodes.end());
+      path.nodes = nodes;
+      RCLCPP_INFO(get_logger(), "%s: 관찰 자세 → %s 로 받침을 거쳐 감", what, name);
+      return true;
+    }
+    return false;
   }
 
   std::vector<ArmAction> look_plan(const std::string & name, std::string & why)
@@ -445,7 +478,8 @@ private:
 
   // 목표 (x, y, 퍽 중심 높이 zc, base_link) 주변 이웃 퍽. 목표 자신 = 25 mm 안 (선 퍽 두 개는 30 mm 이상 떨어짐)
   //   같은 면 위 퍽만 (높이 ±40 mm). 목표로 보이는 검출이 있으면 그 모양 · 면 방향
-  std::vector<NeighborPuck> neighbors_near(double x, double y, double zc, bool & found, TargetPuck & tgt, bool & stale) const
+  std::vector<NeighborPuck> neighbors_near(double x, double y, double zc, bool & found, TargetPuck & tgt, Eigen::Vector2d & tc,
+    bool & stale) const
   {
     std::vector<NeighborPuck> nb;
     found = false;
@@ -470,6 +504,7 @@ private:
       if (d < 0.025) {
         found = true;
         tgt = {p.square, p.yaw_known, p.yaw + dyaw, d, true};
+        tc = b.head<2>();
         continue;
       }
       if (d > nb_radius_) {continue;}
@@ -486,14 +521,23 @@ private:
 
   // 이웃 퍽을 보고 닫힘 방향 [°] · 벌림 키워드 (open | release) 후보를 고르는 순서대로. 이웃 없으면 기본 하나 (NaN, open)
   //   place: 놓을 자리 25 mm 안에 이미 퍽이 보이면 거절
-  bool grasp_for(double x, double y, double zc, double yaw_deg, bool place,
+  //   PICK 에서 목표 검출이 맞춰지면 x · y 를 그 검출 중심으로 바꿈 (방금 본 위치, 목표 여유 계산의 어긋남 0)
+  bool grasp_for(double & x, double & y, double zc, double yaw_deg, bool place,
     std::vector<std::pair<double, std::string>> & cands, std::string & why, const char * what)
   {
     cands.clear();
     bool found = false, stale = false;
     TargetPuck tgt;
-    const auto nb = neighbors_near(x, y, zc, found, tgt, stale);
+    Eigen::Vector2d tc(x, y);
+    const auto nb = neighbors_near(x, y, zc, found, tgt, tc, stale);
+    last_nb_ = nb;
     if (place && found) {why = std::string(what) + ": 놓을 자리에 이미 퍽이 보임"; return false;}
+    if (found && !place) {
+      RCLCPP_INFO(get_logger(), "%s: 목표 검출 중심 (%.3f, %.3f) 로 맞춤 (목표점과 %.1f mm)", what, tc.x(), tc.y(), tgt.offset * 1000.0);
+      x = tc.x();
+      y = tc.y();
+      tgt.offset = 0.0;
+    }
     if (nb.empty()) {
       RCLCPP_INFO(get_logger(), "%s: 이웃 퍽 %s → 기본 방향 · 다 열기", what, stale ? "정보 없음 (손목 인지 결과가 없거나 오래됨)" : "없음");
       cands.push_back({std::nan(""), "open"});
@@ -524,13 +568,33 @@ private:
     return true;
   }
 
-  // 후보를 차례로 IK (안 되면 다음 후보)
+  // 후보를 차례로 IK (안 되면 다음 후보). 수직이 안 닿으면 기울인 손 (pick_max_tilt_deg 까지)
+  //   기울인 손은 쥐는 높이에서 손가락이 차체 쪽으로 약 30 mm · tan(기울임) 더 차지 → 이웃이 있으면 손가락 폭을 그만큼 넓혀 다시 검사
   std::vector<PickPose> poses_for(double x, double y, double top, double yaw, const std::vector<double> & heights,
-    const std::vector<std::pair<double, std::string>> & cands, std::string & kw, std::string & why) const
+    const std::vector<std::pair<double, std::string>> & cands, std::string & kw, std::string & why,
+    double prefer_tilt = 0.0, double max_dev = 1e9) const
   {
     for (const auto & [cd, k] : cands) {
-      auto P = pick_poses(model_, x, y, top, yaw, heights, why, cd);
-      if (P.size() == heights.size()) {kw = k; return P;}
+      auto P = pick_poses(model_, x, y, top, yaw, heights, why, cd, max_tilt_deg_, prefer_tilt, max_dev);
+      if (P.size() != heights.size()) {continue;}
+      const double tilt = P.back().tilt_deg;
+      if (tilt > 0.0 && !last_nb_.empty()) {
+        FingerTip f;
+        const double e = 0.030 * std::tan(tilt * M_PI / 180.0);
+        f.w_lo -= e;
+        f.w_hi += e;
+        const double c = std::atan2(y - model_.j1_xy.y(), x - model_.j1_xy.x()) + M_PI / 2.0;   // 기울인 손의 닫힘축 = 접선 (pick_poses)
+        const double clr = finger_clearance(Eigen::Vector2d(x, y), c, k == "open" ? grip_.open : grip_.release, last_nb_, f);
+        if (clr < nb_min_clear_) {
+          char buf[160];
+          std::snprintf(buf, sizeof(buf), "손을 %.0f° 기울이면 이웃 퍽과 여유 %.1f mm", tilt, clr * 1000.0);
+          why = buf;
+          continue;
+        }
+      }
+      if (tilt > 0.0) {RCLCPP_INFO(get_logger(), "퍽 (%.3f, %.3f): 수직 손이 안 닿아 손을 %.0f° 기울임", x, y, tilt);}
+      kw = k;
+      return P;
     }
     return {};
   }
@@ -547,6 +611,7 @@ private:
     if (!grasp_for(x, y, zc, yaw, false, cands, why, "PICK")) {return {};}
     const auto P = poses_for(x, y, top, yaw, pick_heights_, cands, open_kw, why);
     if (P.size() != 3) {return {};}
+    pending_tilt_ = P.back().tilt_deg;
     ArmPath path = unfold->second;
     path.name = "pick";
     path.ends_home = false;
@@ -557,21 +622,9 @@ private:
     path.nodes.push_back(model_node("lift", P[0].enc, slow_dps_));
     path.nodes.push_back({"staging", staging_, false, slow_dps_, "", false});
     std::string look_why;
-    if (!path_start_ok(path, joint_buf_, path_start_tol_, look_why)) {
-      // LOOK · LOOK_BARCODE 자세면 검사된 복귀 경로로 받침을 거쳐 감 (관찰 → 집기)
-      bool joined = false;
-      for (const char * name : {"home_from_look", "home_from_look_barcode"}) {
-        const auto back = paths_.find(name);
-        std::string dummy;
-        if (back == paths_.end() || !path_start_ok(back->second, joint_buf_, path_start_tol_, dummy)) {continue;}
-        std::vector<PathNode> nodes = back->second.nodes;
-        nodes.insert(nodes.end(), path.nodes.begin() + 1, path.nodes.end());
-        path.nodes = nodes;
-        RCLCPP_INFO(get_logger(), "PICK: 관찰 자세 → %s 로 받침을 거쳐 집기", name);
-        joined = true;
-        break;
-      }
-      if (!joined) {why = look_why + " — 받침(HOME) 또는 LOOK 자세에서 시작해야 함"; return {};}
+    if (!path_start_ok(path, joint_buf_, path_start_tol_, look_why) && !join_from_look(path, "PICK")) {
+      why = look_why + " — 받침(HOME) 또는 LOOK 자세에서 시작해야 함";
+      return {};
     }
     RCLCPP_INFO(get_logger(), "PICK: 퍽 (%.3f, %.3f) 돌림 %.1f° → 쥐기 틱 [%d %d %d %d %d]", x, y, yaw,
       P[2].ticks[0], P[2].ticks[1], P[2].ticks[2], P[2].ticks[3], P[2].ticks[4]);
@@ -588,7 +641,7 @@ private:
     std::string open_kw;
     const double zc = top - model_.team_base_z_floor + model_.base_z_floor - puck_h_ / 2.0;
     if (!grasp_for(x, y, zc, yaw, true, cands, why, "PLACE")) {return {};}
-    const auto P = poses_for(x, y, top, yaw, place_heights_, cands, open_kw, why);
+    const auto P = poses_for(x, y, top, yaw, place_heights_, cands, open_kw, why, held_tilt_, 20.0);   // 놓는 퍽 기울임 ≤ 20°
     if (P.size() != 3) {return {};}
     ArmPath path;
     path.name = "place";
@@ -743,6 +796,7 @@ private:
           if (c.end == ArmEnd::SUCCEEDED) {   // 퍽을 쥐고 끝나는 작업 / 놓고 끝나는 작업
             if (task == ArmTask::Goal::PICK || task == ArmTask::Goal::RETRIEVE) {carrying_ = true;}
             if (task == ArmTask::Goal::STORE || task == ArmTask::Goal::PLACE || task == ArmTask::Goal::HOME) {carrying_ = false;}
+            held_tilt_ = task == ArmTask::Goal::PICK ? pending_tilt_ : 0.0;
           }
           if (c.end == ArmEnd::SUCCEEDED) {
             arm_goal_->succeed(result);
@@ -895,6 +949,10 @@ private:
   double seen_t_{std::nan("")};   // 마지막 손목 인지 결과 시각
   double nb_age_s_{10.0}, nb_radius_{0.12}, nb_min_clear_{0.002}, nb_target_clear_{0.003};
   std::string odom_frame_{"odom"};
+  double max_tilt_deg_{20.0};
+  double held_tilt_{0.0};          // 쥔 퍽의 손 안 기울임 [°] (PICK 때 손 기울임, RETRIEVE = 0)
+  double pending_tilt_{0.0};       // 받은 PICK 계획의 손 기울임 (성공하면 held_tilt_)
+  std::vector<NeighborPuck> last_nb_;   // grasp_for 가 본 이웃 (poses_for 의 기울인 손 다시 검사용)
   std::unique_ptr<tf2_ros::Buffer> tf_buf_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listen_;
   rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr sub_dets_;

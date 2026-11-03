@@ -93,3 +93,33 @@ TEST(ArmKinematics, ExplicitCloseAxisTurnsWrist)
   for (int j = 0; j < 5; ++j) {EXPECT_EQ(a[2].ticks[j], b[2].ticks[j]);}
   EXPECT_NEAR(std::abs(c[2].ticks[4] - a[2].ticks[4]), 1024, 80);   // 90° = 1024 틱 (손끝 위치를 맞추느라 조금 다름)
 }
+
+// 먼 퍽: 수직 손은 안 닿고, 기울이면 닿음 (10° 씩, 가장 작은 기울임). 가까운 퍽은 기울임 허용해도 예전과 같은 수직 해
+TEST(ArmKinematics, TiltedHandReachesFarther)
+{
+  const auto m = kin_data::model();
+  std::string why;
+  EXPECT_TRUE(manipulation::pick_poses(m, 0.30, 0.0, 0.058, -4.0, {40, 10, -30}, why).empty());
+  EXPECT_FALSE(why.empty());
+  const auto far = manipulation::pick_poses(m, 0.30, 0.0, 0.058, -4.0, {40, 10, -30}, why, std::nan(""), 30.0);
+  ASSERT_EQ(far.size(), 3u) << why;
+  EXPECT_GT(far.back().tilt_deg, 0.0);
+  EXPECT_LE(far.back().tilt_deg, 30.0);
+  const auto a = manipulation::pick_poses(m, 0.2102, 0.038, 0.058, -4.0, {40, 10, -30}, why);
+  const auto b = manipulation::pick_poses(m, 0.2102, 0.038, 0.058, -4.0, {40, 10, -30}, why, std::nan(""), 30.0);
+  ASSERT_EQ(b.size(), 3u);
+  EXPECT_DOUBLE_EQ(b.back().tilt_deg, 0.0);
+  for (int j = 0; j < 5; ++j) {EXPECT_EQ(a[2].ticks[j], b[2].ticks[j]);}
+}
+
+// 선호 기울임 (PLACE: 쥘 때 기울임) 에 가까운 것부터 · 차이 한도 밖은 안 씀
+TEST(ArmKinematics, TiltPreferenceAndLimit)
+{
+  const auto m = kin_data::model();
+  std::string why;
+  // 가까운 자리: 기울임 20° 선호 · 한도 10° → 10~30° 중 되는 것, 수직(0°)은 안 씀
+  const auto p = manipulation::pick_poses(m, 0.21, 0.0, 0.058, std::nan(""), {40, 10, -23}, why, std::nan(""), 30.0, 20.0, 10.0);
+  if (!p.empty()) {EXPECT_GE(p.back().tilt_deg, 10.0);}
+  // 먼 자리 (수직 안 닿음) · 선호 0° · 한도 0° → 거절
+  EXPECT_TRUE(manipulation::pick_poses(m, 0.30, 0.0, 0.058, std::nan(""), {40, 10, -23}, why, std::nan(""), 30.0, 0.0, 0.0).empty());
+}

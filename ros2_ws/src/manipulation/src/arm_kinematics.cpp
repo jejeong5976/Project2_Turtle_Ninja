@@ -13,6 +13,7 @@ namespace manipulation
 namespace
 {
 constexpr double kDeg = 180.0 / M_PI;
+constexpr double kTiltFaceTol = 10.0 * M_PI / 180.0;   // 기울인 손: 닫힘축(접선)과 퍽 면 · 고른 방향 차이 허용
 constexpr double kG = 9.81;
 
 Eigen::Matrix4d axis_angle(const Eigen::Vector3d & axis, double a)
@@ -232,42 +233,69 @@ double default_close_rad(const ArmModel & m, double x, double y, double yaw_deg)
 
 std::vector<PickPose> pick_poses(
   const ArmModel & m, double x, double y, double top_z, double yaw_deg, const std::vector<double> & heights_mm,
-  std::string & why, double close_deg)
+  std::string & why, double close_deg, double max_tilt_deg, double prefer_tilt_deg, double max_dev_deg)
 {
-  const Eigen::Vector3d app(0.0, 0.0, -1.0);
   const double ca = std::isfinite(close_deg) ? close_deg / kDeg : default_close_rad(m, x, y, yaw_deg);
-  const Eigen::Vector3d close(std::cos(ca), std::sin(ca), 0.0);
+  // 5 축 팔은 손을 J1 → 퍽 수직면 안으로만 기울일 수 있음 → 기울인 손은 닫힘축 = 접선, 기울임 = 바깥 반지름 방향
+  //   닫힘축이 접선에서 kTiltFaceTol 넘게 다르면 (면이 틀어진 네모 · 이웃 때문에 고른 방향) 기울이지 않음. 안이면 손가락이 닫히며 퍽을 면에 맞춤
+  const double az = std::atan2(y - m.j1_xy.y(), x - m.j1_xy.x());
+  const double tangential = az + M_PI / 2.0;
+  const double period = std::isfinite(close_deg) ? M_PI : M_PI / 2.0;   // 고른 방향 = 손가락 방향 (180°), 네모 면 = 90° 마다 같음
+  const bool tilt_ok = std::fabs(std::remainder(ca - tangential, period)) <= kTiltFaceTol + 1e-9;
+  const Eigen::Vector3d radial(std::cos(az), std::sin(az), 0.0);
   const Q5 & q0 = m.template_q;
-  std::vector<PickPose> out;
-  std::vector<Q5> seeds;
-  for (double h : heights_mm) {
-    const Eigen::Vector3d p(x, y, top_z + h / 1000.0);
-    const auto sols = arm_ik(m, p, app, close, seeds, std::isfinite(close_deg) ? 180.0 : 90.0);
-    const IkSolution * pick = nullptr;
-    auto key = [&](const IkSolution & s) {
-        const double a = std::round(std::fabs(s.q[4] - m.q5_rest) / 0.3);
-        double d = 0.0;
-        for (int j = 1; j < 4; ++j) {d += (s.q[j] - q0[j]) * (s.q[j] - q0[j]);}
-        return std::make_pair(a, std::sqrt(d));
-      };
-    for (const auto & s : sols) {
-      if (s.pos_mm < 1.0 && s.app_deg < 1.0 && s.roll_deg < 2.0 && ticks_in_range(m, q_to_ticks(m, s.q))) {
-        if (!pick || key(s) < key(*pick)) {pick = &s;}
-      }
-    }
-    if (!pick) {
-      char buf[160];
-      std::snprintf(buf, sizeof(buf), "높이 %.0f mm: 수직 손 IK 안 됨 (퍽 %.3f, %.3f, 돌림 %.1f°) — 퍽이 팔에서 너무 멀거나 옆", h, x, y, yaw_deg);
-      why = buf;
-      return {};
-    }
-    char name[16];
-    std::snprintf(name, sizeof(name), "h%.0f", h);
-    out.push_back({name, q_to_ticks(m, pick->q), q_to_ticks(m, encoder_goal_q(m, pick->q, 0.0))});
-    seeds = {pick->q};
+  std::vector<double> tilts;   // 선호 기울임에 가까운 순 (같으면 작은 것 먼저)
+  for (double t = 0.0; t <= max_tilt_deg + 1e-9; t += 10.0) {
+    if (std::fabs(t - prefer_tilt_deg) <= max_dev_deg + 1e-9 && (t == 0.0 || tilt_ok)) {tilts.push_back(t);}
   }
-  why.clear();
-  return out;
+  std::stable_sort(tilts.begin(), tilts.end(), [&](double a, double b) {
+      return std::fabs(a - prefer_tilt_deg) < std::fabs(b - prefer_tilt_deg) - 1e-9;
+    });
+  if (tilts.empty()) {why = "쥔 퍽 기울임에 맞는 손 기울임 없음"; return {};}
+  for (double tilt : tilts) {
+    const double t = tilt / kDeg;
+    const double cc = tilt > 0.0 ? tangential : ca;
+    const Eigen::Vector3d close(std::cos(cc), std::sin(cc), 0.0);
+    const Eigen::Vector3d app = std::sin(t) * radial - std::cos(t) * Eigen::Vector3d::UnitZ();
+    std::vector<PickPose> out;
+    std::vector<Q5> seeds;
+    bool ok = true;
+    for (double h : heights_mm) {
+      const Eigen::Vector3d p(x, y, top_z + h / 1000.0);   // 손끝 = 퍽 중심축 위 (기울여도 수직으로 들고 내림)
+      const auto sols = arm_ik(m, p, app, close, seeds, std::isfinite(close_deg) || tilt > 0.0 ? 180.0 : 90.0);
+      const IkSolution * pick = nullptr;
+      auto key = [&](const IkSolution & s) {
+          const double a = std::round(std::fabs(s.q[4] - m.q5_rest) / 0.3);
+          double dd = 0.0;
+          for (int j = 1; j < 4; ++j) {dd += (s.q[j] - q0[j]) * (s.q[j] - q0[j]);}
+          return std::make_pair(a, std::sqrt(dd));
+        };
+      for (const auto & s : sols) {
+        if (s.pos_mm < 1.0 && s.app_deg < 1.0 && s.roll_deg < 2.0 && ticks_in_range(m, q_to_ticks(m, s.q)) &&
+          ticks_in_range(m, q_to_ticks(m, encoder_goal_q(m, s.q, 0.0))))   // 명령(처짐 앞먹임)도 범위 안
+        {
+          if (!pick || key(s) < key(*pick)) {pick = &s;}
+        }
+      }
+      if (!pick) {
+        char buf[200];
+        std::snprintf(buf, sizeof(buf), "높이 %.0f mm: 손 IK 안 됨 (퍽 %.3f, %.3f, 돌림 %.1f°, 기울임 %.0f° 까지) — 퍽이 팔에서 너무 멀거나 옆",
+          h, x, y, yaw_deg, max_tilt_deg);
+        why = buf;
+        ok = false;
+        break;
+      }
+      char name[16];
+      std::snprintf(name, sizeof(name), "h%.0f", h);
+      out.push_back({name, q_to_ticks(m, pick->q), q_to_ticks(m, encoder_goal_q(m, pick->q, 0.0)), tilt});
+      seeds = {pick->q};
+    }
+    if (ok) {
+      why.clear();
+      return out;
+    }
+  }
+  return {};
 }
 
 }  // namespace manipulation
