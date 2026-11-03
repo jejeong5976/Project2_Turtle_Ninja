@@ -315,6 +315,8 @@ private:
   //   STORE <칸>   : 박스 위 들기(퍽 쥠) → 칸에 넣기 → 받침 (주행 허용). lazy_fold 면 P0 (아래)
   //   RETRIEVE <칸>: 받침 → 칸에서 꺼내기 → 박스 위 들기 (퍽 쥠, 바퀴 잠금 유지 — 이어서 PLACE). LOOK 자세면 복귀 경로로 받침을 거쳐 감
   //   LOOK · LOOK_BARCODE: 받침 → 관찰 자세 (그 자세 유지). 이미 그 자세면 그대로
+  //   LOOK slot "rack": 빈 손 적재함 스캔 (경로 rack_scan) — 받침 → 칸 두 개씩 손목 카메라로 내려다보며 2 s 씩 → 받침 (주행 허용)
+  //     칸 바닥 태그로 칸 위치를 잼 (manipulation rack_tag_node). 퍽 쥐면 거절. 칸에 퍽이 있어도 경로는 퍽 위로 지나감 (그 칸은 못 잼)
   //   HOME: 접혀 있으면 home 한 점, 아니면 지금 자세에서 출발하는 검사된 복귀 경로(home_from_*), 없으면 home 한 점
   //   PICK: 받침 → 펼치기 → 퍽 위 40 열기 → 10 → 쥐기 −40 닫기 → 10 → 40 → 박스 위 기준점 (퍽 쥠, 바퀴 잠금 유지 — 이어서 STORE)
   //     손을 10° 넘게 기울여야 하면 (적재함에 못 넣는 먼 퍽) pick_tilted_depth_mm (30) = 퍽 무게중심을 쥠 — 더 깊으면 원기둥이 손가락 사이에서 굴러 넘어짐 (11-03 시뮬)
@@ -342,6 +344,10 @@ private:
       case G::RETRIEVE:
         return path_plan("retrieve_" + goal.slot, why, true);
       case G::LOOK:
+        if (goal.slot == "rack") {
+          if (carrying_) {why = "퍽을 쥔 채 적재함 스캔 안 함 (빈 손으로만)"; return {};}
+          return path_plan("rack_scan", why, false, true);   // lazy_fold 여도 받침까지 (P0 에서 오래 버티지 않게)
+        }
         return look_plan("look", why);
       case G::LOOK_BARCODE:
         return look_plan("look_barcode", why);
@@ -360,12 +366,13 @@ private:
   }
 
   // from_look: 받침에서 시작하는 경로를 LOOK · LOOK_BARCODE 자세에서 받으면 검사된 복귀 경로로 받침을 거쳐 감 (RETRIEVE)
-  std::vector<ArmAction> path_plan(const std::string & name, std::string & why, bool from_look = false)
+  // keep_fold: lazy_fold 여도 끝의 접기를 안 자름 (받침까지)
+  std::vector<ArmAction> path_plan(const std::string & name, std::string & why, bool from_look = false, bool keep_fold = false)
   {
     const auto it = paths_.find(name);
     if (it == paths_.end()) {why = "경로 " + name + " 없음 (config/arm_paths.yaml)"; return {};}
     ArmPath path = it->second;
-    if (cut_fold_tail(path)) {RCLCPP_INFO(get_logger(), "%s: P0 에서 멈춤 (나중에 접기, 주행 전 HOME 이 접음)", name.c_str());}
+    if (!keep_fold && cut_fold_tail(path)) {RCLCPP_INFO(get_logger(), "%s: P0 에서 멈춤 (나중에 접기, 주행 전 HOME 이 접음)", name.c_str());}
     if (!path_start_ok(path, joint_buf_, path_start_tol_, why)) {
       if (!join_from_p0(path, name.c_str()) && (!from_look || !join_from_look(path, name.c_str()))) {
         if (from_look) {why += " — 받침(HOME) 또는 LOOK 자세에서 시작해야 함";}
@@ -763,7 +770,7 @@ private:
     return false;
   }
 
-  // 경로 묶음 읽기: arm_paths.names 마다 arm_paths.<이름>.{nodes, q(관절 5 개 × 점), stand, speed, grip, stop, ends_home}
+  // 경로 묶음 읽기: arm_paths.names 마다 arm_paths.<이름>.{nodes, q(관절 5 개 × 점), stand, speed, grip, stop, ends_home}, hold (없어도 됨)
   void load_paths()
   {
     const auto names = declare_parameter<std::vector<std::string>>("arm_paths.names", std::vector<std::string>{});
@@ -777,18 +784,21 @@ private:
       const auto speed = declare_parameter<std::vector<double>>(k + "speed", std::vector<double>{});
       const auto grip = declare_parameter<std::vector<std::string>>(k + "grip", std::vector<std::string>{});
       const auto stop = declare_parameter<std::vector<bool>>(k + "stop", std::vector<bool>{});
+      auto hold = declare_parameter<std::vector<double>>(k + "hold", std::vector<double>{});
       const std::size_t m = ids.size();
-      if (m < 2 || q.size() != m * nj || stand.size() != m || speed.size() != m || grip.size() != m || stop.size() != m) {
+      if (hold.empty()) {hold.assign(m, 0.0);}
+      if (m < 2 || q.size() != m * nj || stand.size() != m || speed.size() != m || grip.size() != m || stop.size() != m || hold.size() != m) {
         RCLCPP_ERROR(get_logger(), "경로 %s: 점 수가 맞지 않음 (nodes %zu, q %zu) → 안 씀", n.c_str(), m, q.size());
         continue;
       }
       bool finite = true;
       for (double v : q) {finite = finite && std::isfinite(v);}
       for (double v : speed) {finite = finite && std::isfinite(v) && v >= 0.0;}
+      for (double v : hold) {finite = finite && std::isfinite(v) && v >= 0.0 && v <= 10.0;}
       bool grip_ok = true;
       for (const auto & g : grip) {grip_ok = grip_ok && (g == "-" || g == "open" || g == "release" || g == "close");}
       if (!finite || !grip_ok) {
-        RCLCPP_ERROR(get_logger(), "경로 %s: q · speed 에 NaN · 음수 또는 모르는 grip → 안 씀", n.c_str());
+        RCLCPP_ERROR(get_logger(), "경로 %s: q · speed · hold 에 NaN · 음수 (hold 는 10 s 까지) 또는 모르는 grip → 안 씀", n.c_str());
         continue;
       }
       ArmPath p;
@@ -796,7 +806,7 @@ private:
       p.ends_home = declare_parameter<bool>(k + "ends_home", false);
       for (std::size_t i = 0; i < m; ++i) {
         const std::string g = grip[i] == "-" ? "" : grip[i];
-        p.nodes.push_back({ids[i], std::vector<double>(q.begin() + i * nj, q.begin() + (i + 1) * nj), stand[i], speed[i], g, stop[i]});
+        p.nodes.push_back({ids[i], std::vector<double>(q.begin() + i * nj, q.begin() + (i + 1) * nj), stand[i], speed[i], g, stop[i], hold[i]});
       }
       paths_[n] = p;
     }
