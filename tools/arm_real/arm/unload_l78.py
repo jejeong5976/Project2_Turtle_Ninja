@@ -25,7 +25,7 @@ import rack_load                  # noqa: E402
 import sag_model                  # noqa: E402
 
 PY = os.environ.get('NT_PY', sys.executable)
-TEACH = HERE / 'teach_20261101T162442'   # 11-01 사람 시연 기록 (poses.txt = 자세 폴더 이름, 자세 자료는 NT_POSE_MEASURE/runs/)
+TEACH = HERE / 'teach_l78'   # 11-01 사람 시연 기록 (poses.txt = 자세 폴더 이름, 자세 자료는 NT_POSE_MEASURE/runs/)
 POSE_MEASURE = Path(os.environ.get('NT_POSE_MEASURE', HERE.parent / 'arm_workspace_measure_20261024'))
 J4_HI = 2470
 DROP = (0.235, 0.0)               # 박스 놓는 자리 = 넣기 경유점(L7/L8 설정)의 출발 자리

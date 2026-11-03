@@ -100,7 +100,7 @@ _CACHE_NEW = {}
 
 def _code_key():
     import reach_lib
-    files = [Path(__file__), HERE / 'arm_pose_fk.py', HERE / 'sag_model.py', HERE / 'camera_calib_20261030.json',
+    files = [Path(__file__), HERE / 'arm_pose_fk.py', HERE / 'sag_model.py', HERE / 'camera_calib.json',
              Path(reach_lib.__file__), Path(reach_lib.__file__).with_name('reach_model.py'), reach_lib.URDF_PATH,
              Path(reach_lib.URDF_PATH).parent.parent / 'config' / 'joint_map.json']
     h = hashlib.sha1(repr((PLACED_PUCK_MARGIN, OBS_MARGIN, MARGIN, STAND_MARGIN, FLOOR_MARGIN, HYPS)).encode())
@@ -432,11 +432,11 @@ def calib_poses(C, n_pick=10):
 
 
 def kin_poses(C, n_pick=10):
-    """어느 관절(J2 · J3 · J4) 기준이 틀렸는지 가리는 자세: 어깨 · 팔꿈치를 크게 바꾸며 바닥을 봄. 보정된 카메라(camera_calib_20261030.json) 로 바닥 보임 판정,
+    """어느 관절(J2 · J3 · J4) 기준이 틀렸는지 가리는 자세: 어깨 · 팔꿈치를 크게 바꾸며 바닥을 봄. 보정된 카메라(camera_calib.json) 로 바닥 보임 판정,
     D-최적(카메라 6 + 관절 오프셋 3) 으로 고름"""
     import handeye_floor as he
     from scipy.spatial.transform import Rotation as Rot
-    cal = json.loads((HERE / 'camera_calib_20261030.json').read_text())
+    cal = json.loads((HERE / 'camera_calib.json').read_text())
     T5d = np.array(cal['T_5d']); off0 = {1: cal['joint_offset_deg']['J2']}
     deg = lambda x: round(x * 4096 / 360)
     base = [3950, 1667, 1992, 2066, 1996]

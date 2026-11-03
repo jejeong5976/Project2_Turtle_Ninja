@@ -12,11 +12,11 @@
 ## 파일
 | 파일 | 하는 일 |
 |---|---|
-| `arm/replay_paths.py` | 칸마다 실물 성공 실행 기록(joint_states.csv) → 16 틱 간격 · 처짐 앞먹임 · 안전 다시 검사 → `out/<경로>.checked.json`. '그때 찬 칸' 은 `rack_cells.json.bak_state_1101_*` 로 되살림 |
+| `arm/replay_paths.py` | 칸마다 실물 성공 실행 기록(joint_states.csv) → 16 틱 간격 · 처짐 앞먹임 · 안전 다시 검사 → `out/<경로>.checked.json`. '그때 찬 칸' 은 `rack_states/` 로 되살림 |
 | `arm/retrieve_tail.py` | 빼기 경로 끝(실물 들기) → 박스 위 기준점 (PICK 끝과 같은 자세) |
 | `arm/fullcheck.py` | 최악 검사: 대상 칸 말고 11 칸이 모두 찬 상태로 다시 검사 (경고만) |
 | `arm/gen_look.py` | LOOK · LOOK_BARCODE 와 그 복귀 경로 |
-| `arm/gen_paths.py` · `rack_load.py` · `unload_cell.py` · `unload_l78.py` | 계획기 경로 (재생 경로의 기준 · 칸 이름 짝 · L7/L8 사람 시연 재생, `teach_20261101T162442/`) |
+| `arm/gen_paths.py` · `rack_load.py` · `unload_cell.py` · `unload_l78.py` | 계획기 경로 (재생 경로의 기준 · 칸 이름 짝 · L7/L8 사람 시연 재생, `teach_l78/`) |
 | `arm/map_runs.py` | 실물 실행 기록 → 칸 짝짓기 |
 | `arm/export_yaml.py` | `out/*.checked.json` → `config/arm_paths.yaml` (칸 근처 15 °/s 표시 포함) |
 | `arm/export_kin.py` · `export_kin_cpp.py` | 기구학 상수 · 정답값 → `config/arm_kinematics.yaml` · `arm_kin_data.hpp` |
@@ -25,8 +25,8 @@
 | `arm/handeye_floor.py` · `camera_angle_ref.py` | 손목 카메라 장착 (`pose_safety.py --calib · --kin` 때만) |
 | `reach/reach_model.py` · `reach_lib.py` | URDF 메시 충돌 · IK 모델 |
 | `place_spots/place_ik.py` · `place_poses.json` | 놓기 자세 계산 (`pose_safety.py --calib · --kin` 때만, json 은 참고 자료) |
-| `arm/rack_cells.json` (+ `.bak_state_1101_*` 12 개) | 칸 측정값 (옛 이름 A · B · C · D · L1~L8) · 11-01 칸 상태 기록 |
-| `arm/camera_calib_20261030.json` · `ros/hardware_map_arm_only.yaml` | 손목 카메라 보정 · 팔 관절 영점 (생성기가 읽음) |
+| `arm/rack_cells.json` · `arm/rack_states/` (12 개) | 칸 측정값 (옛 이름 A · B · C · D · L1~L8) · 11-01 시험 중 칸 상태 기록 (파일 이름 = 그 시각) |
+| `arm/camera_calib.json` · `ros/hardware_map_arm_only.yaml` | 손목 카메라 보정 · 팔 관절 영점 (생성기가 읽음) |
 | `arm/grasp_poses*.json` | 실물 집기 기준 자세 (참고 자료, `grasp_test.py` 를 인자 없이 돌리면 덮어씀) |
 
 ## 다시 만들기

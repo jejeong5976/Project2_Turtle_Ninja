@@ -1,5 +1,5 @@
 """팔 처짐 모델 (2026-10-30 손눈 보정에서 구함, handeye_sag.py): 실제 관절 = 엔코더 + c·τ_j (j = J2 · J3 · J4, τ = 중력 토크 N·m).
-c = camera_calib_20261030.json 의 sag_c_deg_per_Nm (3.07 °/N·m). 질량 어림: 링크2 구간 0.12 · 링크3 0.12 · 링크4 0.10 · 손목+그리퍼+카메라 0.40 kg.
+c = camera_calib.json 의 sag_c_deg_per_Nm (3.07 °/N·m). 질량 어림: 링크2 구간 0.12 · 링크3 0.12 · 링크4 0.10 · 손목+그리퍼+카메라 0.40 kg.
 held_kg: 쥔 물체 (손끝에) — 퍽 쥐면 그만큼 처짐 늘어남 (추정)."""
 import json
 import math
@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 
 G = 9.81
-CAL = Path(__file__).with_name('camera_calib_20261030.json')
+CAL = Path(__file__).with_name('camera_calib.json')
 
 
 def c_rad():

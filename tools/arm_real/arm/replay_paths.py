@@ -69,8 +69,8 @@ def runs_all():
 # ------------------------------------------------------------------ 칸 상태 복원
 def snapshots():
     snaps = []
-    for f in sorted(ARM.glob('rack_cells.json.bak_state_1101_*')):
-        ts = datetime.strptime('2026' + f.name.split('_state_')[1], '%Y%m%d_%H%M%S').timestamp()   # 로컬 시각 (백업 = 바꾸기 전 상태)
+    for f in sorted((ARM / 'rack_states').glob('1101_*.json')):   # 이름 = 11-01 로컬 시각 (그 시각에 바꾸기 전 칸 상태)
+        ts = datetime.strptime('2026' + f.stem, '%Y%m%d_%H%M%S').timestamp()
         r = json.loads(f.read_text())
         snaps.append((ts, {k for k, v in r['cells'].items() if v['state'].startswith('full')}))
     return snaps
