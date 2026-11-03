@@ -1,0 +1,10 @@
+# 생성물 · 큰 자료 (README_KO.md '필요한 자료')
+arm/out/
+arm/runs/
+nt_urdf_release_20261027_layout
+arm_workspace_measure_20261024
+__pycache__/
+arm/.pose_cache/
+arm/lc_*.json
+arm/*_drop_ik.json
+arm/camera_ref/
