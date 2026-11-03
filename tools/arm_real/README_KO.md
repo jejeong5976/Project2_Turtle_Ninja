@@ -19,6 +19,7 @@
 | `arm/gen_paths.py` · `rack_load.py` · `unload_cell.py` · `unload_l78.py` | 계획기 경로 (재생 경로의 기준 · 칸 이름 짝 · L7/L8 사람 시연 재생, `teach_l78/`) |
 | `arm/map_runs.py` | 실물 실행 기록 → 칸 짝짓기 |
 | `arm/export_yaml.py` | `out/*.checked.json` → `config/arm_paths.yaml` (칸 근처 15 °/s 표시 포함) |
+| `arm/shift_cell_paths.py` | `arm_paths.yaml` 의 칸 근처만 base_link 기준 몇 mm 옮김 (STORE · RETRIEVE 둘 다, PICK 끝 · P0 · 받침 쪽은 그대로) — 실물에서 퍽이 옆 컵에 걸린 칸 |
 | `arm/export_kin.py` · `export_kin_cpp.py` | 기구학 상수 · 정답값 → `config/arm_kinematics.yaml` · `arm_kin_data.hpp` |
 | `arm/pose_safety.py` | 자세 · 경로 안전 검사 (URDF 메시 충돌, 관절 범위, 쥔 퍽 · 칸 안 퍽, 처짐 ±2° 가설) |
 | `arm/sag_model.py` · `arm_pose_fk.py` · `grasp_test.py` · `arm_map.py` | 처짐 모델 · 순기구학 · 집기 계산 · 하드웨어 지도 (검사기 · 생성기가 씀) |
@@ -41,8 +42,12 @@ $NT_PY retrieve_tail.py
 $NT_PY fullcheck.py              # 나머지 11 칸 다 참 (경고만)
 $NT_PY gen_look.py
 $NT_PY export_yaml.py ../../../config/arm_paths.yaml
+$NT_PY shift_cell_paths.py ../../../config/arm_paths.yaml ../../../config/arm_paths.yaml 0,5 S12   # 칸 보정 (아래)
 $NT_PY export_kin.py && $NT_PY export_kin_cpp.py ../../..   # 기구학 → config/arm_kinematics.yaml · test/arm_kin_data.hpp
 ```
+**칸 보정**: S12 는 재생 경로 그대로면 쥔 퍽이 S7 쪽(−y)으로 약 3~5 mm 밀려 옆 컵 테두리에 걸림 → 칸 근처를 +y 5 mm 옮겨 넣기 · 빼기 실물 성공. `export_yaml.py` 로 다시 만들면 이 줄도 다시 돌릴 것 (`arm_paths.yaml` 의 `칸 보정:` 주석).
+S9 도 같은 쪽으로 걸렸지만 +y 만으로는 안 맞음 (+5 mm 오른쪽에 걸림, +7 mm 지나침, +6 mm 앞쪽(+x)으로 걸림) → 아직 보정 없음.
+
 `export_yaml.py` 는 `out/<이름>_rot.checked.json` 이 있으면 손목 회전 후보를 넣음 — **만들지 말 것** (J5 만 돌린 후보는 그리퍼 중심이 J5 축에서 약 12 mm 떨어져 있어 퍽이 13~17 mm 옮겨짐, 11-03 시뮬 · FK 로 확인해 뺐음).
 
 ## 필요한 자료 (저장소에 없음)
