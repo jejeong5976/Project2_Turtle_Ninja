@@ -114,8 +114,13 @@ public:
     load_paths();
     // ---- 집기 · 놓기 (실물 집기 계산기와 같은 기구학, config/arm_kinematics.yaml) ----
     staging_ = declare_parameter<std::vector<double>>("staging_pose", std::vector<double>{});
-    pick_heights_ = declare_parameter<std::vector<double>>("pick_heights_mm", {40.0, 10.0, -30.0});
-    place_heights_ = declare_parameter<std::vector<double>>("place_heights_mm", {40.0, 10.0, -23.0});
+    // 쥐기 −40 mm = 11-01 실물 넣기 시험 때 쥔 깊이. 칸 경로(arm_paths)가 이 깊이로 쥔 퍽 기준 — 얕게 쥐면 쥔 퍽이 그만큼 낮게 지나가
+    //   옆 칸 퍽을 긁음 (−30 이면 10 mm 낮음: 11-03 물리 시뮬 넣기 41/56 → −40 에서 53/56, 실제 채우는 순서 24/24)
+    pick_heights_ = declare_parameter<std::vector<double>>("pick_heights_mm", {40.0, 10.0, -40.0});
+    place_heights_ = declare_parameter<std::vector<double>>("place_heights_mm", {40.0, 10.0, -23.0});   // 마지막 = 쥔 깊이 모를 때만
+    place_clear_mm_ = declare_parameter<double>("place_bottom_clear_mm", 2.0);      // 놓을 때 퍽 바닥 ↔ 놓을 면
+    retrieve_depth_mm_ = declare_parameter<double>("retrieve_grip_depth_mm", 25.0); // 칸에서 꺼낸 퍽을 쥔 깊이 (11-01 실물 빼기 계획 unload_cell.py, 실물 확인 전)
+    tilted_depth_mm_ = declare_parameter<double>("pick_tilted_depth_mm", 30.0);     // 손을 10° 넘게 기울인 PICK 의 쥐는 깊이 (퍽 무게중심)
     surface_z_ = declare_parameter<double>("puck_surface_z", 0.037);
     puck_h_ = declare_parameter<double>("puck_height", 0.060);
     grasp_offset_ = declare_parameter<double>("grasp_offset_m", 0.015);   // planning 과 같은 값 (docs/planning/planning_interfaces.md 6 절)
@@ -296,9 +301,12 @@ private:
   //   RETRIEVE <칸>: 받침 → 칸에서 꺼내기 → 박스 위 들기 (퍽 쥠, 바퀴 잠금 유지 — 이어서 PLACE). LOOK 자세면 복귀 경로로 받침을 거쳐 감
   //   LOOK · LOOK_BARCODE: 받침 → 관찰 자세 (그 자세 유지). 이미 그 자세면 그대로
   //   HOME: 접혀 있으면 home 한 점, 아니면 지금 자세에서 출발하는 검사된 복귀 경로(home_from_*), 없으면 home 한 점
-  //   PICK: 받침 → 펼치기 → 퍽 위 40 열기 → 10 → 쥐기 −30 닫기 → 10 → 40 → 박스 위 기준점 (퍽 쥠, 바퀴 잠금 유지 — 이어서 STORE)
+  //   PICK: 받침 → 펼치기 → 퍽 위 40 열기 → 10 → 쥐기 −40 닫기 → 10 → 40 → 박스 위 기준점 (퍽 쥠, 바퀴 잠금 유지 — 이어서 STORE)
+  //     손을 10° 넘게 기울여야 하면 (적재함에 못 넣는 먼 퍽) pick_tilted_depth_mm (30) = 퍽 무게중심을 쥠 — 더 깊으면 원기둥이 손가락 사이에서 굴러 넘어짐 (11-03 시뮬)
   //     LOOK · LOOK_BARCODE 자세에서 받으면 앞에 검사된 복귀 경로(home_from_*)를 붙여 받침을 거쳐 감
-  //   PLACE: 기준점(퍽 쥠) → 놓을 자리 위 40 → 10 → −23 열기 → 10 → 40 닫기 → P0 → 접기 → 받침 (주행 허용)
+  //   PLACE: 기준점(퍽 쥠) → 놓을 자리 위 40 → 10 → 놓기 열기 → 10 → 40 닫기 → P0 → 접기 → 받침 (주행 허용)
+  //     놓기 높이: 놓는 순간 퍽의 가장 낮은 모서리가 놓을 면 위 place_bottom_clear_mm (drop_height_mm) — 수직이면 2 − 쥔 깊이:
+  //     RETRIEVE 뒤 (retrieve_grip_depth_mm 25) −23, PICK 뒤 (40) −38. 다른 기울임으로 풀리면 그 기울임으로 높이를 다시 계산해 한 번 더 풂
   //     목표 = ArmTask.target (base_link) = planning 약속 (planning_interfaces.md 6 절): 그리퍼 중심이 갈 점 = 퍽 중심 + 쥘 끝(위) 방향 × grasp_offset_m,
   //       방향 z 축 = 쥘 끝, x 축 = 네모 퍽 면. 서 있는 퍽만 (누운 퍽은 실물 시험 전이라 거절). z = 0 이면 박스 위 기본 높이 (손 시험용)
   // 빈 목록 = 거절 (why 에 이유)
@@ -307,7 +315,7 @@ private:
     using G = ArmTask::Goal;
     switch (goal.task) {
       case G::STORE:
-        if (held_tilt_ > 10.0 + 1e-6) {   // 적재함 경로는 수직 퍽으로 검증됨
+        if (held_tilt_ > kStoreMaxTilt + 1e-6) {   // 적재함 경로는 수직 퍽으로 검증됨
           char buf[160];
           std::snprintf(buf, sizeof(buf), "손을 %.0f° 기울여 집은 퍽은 적재함에 못 넣음 (10° 까지) — 가까운 자리에 놓고 다시 집기", held_tilt_);
           why = buf;
@@ -569,7 +577,7 @@ private:
   }
 
   // 후보를 차례로 IK (안 되면 다음 후보). 수직이 안 닿으면 기울인 손 (pick_max_tilt_deg 까지)
-  //   기울인 손은 쥐는 높이에서 손가락이 차체 쪽으로 약 30 mm · tan(기울임) 더 차지 → 이웃이 있으면 손가락 폭을 그만큼 넓혀 다시 검사
+  //   기울인 손은 쥐는 높이에서 손가락이 차체 쪽으로 쥔 깊이(이웃 퍽 윗면 아래로 들어간 손가락 길이) · tan(기울임) 더 차지 → 이웃이 있으면 손가락 폭을 그만큼 넓혀 다시 검사
   std::vector<PickPose> poses_for(double x, double y, double top, double yaw, const std::vector<double> & heights,
     const std::vector<std::pair<double, std::string>> & cands, std::string & kw, std::string & why,
     double prefer_tilt = 0.0, double max_dev = 1e9) const
@@ -580,7 +588,7 @@ private:
       const double tilt = P.back().tilt_deg;
       if (tilt > 0.0 && !last_nb_.empty()) {
         FingerTip f;
-        const double e = 0.030 * std::tan(tilt * M_PI / 180.0);
+        const double e = std::max(0.0, -heights.back() / 1000.0) * std::tan(tilt * M_PI / 180.0);
         f.w_lo -= e;
         f.w_hi += e;
         const double c = std::atan2(y - model_.j1_xy.y(), x - model_.j1_xy.x()) + M_PI / 2.0;   // 기울인 손의 닫힘축 = 접선 (pick_poses)
@@ -609,9 +617,21 @@ private:
     std::string open_kw;
     const double zc = top - model_.team_base_z_floor + model_.base_z_floor - puck_h_ / 2.0;   // 퍽 중심 (base_link)
     if (!grasp_for(x, y, zc, yaw, false, cands, why, "PICK")) {return {};}
-    const auto P = poses_for(x, y, top, yaw, pick_heights_, cands, open_kw, why);
+    // 손 기울임 10° 까지 = pick_heights_ (−40, 적재함 경로와 같은 깊이), 그보다 기울여야 하면 pick_tilted_depth_mm (퍽 무게중심)
+    //   기울임 후보는 10° 간격 (pick_poses): 2 번째 풀이는 20° 부터 max_tilt 까지, 수직에 가까운 것부터
+    auto P = poses_for(x, y, top, yaw, pick_heights_, cands, open_kw, why, 0.0, kStoreMaxTilt);
+    double depth = -pick_heights_.back();
+    if (P.size() != 3 && max_tilt_deg_ >= kStoreMaxTilt + 10.0 - 1e-6) {
+      auto h = pick_heights_;
+      h.back() = -tilted_depth_mm_;
+      std::string why2;
+      P = poses_for(x, y, top, yaw, h, cands, open_kw, why2, kStoreMaxTilt + 10.0, max_tilt_deg_ - kStoreMaxTilt - 10.0);
+      depth = tilted_depth_mm_;
+      if (P.size() != 3) {why = why + " · 기울인 손 (" + why2 + ")";}
+    }
     if (P.size() != 3) {return {};}
     pending_tilt_ = P.back().tilt_deg;
+    pending_depth_ = depth;
     ArmPath path = unfold->second;
     path.name = "pick";
     path.ends_home = false;
@@ -626,7 +646,8 @@ private:
       why = look_why + " — 받침(HOME) 또는 LOOK 자세에서 시작해야 함";
       return {};
     }
-    RCLCPP_INFO(get_logger(), "PICK: 퍽 (%.3f, %.3f) 돌림 %.1f° → 쥐기 틱 [%d %d %d %d %d]", x, y, yaw,
+    RCLCPP_INFO(get_logger(), "PICK: 퍽 (%.3f, %.3f) 돌림 %.1f° · 손 기울임 %.0f° · 쥐는 깊이 %.0f mm → 쥐기 틱 [%d %d %d %d %d]", x, y, yaw,
+      pending_tilt_, pending_depth_,
       P[2].ticks[0], P[2].ticks[1], P[2].ticks[2], P[2].ticks[3], P[2].ticks[4]);
     return path_actions(path, timing_, grip_, joint_buf_);
   }
@@ -641,8 +662,19 @@ private:
     std::string open_kw;
     const double zc = top - model_.team_base_z_floor + model_.base_z_floor - puck_h_ / 2.0;
     if (!grasp_for(x, y, zc, yaw, true, cands, why, "PLACE")) {return {};}
-    const auto P = poses_for(x, y, top, yaw, place_heights_, cands, open_kw, why, held_tilt_, 20.0);   // 놓는 퍽 기울임 ≤ 20°
+    auto heights = place_heights_;
+    const bool depth_known = heights.size() == 3 && held_depth_mm_ > 0.0;
+    if (depth_known) {heights[2] = drop_height_mm(held_tilt_);}   // 쥘 때 기울임 그대로 놓으면 퍽은 수직
+    auto P = poses_for(x, y, top, yaw, heights, cands, open_kw, why, held_tilt_, 20.0);   // 놓는 퍽 기울임 ≤ 20°
     if (P.size() != 3) {return {};}
+    if (depth_known && std::abs(P.back().tilt_deg - held_tilt_) > 0.5) {   // 다른 손 기울임으로 풀림 → 퍽이 기울어 모서리가 낮아짐 → 그 기울임으로 다시
+      const double t = P.back().tilt_deg;
+      heights[2] = drop_height_mm(t);
+      P = poses_for(x, y, top, yaw, heights, cands, open_kw, why, t, 0.0);
+      if (P.size() != 3) {why = "놓는 손 기울임 " + std::to_string(static_cast<int>(t)) + "° 의 놓기 높이로 다시 풀면 IK 안 됨: " + why; return {};}
+    }
+    RCLCPP_INFO(get_logger(), "PLACE: (%.3f, %.3f) 쥔 깊이 %.0f mm · 쥘 때 기울임 %.0f° · 놓는 손 %.0f° → 놓기 높이 %.1f mm", x, y, held_depth_mm_,
+      held_tilt_, P.back().tilt_deg, heights.back());
     ArmPath path;
     path.name = "place";
     path.ends_home = true;
@@ -655,6 +687,15 @@ private:
     for (const auto & n : fold->second.nodes) {path.nodes.push_back(n);}
     if (!path_start_ok(path, joint_buf_, path_start_tol_, why)) {why += " — 퍽을 쥐고 박스 위 기준점에 있어야 함 (PICK · RETRIEVE 뒤)"; return {};}
     return path_actions(path, timing_, grip_, joint_buf_);
+  }
+
+  // 놓기 높이 [mm, 퍽 윗면 기준 손끝]: 손 기울임 place_tilt 로 놓으면 퍽이 세상에서 Δ = place_tilt − held_tilt_ 기울어짐.
+  //   손끝은 퍽 축 위 → 가장 낮은 모서리 = 손끝 − (퍽 높이 − 쥔 깊이)·cosΔ − 반폭·sin|Δ| 가 놓을 면 위 place_clear_mm_ 가 되게 (반폭 17.4 mm)
+  double drop_height_mm(double place_tilt) const
+  {
+    const double d = std::abs(place_tilt - held_tilt_) * M_PI / 180.0;
+    const double H = puck_h_ * 1000.0;
+    return place_clear_mm_ - H + (H - held_depth_mm_) * std::cos(d) + 17.4 * std::sin(d);   // 반폭: 네모 퍽 면이 10° 틀어져도 (15·(cos10°+sin10°))
   }
 
   // 팔 기구학 읽기: arm_model.* (config/arm_kinematics.yaml)
@@ -797,6 +838,9 @@ private:
             if (task == ArmTask::Goal::PICK || task == ArmTask::Goal::RETRIEVE) {carrying_ = true;}
             if (task == ArmTask::Goal::STORE || task == ArmTask::Goal::PLACE || task == ArmTask::Goal::HOME) {carrying_ = false;}
             held_tilt_ = task == ArmTask::Goal::PICK ? pending_tilt_ : 0.0;
+            if (task == ArmTask::Goal::PICK) {held_depth_mm_ = pending_depth_;}
+            else if (task == ArmTask::Goal::RETRIEVE) {held_depth_mm_ = retrieve_depth_mm_;}
+            else if (!carrying_) {held_depth_mm_ = 0.0;}
           }
           if (c.end == ArmEnd::SUCCEEDED) {
             arm_goal_->succeed(result);
@@ -952,6 +996,10 @@ private:
   double max_tilt_deg_{20.0};
   double held_tilt_{0.0};          // 쥔 퍽의 손 안 기울임 [°] (PICK 때 손 기울임, RETRIEVE = 0)
   double pending_tilt_{0.0};       // 받은 PICK 계획의 손 기울임 (성공하면 held_tilt_)
+  double held_depth_mm_{0.0};      // 쥔 퍽 깊이 = 퍽 윗면 ↔ 손끝 [mm] (PICK = 그 계획의 쥐는 깊이, RETRIEVE = retrieve_grip_depth_mm, 0 = 모름)
+  double pending_depth_{0.0};      // 받은 PICK 계획의 쥐는 깊이 (성공하면 held_depth_mm_)
+  double place_clear_mm_{2.0}, retrieve_depth_mm_{25.0}, tilted_depth_mm_{30.0};
+  static constexpr double kStoreMaxTilt = 10.0;   // 이보다 기울여 쥔 퍽은 STORE 거절 (적재함 경로는 수직 퍽으로 검증)
   std::vector<NeighborPuck> last_nb_;   // grasp_for 가 본 이웃 (poses_for 의 기울인 손 다시 검사용)
   std::unique_ptr<tf2_ros::Buffer> tf_buf_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listen_;

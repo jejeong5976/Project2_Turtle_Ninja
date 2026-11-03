@@ -123,3 +123,22 @@ TEST(ArmKinematics, TiltPreferenceAndLimit)
   // 먼 자리 (수직 안 닿음) · 선호 0° · 한도 0° → 거절
   EXPECT_TRUE(manipulation::pick_poses(m, 0.30, 0.0, 0.058, std::nan(""), {40, 10, -23}, why, std::nan(""), 30.0, 0.0, 0.0).empty());
 }
+
+// 쥐기 −40 mm (control 기본, 11-01 실물 넣기 깊이): 박스 자리 · 옆 자리 · 먼 자리(기울인 손)에서 풀리고 −30 보다 손끝이 10 mm 낮음
+TEST(ArmKinematics, PickDepth40Reachable)
+{
+  const auto m = kin_data::model();
+  std::string why, why30;
+  struct P {double x, y, yaw, tilt;};
+  for (const P & c : {P{0.2102, 0.038, -4.0, 20.0}, P{0.22, 0.08, std::nan(""), 20.0}, P{0.22, -0.08, std::nan(""), 20.0},
+                      P{0.18, 0.0, std::nan(""), 20.0}, P{0.30, 0.0, std::nan(""), 20.0}, P{0.33, 0.0, std::nan(""), 30.0}}) {
+    const auto d40 = manipulation::pick_poses(m, c.x, c.y, 0.058, c.yaw, {40, 10, -40}, why, std::nan(""), c.tilt);
+    ASSERT_EQ(d40.size(), 3u) << c.x << ", " << c.y << ": " << why;
+    const auto d30 = manipulation::pick_poses(m, c.x, c.y, 0.058, c.yaw, {40, 10, -30}, why30, std::nan(""), c.tilt);
+    ASSERT_EQ(d30.size(), 3u) << why30;
+    EXPECT_DOUBLE_EQ(d40.back().tilt_deg, d30.back().tilt_deg);
+    const auto g40 = manipulation::arm_grip(m, manipulation::ticks_to_q(m, d40[2].ticks));
+    const auto g30 = manipulation::arm_grip(m, manipulation::ticks_to_q(m, d30[2].ticks));
+    EXPECT_NEAR(g30.tip.z() - g40.tip.z(), 0.010, 0.0015) << c.x << ", " << c.y;
+  }
+}
