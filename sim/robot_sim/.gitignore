@@ -10,3 +10,5 @@ pack_large_files.sh
 results/
 __pycache__/
 rl/logs/
+robot_description/team/
+usd/team_robot/

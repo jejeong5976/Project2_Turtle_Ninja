@@ -1089,3 +1089,11 @@ def set_physics_backend(cfg: 'TurtleNinjaMazeEnvCfg', name: str | None):
         cfg.sim.physics = NewtonCfg()
         return
     raise ValueError(f'모르는 물리 엔진: {name}')
+
+
+# 팀 URDF 로봇 (ros2_ws/src/description = 실물): TN_ROBOT=team 이면 위 설정을 바꿔 끼움 (sim_core/team_robot.py, 먼저 tools/convert_team_robot.py)
+if os.environ.get('TN_ROBOT', '') == 'team':
+    from sim_core import team_robot as _team_robot
+    _team_robot.install(_sys.modules[__name__])
+elif os.environ.get('TN_ROBOT', '') not in ('', 'release'):
+    raise ValueError(f"TN_ROBOT={os.environ['TN_ROBOT']} 모름 (team 또는 비움)")
