@@ -54,6 +54,10 @@
 #include "interfaces/msg/detection_array.hpp"
 #include "interfaces/msg/motion_mode.hpp"
 #include "nav2_msgs/action/navigate_to_pose.hpp"
+#include <cmath>
+#include <limits>
+
+#include "geometry_msgs/msg/twist_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
@@ -63,6 +67,7 @@
 #include "tf2_ros/transform_listener.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 
+#include "planning/approach.hpp"
 #include "planning/cargo.hpp"
 #include "planning/health.hpp"
 #include "planning/puck_registry.hpp"
@@ -218,6 +223,8 @@ private:
   // 단계 실행
   StepResult run_step(const Step & s, double now);
   StepResult run_navigate(const Step & s, double now);
+  StepResult run_approach(const Step & s, double now);   // 박스 앞 마지막 접근 (approach.hpp)
+  void stop_approach();
   bool navigate_goal(const Step & s, Pose2D & goal);
   StepResult run_arm(const Step & s, double now);
   bool arm_target(const Step & s, geometry_msgs::msg::PoseStamped & target, double now);
@@ -317,6 +324,22 @@ private:
   std::string mode_reason_;
   double last_mode_s_ = -1.0;
   double last_odom_s_ = -1.0;
+  double odom_x_ = 0.0, odom_y_ = 0.0;
+  double odom_fresh_s_ = -1.0;               // 측정 시각이 앞으로 간 /odom 을 받은 때 (같은 · 옛 시각은 안 셈)
+  rclcpp::Time odom_stamp_{0, 0, RCL_ROS_TIME};
+  struct OdomSample {double t, x, y;};
+  std::deque<OdomSample> odom_hist_;        // 최근 odom (스캔 측정 시각의 위치를 맞추려고, 약 1 s)
+  rclcpp::Time scan_stamp_{0, 0, RCL_ROS_TIME};
+  double travel_at(double t) const;          // 측정 시각 t 의 직진 거리 (odom_hist_ 사이 보간)
+
+  // 박스 앞 마지막 접근 (approach.hpp)
+  ApproachConfig approach_cfg_;
+  double approach_half_width_m_ = 0.06;      // 박스 면으로 보는 좁은 띠 (몸 중심선 ±)
+  double approach_body_half_m_ = 0.18;       // 다른 물체를 보는 차체 폭 띠 (몸 반폭 0.16 + 여유)
+  double approach_timeout_s_ = 8.0, approach_sensor_max_age_s_ = 0.3;
+  struct ApproachRun {bool active = false; double start_s = 0.0, x0 = 0.0, y0 = 0.0; ApproachState st;} approach_;
+  double front_scan_s_ = -1.0;               // 접근 중 앞쪽 라이다를 마지막으로 받은 때
+  double approach_travel() const {return std::hypot(odom_x_ - approach_.x0, odom_y_ - approach_.y0);}
 
   // 액션
   uint64_t gen_ = 0;
@@ -343,6 +366,8 @@ private:
   rclcpp::Subscription<diagnostic_msgs::msg::DiagnosticStatus>::SharedPtr sub_loc_health_;
   rclcpp::Publisher<interfaces::msg::CargoState>::SharedPtr pub_cargo_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_markers_;
+  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr pub_approach_;
+  rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_front_scan_;
   rclcpp_action::Client<Nav>::SharedPtr nav_client_;
   rclcpp_action::Client<ArmTask>::SharedPtr arm_client_;
   rclcpp::TimerBase::SharedPtr lifecycle_timer_, cargo_timer_, marker_timer_;

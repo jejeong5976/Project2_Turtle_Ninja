@@ -7,7 +7,7 @@ planning · perception 이 붙을 때 보는 표. 이름은 팀 시뮬 브리지
 
 | 이름 | 타입 | 보내는 곳 | 프레임 · 주기 | 비고 |
 |---|---|---|---|---|
-| `/cmd_vel` | `geometry_msgs/TwistStamped` | Nav2 · planning → swerve_controller | base_footprint 기준 몸 속도 | 0.3 s 끊기면 정지. 최고 0.10 m/s · 0.5 rad/s. header.stamp 가 젯슨 시각과 0.3 s 넘게 다르면 버림 (젯슨 안에서 보내거나 시각 동기화 필요, stamp 0 은 받은 시각 기준) |
+| `/cmd_vel` | `geometry_msgs/TwistStamped` | Nav2 · planning → swerve_controller | base_footprint 기준 몸 속도 | 0.3 s 끊기면 정지. 최고 0.20 m/s · 0.5 rad/s. header.stamp 가 젯슨 시각과 0.3 s 넘게 다르면 버림 (젯슨 안에서 보내거나 시각 동기화 필요, stamp 0 은 받은 시각 기준) |
 | `/odom` | `nav_msgs/Odometry` | swerve_controller | `odom` → `base_footprint`, 50 Hz | 회전은 OpenCR 자이로 (`/imu_sensor_broadcaster/imu`) |
 | TF `odom → base_footprint` | | swerve_controller | 50 Hz | `base_footprint → base_link` 는 URDF 고정 TF (z=0.033 m) |
 | `/lidar_front/scan` | `sensor_msgs/LaserScan` | `coin_d4_driver/multi_coin_d4_node` | `lidar_front_link` (= `base_scan_front` = `base_scan`) | `slam.launch.py` 기본 입력. SensorDataQoS |

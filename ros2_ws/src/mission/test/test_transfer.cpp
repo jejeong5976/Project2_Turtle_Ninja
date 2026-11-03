@@ -582,6 +582,24 @@ TEST(DiceSteps, CollectStepsPerBox)
   EXPECT_TRUE(collect_steps(a, {}, &err).empty());
 }
 
+// 박스 정차만 마지막 접근 (dice_map box_approach_m), 멈출 면 거리 = 정차 ↔ 중심 0.2935 − 반 변 0.1025
+TEST(DiceSteps, BoxStopsUseFinalApproach)
+{
+  DiceMap a;
+  ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
+  ASSERT_GT(a.box_approach_m, 0.0);
+  int boxes = 0;
+  for (const auto & s : collect_steps(a, {1, 2, 6, 3, 4, 5})) {
+    if (s.type != StepType::Navigate) {continue;}
+    ++boxes;
+    EXPECT_DOUBLE_EQ(s.approach_m, a.box_approach_m) << s.name;
+    EXPECT_NEAR(s.approach_face_m, 0.2935 - 0.1025, 1e-6) << s.name;
+  }
+  EXPECT_EQ(boxes, 6);
+  a.box_approach_m = 0.0;   // 끄면 예전과 같음
+  for (const auto & s : collect_steps(a, {1})) {EXPECT_DOUBLE_EQ(s.approach_m, 0.0);}
+}
+
 TEST(DiceSteps, Q1CollectThenDeliverSteps)
 {
   // 노드와 같은 순서로 순수 계산만: 박스 5 곳 수집 (collect_box_actions → Cargo 반영) → 마지막 박스에서 계획 → 단계

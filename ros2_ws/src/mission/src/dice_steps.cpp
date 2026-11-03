@@ -2,6 +2,7 @@
 
 #include "mission/dice_steps.hpp"
 
+#include <cmath>
 #include <set>
 
 namespace mission
@@ -20,6 +21,15 @@ Step nav_step(const Pose2D & p, const std::string & name, int node)
   if (is_box_node(node)) {box_of(s) = node;}
   if (is_place_node(node)) {place_of(s) = node_place(node);}
   return s;
+}
+
+// 박스 정차면 마지막 접근 (Nav2 는 box_approach_m 앞에서 멈추고 라이다로 면까지 붙음). 멈출 면 거리 = 정차 ↔ 박스 중심 − 반 변
+void set_box_approach(Step & s, const DiceMap & arena, int node)
+{
+  if (!is_box_node(node) || arena.box_approach_m <= 0.0) {return;}
+  const auto & b = arena.boxes[node - 1];
+  s.approach_m = arena.box_approach_m;
+  s.approach_face_m = std::hypot(b.center[0] - b.stop.x, b.center[1] - b.stop.y) - arena.box_size / 2.0;
 }
 
 Step look_step(int box, int place)
@@ -51,6 +61,7 @@ std::vector<Step> collect_steps(const DiceMap & arena, const std::vector<int> & 
   for (std::size_t i = 0; i < order.size(); ++i) {
     const int b = order[i];
     steps.push_back(nav_step(arena.boxes[b - 1].stop, "B" + std::to_string(b), b));
+    set_box_approach(steps.back(), arena, b);
     steps.push_back(look_step(b, -1));
     Step plan;
     plan.type = StepType::Custom;
@@ -107,7 +118,10 @@ std::vector<Step> transfer_steps(const TransferPlan & plan, const DiceMap & aren
 {
   std::vector<Step> steps;
   for (const auto & st : plan.stops) {
-    if (st.move) {steps.push_back(nav_step(node_stop(arena, st.node), node_name(st.node), st.node));}
+    if (st.move) {
+      steps.push_back(nav_step(node_stop(arena, st.node), node_name(st.node), st.node));
+      set_box_approach(steps.back(), arena, st.node);
+    }
     auto arm = arm_steps(st.actions);
     steps.insert(steps.end(), arm.begin(), arm.end());
   }

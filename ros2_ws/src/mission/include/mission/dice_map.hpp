@@ -14,6 +14,7 @@
 //   - places: L1 … L3: {center: [x, y], stop: [x, y, yaw], top_z: 0.07}
 //       center = 주사위 격자 중심, 보는 방향 = stop yaw
 //   - box_radius: 0.15            박스 LOOK 때 이 반경 안 퍽 = 그 박스 퍽, m
+//   - box_size: 0.205 · box_approach_m: 0.10  박스 한 변 · 박스 앞 마지막 접근 거리 (0 = 끔), m
 // 출력
 //   - DiceMap: 정차 자세 · 장소 중심 · 박스 중심, map 프레임
 // 실행
@@ -55,6 +56,8 @@ struct DiceMap
   std::array<ArenaBox, 6> boxes;    // B1–B6
   std::array<ArenaPlace, 3> places; // L1–L3
   double box_radius = 0.15;
+  double box_size = 0.205;          // 박스 한 변 [m]
+  double box_approach_m = 0.0;      // > 0 이면 박스 정차를 이만큼 앞에서 Nav2 로 멈춘 뒤 라이다로 똑바로 붙음 (planning approach)
 };
 
 // 실패하면 false + error. out 은 map 프레임으로 바꾼 값
