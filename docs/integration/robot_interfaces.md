@@ -80,13 +80,13 @@ STORE · RETRIEVE 경로는 11-01 실물 적재함 12 칸 시험에서 성공한
 | 작업 | 시작 자세 | 하는 일 | 끝 자세 | 다음 | 가짜 로봇 시간 |
 |---|---|---|---|---|---|
 | HOME | 아무 자세 | 접기 (LOOK 자세면 정해진 복귀 경로) | 받침 (주행 가능) | | 5 s |
-| PICK | 받침 또는 LOOK 자세 (LOOK 이면 검사된 복귀 경로로 받침을 거쳐 감) | target 퍽 위 40 mm → 10 → −30 mm 에서 쥠 → 들기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | STORE 또는 PLACE | 16 s (LOOK 에서 24 s) |
+| PICK | 받침 또는 LOOK 자세 (LOOK 이면 검사된 복귀 경로로 받침을 거쳐 감) | target 퍽 위 40 mm → 10 → −40 mm 에서 쥠 (11-01 실물 넣기 때 깊이, 칸 경로 기준) → 들기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | STORE 또는 PLACE | 16 s (LOOK 에서 24 s) |
 | STORE | 박스 위 기준점 (PICK 뒤) | slot 칸에 놓기 | 받침 (주행 가능) | | 19~31 s |
 | RETRIEVE | 받침 또는 LOOK 자세 (LOOK 이면 복귀 경로로 받침을 거쳐 감) | slot 칸에서 꺼내기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | PLACE | 19~32 s |
-| PLACE | 박스 위 기준점 (PICK · RETRIEVE 뒤) | target 위 40 → 10 → −23 mm 에서 놓기 → 들기 | 받침 (주행 가능) | | 17 s |
+| PLACE | 박스 위 기준점 (PICK · RETRIEVE 뒤) | target 위 40 → 10 → 놓기 (퍽 바닥이 면 위 2 mm: RETRIEVE 뒤 −23 · PICK 뒤 −38 mm) → 들기 | 받침 (주행 가능) | | 17 s |
 | LOOK · LOOK_BARCODE | 받침 | 손목 카메라 관찰 자세 | 그 자세 유지 | HOME | |
 
-- **target** (PICK · PLACE): `docs/planning/planning_interfaces.md` 6 절 약속 그대로 — `base_link` 기준 **그리퍼 중심이 갈 점** = 퍽 중심 + 쥘 끝(위) 방향 × `grasp_offset_m` (0.015), 방향 z 축 = 쥘 끝 · x 축 = 네모 퍽 면. 서 있는 퍽만 (누운 퍽은 실물 시험 전이라 거절). `base_link` 가 아닌 프레임 · NaN 은 거절. `z = 0` 이면 박스 위 기본 높이 (손 시험용). 팔이 닿지 않는 자리면 거절(이유가 result.message).
+- **target** (PICK · PLACE): `docs/planning/planning_interfaces.md` 6 절 약속 그대로 — `base_link` 기준 **그리퍼 중심이 갈 점** = 퍽 중심 + 쥘 끝(위) 방향 × `grasp_offset_m` (0.015) — control 은 이 값으로 퍽 윗면을 알아내고, 실제로는 윗면 40 mm 아래 (`pick_heights_mm`) 를 쥠, 방향 z 축 = 쥘 끝 · x 축 = 네모 퍽 면. 서 있는 퍽만 (누운 퍽은 실물 시험 전이라 거절). `base_link` 가 아닌 프레임 · NaN 은 거절. `z = 0` 이면 박스 위 기본 높이 (손 시험용). 팔이 닿지 않는 자리면 거절(이유가 result.message).
 - **slot** (STORE · RETRIEVE): `S1` ~ `S12`. 시작 자세가 맞지 않으면 거절 (예: PICK 없이 STORE).
 - 실패 · 취소 · 시간 초과 뒤에는 STOP 잠금, HOME 이 성공해야 다시 주행.
 - HOME 이 검사된 복귀 경로 없이 받침으로 곧장 가는 건 받침 근처이거나 (켤 때 등) 팔이 경로 중간이 아닐 때만. **퍽을 쥔 채 · 경로 작업이 도중에 멈춘 뒤에는 HOME 거절** (칸 · 박스 안에서 직선으로 쓸고 나올 수 있음) → STORE · PLACE 로 끝내거나 사람이 팔을 받침 근처로 옮긴 뒤 HOME.
