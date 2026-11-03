@@ -1,0 +1,27 @@
+# 팔 보드만 (2026-10-30, arm_tests/ros/arm_only.launch.py 전용). 팀 nt_description/config/hardware_map.yaml 의 팔 부분을 그대로 + 보드 1 장.
+# 관절 변환 = 팀 ROS 식 rad = (틱 − zero_tick)·2π/4096 (zero_tick 없음 = 2048). J1 은 fw_ext3 펌웨어에서 확장 위치 모드 (아래 joint1 설명).
+# initial = 가짜(mock) 시험 때 시작 자세 = 받침 자세 [4084, 1102, 2668, 1971, 2063] 를 위 식으로 바꾼 값 (실물에서는 안 씀)
+buses:
+  - name: bus_arm
+    port: /dev/ttyACM0
+    baud: 1000000
+    joints: [joint1, joint2, joint3, joint4, joint5, gripper_left_joint]
+motors:
+  joint1:             {id: 11, model: XM430-W350, mode: gripper, initial: -0.0061, goal_current: 0, zero_tick: 4088}
+  # 10-30 20:45: goal_current 0 → fw_ext3 펌웨어가 J1 을 '확장 위치 모드'(일반 위치 제어 + 여러 바퀴) 로 설정. 400(전류 기반 위치) 은 팔 뻗은 자세에서 10 Hz 떨림 (실물 202825 · 203800).
+  # 10-30 20:05: J1 = 전류 기반 위치(확장, 여러 바퀴) 모드 · 영점 4088(정면) → ROS 관절 ±π = 틱 2040 ~ 6136 (정면 기준 좌우 180°, 왼쪽 적재함 · 박스 왼쪽 절반).
+  #   ⚠ arm_tests/fw_ext 펌웨어(확장 모드 목표를 0~4095 로 안 자름) 를 올려야 왼쪽(4095 넘음) 으로 감. 옛 펌웨어면 지금처럼 4095 에서 잘림 (위험 없음).
+  #   이름이 'gripper' 인 건 팀 플러그인의 전류 기반 위치 모드 이름 (펌웨어가 goal_current 0 이면 확장 위치로 바꿈 — fw_ext3 만).
+  #   ⚠ 펌웨어 고장 정지 때 이 모드는 '지금 위치로 목표' 를 안 함 (그리퍼처럼) — 모터 Bus Watchdog 0.3 s 로 멈춤.
+  joint2:             {id: 12, model: XM430-W350, mode: position, initial: -1.4511}
+  joint3:             {id: 13, model: XM430-W350, mode: position, initial: 0.9511}
+  joint4:             {id: 14, model: XM430-W350, mode: position, initial: -0.1181}
+  joint5:             {id: 16, model: XM430-W350, mode: position, initial: 0.0230}
+  gripper_left_joint: {id: 15, model: XM430-W350, mode: gripper,  initial: -0.0018, goal_current: 100, scale: 0.01149, zero_tick: 3549}
+  # 10-30 저녁: 켤 때 그리퍼(닫힘) 가 틱 약 3449 → 팀 URDF 한계(−0.011 ~ 0.02 m = 영점 2048 이면 틱 1424 ~ 3183) 밖이라 ROS 가 3183 으로 잘라 닫는 쪽으로 밀었음 (실물: 켤 때 살짝 움직이고 3449 에서 막힘).
+  #   → 영점 3549: 허용 틱 2925 ~ 4684, 닫힘 3449 = −0.0018 m, 열림 = + 방향 (ChatGPT 기록 3499 닫힘 때 '열면 +', 실물 막힌 방향과 맞음). 쥐는 힘 200 → 100.
+  #   ⚠ 켤 때 닫힘이 2660 근처로 읽히는 날도 있었음 (ChatGPT 10-25) → 그때는 이 영점이 안 맞음. arm_pose_runner 가 시작 때 그리퍼 틱 3300 ~ 3600 아니면 그리퍼 동작 거부.
+watchdog: 15
+battery_warn_v: 10.8
+battery_stop_v: 10.2
+require_all_motors: true

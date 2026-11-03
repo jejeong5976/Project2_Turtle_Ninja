@@ -1,0 +1,287 @@
+{
+ "note": "적재함 오른쪽 2 × 2 칸 (10-30 19:57 rack_obs 컬러 캡처 → 컵 윗면 높이 평면 투영, runs/runner_20261030T195700/analysis/cups.py). base_link m. 깊이: 컵 윗면 z 0.1215 (모델과 같음), 상판 약 0.094. 열 간격 60 · 줄 간격 41 mm, 돌림 0~2°. 사진 어림(RACK_ZONES) 보다 x 약 −15 · y 약 −6 mm. 안쪽 열(x 0.0215) 은 원기둥 덩어리에 섞여 격자로 어림. · B: 10-31 15:42 실측으로 (y −2.4 mm) · A·C·D: B 실측 이동 (−0.3, −2.4) mm 같이 (10-31 15:51) · B · C · D: 10-31 17:4x 칸별 스캔 (위치 + 칸별 yaw_deg). A 는 실물 성공 좌표 유지 (스캔에서 한 변 36 mm 로 의심)",
+ "rim_z": 0.1215,
+ "floor_z": 0.0935,
+ "yaw_deg": 1.0,
+ "cells": {
+  "A": {
+   "xy": [
+    0.0812,
+    -0.0721
+   ],
+   "state": "empty",
+   "measured": " · 10-31 15:51 B 실측과 같은 적재함 이동 (−0.3, −2.4) mm 적용",
+   "place_offset": [
+    0.001,
+    0.001
+   ],
+   "inhand_ref": [
+    -1.0,
+    1.0
+   ],
+   "place_calib": "10-31 23:4x 실물 (runner_20261031T234614): 1 mm 씩 → 박스 쪽(+x) · 그리퍼 받침 쪽(B 반대, +y) 1 mm",
+   "inhand_src": "runner_20261031T235529 — puck_inhand (11-01 02:5x)"
+  },
+  "B": {
+   "xy": [
+    0.0795,
+    -0.114
+   ],
+   "state": "empty",
+   "measured": "rack_scan runner_20261031T174144 · 174428 평균 (10-31) — 예전 [0.0812, -0.1129]",
+   "yaw_deg": -3.28,
+   "place_offset": [
+    0.0,
+    0.005
+   ],
+   "inhand_ref": [
+    1.5,
+    1.5
+   ],
+   "place_calib": "11-01 00:0x 실물: A 칸 쪽(+y) 으로 3 mm · 00:2x 실물 (runner_20261101T001952 들어감): A 쪽으로 2 mm 더",
+   "inhand_src": "runner_20261101T003639 — puck_inhand (11-01 02:5x)"
+  },
+  "C": {
+   "xy": [
+    0.0158,
+    -0.0681
+   ],
+   "state": "empty",
+   "measured": "rack_scan runner_20261031T174428 (10-31) — 예전 [0.0212, -0.0721]",
+   "yaw_deg": -5.08,
+   "place_offset": [
+    0.003,
+    -0.0017
+   ],
+   "place_calib": "runner_20261031T175420 in_cell 사진 — 컵 모양 겹치기 (스캔 사진 검증 ±2 mm), 실물: 테두리에 걸쳐 못 들어감 (10-31 18:2x) · 18:3x 줄자 실측 (틈: A 쪽 5 · 뒤 8 · D 쪽 6 · 가운데 쪽 15 mm) → (−1.5, +4.5) mm 더함 · 18:4x 두 번째 줄자 (앞 6 · 뒤 3 · 오른 3 · 왼 15 — 왼쪽은 합이 안 맞아 뺌, 퍽 기울어 걸침) → 두 번 내삽 (−5.1, +0.4) · 18:5x 칸 위 멈춤 실측 (박스 쪽 7 · 오른 5 · 왼 2 · 뒤 −4 mm) → 사용자: 앞-오른쪽 대각선 3 mm · 19:0x 사용자: 정면(박스 쪽) 6 mm",
+   "inhand_ref": [
+    3.0,
+    1.5
+   ],
+   "inhand_src": "runner_20261031T192308 — puck_inhand (11-01 02:5x)"
+  },
+  "D": {
+   "xy": [
+    0.0116,
+    -0.1084
+   ],
+   "state": "empty",
+   "measured": "rack_scan runner_20261031T174144 · 174428 평균 (10-31) — 예전 [0.0212, -0.1129] · 19:3x C–D 간격 38.3 mm 는 컵 한 변(40) 보다 작아 불가능 → C 에서 40.5 mm 로 (D 를 2.2 mm 옮김)",
+   "yaw_deg": -5.71,
+   "place_offset": [
+    0.006,
+    -0.0062
+   ],
+   "place_calib": "시작값 = C 확정 보정 (같은 뒷줄, 10-31 19:2x) · 19:4x 칸 위 멈춤 실측 → 사용자: 정면 3 mm · 왼쪽 0.5 mm · 20:0x 사용자: 왼쪽으로 8 mm 더 (실패) · 2차 (runner_20261031T232949): C 칸 쪽(+y) 으로 13 mm 치우침 → y −13 mm. 앞서 \"왼쪽 8 mm\" 는 로봇 직진 기준이라 반대였음. 쥔 자리 기준 [2.5, 2.0]",
+   "inhand_ref": [
+    0.0,
+    1.0
+   ],
+   "inhand_src": "runner_20261031T234052 — puck_inhand (11-01 02:5x)"
+  },
+  "L1": {
+   "state": "empty",
+   "xy": [
+    0.084142,
+    0.066838
+   ],
+   "yaw_deg": -0.817,
+   "measured": "rack_scan.py runner_20261101T005826 scan_L1",
+   "scan_measurement": {
+    "sides_mm": [
+     38.491,
+     40.474
+    ],
+    "confidence": "ok",
+    "source": "runner_20261101T005826",
+    "stop": "scan_L1"
+   },
+   "place_offset": [
+    -0.002,
+    -0.002
+   ],
+   "inhand_ref": [
+    1.5,
+    1.0
+   ],
+   "inhand_src": "보통 쥐는 자리 (첫 시도용, 11-01 03:1x)",
+   "offset_src": "11-01 키보드 맞춤 성공 (보정 + 키보드)"
+  },
+  "L2": {
+   "state": "empty",
+   "xy": [
+    0.0843,
+    0.1073
+   ],
+   "yaw_deg": -0.771,
+   "measured": "rack_scan.py runner_20261101T005826 scan_L2 · 11-01 L1–L2 간격 37.5 mm < 컵 40 → 40.5 mm 로 (3.0 mm 옮김)",
+   "scan_measurement": {
+    "sides_mm": [
+     38.984,
+     40.98
+    ],
+    "confidence": "ok",
+    "source": "runner_20261101T005826",
+    "stop": "scan_L2"
+   },
+   "place_offset": [
+    -0.006,
+    -0.002
+   ],
+   "inhand_ref": [
+    1.5,
+    1.0
+   ],
+   "inhand_src": "보통 쥐는 자리 (첫 시도용, 11-01 03:1x)",
+   "offset_src": "11-01 키보드 맞춤 성공 (보정 + 키보드)"
+  },
+  "L3": {
+   "state": "empty",
+   "xy": [
+    0.023953,
+    0.069231
+   ],
+   "yaw_deg": 0.545,
+   "measured": "rack_scan.py runner_20261101T005826 scan_L3",
+   "scan_measurement": {
+    "sides_mm": [
+     39.646,
+     38.955
+    ],
+    "confidence": "ok",
+    "source": "runner_20261101T005826",
+    "stop": "scan_L3"
+   },
+   "place_offset": [
+    -0.006,
+    -0.003
+   ],
+   "inhand_ref": [
+    1.5,
+    1.0
+   ],
+   "inhand_src": "보통 쥐는 자리 (첫 시도용, 11-01 03:1x)",
+   "offset_src": "11-01 키보드 맞춤 성공 (보정 + 키보드)"
+  },
+  "L4": {
+   "state": "empty",
+   "xy": [
+    0.0219,
+    0.1097
+   ],
+   "yaw_deg": -0.721,
+   "measured": "rack_scan.py runner_20261101T005826 scan_L4 · 11-01 L3–L4 간격 40.2 mm < 컵 40 → 40.5 mm 로 (0.3 mm 옮김)",
+   "scan_measurement": {
+    "sides_mm": [
+     39.475,
+     39.728
+    ],
+    "confidence": "ok",
+    "source": "runner_20261101T005826",
+    "stop": "scan_L4"
+   },
+   "place_offset": [
+    -0.003,
+    -0.004
+   ],
+   "inhand_ref": [
+    1.5,
+    1.0
+   ],
+   "inhand_src": "보통 쥐는 자리 (첫 시도용, 11-01 03:1x)",
+   "offset_src": "11-01 키보드 맞춤 성공 (보정 + 키보드)"
+  },
+  "L5": {
+   "state": "empty",
+   "xy": [
+    -0.043572,
+    0.070504
+   ],
+   "yaw_deg": 2.243,
+   "measured": "rack_scan.py runner_20261101T005826 scan_L5",
+   "scan_measurement": {
+    "sides_mm": [
+     41.179,
+     38.688
+    ],
+    "confidence": "ok",
+    "source": "runner_20261101T005826",
+    "stop": "scan_L5"
+   },
+   "place_offset": [
+    0.0056,
+    -0.0085
+   ],
+   "inhand_ref": [
+    4.0,
+    3.0
+   ],
+   "place_calib": "11-01 01:3x 실물: 옆 칸(L6) 쪽으로 13 mm 치우침 → L6 반대(−y) 13 mm · 박스 쪽(+x) 1 mm · 01:5x 실물: 13 mm 에서 1 mm 줄이면 딱 → −12 mm",
+   "inhand_src": "load_cycle 11-01 04:0x (쥐는 높이 30 뒤): 쓴 자리 [4.6, -12.5] − L6 반대(로봇 가운데) 쪽 2 mm (사용자 정정), 쥔 자리 2.0, 2.5 · 04:1x: −14.5 로 해 보니 더 벗어남 → 처음 해석대로 −12.5 에서 L6 쪽 2 mm (−10.5) · 04:1x 칸 위 실측 \"딱 맞음\" (쥔 자리 6.0, 2.5) 을 기준으로 · 04:2x 실물: 박스 쪽 1 mm 더 (살짝 대각선으로 걸침) · 05:0x 실물 (runner_20261101T045651, 쥔 자리 4.0 · 3.0, 놓은 자리 5.6 · −10.5): L6 쪽 2 mm 더 → (5.6, −8.5)"
+  },
+  "L6": {
+   "state": "empty",
+   "xy": [
+    -0.0434,
+    0.111
+   ],
+   "yaw_deg": 0.548,
+   "measured": "rack_scan.py runner_20261101T005826 scan_L6 · 11-01 간격 39.4 mm 는 그대로 둠 (옮기면 L6 길이 막힘) · 11-01 04:1x L5–L6 39.4 mm < 컵 40 → 40.5 (L6 은 이미 참, 장애물 자리만)",
+   "scan_measurement": {
+    "sides_mm": [
+     40.001,
+     39.562
+    ],
+    "confidence": "ok",
+    "source": "runner_20261101T005826",
+    "stop": "scan_L6"
+   },
+   "place_offset": [
+    0.0045,
+    -0.0055
+   ],
+   "inhand_ref": [
+    1.0,
+    0.5
+   ],
+   "place_calib": "시작값 = L5 보정 (같은 줄, 11-01 01:5x)",
+   "inhand_src": "load_cycle 11-01 03:0x (쥔 자리 0.5 · 1.0) — 실물: 바깥(+y) 8 · 박스 쪽(+x) 3 mm 더 · 03:1x: 쓴 자리 [4.5, -6.5] + L6 쪽 1 mm, 쥔 자리 1.0, 0.5"
+  },
+  "L7": {
+   "state": "empty",
+   "xy": [
+    -0.109317,
+    0.064428
+   ],
+   "yaw_deg": 1.497,
+   "measured": "rack_scan.py runner_20261101T005826 scan_L7",
+   "scan_measurement": {
+    "sides_mm": [
+     39.298,
+     39.825
+    ],
+    "confidence": "ok",
+    "source": "runner_20261101T005826",
+    "stop": "scan_L7"
+   }
+  },
+  "L8": {
+   "state": "empty",
+   "xy": [
+    -0.11013,
+    0.106931
+   ],
+   "yaw_deg": 1.557,
+   "measured": "rack_scan.py runner_20261101T005826 scan_L8",
+   "scan_measurement": {
+    "sides_mm": [
+     40.174,
+     40.243
+    ],
+    "confidence": "ok",
+    "source": "runner_20261101T005826",
+    "stop": "scan_L8"
+   }
+  }
+ }
+}

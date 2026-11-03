@@ -1,0 +1,416 @@
+{
+ "gap_m": 0.02,
+ "box_center_body_m": [
+  0.2675,
+  0.0
+ ],
+ "clearance_m": 0.003,
+ "above_m": 0.04,
+ "grasp_deg": [
+  -108.1,
+  41.48,
+  -7.44,
+  -44.18,
+  -3.56
+ ],
+ "grasp_tick": [
+  4241,
+  2626,
+  1709,
+  1395,
+  2059
+ ],
+ "joints": [
+  "arm_joint1",
+  "arm_joint2",
+  "arm_joint3",
+  "arm_joint4",
+  "arm_joint5"
+ ],
+ "cells": [
+  {
+   "cell": "가까운·왼",
+   "xy_body_m": [
+    0.2075,
+    0.06
+   ],
+   "ok": true,
+   "pos_err_mm": 0.0,
+   "tilt_deg": 0.0,
+   "place_deg": [
+    -112.46,
+    -5.25,
+    -92.04,
+    -82.04,
+    -3.56
+   ],
+   "place_tick": [
+    4291,
+    2094,
+    2671,
+    964,
+    2059
+   ],
+   "above_deg": [
+    -112.46,
+    -22.7,
+    -84.7,
+    -57.27,
+    -3.56
+   ],
+   "above_tick": [
+    4291,
+    1896,
+    2588,
+    1246,
+    2059
+   ],
+   "above_err_mm": 0.0,
+   "lowest_over_box_mm": 54.8,
+   "floor_ok": true,
+   "joint_margin_deg": 33.0
+  },
+  {
+   "cell": "가운데·왼",
+   "xy_body_m": [
+    0.2675,
+    0.06
+   ],
+   "ok": true,
+   "pos_err_mm": 0.0,
+   "tilt_deg": 0.0,
+   "place_deg": [
+    -108.28,
+    12.2,
+    -62.25,
+    -69.72,
+    -3.56
+   ],
+   "place_tick": [
+    4243,
+    2293,
+    2333,
+    1104,
+    2059
+   ],
+   "above_deg": [
+    -108.28,
+    0.8,
+    -56.64,
+    -52.7,
+    -3.56
+   ],
+   "above_tick": [
+    4243,
+    2163,
+    2269,
+    1298,
+    2059
+   ],
+   "above_err_mm": 0.0,
+   "lowest_over_box_mm": 54.8,
+   "floor_ok": true,
+   "joint_margin_deg": 62.8
+  },
+  {
+   "cell": "앞·왼",
+   "xy_body_m": [
+    0.3275,
+    0.06
+   ],
+   "ok": true,
+   "pos_err_mm": 0.0,
+   "tilt_deg": 0.0,
+   "place_deg": [
+    -105.67,
+    32.54,
+    -23.56,
+    -51.37,
+    -3.56
+   ],
+   "place_tick": [
+    4213,
+    2524,
+    1892,
+    1313,
+    2059
+   ],
+   "above_deg": [
+    -105.67,
+    25.03,
+    -17.45,
+    -37.74,
+    -3.56
+   ],
+   "above_tick": [
+    4213,
+    2439,
+    1823,
+    1468,
+    2059
+   ],
+   "above_err_mm": 0.0,
+   "lowest_over_box_mm": 54.8,
+   "floor_ok": true,
+   "joint_margin_deg": 56.1
+  },
+  {
+   "cell": "가까운",
+   "xy_body_m": [
+    0.2075,
+    0.0
+   ],
+   "ok": true,
+   "pos_err_mm": 0.0,
+   "tilt_deg": 0.0,
+   "place_deg": [
+    -94.48,
+    -8.28,
+    -96.54,
+    -83.52,
+    -3.56
+   ],
+   "place_tick": [
+    4086,
+    2060,
+    2723,
+    947,
+    2059
+   ],
+   "above_deg": [
+    -94.48,
+    -27.16,
+    -88.67,
+    -56.77,
+    -3.56
+   ],
+   "above_tick": [
+    4086,
+    1845,
+    2633,
+    1252,
+    2059
+   ],
+   "above_err_mm": 0.0,
+   "lowest_over_box_mm": 54.8,
+   "floor_ok": true,
+   "joint_margin_deg": 28.5
+  },
+  {
+   "cell": "가운데",
+   "xy_body_m": [
+    0.2675,
+    0.0
+   ],
+   "ok": true,
+   "pos_err_mm": 0.0,
+   "tilt_deg": 0.0,
+   "place_deg": [
+    -94.52,
+    9.99,
+    -66.28,
+    -71.53,
+    -3.56
+   ],
+   "place_tick": [
+    4087,
+    2268,
+    2378,
+    1084,
+    2059
+   ],
+   "above_deg": [
+    -94.52,
+    -1.99,
+    -60.55,
+    -53.83,
+    -3.56
+   ],
+   "above_tick": [
+    4087,
+    2131,
+    2313,
+    1285,
+    2059
+   ],
+   "above_err_mm": 0.0,
+   "lowest_over_box_mm": 54.8,
+   "floor_ok": true,
+   "joint_margin_deg": 58.8
+  },
+  {
+   "cell": "앞",
+   "xy_body_m": [
+    0.3275,
+    0.0
+   ],
+   "ok": true,
+   "pos_err_mm": 0.0,
+   "tilt_deg": 0.0,
+   "place_deg": [
+    -94.54,
+    30.17,
+    -28.19,
+    -53.62,
+    -3.56
+   ],
+   "place_tick": [
+    4087,
+    2497,
+    1945,
+    1288,
+    2059
+   ],
+   "above_deg": [
+    -94.54,
+    22.27,
+    -22.3,
+    -39.83,
+    -3.56
+   ],
+   "above_tick": [
+    4087,
+    2407,
+    1878,
+    1444,
+    2059
+   ],
+   "above_err_mm": 0.0,
+   "lowest_over_box_mm": 54.8,
+   "floor_ok": true,
+   "joint_margin_deg": 58.5
+  },
+  {
+   "cell": "가까운·오른",
+   "xy_body_m": [
+    0.2075,
+    -0.06
+   ],
+   "ok": true,
+   "pos_err_mm": 0.0,
+   "tilt_deg": 0.0,
+   "place_deg": [
+    -76.52,
+    -5.25,
+    -92.04,
+    -82.04,
+    -3.56
+   ],
+   "place_tick": [
+    3882,
+    2094,
+    2671,
+    964,
+    2059
+   ],
+   "above_deg": [
+    -76.52,
+    -22.7,
+    -84.7,
+    -57.27,
+    -3.56
+   ],
+   "above_tick": [
+    3882,
+    1896,
+    2588,
+    1246,
+    2059
+   ],
+   "above_err_mm": 0.0,
+   "lowest_over_box_mm": 60.5,
+   "floor_ok": true,
+   "joint_margin_deg": 33.0
+  },
+  {
+   "cell": "가운데·오른",
+   "xy_body_m": [
+    0.2675,
+    -0.06
+   ],
+   "ok": true,
+   "pos_err_mm": 0.0,
+   "tilt_deg": 0.0,
+   "place_deg": [
+    -80.76,
+    12.2,
+    -62.25,
+    -69.72,
+    -3.56
+   ],
+   "place_tick": [
+    3930,
+    2293,
+    2333,
+    1104,
+    2059
+   ],
+   "above_deg": [
+    -80.76,
+    0.8,
+    -56.64,
+    -52.7,
+    -3.56
+   ],
+   "above_tick": [
+    3930,
+    2163,
+    2269,
+    1298,
+    2059
+   ],
+   "above_err_mm": 0.0,
+   "lowest_over_box_mm": 60.5,
+   "floor_ok": true,
+   "joint_margin_deg": 62.8
+  },
+  {
+   "cell": "앞·오른",
+   "xy_body_m": [
+    0.3275,
+    -0.06
+   ],
+   "ok": true,
+   "pos_err_mm": 0.0,
+   "tilt_deg": 0.0,
+   "place_deg": [
+    -83.41,
+    32.54,
+    -23.56,
+    -51.37,
+    -3.56
+   ],
+   "place_tick": [
+    3960,
+    2524,
+    1892,
+    1313,
+    2059
+   ],
+   "above_deg": [
+    -83.41,
+    25.03,
+    -17.45,
+    -37.74,
+    -3.56
+   ],
+   "above_tick": [
+    3960,
+    2439,
+    1823,
+    1468,
+    2059
+   ],
+   "above_err_mm": 0.0,
+   "lowest_over_box_mm": 60.5,
+   "floor_ok": true,
+   "joint_margin_deg": 56.1
+  }
+ ],
+ "max_reach_m": {
+  "y=+0.000": 0.3771,
+  "y=+0.060": 0.372,
+  "y=-0.060": 0.372,
+  "y=+0.077": 0.3686
+ }
+}
