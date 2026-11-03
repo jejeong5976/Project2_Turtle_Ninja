@@ -86,6 +86,7 @@ STORE · RETRIEVE 경로는 11-01 실물 적재함 12 칸 시험에서 성공한
 | RETRIEVE | 받침 · P0 · LOOK 자세 (P0 면 펼치기 생략, LOOK 이면 복귀 경로로 P0 를 거쳐 감) | slot 칸에서 꺼내기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | PLACE | 19~32 s (P0 에서 14~27 s) |
 | PLACE | 박스 위 기준점 (PICK · RETRIEVE 뒤) | target 위 40 → 10 → 놓기 (퍽 바닥이 면 위 2 mm: RETRIEVE 뒤 −23 · PICK 뒤 −38 mm) → 들기 | 받침 (주행 가능). `lazy_fold` 면 **P0** (바퀴 잠금 유지) | `lazy_fold` 면 PICK · RETRIEVE · LOOK 또는 HOME | 17 s (`lazy_fold` 12 s) |
 | LOOK · LOOK_BARCODE | 받침 · P0 | 손목 카메라 관찰 자세 | 그 자세 유지 | HOME · PICK · RETRIEVE | |
+| LOOK `slot: rack` | 받침 (빈 손. 칸에 퍽이 있으면 그 칸은 못 잼) | 적재함 스캔: 칸 두 개씩 손목 카메라를 칸 바닥 위 170 mm 에서 수직으로, 자세마다 2 s (경로 `rack_scan`, lazy_fold 여도 받침까지). `bringup/rack_tags.launch.py` 를 띄워 두면 칸 위치를 잼 → `/rack_tag_node/report` | 받침 (주행 가능) | | 46 s |
 
 - **target** (PICK · PLACE): `docs/planning/planning_interfaces.md` 6 절 약속 그대로 — `base_link` 기준 **그리퍼 중심이 갈 점** = 퍽 중심 + 쥘 끝(위) 방향 × `grasp_offset_m` (0.015) — control 은 이 값으로 퍽 윗면을 알아내고, 실제로는 윗면 40 mm 아래 (`pick_heights_mm`) 를 쥠, 방향 z 축 = 쥘 끝 · x 축 = 네모 퍽 면. 서 있는 퍽만 (누운 퍽은 실물 시험 전이라 거절). `base_link` 가 아닌 프레임 · NaN 은 거절. `z = 0` 이면 박스 위 기본 높이 (손 시험용). 팔이 닿지 않는 자리면 거절(이유가 result.message).
 - **slot** (STORE · RETRIEVE): `S1` ~ `S12`. 시작 자세가 맞지 않으면 거절 (예: PICK 없이 STORE).

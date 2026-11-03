@@ -114,6 +114,29 @@ TEST(PathActions, NotHomeEnding)
   EXPECT_NE(acts.back().pose, "home");
 }
 
+// 6-1) hold_s: 멈추는 점에서 그 자세로 기다림 → 마지막 점 하나 더 (같은 자세, hold 만큼 뒤) · 동작 시간도 그만큼
+TEST(PathActions, HoldAddsWaitAtStop)
+{
+  ArmPath p;
+  p.name = "rack_scan";
+  p.nodes = {node("P0", {0, 0, 0, 0, 0}, true), node("scan1", {10, 0, 0, 0, 0}), node("scan2", {20, 0, 0, 0, 0})};
+  p.nodes[1].stop = true;
+  p.nodes[1].hold_s = 2.0;
+  const auto plain = manipulation::path_actions(p, PathTiming{}, manipulation::GripperValues{});
+  ASSERT_EQ(plain.size(), 2u);
+  const auto & a = plain[0];
+  ASSERT_GE(a.points.size(), 2u);
+  const auto & last = a.points.back();
+  const auto & before = a.points[a.points.size() - 2];
+  EXPECT_NEAR(last.t - before.t, 2.0, 1e-9);
+  EXPECT_EQ(last.q, before.q);
+  EXPECT_NEAR(last.q[0], 10 * kDeg, 1e-9);
+  EXPECT_NEAR(a.duration_s, last.t, 1e-12);
+  p.nodes[1].hold_s = 0.0;
+  const auto no_hold = manipulation::path_actions(p, PathTiming{}, manipulation::GripperValues{});
+  EXPECT_NEAR(a.duration_s - no_hold[0].duration_s, 2.0, 1e-9);
+}
+
 // 7) 출발 자세 확인: 관절마다 허용 안 · NaN 은 아님
 TEST(PathActions, StartCheck)
 {

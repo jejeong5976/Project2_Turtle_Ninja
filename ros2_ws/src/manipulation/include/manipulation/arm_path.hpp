@@ -28,6 +28,7 @@ struct PathNode
   double speed_dps{0.0};     // 이 점으로 가는 최고 속도 [°/s], 0 = 기본
   std::string grip;          // 도착 뒤 그리퍼: "" · open · release · close
   bool stop{false};          // 도착해서 멈춤 (동작을 여기서 끊음)
+  double hold_s{0.0};        // 도착해서 이만큼 그 자세로 기다림 [s] (stop 과 같이 씀, 손목 카메라가 멈춘 장을 모으게)
 };
 
 struct ArmPath

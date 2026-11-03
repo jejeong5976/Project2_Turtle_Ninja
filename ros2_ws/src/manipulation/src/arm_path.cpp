@@ -137,6 +137,7 @@ std::vector<ArmAction> path_actions(
       a.phase = last.grip == "release" ? "release" : (last.grip == "close" ? "grasp" : (is_last && path.ends_home ? "retreat" : "approach"));
       a.pose = is_last && path.ends_home ? "home" : last.name;
       a.points = time_path(from, seg, timing);
+      if (last.hold_s > 0.0 && !a.points.empty()) {a.points.push_back({last.q, a.points.back().t + last.hold_s});}   // 같은 자세로 기다림
       a.duration_s = a.points.empty() ? 0.0 : a.points.back().t;
       out.push_back(a);
       from = last.q;
