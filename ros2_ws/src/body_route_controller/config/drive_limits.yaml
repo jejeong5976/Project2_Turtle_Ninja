@@ -1,0 +1,8 @@
+# Pass as drive_test_params to the main-based arm:=false bringup.
+# The route controller owns heading feedback in this profile. Preserve the
+# original physical-run profile (heading_hold_kp=2.0) for comparison/replay.
+max_linear: 0.025
+max_angular: 0.1
+max_linear_accel: 0.05
+max_angular_accel: 0.2
+heading_hold_kp: 0.0

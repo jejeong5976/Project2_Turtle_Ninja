@@ -1,0 +1,50 @@
+cmake_minimum_required(VERSION 3.16)
+project(body_route_controller LANGUAGES CXX)
+find_package(ament_cmake REQUIRED)
+find_package(nav2_core REQUIRED)
+find_package(nav2_costmap_2d REQUIRED)
+find_package(nav2_ros_common REQUIRED)
+find_package(pluginlib REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(tf2 REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+
+add_library(body_route_core STATIC src/core.cpp)
+set_target_properties(body_route_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_compile_features(body_route_core PUBLIC cxx_std_17)
+target_include_directories(body_route_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
+target_compile_options(body_route_core PRIVATE -Wall -Wextra -Wpedantic -Werror)
+
+add_library(body_route_plugin SHARED src/controller.cpp src/collision.cpp)
+target_compile_features(body_route_plugin PUBLIC cxx_std_17)
+target_compile_options(body_route_plugin PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(body_route_plugin PUBLIC body_route_core
+  ${nav2_core_LIBRARIES} ${nav2_costmap_2d_LIBRARIES} ${nav2_ros_common_LIBRARIES}
+  pluginlib::pluginlib rclcpp::rclcpp tf2::tf2 tf2_geometry_msgs::tf2_geometry_msgs
+  ${geometry_msgs_TARGETS} ${nav_msgs_TARGETS} ${std_msgs_TARGETS})
+target_include_directories(body_route_plugin SYSTEM PUBLIC
+  ${nav2_core_INCLUDE_DIRS} ${nav2_costmap_2d_INCLUDE_DIRS} ${nav2_ros_common_INCLUDE_DIRS})
+pluginlib_export_plugin_description_file(nav2_core body_route_plugins.xml)
+install(TARGETS body_route_core body_route_plugin ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
+install(DIRECTORY include/ DESTINATION include)
+install(DIRECTORY config launch behavior_trees DESTINATION share/${PROJECT_NAME})
+install(FILES README.md DESTINATION share/${PROJECT_NAME})
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_gtest(test_body_route test/test_core.cpp test/test_collision.cpp test/test_plugin.cpp)
+  target_link_libraries(test_body_route body_route_plugin)
+  target_compile_options(test_body_route PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  ament_add_gtest(test_body_route_adapter test/test_adapter.cpp)
+  target_link_libraries(test_body_route_adapter body_route_plugin)
+  target_compile_options(test_body_route_adapter PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  set_tests_properties(test_body_route_adapter PROPERTIES ENVIRONMENT
+    "ROS_DOMAIN_ID=231;ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST;ROS_LOG_DIR=/tmp/body-route-ros-test-log")
+  ament_add_pytest_test(test_body_route_launch test/test_launch.py
+    APPEND_ENV ROS_LOG_DIR=/tmp/body-route-launch-test-log)
+endif()
+ament_package()

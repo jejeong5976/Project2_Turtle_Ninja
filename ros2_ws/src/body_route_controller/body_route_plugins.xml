@@ -1,0 +1,6 @@
+<library path="body_route_plugin">
+  <class name="body_route_controller::BodyRouteController"
+         type="body_route_controller::BodyRouteController" base_class_type="nav2_core::Controller">
+    <description>Face body +X along the route; stop/rotate for large turns and use bounded axial corrections.</description>
+  </class>
+</library>
