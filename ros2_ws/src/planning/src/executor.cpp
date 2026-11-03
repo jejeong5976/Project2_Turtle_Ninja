@@ -306,10 +306,12 @@ ExecEvent Executor::step(double now)
   // 대기 원인으로 막힌 단계는 시작 · 진행 안 함
   const Step & cur = steps_[step_i_];
   const bool drive_step = cur.type == StepType::Navigate;
-  // LOOK · LOOK_BARCODE 뒤 팔이 펴진 채 이동하려 함 → 기다리지 않고 바로 HOME (control 은 접힘 실측 뒤에만 DRIVE)
+  // 이미 DRIVE 면 접힌 것 → HOME 안 끼움
+  if (drive_step && arm_unfolded_ && have_mode_ && mode_ == MotionMode::DRIVE) {arm_unfolded_ = false;}
+  // 팔이 펴진 채 이동하려 함 → 바로 HOME (control 은 접힘 확인 뒤에만 DRIVE)
   if (drive_step && arm_unfolded_ && !step_running_ && require_motion_mode_) {
     arm_unfolded_ = false;
-    insert_home_at_current("LOOK 뒤 이동 전 접기");
+    insert_home_at_current("팔 작업 뒤 이동 전 접기");
     return ev;
   }
   if (update_drive_reason(now, drive_step, ev)) {return ev;}   // HOME 끼워 넣음 (또는 Fault)
@@ -673,10 +675,11 @@ bool Executor::navigate_goal(const Step & s, Pose2D & goal)
   }
 }
 
-// 이 팔 작업이 성공하면 팔이 펴진 채 남나 (control 은 LOOK 류만 그 자세 유지, 그 밖은 home 으로 끝냄)
+// 성공해도 팔이 펴진 채 남을 수 있는 작업 (LOOK 류, lazy_fold 의 STORE · PLACE) → 다음 이동 전 HOME
 bool Executor::leaves_arm_unfolded(const Step & s)
 {
-  return s.type == StepType::Arm && (s.arm_task == kArmLook || s.arm_task == kArmLookBarcode);
+  return s.type == StepType::Arm && (s.arm_task == kArmLook || s.arm_task == kArmLookBarcode ||
+    s.arm_task == kArmStore || s.arm_task == kArmPlace);
 }
 
 StepResult Executor::run_arm(const Step & s, double now)
@@ -718,7 +721,7 @@ StepResult Executor::run_arm(const Step & s, double now)
     if (late_arm_ok_) {
       late_arm_ok_.reset();
       arm_timeout_wait_ = false;
-      arm_needs_home_ = false;   // control 의 팔 작업은 성공하면 home 자세로 끝남 (LOOK 류만 그 자세 유지)
+      arm_needs_home_ = false;   // 성공한 작업은 검사된 자세로 끝남 (펴진 채면 arm_unfolded_)
       arm_unfolded_ = leaves_arm_unfolded(s);
       RCLCPP_WARN(logger(), "시간 초과로 취소한 팔 작업이 성공으로 끝남 → 성공 처리: %s", s.name.c_str());
       update_cargo(s);
@@ -1099,7 +1102,7 @@ bool Executor::send_arm(const ArmTask::Goal & goal)
       arm_.active = false;
       arm_.success = (r.code == rclcpp_action::ResultCode::SUCCEEDED) && r.result && r.result->success;
       arm_.message = r.result ? r.result->message : "";
-      if (arm_.success) {arm_needs_home_ = false;}   // control 의 팔 작업은 모두 home 자세로 끝남
+      if (arm_.success) {arm_needs_home_ = false;}   // 성공한 작업은 검사된 자세로 끝남 (펴진 채면 arm_unfolded_)
     };
   arm_client_->async_send_goal(goal, opts);
   return true;

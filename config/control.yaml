@@ -36,6 +36,8 @@ control_master:
                       joint1, joint2, joint3, joint4, joint5, gripper_left_joint]
     gripper_open: 0.0164           # [m] 실측 기준: 닫힘(약 3478 틱) + 1000 틱 = 간격 약 50 mm (scale 0.01149 · zero 3549)
     gripper_close: -0.0016         # [m] 실측 기준: 닫힘 − 20 틱 (퍽이 있으면 전류 한계로 그 전에 멈춤 = 쥠)
+    # 나중에 접기: STORE · PLACE 를 P0 (받침 바로 위) 에서 끝냄 → 다음 팔 작업이 접기 · 펼치기 (약 10 s) 를 건너뜀. 주행 전 HOME 이 접음
+    lazy_fold: true
 
     # 고정 자세표
     #   - 팔을 수평으로 쭉 뻗지 않는다 (손목 모터 82 g + 판 + 그리퍼 44 mm 전진 → 어깨 부담 ↑)

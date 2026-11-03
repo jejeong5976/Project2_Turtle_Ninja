@@ -300,7 +300,7 @@ private:
   double drive_wait_start_ = -1.0;
   int recover_homes_ = 0;                    // DRIVE 받기 전까지 끼운 복구 HOME 수
   bool arm_needs_home_ = false;              // 팔이 움직였는데 성공으로 안 끝남
-  bool arm_unfolded_ = false;                // 마지막 팔 작업이 LOOK · LOOK_BARCODE 로 끝남 = 팔이 펴진 채 (control 은 접힘 실측 뒤에만 DRIVE)
+  bool arm_unfolded_ = false;                // 마지막 팔 작업 뒤 팔이 펴졌을 수 있음 (LOOK 류 · STORE · PLACE) → 이동 전 HOME
   ConditionMonitor scan_mon_, det_mon_, loc_mon_;
   std::vector<std::string> scan_topics_;
   std::vector<double> last_scan_s_;          // scan_topics_ 와 같은 순서, -1 = 아직 못 받음

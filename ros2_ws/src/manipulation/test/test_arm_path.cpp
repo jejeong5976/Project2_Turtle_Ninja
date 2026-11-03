@@ -171,3 +171,52 @@ TEST(PathActions, StartsFromMeasuredPose)
   const auto old = manipulation::path_actions(p, PathTiming{}, manipulation::GripperValues{});
   EXPECT_GT(max_speed_dps(q_now, old[0].points), 50.0);   // 실측을 안 주면 (예전 방식) 첫 점까지 급하게
 }
+
+// 나중에 접기: STORE 끝 = fold 전체 → P0 에서 끝 (P0 한 번), RETRIEVE 앞 = unfold 전체 → P0 에서 시작, 다른 경로는 그대로
+TEST(LazyFold, CutTailSkipHeadAndGuard)
+{
+  ArmPath fold, unfold, store, retrieve, other;
+  fold.nodes = {node("P0", {0, -79, 36, -1, 1}), node("up", {0, -40, 36, -1, 1}), node("rest", {0, -83, 54, -7, 1})};
+  fold.ends_home = true;
+  unfold.nodes = {node("rest", {0, -83, 54, -7, 1}), node("up", {0, -40, 36, -1, 1}), node("P0", {0, -79, 36, -1, 1})};
+  store.nodes = {node("staging", {10, 24, -38, 11, 12}), node("cell", {120, 10, -50, 29, -48})};
+  store.nodes.insert(store.nodes.end(), fold.nodes.begin(), fold.nodes.end());
+  store.ends_home = true;
+  ASSERT_TRUE(manipulation::cut_fold_tail(store, fold));
+  ASSERT_EQ(store.nodes.size(), 3u);
+  EXPECT_EQ(store.nodes.back().name, "P0");
+  EXPECT_FALSE(store.ends_home);
+  EXPECT_FALSE(manipulation::cut_fold_tail(store, fold));   // 이미 잘림 → 그대로
+  ArmPath f2 = fold;
+  EXPECT_FALSE(manipulation::cut_fold_tail(f2, fold));      // HOME 의 fold 자체는 안 자름
+  EXPECT_EQ(f2.nodes.size(), 3u);
+
+  retrieve.nodes = unfold.nodes;
+  retrieve.nodes.push_back(node("cell", {120, 10, -50, 29, -48}));
+  ASSERT_TRUE(manipulation::skip_unfold(retrieve, unfold));
+  ASSERT_EQ(retrieve.nodes.size(), 2u);
+  EXPECT_EQ(retrieve.nodes.front().name, "P0");
+  EXPECT_FALSE(manipulation::skip_unfold(retrieve, unfold));
+
+  other.nodes = {node("rest", {0, -83, 54, -7, 1}), node("x", {5, -40, 36, -1, 1}), node("P0", {0, -79, 36, -1, 1}), node("y", {9, 0, 0, 0, 0})};
+  EXPECT_FALSE(manipulation::skip_unfold(other, unfold));   // 가운데 점이 다르면 안 자름
+
+  // P0 와 받침이 출발 허용(0.15 rad) 보다 멀어야 켬: 여기 J3 차 18° = 0.31 rad
+  EXPECT_TRUE(manipulation::p0_distinct(fold, unfold, 0.15));
+  EXPECT_FALSE(manipulation::p0_distinct(fold, unfold, 0.35));
+  EXPECT_FALSE(manipulation::p0_distinct(fold, ArmPath{}, 0.15));
+}
+
+// 그리퍼 동작 · 멈춤이 있는 점은 잘라내지 않음 (잘라내면 동작이 사라짐)
+TEST(LazyFold, KeepsGripOrStopNodes)
+{
+  ArmPath fold, unfold, retrieve, store;
+  fold.nodes = {node("P0", {0, -79, 36, -1, 1}), node("rest", {0, -83, 54, -7, 1})};
+  unfold.nodes = {node("rest", {0, -83, 54, -7, 1}), node("P0", {0, -79, 36, -1, 1})};
+  retrieve.nodes = {node("rest", {0, -83, 54, -7, 1}), node("P0", {0, -79, 36, -1, 1}, false, "open"), node("cell", {120, 10, -50, 29, -48})};
+  EXPECT_FALSE(manipulation::skip_unfold(retrieve, unfold));   // P0 의 열기가 출발점이 되면 실행 안 됨
+  store.nodes = {node("cell", {120, 10, -50, 29, -48}), node("P0", {0, -79, 36, -1, 1}), node("rest", {0, -83, 54, -7, 1}, false, "close")};
+  store.ends_home = true;
+  EXPECT_FALSE(manipulation::cut_fold_tail(store, fold));      // 받침에서 닫기가 사라짐
+  EXPECT_TRUE(store.ends_home);
+}
