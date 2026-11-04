@@ -348,3 +348,38 @@ TEST(Planar, UprightBoxAndLying)
   EXPECT_FALSE(p.upright);
   EXPECT_NEAR(p.theta, -80 * M_PI / 180, 1e-9);
 }
+
+TEST(Geometry, TagTopRefineUsesTagCentreAndEdges)
+{
+  // 바로 아래를 보는 카메라 (위쪽 = −z), 윗면 0.28 m. 깊이 평균이 10 mm 치우친 윗면 중심을 태그로 바로잡음
+  const Intrinsics K{606.4, 606.2, 325.2, 256.8};
+  const Vec3 up(0.0, 0.0, -1.0), centre(0.01, -0.02, 0.28);
+  const double yaw = 30.0 * M_PI / 180.0, h = 0.0153 / 2.0;
+  const Vec3 ex(std::cos(yaw), std::sin(yaw), 0.0), ey(-std::sin(yaw), std::cos(yaw), 0.0);
+  TagPose t;
+  t.id = 4;
+  const std::array<Vec3, 4> corners{centre - ex * h - ey * h, centre + ex * h - ey * h, centre + ex * h + ey * h, centre - ex * h + ey * h};
+  for (int k = 0; k < 4; ++k) {
+    t.corners[k] = cv::Point2f(static_cast<float>(K.fx * corners[k].x() / corners[k].z() + K.cx),
+      static_cast<float>(K.fy * corners[k].y() / corners[k].z() + K.cy));
+  }
+  PuckPose p;
+  p.upright = true;
+  p.tag = t;
+  p.top_center = centre + Vec3(0.010, 0.0, 0.0);
+  ASSERT_TRUE(tag_top_refine(p, K, up));
+  EXPECT_LT((*p.top_center - centre).norm(), 0.0003);
+  EXPECT_LT((p.center - (centre - up * 0.030)).norm(), 0.0003);
+  ASSERT_TRUE(p.face_dir.has_value());
+  EXPECT_NEAR(std::abs(p.face_dir->dot(ex)), 1.0, 1e-3);   // 태그 변 = 면 방향
+  // 다른 퍽 태그 (윗면 중심에서 30 mm) · 누운 퍽 · 태그 없음 → 그대로
+  PuckPose far = p;
+  far.top_center = centre + Vec3(0.030, 0.0, 0.0);
+  EXPECT_FALSE(tag_top_refine(far, K, up));
+  PuckPose lying = p;
+  lying.upright = false;
+  EXPECT_FALSE(tag_top_refine(lying, K, up));
+  PuckPose none = p;
+  none.tag.reset();
+  EXPECT_FALSE(tag_top_refine(none, K, up));
+}
