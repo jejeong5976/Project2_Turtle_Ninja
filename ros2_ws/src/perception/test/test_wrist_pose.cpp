@@ -372,6 +372,14 @@ TEST(Geometry, TagTopRefineUsesTagCentreAndEdges)
   EXPECT_LT((p.center - (centre - up * 0.030)).norm(), 0.0003);
   ASSERT_TRUE(p.face_dir.has_value());
   EXPECT_NEAR(std::abs(p.face_dir->dot(ex)), 1.0, 1e-3);   // 태그 변 = 면 방향
+  EXPECT_TRUE(p.tag_centre);
+  // 마스크가 화면 가장자리에 닿아도 태그로 중심을 잡았으면 거르지 않음, 태그 없으면 거름
+  PuckPose cut = p;
+  cut.truncated = true;
+  cut.n_points = 500;
+  EXPECT_EQ(reject_reason(cut), "");
+  cut.tag_centre = false;
+  EXPECT_EQ(reject_reason(cut), "truncated");
   // 다른 퍽 태그 (윗면 중심에서 30 mm) · 누운 퍽 · 태그 없음 → 그대로
   PuckPose far = p;
   far.top_center = centre + Vec3(0.030, 0.0, 0.0);
