@@ -38,6 +38,7 @@ void BodyRouteController::configure(const nav2::LifecycleNode::WeakPtr & parent,
   LOAD_SETTING(heading_hold_rate); LOAD_SETTING(heading_rate_per_speed); LOAD_SETTING(heading_kp); LOAD_SETTING(linear_kp);
   LOAD_SETTING(linear_accel); LOAD_SETTING(angular_accel); LOAD_SETTING(align_enter);
   LOAD_SETTING(align_exit); LOAD_SETTING(lookahead); LOAD_SETTING(corner_tolerance);
+  LOAD_SETTING(path_simplify_tolerance);
   LOAD_SETTING(cross_track_enter); LOAD_SETTING(cross_track_exit); LOAD_SETTING(max_path_distance);
   LOAD_SETTING(max_correction_distance); LOAD_SETTING(max_correction_time);
   LOAD_SETTING(stopped_linear); LOAD_SETTING(stopped_angular); LOAD_SETTING(goal_xy);

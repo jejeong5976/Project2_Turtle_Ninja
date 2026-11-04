@@ -126,6 +126,7 @@ controller_server:
       align_exit: 0.035
       lookahead: 0.12
       corner_tolerance: 0.02
+      path_simplify_tolerance: 0.01
       cross_track_enter: 0.025
       cross_track_exit: 0.01
       max_path_distance: 0.25

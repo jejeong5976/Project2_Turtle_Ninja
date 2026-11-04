@@ -1,69 +1,173 @@
-# Body-route controller (ROS 2 Lyrical)
+# Body-route controller
 
-Experimental Nav2 controller: **body +X faces the upcoming path tangent**, independently of camera mounting. It stops before large turns, permits only one translation axis at a time, allows bounded backward/side corrections, and permits small yaw corrections while translating. Final goal yaw provides the shelf-facing heading.
+Nav2 controller for **body +X facing the route**, L2 crossing, multi-turn maze travel,
+and oriented arrival at a shelf. Development workspace:
+`/home/pa4/git/Project2_Turtle_Ninja-body-route`.
 
-This package is a standalone overlay because the evidence checkout does not contain the newer `navigation` package. Build it over the main-based/team navigation workspace. It does not replace that package or change the original MPPI/physical-run configurations.
+## Motion contract
 
-## Command and feedback chain
+- Stop translation using measured feedback before a large turn; rotate, settle,
+  then move. Final goal yaw overrides the route tangent.
+- Only one translation axis at a time. Forward is preferred; side/backward
+  corrections have distance and time bounds. Small yaw corrections may accompany
+  translation.
+- Forward/correction/turn caps remain 0.025 m/s, 0.015 m/s, 0.1 rad/s.
+- Occupied and unknown cells, the entire rotation, and the measured stopping
+  envelope are checked against the padded footprint. Blocked motion aborts.
+- Fresh odometry, pose, costmaps, and a continuing released mission-hold heartbeat
+  are required. Startup is held. The BT does not invoke spin/backup recovery.
 
-`mission_manager -> bt_navigator -> planner_server / controller_server -> /cmd_vel_nav -> collision_monitor -> /cmd_vel_safe -> cmd_vel_hold -> /cmd_vel -> swerve_controller`
+The recorded L2 planner path contains closely spaced points with noisy tangents.
+The controller now simplifies those points within a **0.01 m deviation bound**
+before selecting a tangent. Endpoints and larger corners are retained. This
+prevents small grid variations from becoming repeated stop/turn commands.
+The live swept-footprint check still rejects an unsafe shortcut. This tolerance
+is a geometric path-processing bound, not a physical localization accuracy claim.
+Goal alignment also requires reaching the end of the remaining route, so a goal
+near the beginning of a loop does not immediately stop the controller.
 
-The plugin is loaded inside `controller_server`. Its status is published at `/controller_server/body_route_status`. There is no extra publisher competing for `/cmd_vel`. The launch starts no hardware driver and neither releases hold nor sends a goal. The supplied behavior tree aborts on planner/controller failure instead of executing automatic spin/backup recovery commands outside the motion contract.
+## Main and manipulator integration
 
-AMCL uses the scanned map and front scan; both filtered scans feed obstacle costmaps and collision monitoring. Navigation commands use the full padded footprint. This package does **not** implement changed-wall map clearing, simulator/controller parity, or a calibrated physical response model. Stale static occupancy may still prevent a feasible route. Those remain separate qualification tasks.
+`mission_manager -> NavigateToPose -> planner/controller -> /cmd_vel_nav ->
+collision_monitor -> /cmd_vel_safe -> cmd_vel_hold -> /cmd_vel -> swerve_controller`
 
-## Profile and behavior
+The plugin runs inside `controller_server`; it adds no competing velocity
+publisher. Existing mission `Executor` goals and `/mission/hold` remain the
+integration interface. During a mission, **mission_manager is the sole hold
+owner**; manipulator readiness continues to gate navigation through that existing
+interface. The optional `route_trial` below is a wheel-only test client and must
+not run alongside mission_manager, teleop, or another trial client.
 
-The Nav2 profile is derived from the retained November 3 executed profile, with a new controller, stopped goal checker, rotation-aware progress checker, explicit scan freshness checks, corrected 0.26 m inflation and a recovery-free behavior tree. It keeps the 0.36 m padded square and 0.38 m stop zone; those are provisional envelopes, not surveyed dimensions.
+AMCL owns map->odom; measured swerve odometry owns odom->base_footprint. Front
+filtered scans localize; both filtered scans feed obstacle costmaps and collision
+monitoring. The original MPPI profile, firmware, mounting transforms, and arm
+implementation are unchanged.
 
-Initial engineering settings: 0.025 m/s forward, 0.015 m/s corrections, 0.1 rad/s in-place rotation, alignment entry/exit 0.12/0.035 rad, final XY/yaw tolerance 0.03 m/0.05 rad. Small heading corrections are capped by both 0.02 rad/s and 0.4 times translation speed. These are test settings, not physically validated accuracy limits.
+Use `config/drive_limits.yaml` with the existing wheel-only bringup. It disables
+the low-level controller's separate heading-hold gain because this plugin owns
+route heading feedback. Steering alignment stays enabled. The inspected main
+bringup accepts this override only with `arm:=false`; combining it with the arm
+bringup needs team integration review, not an unverified launch flag change.
 
-The existing swerve controller still owns steering alignment, branch choices, wheel limits and command timeout. Use `config/drive_limits.yaml` with the main-based wheel-only bringup: it disables that controller's separate heading-hold gain for this candidate, because route heading feedback is computed here. Do not disable steering alignment. Preserve the original heading-hold profile for physical-reference replay. The supplied bringup override is supported only with `arm:=false` by the inspected main launch.
+## Build and test offline
 
-The plugin requires fresh `/odom`, a fresh pose, current costmaps, and a continuing `/mission/hold` heartbeat set to false. Its default is held. A goal alone cannot release it. Heading changes and translation-axis changes wait for measured translation to stop. Steering alignment remains enforced by the lower controller rather than by an arbitrary delay.
-
-Footprint checking includes occupied/unknown cells inside the polygon, intermediate rotation poses, command lookahead and a conservative measured-motion stopping envelope. Leaving the costmap is rejected. This is sampled geometric checking with explicit speed/deceleration assumptions, not a physical safety certification. If blocked it reports a controller failure; it does not search arbitrary evasive maneuvers.
-
-## Build and offline test
-
-The repository owner handles all Git commands. No branch switch is required to build the new package as an overlay.
+The user performs every Git operation. Build the main-based workspace directly,
+using only the ROS underlay (no team-sim overlay):
 
 ```bash
 source /opt/ros/lyrical/setup.bash
-source /home/pa4/git/Project2_Turtle_Ninja-team-sim/ros2_ws/install/setup.bash
-cd /home/pa4/git/Project2_Turtle_Ninja
-colcon --log-base /tmp/body-route-colcon-log build \
-  --base-paths ros2_ws/src/body_route_controller \
-  --build-base /tmp/body-route-colcon-build \
-  --install-base /tmp/body-route-colcon-install \
+cd /home/pa4/git/Project2_Turtle_Ninja-body-route
+colcon --log-base /tmp/body-route-maze-build-log build \
+  --base-paths ros2_ws/src --packages-up-to body_route_controller \
+  --build-base /tmp/body-route-maze-build \
+  --install-base /tmp/body-route-maze-install \
   --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=ON
-source /tmp/body-route-colcon-install/setup.bash
-colcon --log-base /tmp/body-route-test-log test \
-  --base-paths ros2_ws/src/body_route_controller \
-  --build-base /tmp/body-route-colcon-build \
-  --install-base /tmp/body-route-colcon-install
-colcon test-result --test-result-base /tmp/body-route-colcon-build --verbose
+source /tmp/body-route-maze-install/setup.bash
+colcon --log-base /tmp/body-route-maze-test-log test \
+  --base-paths ros2_ws/src --packages-select body_route_controller \
+  --build-base /tmp/body-route-maze-build \
+  --install-base /tmp/body-route-maze-install --ctest-args --output-on-failure
+colcon test-result --test-result-base /tmp/body-route-maze-build --verbose
 ```
 
-Verified locally on November 4: the overlay builds against installed ROS 2 Lyrical/Nav2 and the team workspace; **23 test cases pass** (21 controller/collision/plugin cases, one ROS adapter case, one launch-integration case). CTest reports three passing test targets; `colcon test-result` counts those wrappers too and reports 26. The ROS adapter test uses localhost domain 231, synthetic odometry and an empty costmap, with no hardware drivers or velocity publisher. Launch integration constructs actions and resolves parameters without executing nodes. These checks do not establish a complete Nav2 mission, Isaac fidelity, physical tracking accuracy or 5 cm wall-offset performance. Retained results: [validation record](/home/pa4/git/Project2_Turtle_Ninja/output/body_route_controller_20261104_v1/VALIDATION.md).
+Tests include the retained 553-point L2 path, delayed measured feedback,
+multi-turn/return routes, near-start loop goals, full rotation collisions,
+mission hold and stale odometry, and route-relative trial checks.
+`test/data/l2_recorded.path` is the November 4 planning output from the retained
+physical trial; that trial did not physically follow the whole path.
+`replay_map` is an additional offline executable in the test build. It accepts
+`P5_MAP RESOLUTION ORIGIN_X ORIGIN_Y PATH INITIAL_YAW OUTPUT_CSV`; the P5 reader
+expects the recorded no-comment, 8-bit trinary format and thresholds .65/.25.
+No ROS graph or hardware is started by that replay.
 
-## User-run map test
+## Navigation-only launch
 
-First test in an isolated simulation ROS domain. Confirm simulation provides measured-state odometry/TF and matching filtered scans; the earlier bridge's truth odometry is only an ideal diagnostic mode. Physical-map testing remains unqualified until these comparisons are reviewed.
-
-For a later physical run, use the existing wheel/LiDAR bringup used for the recorded crossing, select the candidate drive override above, and ensure no other Nav2/teleop publisher is running. In that wheel-only `bringup/robot.launch.py` invocation, set `arm:=false` and `drive_test_params:=<absolute path to this package's config/drive_limits.yaml>`; preserve the recorded slow hardware-map profile. Do not run the historical combined held launch alongside this navigation launch, because it already starts Nav2. Bringup commands depend on the currently connected robot and are not started by this package. Verify the full footprint can rotate at the chosen starting pose.
-
-With the underlying sensors/controller already running, the navigation-only launch is:
+With the matching underlying wheel and sensor stack already available:
 
 ```bash
-# Source ROS, the main-based navigation workspace, and this overlay first.
 ros2 launch body_route_controller body_route.launch.py \
-  map:=/home/pa4/git/Project2_Turtle_Ninja/output/A1_H2_occupancy_1cm_2p5cm_5cm_20261102_v2/maps_1cm/map.yaml \
-  use_sim_time:=false
+  map:=/absolute/path/to/scanned/map.yaml use_sim_time:=false rviz:=true
 ```
 
-Set the measured initial pose in RViz. Retain the existing mission/operator hold mechanism; a continuous false heartbeat is required only when the operator intends motion. Do not bypass collision monitoring or publish directly to `/cmd_vel` to make the test move.
+This launches no hardware, sends no goal, and does not release hold. Supply the
+current independently measured initial pose in RViz. Historical coordinates
+must not be reused after teammates move the robot. Preserve the recorded slow
+hardware map, steering limits, filtered scans, and current USB topology.
 
-Check resolved parameters before releasing hold: `FollowPath.plugin` must be `body_route_controller::BodyRouteController`, swerve `heading_hold_kp` must be zero for this candidate, speed/acceleration limits must match, and steering alignment must remain enabled. Verify front/rear scans, `/odom`, TF and the footprint in RViz.
+## Optional route trial client
 
-Use one short, clearly free segment first; then a clear in-place turn, a side correction, a backward correction and an oriented final goal. Record status, commands at every stage of the chain, scans, odometry, joints/IMU, AMCL, TF, plans and costmaps. Stop the trial on unexpected heading, branch flips, stale feedback or repeated blocked messages. Test changed walls only after nominal behavior is understood. A nominal success does not establish 5 cm robustness or whole-mission completion.
+Write an explicit goal file: one **map-frame x y yaw-radians** row per destination;
+blank lines and `#` comments are accepted. Goals are visited in order. There is
+no default L2 goal or implicit arena-to-map conversion.
+
+```text
+# Example file format only: replace with surveyed map goals.
+0.50 0.70 1.57079632679
+0.90 0.70 0.0
+```
+
+Preview while the stack is held:
+
+```bash
+ros2 run body_route_controller route_trial --ros-args \
+  -p goals_file:=/absolute/path/to/goals.path
+```
+
+Preview is the default. It plans all legs, sends **no NavigateToPose goal**, and
+publishes **no hold heartbeat**. A plan is not a swept-footprint or physical
+clearance approval. Do not preview concurrently with another active navigator:
+both use the planner's `/plan` topic.
+
+For an operator-supervised physical trial, after checking pose, clear space,
+stowed arm and immediate stop access, explicitly select execution:
+
+```bash
+ros2 run body_route_controller route_trial --ros-args \
+  -p goals_file:=/absolute/path/to/goals.path -p execute:=true \
+  -p max_goal_duration:=900.0
+```
+
+The client refuses a competing `/mission/hold` publisher, owns hold only for
+that trial, requires two seconds of stationary fresh feedback before every leg,
+plans while held, then invokes the normal NavigateToPose BT with replanning.
+It restores hold and cancels its action on failure/interruption, and requires
+measured stopped arrival before the next destination. SIGINT/SIGTERM request
+that cleanup. A hard process kill is handled by the existing hold heartbeat
+and drive-command timeouts.
+
+The former 25 cm length and fixed initial-heading limits are replaced by:
+
+- 0.10 m distance to the current planned route; 0.25 rad target-heading error
+  while translating above 0.008 m/s.
+- During turn phases, 0.025 m odometry drift and 0.008 m/s translation bounds.
+  The controller's tighter measured-stop gate remains 0.003 m/s.
+- Measured speed caps 0.04 m/s and 0.15 rad/s; odometry/scans/map pose freshness
+  0.35 s; controller-status freshness 0.4 s after startup.
+- Both scans require 50 valid returns and fewer than two combined returns inside
+  the existing 0.38 m square stop region. Sensor transforms come from TF.
+- A finite per-goal deadline (default 900 s) and total travel budget twice the
+  initial planned length plus 0.25 m. Failure requires explicit investigation
+  and a new invocation; it never silently retries or releases itself.
+
+The diagnostic viewer must publish fresh `/live_view/fresh` and retain its
+latched `/live_view/stop`; this is required by default. Only an isolated simulation
+fixture without that UI should use `require_live_view:=false`. That setting does
+not disable any sensor, motion, collision, ownership, or deadline checks.
+`/trial/status` shows the actual goal index, route length and deadline.
+Record it with `/live_view/diagnostics`, controller status, all command stages,
+`/swerve_controller/commands`, odometry, scans, AMCL, TF, plans and costmaps.
+
+## Qualification boundary
+
+Offline passes establish software behavior under the stated fixtures, not a
+physical L2 crossing or complete competition mission. The 0.36 m padded square
+and 0.38 m stop region remain provisional; full stowed-body/arm/cable geometry,
+localization, turning drift, stopping response and battery condition need the
+next physical check. Speed and collision limits remain unchanged; the new
+route-relative supervisory bounds still require physical qualification.
+
+Changed-wall static-map clearing and 5 cm wall-displacement robustness are not
+implemented here. NavFn can also propose a path whose footprint/rotation is
+infeasible; the controller stops rather than inventing an evasive maneuver.
+Training remains on hold. See the accompanying November 4 offline validation
+record for exact test results and remaining evening checks.

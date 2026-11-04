@@ -24,6 +24,7 @@ struct Settings
   double align_exit = 0.035;
   double lookahead = 0.12;
   double corner_tolerance = 0.02;
+  double path_simplify_tolerance = 0.01;
   double cross_track_enter = 0.025;
   double cross_track_exit = 0.01;
   double max_path_distance = 0.25;
@@ -42,6 +43,7 @@ struct RouteTarget
   Point point;
   double heading = 0.0;
   double distance_to_path = 0.0;
+  double remaining = 0.0;
 };
 struct Result
 {

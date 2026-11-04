@@ -14,6 +14,35 @@ double distance(Point a, Point b) {return std::hypot(a.x - b.x, a.y - b.y);}
 double approach(double current, double target, double step)
 {return current + std::clamp(target - current, -step, step);}
 bool finite(const Pose & p) {return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.yaw);}
+// Iterative Ramer-Douglas-Peucker removes centimetre-grid tangent noise without
+// moving an endpoint or deviating more than tolerance from the supplied route.
+// Live footprint/stopping checks still decide whether a shortcut is traversable.
+std::vector<Point> simplify(const std::vector<Point> & input, double tolerance)
+{
+  if (input.size() < 3) {return input;}
+  std::vector<bool> keep(input.size(), false);
+  keep.front() = keep.back() = true;
+  std::vector<std::pair<std::size_t, std::size_t>> pending{{0, input.size() - 1}};
+  while (!pending.empty()) {
+    const auto [first, last] = pending.back(); pending.pop_back();
+    const auto a = input[first], b = input[last];
+    const double dx = b.x - a.x, dy = b.y - a.y, norm = dx * dx + dy * dy;
+    double worst = tolerance; std::size_t split = first;
+    for (std::size_t i = first + 1; i < last; ++i) {
+      const double t = norm > 0 ? std::clamp(
+        ((input[i].x - a.x) * dx + (input[i].y - a.y) * dy) / norm, 0.0, 1.0) : 0.0;
+      const double error = distance(input[i], {a.x + t * dx, a.y + t * dy});
+      if (error > worst) {worst = error; split = i;}
+    }
+    if (split != first) {
+      keep[split] = true; pending.emplace_back(first, split); pending.emplace_back(split, last);
+    }
+  }
+  std::vector<Point> out;
+  for (std::size_t i = 0; i < input.size(); ++i) {if (keep[i]) {out.push_back(input[i]);}}
+  return out;
+}
+
 }
 
 double wrap(double a) {return std::remainder(a, 2.0 * kPi);}
@@ -29,7 +58,7 @@ void Settings::validate() const
 {
   for (double v : {max_speed, correction_speed, max_yaw_rate, heading_hold_rate, heading_rate_per_speed,
       heading_kp, linear_kp, linear_accel, angular_accel, align_enter, align_exit,
-      lookahead, corner_tolerance, cross_track_enter, cross_track_exit, max_path_distance,
+      lookahead, corner_tolerance, path_simplify_tolerance, cross_track_enter, cross_track_exit, max_path_distance,
       max_correction_distance, max_correction_time, stopped_linear, stopped_angular,
       goal_xy, goal_yaw, max_dt})
   {
@@ -37,7 +66,7 @@ void Settings::validate() const
   }
   if (align_exit >= align_enter || align_enter >= kPi / 2 ||
     cross_track_exit >= cross_track_enter || correction_speed > max_speed ||
-    heading_hold_rate > max_yaw_rate || corner_tolerance >= lookahead)
+    heading_hold_rate > max_yaw_rate || corner_tolerance >= lookahead || path_simplify_tolerance >= corner_tolerance)
   {throw std::invalid_argument("Inconsistent body-route hysteresis or limits");}
 }
 
@@ -49,13 +78,14 @@ RouteTarget routeTarget(const std::vector<Point> & input, const Pose & pose, con
     if (!std::isfinite(p.x) || !std::isfinite(p.y)) {throw std::invalid_argument("Non-finite path");}
     if (path.empty() || distance(path.back(), p) > 1e-6) {path.push_back(p);}
   }
+  path = simplify(path, cfg.path_simplify_tolerance);
   const Point here{pose.x, pose.y};
   if (path.size() == 1) {
     const double d = distance(here, path[0]);
     // A single point has no route tangent. It can support final goal alignment,
     // but must not turn a backward correction into an invented 180-degree turn.
     if (d > cfg.goal_xy) {throw std::runtime_error("Single-point route has no translation heading; replan required");}
-    return {path[0], pose.yaw, d};
+    return {path[0], pose.yaw, d, 0.0};
   }
   std::size_t nearest = 0;
   Point projected = path[0];
@@ -97,7 +127,11 @@ RouteTarget routeTarget(const std::vector<Point> & input, const Pose & pose, con
     remaining -= fraction * length;
     if (remaining <= 1e-9) {break;}
   }
-  return {target, initial_heading, best};
+  double remaining_path = distance(projected, path[nearest + 1]);
+  for (std::size_t i = nearest + 1; i + 1 < path.size(); ++i) {
+    remaining_path += distance(path[i], path[i + 1]);
+  }
+  return {target, initial_heading, best, remaining_path};
 }
 
 Core::Core(Settings cfg) : cfg_(cfg) {cfg_.validate();}
@@ -121,7 +155,7 @@ Result Core::step(const Pose & pose, const Velocity & measured, const std::vecto
   if (dt > cfg_.max_dt) {reset(); return {{}, "clock_gap", pose.yaw, 0.0};}
   const auto target = routeTarget(path, pose, cfg_);
   const double goal_distance = std::hypot(goal.x - pose.x, goal.y - pose.y);
-  const bool final = goal_distance <= cfg_.goal_xy;
+  const bool final = goal_distance <= cfg_.goal_xy && target.remaining <= cfg_.goal_xy;
   const double heading = final ? goal.yaw : target.heading;
   const double error = wrap(heading - pose.yaw);
   const bool stopped = std::hypot(measured.x, measured.y) <= cfg_.stopped_linear;
