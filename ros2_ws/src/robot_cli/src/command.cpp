@@ -16,11 +16,12 @@ using ArmTask = interfaces::action::ArmTask;
 
 const char * const kHelp =
   "켜기: nt = 화면 · nt <명령> = 한 줄 (예 nt h · nt g B1 · nt check · nt status 2)   설치: tools/robot_cli/install.sh\n"
-  "짧게  h home · l look · b barcode · s5 store S5 · r5 retrieve S5 · p x y pick · pl x y place · g B1 접고 이동\n"
+  "짧게  h home · l look · b barcode · s5 store S5 · r5 retrieve S5 · p x y pick · pl place (집은 자리) · g B1 접고 이동\n"
   "      x 모두 취소 · ! estop (F9) · c check · m 이름 mark · n 메모 note · ? help · q quit · Tab 자동 완성 · ↑↓ 기록\n"
   "화면  0 쪽에서 번호 + Enter = 쪽 · 2 3 5 6 7 쪽에서 번호 = 그 쪽 동작 · Esc · 0 = 전체 요약 · ←/→ = 옆 쪽 · PgUp/PgDn\n"
   "팔    home [force] · look · barcode · store <칸> · retrieve <칸> (칸 = S5 또는 5)\n"
   "      pick x y [z] [yaw°] · place x y [z] [yaw°] (base_link m, z 0 = 박스 위 기본 높이) · arm <TASK> …\n"
+  "      place (인자 없음) = 마지막으로 성공한 PICK 목표 그대로 다시 놓기 (그 뒤 PLACE · STORE 가 성공했으면 거절)\n"
   "      lazy_fold: STORE · PLACE 는 P0 에서 끝 (바퀴 잠금 유지, 다음 팔 작업은 바로) → 주행 전 home (fold 경로로 접음)\n"
   "주행  go <정차|x y [yaw°]> = 접혀 있지 않으면 home 먼저 → nav (퍽 쥐었으면 거절) · nav <정차|x y [yaw°]> = 바로\n"
   "      drive vx vy wz [초] [force] (한계 = controllers.yaml max_linear · max_angular, 기본 1 초) · stop · stops\n"
@@ -154,7 +155,11 @@ bool parse_arm(const std::vector<std::string> & tok, const Names & names, Comman
   }
   if (t == "pick" || t == "place") {
     out.task = t == "pick" ? ArmTask::Goal::PICK : ArmTask::Goal::PLACE;
-    if (!read_nums(tok, 1, 2, 4, v, err)) {err = t + " x y [z] [yaw°] — " + err; return false;}
+    if (t == "place" && tok.size() == 1) {out.from_last = true; return true;}   // 마지막 성공 PICK 자리 (보낼 때 LastPick)
+    if (!read_nums(tok, 1, 2, 4, v, err)) {
+      err = t + " x y [z] [yaw°]" + (t == "place" ? " · 인자 없으면 마지막 PICK 자리" : "") + " — " + err;
+      return false;
+    }
     out.x = v[0];
     out.y = v[1];
     out.z = v.size() > 2 ? v[2] : 0.0;
@@ -186,6 +191,33 @@ const char * task_name(uint8_t task)
     case ArmTask::Goal::LOOK_BARCODE: return "LOOK_BARCODE";
     default: return "?";
   }
+}
+
+void LastPick::on_result(uint8_t task, const ArmTarget & t, bool ok)
+{
+  if (!ok) {return;}
+  if (task == ArmTask::Goal::PICK) {
+    have_ = true;
+    t_ = t;
+    used_by_.clear();
+  } else if (have_ && (task == ArmTask::Goal::PLACE || task == ArmTask::Goal::STORE)) {
+    have_ = false;
+    used_by_ = task_name(task);
+  }
+}
+
+bool LastPick::place_target(ArmTarget & out, std::string & why) const
+{
+  if (have_) {out = t_; return true;}
+  if (used_by_.empty()) {
+    why = "이 CLI 가 켜진 뒤 성공한 PICK 없음 → 좌표로 pl x y [z] [yaw°]";
+    return false;
+  }
+  char b[200];
+  std::snprintf(b, sizeof(b), "마지막 PICK (%.3f, %.3f, %.3f) 뒤 %s 가 이미 성공 (퍽을 놓음) → 좌표로 pl x y [z] [yaw°]", t_.x, t_.y, t_.z,
+    used_by_.c_str());
+  why = b;
+  return false;
 }
 
 bool parse_command(const std::vector<std::string> & raw, const Names & names, Command & out, std::string & err)

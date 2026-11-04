@@ -78,10 +78,67 @@ TEST(Command, PickPlace)
   EXPECT_EQ(c.task, ArmTask::Goal::PLACE);
   EXPECT_DOUBLE_EQ(c.z, 0.08);
   EXPECT_DOUBLE_EQ(c.yaw_deg, 30.0);
+  EXPECT_FALSE(c.from_last);
   EXPECT_FALSE(parse("pick 0.25", c));
   EXPECT_FALSE(parse("pick a b", c));
   EXPECT_FALSE(parse("pick 1 2 3 4 5", c));
   EXPECT_FALSE(parse("pick nan 0", c));
+  // 인자 없는 place = 마지막 성공 PICK 자리 (목표는 보낼 때 LastPick)
+  for (const char * line : {"place", "pl", "PL", "arm PLACE"}) {
+    ASSERT_TRUE(parse(line, c)) << line;
+    EXPECT_EQ(c.task, ArmTask::Goal::PLACE) << line;
+    EXPECT_TRUE(c.from_last) << line;
+  }
+  ASSERT_TRUE(parse("pl 0.2 0.04", c));
+  EXPECT_FALSE(c.from_last);
+  std::string err;
+  EXPECT_FALSE(parse("pl 0.2", c, &err));
+  EXPECT_NE(err.find("마지막 PICK"), std::string::npos);
+  EXPECT_FALSE(parse("pick", c));   // pick 은 좌표 · det · tag 가 꼭 있음
+}
+
+TEST(LastPick, PlaceAtLastPick)
+{
+  LastPick lp;
+  ArmTarget t;
+  std::string why;
+  EXPECT_FALSE(lp.place_target(t, why));   // 켜진 뒤 PICK 없음
+  EXPECT_NE(why.find("PICK 없음"), std::string::npos);
+
+  const ArmTarget a{0.235, -0.010, 0.052, 0.0, 0.0, 0.3826834, 0.9238795, 45.0};   // pick det 이 보낸 목표 (방향까지)
+  lp.on_result(ArmTask::Goal::PICK, a, false);   // 실패한 PICK 은 안 셈
+  EXPECT_FALSE(lp.place_target(t, why));
+  lp.on_result(ArmTask::Goal::PICK, a, true);
+  ASSERT_TRUE(lp.place_target(t, why));
+  EXPECT_DOUBLE_EQ(t.x, a.x);
+  EXPECT_DOUBLE_EQ(t.y, a.y);
+  EXPECT_DOUBLE_EQ(t.z, a.z);
+  EXPECT_DOUBLE_EQ(t.qz, a.qz);
+  EXPECT_DOUBLE_EQ(t.qw, a.qw);
+  EXPECT_DOUBLE_EQ(t.yaw_deg, 45.0);
+
+  // 다른 작업 · 실패한 PLACE · STORE 는 그대로 (아직 쥐고 있음)
+  lp.on_result(ArmTask::Goal::LOOK, ArmTarget{}, true);
+  lp.on_result(ArmTask::Goal::PLACE, ArmTarget{}, false);
+  lp.on_result(ArmTask::Goal::STORE, ArmTarget{}, false);
+  ASSERT_TRUE(lp.place_target(t, why));
+  EXPECT_DOUBLE_EQ(t.x, a.x);
+
+  lp.on_result(ArmTask::Goal::PLACE, a, true);   // 놓음 → 다시 놓을 퍽 없음
+  EXPECT_FALSE(lp.place_target(t, why));
+  EXPECT_NE(why.find("PLACE"), std::string::npos);
+  EXPECT_NE(why.find("0.235"), std::string::npos);
+
+  // 새 PICK (좌표, 방향 모름 0,0,0,0) → 다시 됨, 그 뒤 STORE 성공 → 거절
+  const ArmTarget b{0.200, 0.050, 0.0, 0.0, 0.0, 0.0, 0.0, NAN};
+  lp.on_result(ArmTask::Goal::PICK, b, true);
+  ASSERT_TRUE(lp.place_target(t, why));
+  EXPECT_DOUBLE_EQ(t.qw, 0.0);
+  EXPECT_TRUE(std::isnan(t.yaw_deg));
+  lp.on_result(ArmTask::Goal::STORE, ArmTarget{}, true);
+  EXPECT_FALSE(lp.place_target(t, why));
+  EXPECT_NE(why.find("STORE"), std::string::npos);
+  EXPECT_NE(why.find("0.200"), std::string::npos);
 }
 
 TEST(Command, Nav)
