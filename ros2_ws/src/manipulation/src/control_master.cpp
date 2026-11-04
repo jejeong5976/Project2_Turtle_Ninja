@@ -165,10 +165,11 @@ public:
     //   기울여 집은 퍽은 손 안에서 그만큼 기울어 있음 → STORE 는 10° 까지, PLACE 는 쥘 때 기울임과 20° 안으로 놓음 (넘어지지 않게)
     max_tilt_deg_ = declare_parameter<double>("pick_max_tilt_deg", 20.0);
     // 손목 카메라로 잡은 퍽을 실물에서 늘 한쪽으로 비껴 쥐면 그만큼 PICK 쥐는 점을 옮김 [mm, base_link] (±15 까지)
+    //   윗면 태그가 보인 퍽 (검출 id 있음) 은 인지가 태그로 중심을 잡으므로 옮기지 않음
     //   실행 중 바로 바꿈: ros2 param set /control_master pick_offset_x_mm -5.0 (다음 PICK 부터)
     declare_parameter<double>("pick_offset_x_mm", 0.0);
     declare_parameter<double>("pick_offset_y_mm", 0.0);
-    // STORE 때 칸 근처 경로를 더 옮김 [mm, base_link, ±8 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 적재함 태그 보정과 더해짐
+    // STORE 때 칸 근처 경로를 더 옮김 [mm, base_link, ±8 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 적재함 태그 보정 · 칸별 store_offset.<칸> 과 더해짐
     //   실행 중 바로 바꿈: ros2 param set /control_master store_offset_y_mm 3.0 (다음 STORE 부터, x+ = 앞 · y+ = 왼쪽)
     declare_parameter<double>("store_offset_x_mm", 0.0);
     declare_parameter<double>("store_offset_y_mm", 0.0);
@@ -188,6 +189,8 @@ public:
       } else {
         for (size_t i = 0; i < rx.size(); ++i) {rack_xy_.emplace_back(rx[i], ry[i]);}
         for (const auto & c : rack_xy_) {rack_pivot_ += c / static_cast<double>(rack_xy_.size());}
+        // 칸마다 STORE 보정 [x, y] mm (store_offset_x · y_mm 와 더함): ros2 param set /control_master store_offset.S7 "[0.0, 5.0]"
+        for (const auto & n : rack_names_) {declare_parameter<std::vector<double>>("store_offset." + n, std::vector<double>{0.0, 0.0});}
       }
     }
     rack_ref_file_ = declare_parameter<std::string>("rack_reference_file", "~/.ros/rack_reference.txt");
@@ -697,9 +700,15 @@ private:
     }
     Eigen::Vector2d d_set = Eigen::Vector2d::Zero();
     if (store) {
-      const double ox = get_parameter("store_offset_x_mm").as_double(), oy = get_parameter("store_offset_y_mm").as_double();
+      double ox = get_parameter("store_offset_x_mm").as_double(), oy = get_parameter("store_offset_y_mm").as_double();
+      if (known) {
+        const auto c = get_parameter("store_offset." + cell).as_double_array();
+        if (c.size() != 2) {why = "store_offset." + cell + " 는 [x, y] mm 두 개"; return false;}
+        ox += c[0];
+        oy += c[1];
+      }
       if (!std::isfinite(ox) || !std::isfinite(oy) || std::hypot(ox, oy) > 8.0) {
-        why = "store_offset_x_mm · store_offset_y_mm 가 숫자가 아니거나 8 mm 넘음";
+        why = "store_offset (전체 + 칸 " + cell + ") 가 숫자가 아니거나 8 mm 넘음";
         return false;
       }
       d_set = Eigen::Vector2d(ox, oy) / 1000.0;
@@ -746,7 +755,7 @@ private:
       const double yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
       const bool square = d.shape != "cylinder";                               // 모양 모름("") = 사각으로 (보수적)
       out.push_back({Eigen::Vector3d(o.pose.position.x, o.pose.position.y, o.pose.position.z), square,
-        square && d.yaw_known && q_known, yaw, !q_known || std::fabs(zz) < 0.7, t});
+        square && d.yaw_known && q_known, yaw, !q_known || std::fabs(zz) < 0.7, t, !d.id.empty()});
     }
     seen_ = out;
     seen_t_ = t;   // 빈 배열도 "카메라는 살아 있고 아무것도 없음"
@@ -755,7 +764,7 @@ private:
   // 목표 (x, y, 퍽 중심 높이 zc, base_link) 주변 이웃 퍽. 목표 자신 = 25 mm 안 (선 퍽 두 개는 30 mm 이상 떨어짐)
   //   같은 면 위 퍽만 (높이 ±40 mm). 목표로 보이는 검출이 있으면 그 모양 · 면 방향
   std::vector<NeighborPuck> neighbors_near(double x, double y, double zc, bool & found, TargetPuck & tgt, Eigen::Vector2d & tc,
-    bool & stale) const
+    bool & stale, bool & tagged) const
   {
     std::vector<NeighborPuck> nb;
     found = false;
@@ -781,6 +790,7 @@ private:
         found = true;
         tgt = {p.square, p.yaw_known, p.yaw + dyaw, d, true};
         tc = b.head<2>();
+        tagged = p.tagged;
         continue;
       }
       if (d > nb_radius_) {continue;}
@@ -805,9 +815,14 @@ private:
     bool found = false, stale = false;
     TargetPuck tgt;
     Eigen::Vector2d tc(x, y);
-    const auto nb = neighbors_near(x, y, zc, found, tgt, tc, stale);
+    target_tagged_ = false;
+    const auto nb = neighbors_near(x, y, zc, found, tgt, tc, stale, target_tagged_);
     last_nb_ = nb;
     if (place && found) {why = std::string(what) + ": 놓을 자리에 이미 퍽이 보임"; return false;}
+    if (found && !place && tgt.square && !tgt.yaw_known) {   // 면 방향 모르는 네모 퍽은 15° 후보 중 대각선으로 쥘 수 있음 (11-04 실물)
+      why = std::string(what) + ": 네모 퍽인데 손목 인지가 면 방향을 못 잡음 → 대각선으로 쥐지 않게 거절 (다시 LOOK)";
+      return false;
+    }
     if (found && !place) {
       RCLCPP_INFO(get_logger(), "%s: 목표 검출 중심 (%.3f, %.3f) 로 맞춤 (목표점과 %.1f mm)", what, tc.x(), tc.y(), tgt.offset * 1000.0);
       x = tc.x();
@@ -891,10 +906,12 @@ private:
         why = "pick_offset_x_mm · pick_offset_y_mm 가 숫자가 아니거나 15 mm 넘음";
         return {};
       }
-      if (ox != 0.0 || oy != 0.0) {
+      if (target_tagged_) {
+        RCLCPP_INFO(get_logger(), "PICK: 윗면 태그로 잰 퍽 → 쥐는 점 보정 안 함");
+      } else if (ox != 0.0 || oy != 0.0) {
         x += ox / 1000.0;
         y += oy / 1000.0;
-        RCLCPP_INFO(get_logger(), "PICK: 쥐는 점을 (%+.1f, %+.1f) mm 옮김 (pick_offset_x_mm · y_mm)", ox, oy);
+        RCLCPP_INFO(get_logger(), "PICK: 쥐는 점을 (%+.1f, %+.1f) mm 옮김 (pick_offset_x_mm · y_mm, 태그 없는 퍽)", ox, oy);
       }
     }
     // 손 기울임 10° 까지 = pick_heights_ (−40, 적재함 경로와 같은 깊이), 그보다 기울여야 하면 pick_tilted_depth_mm (퍽 무게중심)
@@ -1280,8 +1297,9 @@ private:
   double surface_z_{0.037}, puck_h_{0.060}, grasp_offset_{0.015}, slow_dps_{15.0};
   double grip_now_{std::nan("")};       // 그리퍼 실측 [m]
   // 손목 인지 퍽 (base_link): 집기 · 놓기 때 이웃
-  struct SeenPuck {Eigen::Vector3d p; bool square; bool yaw_known; double yaw; bool round_r30; double t;};   // p · yaw = odom 기준
+  struct SeenPuck {Eigen::Vector3d p; bool square; bool yaw_known; double yaw; bool round_r30; double t; bool tagged;};   // p · yaw = odom 기준, tagged = 윗면 태그로 잰 중심
   std::vector<SeenPuck> seen_;
+  bool target_tagged_{false};     // 마지막 grasp_for 가 맞춘 목표 검출이 윗면 태그로 잰 퍽
   double seen_t_{std::nan("")};   // 마지막 손목 인지 결과 시각
   double nb_age_s_{10.0}, nb_radius_{0.12}, nb_min_clear_{0.002}, nb_target_clear_{0.003};
   std::string odom_frame_{"odom"};
