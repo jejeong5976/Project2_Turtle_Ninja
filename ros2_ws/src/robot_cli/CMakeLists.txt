@@ -25,6 +25,7 @@ find_package(interfaces REQUIRED)
 find_package(rcl_interfaces REQUIRED)
 find_package(urdf REQUIRED)
 find_package(yaml-cpp REQUIRED)
+find_package(planning REQUIRED)   # pick det: 실행기와 같은 집기 규칙 (planning_core)
 set(CURSES_NEED_WIDE TRUE)
 find_package(Curses REQUIRED)
 
@@ -33,10 +34,10 @@ set(ROBOT_CLI_MAPS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../maps" CACHE PATH "d
 get_filename_component(ROBOT_CLI_MAPS_DIR "${ROBOT_CLI_MAPS_DIR}" ABSOLUTE)
 
 # ROS 없는 부분 (설정 · 명령 문법 · 상태 글 · 실험 기록) — 시험이 이것만 씀
-add_library(robot_cli_core STATIC src/model.cpp src/command.cpp src/status_view.cpp src/pages.cpp src/teach.cpp src/bag.cpp)
+add_library(robot_cli_core STATIC src/model.cpp src/command.cpp src/status_view.cpp src/pages.cpp src/teach.cpp src/bag.cpp src/det_pick.cpp)
 target_include_directories(robot_cli_core PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 target_compile_features(robot_cli_core PUBLIC cxx_std_17)
-target_link_libraries(robot_cli_core yaml-cpp::yaml-cpp ${interfaces_TARGETS})
+target_link_libraries(robot_cli_core yaml-cpp::yaml-cpp ${interfaces_TARGETS} planning::planning_core)
 
 add_executable(robot_cli src/main.cpp src/robot_link.cpp src/tui.cpp)
 target_include_directories(robot_cli PRIVATE ${CURSES_INCLUDE_DIRS})
@@ -61,5 +62,7 @@ if(BUILD_TESTING)
   target_link_libraries(test_status_view robot_cli_core)
   ament_add_gtest(test_teach test/test_teach.cpp)
   target_link_libraries(test_teach robot_cli_core)
+  ament_add_gtest(test_det_pick test/test_det_pick.cpp)
+  target_link_libraries(test_det_pick robot_cli_core)
 endif()
 ament_package()

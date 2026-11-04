@@ -32,6 +32,9 @@ struct Command
   std::string slot;
   double x{0.0}, y{0.0}, z{0.0};      // PICK · PLACE target, base_link [m]. z = 0 → control_master 박스 위 기본 높이
   double yaw_deg{NAN};                // NaN = 방향 모름 (자세 0,0,0,0)
+  // PICK det · PICK tag: 손목 인지 검출로 집기 — det_tag 비면 퍽이 하나뿐일 때 그것, 아니면 그 퍽 태그 ID
+  bool from_det{false};
+  std::string det_tag;
   // NAV — stop 이름이 있으면 그것, 없으면 map 기준 x y yaw
   std::string stop;
   double yaw_nav_deg{0.0};

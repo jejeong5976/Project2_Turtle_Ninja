@@ -29,7 +29,9 @@
 #include "std_msgs/msg/string.hpp"
 #include "urdf/model.hpp"
 
+#include "robot_cli/det_pick.hpp"
 #include "robot_cli/status_view.hpp"
+#include "tf2/exceptions.hpp"
 
 namespace robot_cli
 {
@@ -303,6 +305,7 @@ RobotLink::RobotLink(Config cfg)
       s_.wrist_t = now_s();
       s_.wrist_frame = m->header.frame_id;
       s_.wrist_lag = lag;
+      s_.wrist_stamp = rclcpp::Time(m->header.stamp).seconds();
       s_.wrist_dets = std::move(dets);
     }));
   keep(create_subscription<interfaces::msg::DetectionArray>("/perception/wide/detections", stream,
@@ -485,7 +488,8 @@ void RobotLink::send_arm(const Command & c, Done done, std::function<void()> acc
   }
   if (closing) {fail(done, 2, "팔 거절: 끝내는 중"); return;}
   if (estop) {fail(done, 2, "팔 거절: E-STOP 중 — estop off 뒤에"); return;}
-  const std::string what = arm_what(c), label = arm_short(c);
+  Command cc = c;
+  DetPick dp;
   // 서버 찾기 — Ctrl-C 면 보내지 않음
   const auto until = std::chrono::steady_clock::now() + std::chrono::duration<double>(discovery_wait_s_);
   while (!arm_->action_server_is_ready()) {
@@ -493,17 +497,88 @@ void RobotLink::send_arm(const Command & c, Done done, std::function<void()> acc
     if (std::chrono::steady_clock::now() >= until) {fail(done, 1, "팔: /arm_task 서버 없음 (control_master 꺼짐?)"); return;}
     arm_->wait_for_action_server(50ms);
   }
+  // pick det · pick tag: 손목 인지 검출 → base_link (촬영 시각의 카메라 → odom → 지금의 base_link: 그 사이 몸이 움직여도 맞게)
+  //   → planning 과 같은 규칙의 집기 목표
+  //   서버를 찾은 뒤 (보내기 직전) 에 고르고 나이를 봄: 촬영이 2 s 넘게 지난 검출 · 그 시각 TF 가 없는 검출은 안 씀
+  if (c.from_det) {
+    std::vector<DetView> dets;
+    std::string frame;
+    double wt = -1.0, stamp = 0.0;
+    {
+      std::lock_guard<std::mutex> lk(mu_);
+      dets = s_.wrist_dets;
+      frame = s_.wrist_frame;
+      wt = s_.wrist_t;
+      stamp = s_.wrist_stamp;
+    }
+    // 한 줄 명령은 막 켜져서 첫 검출을 아직 못 받았을 수 있음 → discovery_wait_s 안에서 기다림
+    while (wt < 0.0 && std::chrono::steady_clock::now() < until) {
+      if (interrupted()) {fail(done, 1, "pick det: 중단 (Ctrl-C) — 안 보냄"); return;}
+      std::this_thread::sleep_for(50ms);
+      std::lock_guard<std::mutex> lk(mu_);
+      dets = s_.wrist_dets;
+      frame = s_.wrist_frame;
+      wt = s_.wrist_t;
+      stamp = s_.wrist_stamp;
+    }
+    if (wt < 0.0) {fail(done, 2, "pick det: 손목 검출 없음 (perception · 손목 카메라 켜짐? LOOK 자세?)"); return;}
+    if (now_s() - wt > kStaleS) {fail(done, 2, "pick det: 손목 검출을 받은 지 2 s 넘음 — 인지가 멈췄는지 확인"); return;}   // 시계 차이와 상관없이
+    const double shot_age = now().seconds() - stamp;   // 촬영 뒤 지난 시간 (로봇 시계, 시계 차이가 크면 여기서 걸림)
+    if (shot_age > kStaleS || shot_age < -kClockTolS) {
+      char b[160];
+      std::snprintf(b, sizeof(b), "pick det: 손목 검출 촬영이 %.1f s 전 (%.0f s 넘으면 안 씀, 음수면 시계 차이) — LOOK 자세에서 인지 확인", shot_age, kStaleS);
+      fail(done, 2, b);
+      return;
+    }
+    std::string why;
+    const int k = choose_det(dets, c.det_tag, why);
+    if (k < 0) {fail(done, 2, "pick det: " + why); return;}
+    geometry_msgs::msg::TransformStamped tf;
+    try {
+      tf = tf_buf_->lookupTransform("base_link", rclcpp::Time(0, 0, get_clock()->get_clock_type()), frame,
+          rclcpp::Time(static_cast<int64_t>(stamp * 1e9), get_clock()->get_clock_type()), "odom", rclcpp::Duration::from_seconds(0.2));
+    } catch (const tf2::TransformException & e) {
+      fail(done, 2, "pick det: 촬영 시각 " + frame + " → odom → 지금 base_link TF 없음: " + e.what());
+      return;
+    }
+    // 지금 몸 위치 쪽 TF (시각 0 = 버퍼의 최신) 가 오래됐으면 (odom 끊김) 그 사이 이동을 모름 → 안 씀
+    const double base_age = now().seconds() - rclcpp::Time(tf.header.stamp).seconds();
+    if (base_age > 0.5) {
+      char b[140];
+      std::snprintf(b, sizeof(b), "pick det: 지금 몸 위치 TF 가 %.1f s 전 것 (odom 끊김?) — 안 보냄", base_age);
+      fail(done, 2, b);
+      return;
+    }
+    const auto & tr = tf.transform;
+    const Xform X{tr.translation.x, tr.translation.y, tr.translation.z, tr.rotation.x, tr.rotation.y, tr.rotation.z, tr.rotation.w};
+    if (!det_pick(dets[k], X, kGraspOffsetM, dp, why)) {fail(done, 2, "pick det: " + why); return;}
+    cc.x = dp.x;
+    cc.y = dp.y;
+    cc.z = dp.z;
+    cc.yaw_deg = dp.theta_known ? dp.theta_deg : NAN;   // 표시용 (보내는 방향은 dp 그대로)
+    char b[220];
+    std::snprintf(b, sizeof(b), "pick det: 손목 검출 #%d (%s %s 태그 %s) 퍽 중심 (%.3f, %.3f, %.3f) → 집기 목표 (%.3f, %.3f, %.3f)", k + 1,
+      dets[k].label.c_str(), dets[k].shape.empty() ? "-" : dets[k].shape.c_str(), dets[k].id.empty() ? "-" : dets[k].id.c_str(),
+      dp.cx, dp.cy, dp.cz, dp.x, dp.y, dp.z);
+    log(b);
+  }
+  const std::string what = arm_what(cc), label = arm_short(cc);
   ArmTask::Goal g;
-  g.task = c.task;
-  g.slot = c.slot;
-  if (c.task == ArmTask::Goal::PICK || c.task == ArmTask::Goal::PLACE) {
+  g.task = cc.task;
+  g.slot = cc.slot;
+  if (cc.task == ArmTask::Goal::PICK || cc.task == ArmTask::Goal::PLACE) {
     g.target.header.frame_id = "base_link";
     g.target.header.stamp = now();
-    g.target.pose.position.x = c.x;
-    g.target.pose.position.y = c.y;
-    g.target.pose.position.z = c.z;
-    if (std::isfinite(c.yaw_deg)) {
-      g.target.pose.orientation = quat_of(c.yaw_deg * M_PI / 180.0);
+    g.target.pose.position.x = cc.x;
+    g.target.pose.position.y = cc.y;
+    g.target.pose.position.z = cc.z;
+    if (cc.from_det) {   // planning grasp_orientation 그대로 (방향 모르면 0,0,0,0)
+      g.target.pose.orientation.x = dp.qx;
+      g.target.pose.orientation.y = dp.qy;
+      g.target.pose.orientation.z = dp.qz;
+      g.target.pose.orientation.w = dp.qw;
+    } else if (std::isfinite(cc.yaw_deg)) {
+      g.target.pose.orientation = quat_of(cc.yaw_deg * M_PI / 180.0);
     } else {
       g.target.pose.orientation.w = 0.0;   // 방향 모름 = 0,0,0,0 (Detection.msg 약속, control_master 가 기본 방향)
     }
@@ -523,7 +598,7 @@ void RobotLink::send_arm(const Command & c, Done done, std::function<void()> acc
         if (gh) {
           arm_gh_ = gh;
           note_goal(short_id(gh->get_goal_id()), label);
-          cancel_now = closing_ || seq <= arm_cancel_upto_;
+          cancel_now = closing_ || estop_ || seq <= arm_cancel_upto_;   // 기다리는 사이 E-STOP 이면 받자마자 취소
         }
         if (!cancel_now) {--arm_pending_;}   // 바로 취소할 goal 은 취소를 보낸 뒤에 줄임 (finish 가 그때까지 기다리게)
       }
@@ -553,6 +628,14 @@ void RobotLink::send_arm(const Command & c, Done done, std::function<void()> acc
       done(ok ? 0 : 2, text);
     };
   if (interrupted()) {fail(done, 1, "팔: 중단 (Ctrl-C) — 안 보냄"); return;}
+  // 서버 · TF 를 기다리는 사이 E-STOP · 끝내기가 왔으면 안 보냄 (그 뒤에 오면 받자마자 취소: goal_response_callback)
+  bool estop_now = false, closing_now = false;
+  {
+    std::lock_guard<std::mutex> lk(mu_);
+    estop_now = estop_;
+    closing_now = closing_;
+  }
+  if (estop_now || closing_now) {fail(done, 2, estop_now ? "팔 거절: E-STOP 중 — estop off 뒤에" : "팔 거절: 끝내는 중"); return;}
   if (!quiet_) {log("팔 " + what + " 보냄");}
   {
     std::lock_guard<std::mutex> lk(mu_);

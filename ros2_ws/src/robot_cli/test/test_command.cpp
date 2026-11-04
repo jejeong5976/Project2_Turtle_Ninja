@@ -43,6 +43,17 @@ TEST(Command, Arm)
   ASSERT_TRUE(parse("arm LOOK_BARCODE", c));
   EXPECT_EQ(c.task, ArmTask::Goal::LOOK_BARCODE);
   EXPECT_FALSE(parse("look 1", c));
+  ASSERT_TRUE(parse("pick det", c));   // 손목 인지 검출로 집기
+  EXPECT_EQ(c.task, ArmTask::Goal::PICK);
+  EXPECT_TRUE(c.from_det);
+  EXPECT_EQ(c.det_tag, "");
+  EXPECT_FALSE(parse("p det 2", c));   // 번호로 고르기 없음 (검출 순서가 바뀔 수 있음)
+  ASSERT_TRUE(parse("pick tag 3", c));
+  EXPECT_EQ(c.det_tag, "3");
+  EXPECT_FALSE(parse("pick det x", c));
+  EXPECT_FALSE(parse("pick tag", c));
+  ASSERT_TRUE(parse("pick 0.21 0.04", c));
+  EXPECT_FALSE(c.from_det);
   ASSERT_TRUE(parse("look rack", c));   // 빈 손 적재함 스캔
   EXPECT_EQ(c.task, ArmTask::Goal::LOOK);
   EXPECT_EQ(c.slot, "rack");
