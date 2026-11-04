@@ -16,6 +16,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -31,12 +32,15 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("image_topic", default_value="/camera/camera/color/image_raw"),
         DeclareLaunchArgument("info_topic", default_value="/camera/camera/color/camera_info"),
+        DeclareLaunchArgument("min_view_cos", default_value="0.94",
+                              description="태그 광선이 수직에서 이 cos 안이어야 씀 (0.94 = 20°, 비스듬할수록 각도 오차가 커짐)"),
         DeclareLaunchArgument("camera_frame", default_value="d435_color_optical_frame",
                               description="TF 조회 이름 (URDF). 드라이버 영상 header 는 camera_color_optical_frame 이라 덮어씀"),
         Node(package="manipulation", executable="rack_tag_node", output="both", parameters=[{
             "image_topic": arg("image_topic"),
             "info_topic": arg("info_topic"),
             "camera_frame": arg("camera_frame"),
+            "min_view_cos": ParameterValue(arg("min_view_cos"), value_type=float),
             "floor_z": float(rack["floor_z"]),
             "tag_size_m": float(tags["size_m"]),
             "cell_names": names,

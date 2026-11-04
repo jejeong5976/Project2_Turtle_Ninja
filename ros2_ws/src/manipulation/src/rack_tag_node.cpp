@@ -5,6 +5,7 @@
 //         pose = 칸 바닥 위 태그 중심, z 축 위, x 축 = 태그 x 축. 처리한 영상마다 (없으면 빈 배열)
 //       ~/report (std_srvs/Trigger): 칸별 잰 위치 (중앙값) − config/rack_cells.yaml, 적재함 전체 이동 맞춤, 칸별 옮길 양
 //       ~/reset (std_srvs/Trigger): 모은 값 지움
+//       ~/dump (std_srvs/Trigger): 멈춘 장의 원본 (태그 ID · 왜곡 푼 모서리 4 개 · 카메라 자세) 을 CSV 로 → PC 에서 카메라 보정 · 분석
 // 태그: tag36h11, cell_ids[i] = cell_names[i] 칸의 태그 (config/rack_cells.yaml rack_tags), 검은 사각 26 mm, 칸 바닥 가운데
 //   잰 자리가 다른 칸 표 위치에 더 가깝고 제 칸에서 mismatch_m 넘게 떨어지면 ID 를 잘못 붙인 것으로 보고 안 씀 (경고에 그 칸 이름)
 // 팔이 멈춰 있을 때 (앞 장과 카메라 자리 차이가 still_m · still_deg 안) 만 모음 (움직이는 중은 영상 · 관절 시각이 어긋나 수 mm 틀림)
@@ -16,7 +17,9 @@
 //   퍽이 컵 벽에 닿으면 (틈 약 ±2 mm) 그 이상은 못 잼, 턱에 걸려 기울면 높이가 달라 크기 검사에서 빠짐
 
 #include <cmath>
+#include <cstdlib>
 #include <deque>
+#include <fstream>
 #include <iomanip>
 #include <map>
 #include <set>
@@ -72,7 +75,7 @@ public:
     cfg_.plane_z = declare_parameter<double>("floor_z", 0.1325);
     cfg_.tag_size_m = declare_parameter<double>("tag_size_m", 0.026);
     cfg_.size_tol = declare_parameter<double>("size_tol", 0.15);
-    cfg_.min_view_cos = declare_parameter<double>("min_view_cos", 0.4);
+    cfg_.min_view_cos = declare_parameter<double>("min_view_cos", 0.94);   // 수직에서 20° 안 (rack_tags.hpp)
     names_ = declare_parameter<std::vector<std::string>>("cell_names", std::vector<std::string>{});
     const auto xs = declare_parameter<std::vector<double>>("cell_x", std::vector<double>{});
     const auto ys = declare_parameter<std::vector<double>>("cell_y", std::vector<double>{});
@@ -153,11 +156,29 @@ public:
           res->success = true;
           RCLCPP_INFO(get_logger(), "\n%s", res->message.c_str());
         });
+    dump_path_ = declare_parameter<std::string>("dump_path",
+        std::string(std::getenv("HOME") ? std::getenv("HOME") : "/tmp") + "/rack_tag_samples.csv");
+    dump_srv_ = create_service<std_srvs::srv::Trigger>("~/dump",
+        [this](const std_srvs::srv::Trigger::Request::SharedPtr, std_srvs::srv::Trigger::Response::SharedPtr res) {
+          std::ofstream f(dump_path_);
+          if (!f) {res->success = false; res->message = "못 씀: " + dump_path_; return;}
+          f << "t,tag,cam_px,cam_py,cam_pz,cam_qx,cam_qy,cam_qz,cam_qw,u0,v0,u1,v1,u2,v2,u3,v3\n";
+          f.precision(9);
+          for (const auto & r : raw_) {
+            f << r.t << "," << r.tag << "," << r.p.x() << "," << r.p.y() << "," << r.p.z() << "," << r.q.x() << "," << r.q.y() << ","
+              << r.q.z() << "," << r.q.w();
+            for (const auto & c : r.cn) {f << "," << c.x() << "," << c.y();}
+            f << "\n";
+          }
+          res->success = true;
+          res->message = std::to_string(raw_.size()) + " 줄 → " + dump_path_;
+        });
     reset_srv_ = create_service<std_srvs::srv::Trigger>("~/reset",
         [this](const std_srvs::srv::Trigger::Request::SharedPtr, std_srvs::srv::Trigger::Response::SharedPtr res) {
           for (auto & g : got_) {g.clear();}
           for (auto & g : puck_got_) {g.clear();}
           wrong_.clear();
+          raw_.clear();
           res->success = true;
           res->message = "모은 값 지움";
         });
@@ -263,6 +284,9 @@ private:
       }
       std::array<Eigen::Vector2d, 4> cn;
       for (int j = 0; j < 4; ++j) {cn[j] = Eigen::Vector2d(n[j].x, n[j].y);}
+      if (still && raw_.size() < 20000) {   // 원본 (크기 · 각도 검사 전) — ~/dump
+        raw_.push_back({stamp.seconds(), ids[k], T.translation(), Eigen::Quaterniond(T.linear()), cn});
+      }
       const TagOnPlane hit = tag_on_plane(cn, T, puck ? cfg_puck_ : cfg_);
       if (puck) {
         on_puck(ids[k], hit, corners[k], still, T, out);
@@ -284,7 +308,7 @@ private:
       out.detections.push_back(detection(out.header, "rack_tag", names_[i], ids[k], hit, cfg_.plane_z, corners[k], still));
       if (still) {
         auto & g = got_[i];
-        g.push_back({hit.center, T.translation(), Eigen::Quaterniond(T.linear())});
+        g.push_back({hit.center, T.translation(), Eigen::Quaterniond(T.linear()), hit.side_m});
         while (static_cast<int>(g.size()) > samples_) {g.pop_front();}
         if (static_cast<int>(g.size()) == min_samples_) {
           const Eigen::Vector2d m = cell_median(i);
@@ -375,7 +399,7 @@ private:
     out.detections.push_back(detection(out.header, "rack_puck", names_[j], id, hit, cfg_puck_.plane_z, corners, still));
     if (!still) {return;}
     auto & g = puck_got_[j];
-    g.push_back({hit.center, T.translation(), Eigen::Quaterniond(T.linear())});
+    g.push_back({hit.center, T.translation(), Eigen::Quaterniond(T.linear()), hit.side_m});
     while (static_cast<int>(g.size()) > samples_) {g.pop_front();}
     if (static_cast<int>(g.size()) == min_samples_) {
       Eigen::Vector2d d;
@@ -404,6 +428,7 @@ private:
     Eigen::Vector2d c;          // 잰 중심 (base_link xy)
     Eigen::Vector3d cam_p;      // 그때 카메라 자세
     Eigen::Quaterniond cam_q;
+    double side{0.0};           // 평면에 내린 태그 한 변 [m] (태그 크기와 다르면 평면 높이 · 카메라 TF 가 틀림)
   };
 
   bool same_pose(const Sample & a, const Sample & b) const
@@ -447,7 +472,8 @@ private:
   {
     std::ostringstream s;
     s << std::fixed << std::setprecision(1);
-    s << "칸 · 장 수 · 잰 x, y · 표 x, y · 차 dx, dy · 흩어짐 [mm] (표 = config/rack_cells.yaml, 멈춘 장 " << min_samples_ << " 개 이상인 칸만)\n";
+    s << "칸 · 장 수 · 잰 x, y · 표 x, y · 차 dx, dy · 흩어짐 · 태그 한 변 [mm] (표 = config/rack_cells.yaml, 멈춘 장 " << min_samples_
+      << " 개 이상인 칸만. 한 변이 " << cfg_.tag_size_m * 1000.0 << " 에서 벗어나면 칸 바닥 높이 · 카메라 TF 가 틀림)\n";
     std::vector<Eigen::Vector2d> exp, meas;
     std::vector<bool> measured(cells_.size(), false);
     for (size_t i = 0; i < cells_.size(); ++i) {
@@ -458,9 +484,11 @@ private:
       double se = 0.0;
       for (const auto & p : got_[i]) {se += (p.c - m).squaredNorm();}
       const Eigen::Vector2d d = (m - cells_[i]) * 1000.0;
+      std::vector<double> sides;
+      for (const auto & p : got_[i]) {sides.push_back(p.side);}
       s << "  " << names_[i] << "  " << got_[i].size() << "  (" << m.x() * 1000.0 << ", " << m.y() * 1000.0 << ")  ("
         << cells_[i].x() * 1000.0 << ", " << cells_[i].y() * 1000.0 << ")  " << std::showpos << d.x() << ", " << d.y()
-        << std::noshowpos << "  " << std::sqrt(se / static_cast<double>(got_[i].size())) * 1000.0 << "\n";
+        << std::noshowpos << "  " << std::sqrt(se / static_cast<double>(got_[i].size())) * 1000.0 << "  " << median(sides) * 1000.0 << "\n";
       exp.push_back(cells_[i]);
       meas.push_back(m);
       measured[i] = true;
@@ -562,7 +590,17 @@ private:
   rclcpp::Publisher<interfaces::msg::DetectionArray>::SharedPtr pub_;
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr info_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr report_srv_, reset_srv_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr report_srv_, reset_srv_, dump_srv_;
+  struct Raw
+  {
+    double t;
+    int tag;
+    Eigen::Vector3d p;
+    Eigen::Quaterniond q;
+    std::array<Eigen::Vector2d, 4> cn;   // 왜곡 푼 정규 좌표 모서리
+  };
+  std::vector<Raw> raw_;
+  std::string dump_path_;
 };
 
 }  // namespace manipulation
