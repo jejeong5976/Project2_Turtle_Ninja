@@ -9,10 +9,10 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, os.environ.get('NT_REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
 import pose_safety as ps  # noqa: E402
 
-# look: 박스가 차체에 붙었을 때 (앞면 0.16 m) 부터 박스 정차 (3 cm 띄움, 뒷면 0.396 m) 까지 박스 205 mm 전체 · 퍽 윗면이
-#   손목 카메라 화면 안 (가장자리 20 px 여유, 경첩 보정한 카메라, fx 615), 오른쪽 아래 그리퍼 손가락 (u > 420, v > 330) 밖,
-#   닿는 안에서 가장 수직 (광축이 수직에서 14°, 퍽 옆면이 덜 보여 중심이 덜 치우침)
-LOOKS = dict(look=[3923, 1929, 1383, 2374, 1873], look_barcode=[4174, 2249, 1493, 1284, 1675])
+# look: 박스 정차 (3 cm 띄움) 의 실물 박스 (215 mm, x 0.18~0.40 · y −0.12~+0.11 m) 먼 쪽 · 양옆 모서리에 놓인 퍽 윗면까지
+#   손목 카메라 화면 안 (가장자리 15 px, 실제 렌즈 값, 경첩 보정한 카메라), 오른쪽 아래 그리퍼 손가락 (u > 420, v > 330) 밖.
+#   박스 앞쪽 띠 (퍽 중심 x < 0.238) 는 안 봄 — 한 자세로 박스 전체 + 모서리 퍽 윗면은 안 들어감 (팔 높이 한계 · 손가락)
+LOOKS = dict(look=[3911, 1911, 1353, 2380, 2009], look_barcode=[4174, 2249, 1493, 1284, 1675])
 OUT = HERE / 'out'
 OUT.mkdir(exist_ok=True)
 
