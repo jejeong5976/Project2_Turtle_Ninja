@@ -328,6 +328,16 @@ const geometry_msgs::msg::TransformStamped * Executor::lookup_cached(
 void Executor::update(double now)
 {
   registry_.prune_candidates(now, candidate_max_age_s_);
+  // 취소 결과 기다리는 중 서버가 없어짐 → 그 목표도 없어짐 (다시 떠도 결과 안 옴, 안 지우면 resume · 새 목표가 계속 막힘)
+  //   팔 시간 초과 대기 중이면 run_arm 이 결과 없음으로 처리 (on_fail → FAULT)
+  if (arm_cancel_pending_ && !arm_timeout_wait_ && !arm_client_->action_server_is_ready()) {
+    RCLCPP_WARN(logger(), "/arm_task 서버 없어짐 → 취소한 팔 작업 결과 안 기다림");
+    arm_cancel_pending_ = false;
+  }
+  if (nav_cancel_pending_ && !nav_client_->action_server_is_ready()) {
+    RCLCPP_WARN(logger(), "Nav2 서버 없어짐 → 취소한 이동 결과 안 기다림");
+    nav_cancel_pending_ = false;
+  }
   // 취소한 팔 작업이 결국 성공 → 재고 · 기록부에 반영 (상태 무관: FAULT 뒤 그리퍼 기록이 비는 것 방지)
   if (late_arm_ok_ && !arm_timeout_wait_) {   // 시간 초과 대기 중이면 run_arm 이 처리
     const Step late = *late_arm_ok_;
@@ -437,6 +447,14 @@ void Executor::on_fail(ExecEvent & ev)
     ev.kind = ExecEvent::Kind::Fault;
     ev.code = "HOME_FAILED";
     ev.detail = "HOME 실패: " + detail_;
+    return;
+  }
+  // 시간 초과로 취소한 팔 작업의 최종 결과가 끝내 안 옴 (server_wait_s 넘음 · 서버 없어짐) → 결국 성공했을 수 있음
+  //   재시도 · 다음 단계로 가면 같은 작업을 또 함 (늦은 성공은 update() 가 재고에만 반영) → FAULT, 사람 확인
+  if (s.type == StepType::Arm && arm_cancel_pending_) {
+    ev.kind = ExecEvent::Kind::Fault;
+    ev.code = "ARM_NO_RESULT";
+    ev.detail = detail_;
     return;
   }
   // 팔이 움직이다 성공으로 안 끝남 → 접혔는지 모름, 바퀴 잠김 → 다음 단계 전에 HOME
@@ -909,7 +927,7 @@ StepResult Executor::run_arm(const Step & s, double now)
     }
     if (!cancel_blocked() || now - arm_cancel_s_ > server_wait_s_) {
       arm_timeout_wait_ = false;
-      detail_ = cancel_blocked() ? "팔 작업 시간 초과 (취소 결과 없음)" : "팔 작업 시간 초과";
+      detail_ = arm_cancel_pending_ ? "팔 작업 시간 초과 (취소 결과 없음)" : "팔 작업 시간 초과";
       return StepResult::Fail;
     }
     return StepResult::Running;
@@ -1181,8 +1199,10 @@ bool Executor::send_nav(const Pose2D & p)
 
   auto opts = rclcpp_action::Client<Nav>::SendGoalOptions();
   opts.goal_response_callback = [this, gen](NavGoalHandle::SharedPtr gh) {
-      if (nav_cancel_pending_ && gen == nav_cancel_gen_) {   // 취소한 목표가 늦게 받아들여짐 → 그것도 취소
-        if (gh) {nav_client_->async_cancel_goal(gh);} else {nav_cancel_pending_ = false;}
+      // 취소한 목표가 늦게 받아들여짐 → 그것도 취소 (서버 없어짐으로 대기를 지웠어도 살아 있으니 다시 기다림)
+      if (gen == nav_cancel_gen_) {
+        nav_cancel_pending_ = gh != nullptr;
+        if (gh) {nav_client_->async_cancel_goal(gh);}
         return;
       }
       if (gen != nav_.gen) {return;}
@@ -1251,8 +1271,10 @@ bool Executor::send_arm(const ArmTask::Goal & goal)
 
   auto opts = rclcpp_action::Client<ArmTask>::SendGoalOptions();
   opts.goal_response_callback = [this, gen](ArmGoalHandle::SharedPtr gh) {
-      if (arm_cancel_pending_ && gen == arm_cancel_gen_) {   // 취소한 목표가 늦게 받아들여짐 → 그것도 취소
+      // 취소한 목표가 늦게 받아들여짐 → 그것도 취소 (서버 없어짐으로 대기를 지웠어도 살아 있으니 다시 기다림)
+      if (gen == arm_cancel_gen_) {
         if (gh) {
+          arm_cancel_pending_ = true;
           arm_needs_home_ = true;   // 팔이 움직였을 수 있음
           arm_client_->async_cancel_goal(gh);
         } else {
