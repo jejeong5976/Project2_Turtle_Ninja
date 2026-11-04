@@ -35,7 +35,8 @@ struct DetPick
 //   번호로 고르기는 없음 (화면을 그린 뒤 검출 순서가 바뀔 수 있음)
 int choose_det(const std::vector<DetView> & dets, const std::string & tag, std::string & why);
 
-// 검출 (카메라 프레임) → 집기 목표. 위치 모름 · 누운 퍽은 false (누운 퍽은 control_master 가 아직 안 함)
+// 검출 (카메라 프레임) → 집기 목표. 위치 모름 · 누운 원기둥 · 모양 모르는 누운 퍽은 false (control_master 는 누운 네모만 집음)
+//   누운 네모: planning 그대로 — 집기 점 = 퍽 중심 + 로봇 쪽 긴축 끝 × grasp_offset (수평), 목표 z = 그 긴축 끝 · x = 위
 bool det_pick(const DetView & d, const Xform & T, double grasp_offset, DetPick & out, std::string & why);
 
 }  // namespace robot_cli

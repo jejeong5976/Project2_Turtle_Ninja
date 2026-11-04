@@ -54,7 +54,10 @@ bool det_pick(const DetView & d, const Xform & T, double grasp_offset, DetPick &
   const bool has_q = d.qx * d.qx + d.qy * d.qy + d.qz * d.qz + d.qw * d.qw > 0.5;   // Detection.msg: 방향 모름 = 0,0,0,0
   const Quat q = has_q ? qmul(tq, Quat{d.qx, d.qy, d.qz, d.qw}) : Quat{0, 0, 0, 0};
   const planning::PuckPlanar pl = planning::planar_from_pose(has_q, q, c, d.yaw_known, d.shape == "box");
-  if (!pl.upright) {why = "누운 퍽 — control_master 가 아직 안 집음"; return false;}
+  if (!pl.upright && d.shape != "box") {   // control_master 는 누운 네모만 집음 (긴 옆면 두 개를 쥠)
+    why = d.shape == "cylinder" ? "누운 원기둥 — 안 집음 (누운 네모만)" : "누운 퍽인데 모양 모름 — 누운 네모만 집음";
+    return false;
+  }
   const planning::GraspAxis ga = planning::choose_grasp_axis(has_q, q, c);
   const Vec3 g = planning::grasp_point(c, ga.axis, grasp_offset);
   out = DetPick{};

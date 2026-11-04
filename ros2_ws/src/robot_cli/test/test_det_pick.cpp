@@ -60,8 +60,8 @@ TEST(DetPick, UnknownOrientation)
   EXPECT_DOUBLE_EQ(p.qx, 0.0);
 }
 
-// 3) 누운 퍽 · 위치 모름은 거절
-TEST(DetPick, RejectLyingAndUnknownPosition)
+// 3) 누운 원기둥 · 모양 모르는 누운 퍽 · 위치 모름은 거절
+TEST(DetPick, RejectLyingCylinderAndUnknownPosition)
 {
   DetView lying = puck(0.0, 0.0, 0.2);
   lying.qx = std::sqrt(0.5);   // 카메라 x 축 둘레 90° → 긴축이 수평
@@ -69,8 +69,38 @@ TEST(DetPick, RejectLyingAndUnknownPosition)
   robot_cli::DetPick p;
   std::string why;
   EXPECT_FALSE(robot_cli::det_pick(lying, down_cam(), 0.015, p, why));
+  EXPECT_NE(why.find("원기둥"), std::string::npos) << why;
+  lying.shape = "";
+  EXPECT_FALSE(robot_cli::det_pick(lying, down_cam(), 0.015, p, why));
   DetView nan = puck(NAN, 0.0, 0.2);
   EXPECT_FALSE(robot_cli::det_pick(nan, down_cam(), 0.015, p, why));
+}
+
+// 3b) 누운 네모: 퍽 중심 base (0.20, 0, 0.10), 긴축 = base +y → 집기 점 = 중심 + 쥘 끝 (로봇 쪽 끝, 여기선 축이 로봇 방향과 직각이라 그대로)
+//     × grasp_offset (수평), 목표 z = 긴축 (수평) · x = 위 (planning grasp_orientation)
+TEST(DetPick, LyingBoxToGraspPoint)
+{
+  DetView d = puck(0.0, 0.0, 0.2);
+  d.shape = "box";
+  d.yaw_known = true;
+  d.qx = std::sqrt(0.5);   // 카메라 x 축 둘레 90° → 퍽 긴축 = 카메라 −y = base +y (down_cam 은 base x 둘레 180°)
+  d.qw = std::sqrt(0.5);
+  robot_cli::DetPick p;
+  std::string why;
+  ASSERT_TRUE(robot_cli::det_pick(d, down_cam(), 0.015, p, why)) << why;
+  EXPECT_FALSE(p.upright);
+  EXPECT_NEAR(p.cx, 0.20, 1e-9);
+  EXPECT_NEAR(p.cy, 0.0, 1e-9);
+  EXPECT_NEAR(p.cz, 0.10, 1e-9);
+  EXPECT_NEAR(p.z, 0.10, 1e-9);                                  // 수평으로 옮김 → 높이 그대로
+  EXPECT_NEAR(std::hypot(p.x - p.cx, p.y - p.cy), 0.015, 1e-9);  // 긴축 방향으로 grasp_offset
+  EXPECT_NEAR(p.x, 0.20, 1e-9);
+  const double zz = 1.0 - 2.0 * (p.qx * p.qx + p.qy * p.qy);           // 목표 z 축 위쪽 성분 = 0 (수평)
+  const double xz = 2.0 * (p.qx * p.qz - p.qw * p.qy);                 // 목표 x 축 위쪽 성분 = 1 (위)
+  EXPECT_NEAR(zz, 0.0, 1e-9);
+  EXPECT_NEAR(xz, 1.0, 1e-9);
+  const double zy = 2.0 * (p.qy * p.qz - p.qw * p.qx);                 // 목표 z 축 = 집기 점 쪽 (중심 → 집기 점)
+  EXPECT_NEAR(zy * 0.015, p.y - p.cy, 1e-9);
 }
 
 // 4) 고르기: 태그 · 하나뿐일 때
