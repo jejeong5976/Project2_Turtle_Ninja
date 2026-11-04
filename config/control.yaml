@@ -39,6 +39,10 @@ control_master:
     # 나중에 접기: STORE · PLACE 를 P0 (받침 바로 위) 에서 끝냄 → 다음 팔 작업이 접기 · 펼치기 (약 10 s) 를 건너뜀. 주행 전 HOME 이 접음
     #   꺼 둠: P0 에서 약 15 s 기다리는 동안 팔 모터가 버티다 Hardware Error (과열). 일정 시간 뒤 자동 접기를 넣은 뒤 켬
     lazy_fold: false
+    # 쥐는 깊이 [mm, 퍽 윗면 기준 손끝]: 위 · 내림 · 쥐기. 실물에서 명령 −40 이 실제 약 30 mm 만 쥠 (윗면 높이를 약 1 cm 높게 봄) →
+    #   적재함 경로 (실제 40 mm 로 쥔 퍽으로 가르침) 와 맞게 명령 −50. 기울인 손은 40 (실제 약 30 = 퍽 무게중심)
+    pick_heights_mm: [40.0, 10.0, -50.0]
+    pick_tilted_depth_mm: 40.0
     # PICK 쥐는 점 보정 [mm, base_link] — 윗면 태그가 안 보인 퍽만 (태그 보인 퍽은 인지가 태그로 중심 · 면 방향을 잡음)
     #   손목 인지 깊이 평균이 퍽 중심을 앞으로 · 왼쪽으로 밀어 잡음 (태그와 비교 9.6 · 1.7 mm). 실물에서 집어 S12 에 넣기까지 된 값
     #   실행 중 바꾸기: ros2 param set /control_master pick_offset_x_mm <값> (25 mm 까지)
@@ -54,7 +58,9 @@ control_master:
     store_offset_y_mm: 0.0
     # 칸마다 더하는 STORE 보정 [x, y] mm (없는 칸 = 0). 실행 중: ros2 param set /control_master store_offset.S7 "[0.0, 5.0]"
     store_offset:
-      S7: [0.0, 5.0]
+      S7: [0.0, 0.0]
+    # 넣는 점 맞추기: 경로의 놓는 점을 팔 모델로 칸 표 (config/rack_cells.yaml 칸 중심 + place_offset) 로 옮김 (칸마다 자동, 위 보정은 그 위에 더함)
+    store_to_cell: true
 
     # 고정 자세표
     #   - 팔을 수평으로 쭉 뻗지 않는다 (손목 모터 82 g + 판 + 그리퍼 44 mm 전진 → 어깨 부담 ↑)

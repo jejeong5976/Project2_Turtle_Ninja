@@ -180,9 +180,12 @@ public:
     // 윗면 태그로 잰 퍽 (인지 중심이 2 mm 안) 은 팔 쪽 치우침만: ros2 param set /control_master pick_offset_tagged_x_mm -3.0
     declare_parameter<double>("pick_offset_tagged_x_mm", 0.0);
     declare_parameter<double>("pick_offset_tagged_y_mm", 0.0);
-    // STORE 때 칸 근처 경로를 더 옮김 [mm, base_link, 15 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 적재함 태그 보정 · 칸별 store_offset.<칸> 과 더해짐
+    // STORE 때 칸 근처 경로를 더 옮김 [mm, base_link, 넣는 점 맞추기와 합해 20 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 적재함 태그 보정 · 칸별 store_offset.<칸> 과 더해짐
     //   실행 중 바로 바꿈: ros2 param set /control_master store_offset_y_mm 3.0 (다음 STORE 부터, x+ = 앞 · y+ = 왼쪽)
     declare_parameter<double>("store_offset_x_mm", 0.0);
+    // STORE 넣는 점 맞추기: 경로의 놓는 점 (grip release) 손끝을 팔 모델로 계산해 칸 표 (칸 중심 + place_offset) 로 옮김.
+    //   실물 기록 재생 경로는 놓는 점이 칸보다 팔 J1 축 반대쪽으로 7 ~ 13 mm 나가 있음 (실물: S7 +13 · S12 +5 mm 에서 들어감 = 이 계산과 2 mm 안)
+    declare_parameter<bool>("store_to_cell", false);
     declare_parameter<double>("store_offset_y_mm", 0.0);
     tf_buf_ = std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listen_ = std::make_unique<tf2_ros::TransformListener>(*tf_buf_);
@@ -199,6 +202,11 @@ public:
         rack_names_.clear();
       } else {
         for (size_t i = 0; i < rx.size(); ++i) {rack_xy_.emplace_back(rx[i], ry[i]);}
+        const auto px = declare_parameter<std::vector<double>>("rack_cell_place_x", std::vector<double>{});
+        const auto py = declare_parameter<std::vector<double>>("rack_cell_place_y", std::vector<double>{});
+        for (size_t i = 0; i < rx.size(); ++i) {
+          rack_place_.emplace_back(px.size() == rx.size() ? px[i] : 0.0, py.size() == rx.size() ? py[i] : 0.0);
+        }
         for (const auto & c : rack_xy_) {rack_pivot_ += c / static_cast<double>(rack_xy_.size());}
         // 칸마다 STORE 보정 [x, y] mm (store_offset_x · y_mm 와 더함): ros2 param set /control_master store_offset.S7 "[0.0, 5.0]"
         for (const auto & n : rack_names_) {declare_parameter<std::vector<double>>("store_offset." + n, std::vector<double>{0.0, 0.0});}
@@ -694,6 +702,21 @@ private:
     RCLCPP_INFO(get_logger(), "적재함 기준 스캔: 칸 %zu 개 (%s). 스캔하면 이것과 비교해 칸 경로를 옮김", rack_ref_.size(), rack_ref_file_.c_str());
   }
 
+  // 경로의 첫 놓는 점 (grip release) 손끝 [m, 모델 base = base_link 와 x · y 같음]
+  bool release_tip(const std::string & path_name, Eigen::Vector2d & tip) const
+  {
+    const auto it = paths_.find(path_name);
+    if (it == paths_.end() || !model_ok_) {return false;}
+    for (const auto & n : it->second.nodes) {
+      if (n.grip != "release" || n.q.size() != 5) {continue;}
+      Ticks t;
+      for (int j = 0; j < 5; ++j) {t[j] = static_cast<int>(std::lround(model_.zero_tick[j] + n.q[j] * 4096.0 / (2.0 * M_PI)));}
+      tip = arm_grip(model_, ticks_to_q(model_, t)).tip.head<2>();
+      return true;
+    }
+    return false;
+  }
+
   // STORE · RETRIEVE: 마지막 스캔이 기준에서 움직였으면 그 칸 경로의 칸 근처를 옮김 + STORE 는 store_offset_*_mm 도 더함. false = 거절 (why)
   bool rack_adjust(const std::string & name, ArmPath & path, std::string & why)
   {
@@ -724,8 +747,18 @@ private:
         ox += c[0];
         oy += c[1];
       }
-      if (!std::isfinite(ox) || !std::isfinite(oy) || std::hypot(ox, oy) > 15.0) {
-        why = "store_offset (전체 + 칸 " + cell + ") 가 숫자가 아니거나 15 mm 넘음";
+      if (known && get_parameter("store_to_cell").as_bool()) {
+        Eigen::Vector2d tip;
+        if (!release_tip(name, tip)) {why = "넣는 점 맞추기: " + name + " 에 놓는 점 (release) 이 없거나 팔 모델 없음"; return false;}
+        const Eigen::Vector2d a = (rack_xy_[i] + rack_place_[i] - tip) * 1000.0;
+        RCLCPP_INFO(get_logger(), "%s: 넣는 점 맞추기 — 놓는 점 (%.1f, %.1f) → 칸 (%.1f, %.1f) mm = (%+.1f, %+.1f)", name.c_str(),
+          tip.x() * 1000.0, tip.y() * 1000.0, (rack_xy_[i] + rack_place_[i]).x() * 1000.0, (rack_xy_[i] + rack_place_[i]).y() * 1000.0,
+          a.x(), a.y());
+        ox += a.x();
+        oy += a.y();
+      }
+      if (!std::isfinite(ox) || !std::isfinite(oy) || std::hypot(ox, oy) > 20.0) {
+        why = "store_offset (넣는 점 맞추기 + 전체 + 칸 " + cell + ") 가 숫자가 아니거나 20 mm 넘음";
         return false;
       }
       d_set = Eigen::Vector2d(ox, oy) / 1000.0;
@@ -1403,6 +1436,7 @@ private:
   // 적재함 태그 → 칸 경로 옮기기
   std::vector<std::string> rack_names_;
   std::vector<Eigen::Vector2d> rack_xy_;     // 칸 중심 표 (config/rack_cells.yaml)
+  std::vector<Eigen::Vector2d> rack_place_;  // 칸 넣는 점 보정 (같은 표 place_offset) [m]
   Eigen::Vector2d rack_pivot_{Eigen::Vector2d::Zero()};
   std::string rack_ref_file_;
   double rack_min_shift_m_{0.0015}, rack_max_shift_m_{0.008}, rack_max_rms_m_{0.003};
