@@ -1,0 +1,75 @@
+buses:
+- name: bus_drive
+  port: /dev/opencr_drive
+  baud: 1000000
+  imu: true
+  joints:
+  - drive_fl_joint
+  - drive_fr_joint
+  - drive_rl_joint
+  - drive_rr_joint
+  - steer_fl_joint
+  - steer_fr_joint
+  - steer_rl_joint
+  - steer_rr_joint
+motors:
+  drive_fl_joint:
+    id: 1
+    model: XM430-W210
+    mode: velocity
+    profile_acc: 40
+    scale: 1.0
+  drive_fr_joint:
+    id: 2
+    model: XM430-W210
+    mode: velocity
+    profile_acc: 40
+    scale: -1.0
+  drive_rl_joint:
+    id: 41
+    model: XM430-W210
+    mode: velocity
+    profile_acc: 40
+    scale: -1.0
+  drive_rr_joint:
+    id: 42
+    model: XM430-W210
+    mode: velocity
+    profile_acc: 40
+    scale: 1.0
+  steer_fl_joint:
+    id: 11
+    model: XM430-W350
+    mode: position
+    profile_vel: 20
+    profile_acc: 5
+    scale: -1.0
+    zero_tick: 2048
+  steer_fr_joint:
+    id: 12
+    model: XM430-W350
+    mode: position
+    profile_vel: 20
+    profile_acc: 5
+    scale: -1.0
+    zero_tick: 2048
+  steer_rl_joint:
+    id: 13
+    model: XM430-W350
+    mode: position
+    profile_vel: 20
+    profile_acc: 5
+    scale: -1.0
+    zero_tick: 2048
+  steer_rr_joint:
+    id: 14
+    model: XM430-W350
+    mode: position
+    profile_vel: 20
+    profile_acc: 5
+    scale: -1.0
+    zero_tick: 2565
+watchdog: 15
+battery_warn_v: 10.8
+battery_stop_v: 10.2
+require_all_motors: true

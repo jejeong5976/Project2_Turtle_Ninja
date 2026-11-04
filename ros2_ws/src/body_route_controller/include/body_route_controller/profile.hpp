@@ -6,6 +6,8 @@ namespace body_route_controller
 struct TrialSettings
 {
   std::string mode = "custom";
+  std::string unknown_policy="blocked";
+  double unknown_penalty=2.0, observation_ttl=4.0;
   double speed = .025, yaw_rate = .1, linear_accel = .05, angular_accel = .2;
   double correction_speed = .015;
   void validate() const;

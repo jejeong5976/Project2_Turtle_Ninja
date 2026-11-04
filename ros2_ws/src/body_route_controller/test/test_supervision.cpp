@@ -37,3 +37,14 @@ TEST(Supervision, OriginalAllowsHolonomicMotionButKeepsCorridorAndSpeedChecks)
   EXPECT_EQ(g.check({.2,0,0}, {}, {},path,"",0,false),"outside_route_corridor");
   EXPECT_EQ(g.check({}, {}, {NAN,0,0},path,"",0,false),"non_finite_tracking_state");
 }
+TEST(Supervision, BrakingTravelDoesNotCountAsTurnDrift)
+{
+  TrackingLimits limits;limits.measured_speed=.12;TrackingGuard g(limits);
+  EXPECT_TRUE(g.check({}, {}, {.08,0,0},path,"stop_before_turn",1.57).empty());
+  EXPECT_TRUE(g.check({}, {.06,0,0}, {.002,0,0},path,"stop_before_turn",1.57).empty());
+  EXPECT_TRUE(g.check({}, {.06,0,0}, {},path,"route_turn",1.57).empty());
+  EXPECT_EQ(g.check({}, {.09,0,0}, {},path,"route_turn",1.57),"translation_during_turn");
+  g.reset();
+  EXPECT_TRUE(g.check({}, {}, {.08,0,0},path,"stop_before_turn",1.57).empty());
+  EXPECT_EQ(g.check({}, {.2,0,0}, {.08,0,0},path,"stop_before_turn",1.57),"braking_distance_exceeded");
+}

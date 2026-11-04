@@ -1,0 +1,46 @@
+schema_version: 1
+map: /home/pa4/git/Project2_Turtle_Ninja/output/A1_H2_occupancy_1cm_2p5cm_5cm_20261102_v2/maps_1cm/map.yaml
+frame: map
+description: Scan-raster simulation annotations; not surveyed physical geometry
+start: [-1.59000020138919, 0.459999826550483, 1.573]
+view_bounds: [-2.5, -0.85, 2.6, 6.3]
+# Boxes select occupied pixels only. Joined pieces share one translation.
+# Shelf/prop returns outside these strips remain fixed.
+assemblies:
+  - id: perimeter
+    kind: outer
+    boxes: [[-2.45, -0.8, -2.00, 6.10], [-2.00, 5.62, 2.55, 6.10], [2.05, -0.8, 2.55, 5.62], [-2.00, -0.8, 2.05, -0.48]]
+  - id: southwest_zigzag
+    kind: inner
+    boxes: [[-1.18, 0.02, -1.02, 0.94], [-1.18, 0.76, -0.26, 0.94], [-0.45, 0.76, -0.26, 1.67], [-1.18, 1.45, -0.26, 1.63], [-1.18, 1.45, -0.97, 2.38]]
+  - id: west_middle_l
+    kind: inner
+    boxes: [[-1.85, 3.60, -0.93, 3.82], [-1.10, 2.90, -0.93, 3.82]]
+  - id: east_middle_zigzag
+    kind: inner
+    boxes: [[0.37, 1.45, 1.30, 1.66], [1.10, 1.45, 1.30, 3.12], [1.10, 2.93, 2.02, 3.12]]
+  - id: southeast_horizontal
+    kind: inner
+    boxes: [[0.32, 0.70, 1.95, 0.88]]
+  - id: east_upper_horizontal
+    kind: inner
+    boxes: [[1.12, 3.55, 2.04, 3.84]]
+  - id: northwest_vertical
+    kind: inner
+    boxes: [[-1.10, 4.30, -0.93, 5.20]]
+  - id: north_center_l
+    kind: inner
+    boxes: [[-0.42, 4.27, 0.51, 4.50], [0.34, 4.27, 0.51, 5.20]]
+  - id: northeast_vertical
+    kind: inner
+    boxes: [[1.20, 4.27, 1.37, 5.20]]
+routes:
+  l2:
+    - [-0.646512819, 2.60013038, 0.0]
+  maze:
+    - [-0.646512819, 2.60013038, 0.0]
+    - [-0.65, 3.95, 1.5707963267948966]
+    - [1.75, 5.40, -1.5707963267948966]
+    - [0.75, 3.25, 3.141592653589793]
+    - [0.0, 2.40, 3.141592653589793]
+    - [-1.59000020138919, 0.459999826550483, 1.573]

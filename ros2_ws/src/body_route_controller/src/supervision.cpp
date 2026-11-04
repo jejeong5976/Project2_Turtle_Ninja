@@ -24,12 +24,23 @@ std::string TrackingGuard::check(const Pose & map, const Pose & odom,
   }
   if (nearest>limits_.route_distance) {return "outside_route_corridor";}
   // MPPI legitimately combines translation and yaw; it has no discrete-mode status.
-  if(!custom_mode) {turning_=false;return {};}
-  const bool turn=mode=="route_turn"||mode=="final_turn"||mode=="settle_turn"||mode=="stop_before_turn";
+  if(!custom_mode) {reset();return {};}
+  // Braking translation precedes the turn. Bound it by stopping distance;
+  // start the strict turn-drift witness only after measured translation stops.
+  if(mode=="stop_before_turn"||mode=="observation_wait") {
+    if(!std::isfinite(limits_.braking_deceleration)||limits_.braking_deceleration<=0||
+      !std::isfinite(limits_.feedback_delay)||limits_.feedback_delay<0) {return "invalid_braking_limits";}
+    if(!braking_) {brake_start_={odom.x,odom.y};brake_distance_=speed*speed/(2*limits_.braking_deceleration)+speed*limits_.feedback_delay+limits_.turn_drift;}
+    braking_=true;turning_=false;
+    if(std::hypot(odom.x-brake_start_.x,odom.y-brake_start_.y)>brake_distance_) {return "braking_distance_exceeded";}
+    return {};
+  }
+  braking_=false;
+  const bool turn=mode=="route_turn"||mode=="final_turn"||mode=="settle_turn";
   if (turn) {
     if (!turning_) {turn_start_={odom.x,odom.y};}
     if (std::hypot(odom.x-turn_start_.x,odom.y-turn_start_.y)>limits_.turn_drift) {return "translation_during_turn";}
-    if (mode!="stop_before_turn" && speed>limits_.turn_speed) {return "turn_before_stopped";}
+    if (speed>limits_.turn_speed) {return "turn_before_stopped";}
   } else if (mode=="forward"||mode=="backward"||mode=="left"||mode=="right") {
     if (speed>limits_.turn_speed && std::abs(wrap(heading-odom.yaw))>limits_.translating_heading) {
       return "translation_heading_error";

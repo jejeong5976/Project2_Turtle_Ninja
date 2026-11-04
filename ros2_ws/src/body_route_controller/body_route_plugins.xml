@@ -3,4 +3,9 @@
          type="body_route_controller::BodyRouteController" base_class_type="nav2_core::Controller">
     <description>Face body +X along the route; stop/rotate for large turns and use bounded axial corrections.</description>
   </class>
+  <class name="body_route_controller::MazePlanner" type="body_route_controller::MazePlanner" base_class_type="nav2_core::GlobalPlanner">
+    <description>Footprint-checked orthogonal maze routes with explicit turn cost.</description>
+  </class>
+  <class name="body_route_controller::ObservationController" type="body_route_controller::ObservationController" base_class_type="nav2_core::Controller"/>
+  <class name="body_route_controller::ObservedGoalChecker" type="body_route_controller::ObservedGoalChecker" base_class_type="nav2_core::GoalChecker"/>
 </library>

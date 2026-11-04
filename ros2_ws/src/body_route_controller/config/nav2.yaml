@@ -97,8 +97,8 @@ controller_server:
     general_goal_checker:
       plugin: nav2_controller::StoppedGoalChecker
       stateful: false
-      xy_goal_tolerance: 0.03
-      yaw_goal_tolerance: 0.05
+      xy_goal_tolerance: 0.02
+      yaw_goal_tolerance: 0.03
       path_length_tolerance: 0.1
       trans_stopped_velocity: 0.003
       rot_stopped_velocity: 0.01
@@ -127,15 +127,15 @@ controller_server:
       lookahead: 0.12
       corner_tolerance: 0.02
       path_simplify_tolerance: 0.01
-      cross_track_enter: 0.025
-      cross_track_exit: 0.01
+      cross_track_enter: 0.01
+      cross_track_exit: 0.004
       max_path_distance: 0.25
       max_correction_distance: 0.15
       max_correction_time: 20.0
       stopped_linear: 0.003
       stopped_angular: 0.01
-      goal_xy: 0.03
-      goal_yaw: 0.05
+      goal_xy: 0.02
+      goal_yaw: 0.03
       max_dt: 0.25
       feedback_timeout: 0.3
       hold_timeout: 2.5
@@ -155,12 +155,18 @@ local_costmap:
       height: 3
       resolution: 0.01
       footprint: '[[0.17, 0.17], [0.17, -0.17], [-0.17, -0.17], [-0.17, 0.17]]'
-      footprint_padding: 0.01
+      footprint_padding: 0.035
+      track_unknown_space: true
       plugins:
+      - static_layer
       - obstacle_layer
       - inflation_layer
+      static_layer:
+        plugin: nav2_costmap_2d::StaticLayer
+        map_subscribe_transient_local: true
       obstacle_layer:
         plugin: nav2_costmap_2d::ObstacleLayer
+        combination_method: 2  # Preserve static unknown cells when merging lidar.
         enabled: true
         observation_sources: front rear
         front:
@@ -189,6 +195,7 @@ local_costmap:
           inf_is_valid: false
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
+        inflate_around_unknown: true  # Unknown is a collision source, not a soft inflation cost.
         cost_scaling_factor: 10.0
         inflation_radius: 0.26
       always_send_full_costmap: true
@@ -201,7 +208,7 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_footprint
       footprint: '[[0.17, 0.17], [0.17, -0.17], [-0.17, -0.17], [-0.17, 0.17]]'
-      footprint_padding: 0.01
+      footprint_padding: 0.035
       resolution: 0.01
       track_unknown_space: true
       plugins:
@@ -210,6 +217,7 @@ global_costmap:
       - inflation_layer
       obstacle_layer:
         plugin: nav2_costmap_2d::ObstacleLayer
+        combination_method: 2  # Preserve static unknown cells when merging lidar.
         enabled: true
         observation_sources: front rear
         front:
@@ -241,6 +249,7 @@ global_costmap:
         map_subscribe_transient_local: true
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
+        inflate_around_unknown: true  # Unknown is a collision source, not a soft inflation cost.
         cost_scaling_factor: 10.0
         inflation_radius: 0.26
       always_send_full_costmap: true
@@ -257,10 +266,13 @@ planner_server:
     costmap_update_timeout: 1.0
     introspection_mode: disabled
     GridBased:
-      plugin: nav2_navfn_planner::NavfnPlanner
-      tolerance: 0.01
-      use_astar: true
-      allow_unknown: false
+      plugin: body_route_controller::MazePlanner
+      unknown_policy: blocked
+      unknown_penalty: 2.0
+      grid_step: 0.05
+      turn_cost: 0.5
+      cost_weight: 0.5
+      max_seconds: 3.0
 behavior_server:
   ros__parameters:
     local_costmap_topic: local_costmap/costmap_raw

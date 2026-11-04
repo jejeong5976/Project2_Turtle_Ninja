@@ -91,9 +91,17 @@ public:
     settings_.linear_accel=declare_parameter<double>("linear_accel",.05);
     settings_.angular_accel=declare_parameter<double>("angular_accel",.2);
     settings_.correction_speed=declare_parameter<double>("correction_speed",.015);
+    settings_.unknown_policy=declare_parameter<std::string>("unknown_policy","blocked");
+    settings_.unknown_penalty=declare_parameter<double>("unknown_penalty",2.0);
+    settings_.observation_ttl=declare_parameter<double>("observation_ttl",4.0);
     settings_.validate();
+    if(settings_.unknown_policy=="observe-before-enter")observation_=create_subscription<std_msgs::msg::String>(
+      "/controller_server/observation_status",10,[this](std_msgs::msg::String::ConstSharedPtr m){
+        observation_wait_=m->data.rfind("waiting",0)==0;observation_received_=Clock::now();
+      });
     body_route_controller::TrackingLimits limits;
     limits.measured_speed=settings_.measuredSpeed();limits.measured_yaw_rate=settings_.measuredYawRate();
+    limits.braking_deceleration=settings_.linear_accel;
     guard_=body_route_controller::TrackingGuard(limits);
     profile_id_=declare_parameter<std::string>("profile_id","manual");
     execute_=declare_parameter<bool>("execute",false);
@@ -103,7 +111,7 @@ public:
     require_view_=declare_parameter<bool>("require_live_view",true);
     max_duration_=declare_parameter<double>("max_goal_duration",900.0);
     if(!std::isfinite(max_duration_)||max_duration_<30||max_duration_>3600) {throw std::runtime_error("max_goal_duration must be 30..3600 seconds");}
-    status_=create_publisher<std_msgs::msg::String>("/trial/status",rclcpp::QoS(1).transient_local());
+    status_=create_publisher<std_msgs::msg::String>("/trial/status",rclcpp::QoS(10).transient_local());
     odom_sub_=create_subscription<nav_msgs::msg::Odometry>("/odom",rclcpp::SensorDataQoS(),[this](nav_msgs::msg::Odometry::ConstSharedPtr m){
       try {
         if(m->header.frame_id!="odom"||m->child_frame_id!="base_footprint") {throw std::runtime_error("unexpected odometry frame");}
@@ -333,6 +341,14 @@ private:
       nav.emplace_back("FollowPath.ay_max",settings_.linear_accel);nav.emplace_back("FollowPath.ay_min",-settings_.linear_accel);
       nav.emplace_back("FollowPath.az_max",settings_.angular_accel);
     }
+    if(settings_.unknown_policy=="observe-before-enter"){
+      const auto delegate=nav.front().as_string();nav.front()=Parameter("FollowPath.plugin","body_route_controller::ObservationController");
+      nav.emplace_back("FollowPath.delegate_plugin",delegate);
+      check("/local_costmap/local_costmap",{Parameter("observation_layer.unknown_policy",settings_.unknown_policy),
+        Parameter("observation_layer.ttl",settings_.observation_ttl),Parameter("observation_layer.linear_decel",settings_.linear_accel),
+        Parameter("observation_layer.angular_decel",settings_.angular_accel)});
+      check("/planner_server",{Parameter("GridBased.unknown_policy",settings_.unknown_policy),Parameter("GridBased.unknown_penalty",settings_.unknown_penalty)});
+    }
     check("/controller_server",nav);
     check("/swerve_controller",{Parameter("max_linear",settings_.speed),Parameter("max_angular",settings_.yaw_rate),
       Parameter("max_linear_accel",settings_.linear_accel),Parameter("max_angular_accel",settings_.angular_accel),Parameter("heading_hold_kp",0.0)});
@@ -342,7 +358,7 @@ private:
     const typename Action::Goal & target)
   {
     if(!client->wait_for_action_server(2s)) {throw std::runtime_error("navigation action unavailable");}
-    terminal_=false;cancel_={};
+    terminal_=false;cancel_={};controller_received_={};observation_received_={};
     typename rclcpp_action::Client<Action>::SendGoalOptions options;
     options.goal_response_callback=[this,client](typename rclcpp_action::ClientGoalHandle<Action>::SharedPtr h) {
       if(h) {cancel_=[client,h](){(void)client->async_cancel_goal(h);};if(closing_) {cancel_();}}
@@ -355,8 +371,13 @@ private:
     while(rclcpp::ok()&&done.wait_for(0s)!=std::future_status::ready) {
       pump();auto problem=health(false);
       if(problem.empty()&&age(started)>1.0) {
-        if(settings_.mode=="custom"&&age(controller_received_)>.4) {problem="stale_controller_status";}
-        else {problem=guard_.check(mapPose(),odom_,measured_,path_,mode_,heading_,settings_.mode=="custom");}
+        const bool observation_wait=settings_.unknown_policy=="observe-before-enter"&&observation_wait_&&age(observation_received_)<.4;
+        const bool stationary_planning=settings_.unknown_policy=="observe-before-enter"&&
+          controller_received_==Clock::time_point{}&&observation_received_==Clock::time_point{}&&age(started)<4.0&&
+          std::hypot(measured_.x,measured_.y)<.003&&std::abs(measured_.yaw)<.01;
+        if(stationary_planning) {continue;}
+        if(settings_.mode=="custom"&&!observation_wait&&age(controller_received_)>.4) {problem="stale_controller_status";}
+        else {problem=guard_.check(mapPose(),odom_,measured_,path_,observation_wait?"observation_wait":mode_,heading_,settings_.mode=="custom");}
       }
       if(problem.empty()&&travel_>2*planned_length_+.25) {problem="travel_budget_exceeded";}
       if(problem.empty()&&age(started)>max_duration_) {problem="goal_deadline";}
@@ -434,6 +455,8 @@ private:
   std::array<double,2> scan_stamp_{};std::array<int,2> valid_{},points_{};
   Clock::time_point odom_received_{},view_received_{},controller_received_{};
   std::array<Clock::time_point,2> scan_received_{};
+  bool observation_wait_=false;Clock::time_point observation_received_{};
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr observation_;
   std::string fault_,mode_;
   rclcpp::executors::SingleThreadedExecutor executor_;
   tf2_ros::Buffer tf_;tf2_ros::TransformListener listener_;

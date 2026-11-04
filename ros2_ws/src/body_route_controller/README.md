@@ -295,16 +295,17 @@ Record it with `/live_view/diagnostics`, controller status, all command stages,
 ## Qualification boundary
 
 Offline passes establish software behavior under the stated fixtures, not a
-physical L2 crossing or complete competition mission. The 0.36 m padded square
-and 0.38 m stop region remain provisional; full stowed-body/arm/cable geometry,
-localization, turning drift, stopping response and battery condition need the
-next physical check. Collision geometry remains unchanged. The CLI supports new speed limits and
-route-relative supervisory bounds, which require physical qualification.
+physical L2 crossing or complete competition mission. The 0.41 m navigation
+envelope, 0.36 m mock truth square and 0.38 m stop region remain provisional;
+full stowed-body/arm/cable geometry, localization, turning drift, stopping response
+and battery condition need the next physical check. The CLI supports new speed
+limits and route-relative supervisory bounds, which require physical qualification.
 
 Changed-wall maps can now be prepared with the offline workflow below; autonomous
 map adaptation during motion and physical 5 cm robustness remain unqualified.
-NavFn can also propose a path whose footprint/rotation is
-infeasible; the controller stops rather than inventing an evasive maneuver.
+The previous NavFn profile could propose routes with infeasible footprint or
+rotation clearance. The maze planner below checks that geometry explicitly;
+the controller still stops if live safety checks reject a planned motion.
 Training remains on hold. See the accompanying November 4 offline validation
 record for exact test results and remaining evening checks.
 
@@ -316,3 +317,62 @@ checks opening paths with the existing polygon collision code. Both controller
 modes can use the same accepted snapshot. See [WALL_LAYOUT.md](WALL_LAYOUT.md)
 for the input schema, commands, uncertainty gates and qualification limits.
 This experimental workflow does not enable live remapping or robot motion.
+
+## Maze routing and simulation diagnostics (November 4)
+
+The comparison profile now uses `body_route_controller::MazePlanner` for both
+controller modes. It searches a 5 cm orthogonal lattice aligned with the map,
+including the exact start/goal coordinates, and charges 0.5 m of path cost per
+90-degree turn. Each straight leg checks the swept polygon. Intermediate turns
+require the full circumscribed footprint circle to be clear; narrow openings
+can therefore be traversed straight while turns remain outside them. Start and
+final heading changes are also checked. Unknown space is blocked. Cancellation,
+map bounds, memory and planning-time limits fail explicitly; this planner does
+not silently fall back to an unchecked path. It is intended for this arena's
+map-aligned corridors, including translated walls, rather than arbitrary curved
+routes. `grid_step`, `turn_cost`, `cost_weight`, and `max_seconds` are parameters
+under `planner_server.ros__parameters.GridBased`.
+
+The behavior tree retains a valid route and checks it at 1 Hz, replanning when
+it becomes invalid or the goal changes. This avoids moving the target tangent
+every second. After entering a corner within 2 cm, the core retains that outgoing
+leg through small pose shifts, releasing it beyond 6 cm or when the current path
+no longer matches. This prevents localization jitter from reversing a turn in
+progress; hold/reset clears the commitment. Live local footprint/stopping checks
+remain active. The local
+costmap now includes the static map. Lidar layers use combination method 2 to
+preserve static unknown cells, and inflation treats unknown cells as obstacle
+sources (`inflate_around_unknown: true`). This prevents unknown cells near walls
+from becoming merely inscribed cost 253, which polygon checks do not treat as
+physical occupancy. The installed Nav2 behavior has a regression test. Both navigation
+costmaps use the same 0.34 m square plus 0.035 m padding (0.41 m overall), adding
+2.5 cm per side to the previous navigation envelope for localization/tracking
+error. This is a conservative planning margin, not a measured manipulator
+collision envelope or a guarantee against arbitrary localization error.
+
+The trial guard treats `stop_before_turn` as braking, bounded by the measured
+entry speed, configured deceleration, feedback delay and existing drift margin.
+The 2.5 cm turn-drift bound begins when actual turning starts; the measured-speed
+check still forbids turning before translation has stopped. Increasing the CLI
+speed also increases straight-leg lookahead so a fixed target distance does not
+silently cap the command at 0.06 m/s. Lookahead still ends at sharp corners.
+The maze profile starts lateral correction at 1 cm and releases it below 4 mm
+(previously 2.5 cm / 1 cm). This preserves clearance through the shifted L2 gap
+after local-map rasterization; correction still brakes before changing axis.
+Footprint and collision checks are unchanged. Controller and Nav2 arrival
+targets are 2 cm / 0.03 rad, leaving margin inside the unchanged trial/truth
+acceptance bounds of 3.5 cm / 0.055 rad. This margin is not a guarantee for
+unbounded localization error.
+
+For scanned-maze simulation, use `tools/scanned_map_sim` at the repository root.
+RViz shows global/local inflation at 25% opacity and the controller/global/mock
+footprints and robot model at 40% opacity. Reports retain turn counts, mode durations, the latest
+raw costmaps and translucent costmap trajectory plots. Tests and mock trials do
+not establish physical qualification; hardware remains operator-controlled.
+
+## Unknown-space policy
+
+See [UNKNOWN_SPACE.md](UNKNOWN_SPACE.md) for `--unknown-policy blocked` (default) and
+`--unknown-policy observe-before-enter`, positive planning penalties, shared lidar
+execution safeguards for custom/MPPI, complete-truth partial-map simulations, and
+exact offline build/run commands. Unknown goals are provisional until observed.

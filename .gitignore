@@ -68,3 +68,6 @@ yolo/wrist/experiments/train_eval_2.ipynb
 tools/wrist_calib/gt_sheet.pdf
 tools/wrist_calib/gt_sheet_preview.png
 tools/wrist_calib/eval_sheet.py
+
+# Portable scanned-map simulation build cache
+.scanned-map-sim/

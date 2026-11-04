@@ -45,6 +45,12 @@ struct RouteTarget
   double distance_to_path = 0.0;
   double remaining = 0.0;
 };
+struct RouteProgress
+{
+  Point corner;
+  double heading = 0.0;
+  bool committed = false;
+};
 struct Result
 {
   Velocity command;
@@ -55,7 +61,8 @@ struct Result
 
 double wrap(double angle);
 bool fresh(double now, double received, double stamped, double max_age);
-RouteTarget routeTarget(const std::vector<Point> & path, const Pose & pose, const Settings & cfg);
+RouteTarget routeTarget(const std::vector<Point> & path, const Pose & pose, const Settings & cfg,
+  RouteProgress * progress = nullptr);
 
 class Core
 {
@@ -68,6 +75,7 @@ public:
 
 private:
   Settings cfg_;
+  RouteProgress progress_;
   bool aligning_ = true;
   bool lateral_ = false;
   int axis_ = 0;  // +/-1 longitudinal, +/-2 lateral; zero stopped.

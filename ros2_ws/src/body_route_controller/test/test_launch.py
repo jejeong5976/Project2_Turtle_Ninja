@@ -41,6 +41,11 @@ def test_overlay_inclusion_parameter_substitution_and_main_launch(tmp_path):
         actions = navigation.make_nodes(context)
         assert len(actions) == 10  # AMCL/map, navigation, hold and lifecycle managers.
         assert config["controller_server"]["ros__parameters"]["FollowPath"]["require_hold_signal"]
+        for name in ("local_costmap", "global_costmap"):
+            costmap = config[name][name]["ros__parameters"]
+            assert "static_layer" in costmap["plugins"]
+            assert costmap["obstacle_layer"]["combination_method"] == 2
+            assert costmap["inflation_layer"]["inflate_around_unknown"] is True
     finally:
         params.cleanup()
 
@@ -96,3 +101,31 @@ def test_generated_profiles_and_cli_rejections(tmp_path):
         assert type(trial[name]) is float
     for name in ("wz_max", "ax_max", "ax_min", "ay_max", "ay_min", "az_max"):
         assert type(nav[name]) is float
+
+
+def test_observation_profiles_require_matching_execution_guard(tmp_path):
+    import subprocess
+    import pytest
+    from ament_index_python.packages import get_package_prefix
+    binary = Path(get_package_prefix("body_route_controller")) / "lib/body_route_controller/configure_trial"
+    share = Path(get_package_share_directory("body_route_controller"))
+    entry = load_module(share / "launch/body_route.launch.py", "observation_launch")
+    map_file = tmp_path / "map.yaml"
+    map_file.write_text("image: test.pgm\nresolution: 0.01\n")
+    for mode in ("custom", "original"):
+        folder = tmp_path / mode
+        result = subprocess.run([str(binary), "--mode", mode, "--unknown-policy", "observe-before-enter",
+                                 "--unknown-penalty", "3.0", "--output", str(folder)], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        context = LaunchContext()
+        context.launch_configurations.update(map=str(map_file), params=str(folder / "nav2.yaml"),
+                                             use_sim_time="false", initial_pose="", rviz="false")
+        assert len(entry.start(context)) == 1
+        config = yaml.safe_load((folder / "nav2.yaml").read_text())
+        config["controller_server"]["ros__parameters"]["FollowPath"]["plugin"] = "nav2_mppi_controller::MPPIController"
+        (folder / "nav2.yaml").write_text(yaml.safe_dump(config))
+        with pytest.raises(RuntimeError, match="must match"):
+            entry.start(context)
+    for option, value in (("--unknown-policy", "free"), ("--unknown-penalty", "0"),
+                          ("--unknown-penalty", "nan"), ("--observation-ttl", "0")):
+        assert subprocess.run([str(binary), option, value, "--output", str(tmp_path / "invalid")], capture_output=True).returncode != 0

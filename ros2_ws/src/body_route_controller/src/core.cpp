@@ -70,7 +70,8 @@ void Settings::validate() const
   {throw std::invalid_argument("Inconsistent body-route hysteresis or limits");}
 }
 
-RouteTarget routeTarget(const std::vector<Point> & input, const Pose & pose, const Settings & cfg)
+RouteTarget routeTarget(const std::vector<Point> & input, const Pose & pose, const Settings & cfg,
+  RouteProgress * progress)
 {
   if (!finite(pose) || input.empty()) {throw std::invalid_argument("Invalid pose or empty path");}
   std::vector<Point> path;
@@ -81,6 +82,7 @@ RouteTarget routeTarget(const std::vector<Point> & input, const Pose & pose, con
   path = simplify(path, cfg.path_simplify_tolerance);
   const Point here{pose.x, pose.y};
   if (path.size() == 1) {
+    if (progress) {*progress = {};}
     const double d = distance(here, path[0]);
     // A single point has no route tangent. It can support final goal alignment,
     // but must not turn a backward correction into an invented 180-degree turn.
@@ -100,16 +102,41 @@ RouteTarget routeTarget(const std::vector<Point> & input, const Pose & pose, con
         (length * length), 0.0, 1.0);
     Point q{path[i].x + t * dx, path[i].y + t * dy};
     const double d = distance(here, q);
-    if (d <= best + 1e-9) {best = d; projected = q; nearest = i;}
+    // Preserve the earlier leg on overlapping out-and-back routes. Corner
+    // advancement below, rather than a distance tie, selects the outgoing leg.
+    if (d < best - 1e-9) {best = d; projected = q; nearest = i;}
     searched += length;
     if (searched > 1.0) {break;}
   }
   if (best > cfg.max_path_distance) {throw std::runtime_error("Robot too far from route; replan required");}
-  // Advance a segment only after reaching its corner. Do not turn early just
-  // because a lookahead point lies beyond a sharp bend.
-  if (nearest + 2 < path.size() && distance(here, path[nearest + 1]) < cfg.corner_tolerance) {
+  // Enter a corner only inside the normal tolerance, then retain the selected
+  // outgoing leg through small localization shifts. Without this hysteresis a
+  // 2 mm pose update can reverse the target halfway through a stationary turn.
+  // Match the CURRENT path's corner and tangent, so replans cannot reuse a
+  // removed turn. Larger displacement releases the commitment.
+  auto tangent = [&](std::size_t i) {
+      return std::atan2(path[i + 1].y - path[i].y, path[i + 1].x - path[i].x);
+    };
+  const double release = 3 * cfg.corner_tolerance;
+  bool advance = false;
+  if (nearest + 2 < path.size()) {
+    const auto corner = path[nearest + 1];
+    advance = distance(here, corner) < cfg.corner_tolerance;
+    if (!advance && progress && progress->committed) {
+      advance = distance(here, corner) < release &&
+        distance(corner, progress->corner) < 2 * cfg.corner_tolerance &&
+        std::abs(wrap(tangent(nearest + 1) - progress->heading)) < cfg.align_enter;
+    }
+  }
+  if (advance) {
     ++nearest;
     projected = path[nearest];
+    if (progress) {*progress = {path[nearest], tangent(nearest), true};}
+  } else if (progress && progress->committed) {
+    if (distance(here, progress->corner) >= release ||
+      distance(path[nearest], progress->corner) >= 2 * cfg.corner_tolerance ||
+      std::abs(wrap(tangent(nearest) - progress->heading)) >= cfg.align_enter)
+    {*progress = {};}
   }
   Point target = projected;
   double remaining = cfg.lookahead;
@@ -139,6 +166,7 @@ Core::Core(Settings cfg) : cfg_(cfg) {cfg_.validate();}
 void Core::reset()
 {
   aligning_ = true;
+  progress_ = {};
   lateral_ = false;
   axis_ = 0;
   previous_ = {};
@@ -153,7 +181,7 @@ Result Core::step(const Pose & pose, const Velocity & measured, const std::vecto
     !std::isfinite(dt) || dt <= 0.0 || !std::isfinite(speed_limit) || speed_limit < 0.0)
   {reset(); throw std::invalid_argument("Invalid body-route state/time/speed limit");}
   if (dt > cfg_.max_dt) {reset(); return {{}, "clock_gap", pose.yaw, 0.0};}
-  const auto target = routeTarget(path, pose, cfg_);
+  const auto target = routeTarget(path, pose, cfg_, &progress_);
   const double goal_distance = std::hypot(goal.x - pose.x, goal.y - pose.y);
   const bool final = goal_distance <= cfg_.goal_xy && target.remaining <= cfg_.goal_xy;
   const double heading = final ? goal.yaw : target.heading;

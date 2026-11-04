@@ -22,6 +22,9 @@ YAML::Node real(double value)
 }
 void TrialSettings::validate() const
 {
+  if(unknown_policy!="blocked"&&unknown_policy!="observe-before-enter")throw std::invalid_argument("unknown-policy must be blocked or observe-before-enter");
+  if(!std::isfinite(unknown_penalty)||unknown_penalty<=0||!std::isfinite(observation_ttl)||observation_ttl<.8)
+    throw std::invalid_argument("unknown penalty must be positive; observation TTL must be >= .8 seconds");
   if(mode!="custom"&&mode!="original") {throw std::invalid_argument("mode must be custom or original (MPPI)");}
   for(double n:{speed,yaw_rate,linear_accel,angular_accel,correction_speed}) {
     if(!std::isfinite(n)) {throw std::invalid_argument("limits must be finite");}
@@ -84,18 +87,40 @@ TrialProfile makeProfile(const YAML::Node & common,const YAML::Node & original,c
     f["max_speed"]=real(s.speed);f["correction_speed"]=real(s.correction_speed);f["max_yaw_rate"]=real(s.yaw_rate);
     f["linear_accel"]=real(s.linear_accel);f["angular_accel"]=real(s.angular_accel);
     f["heading_hold_rate"]=real(std::min(.02,s.yaw_rate));
+    // A fixed 12 cm target with kp=.5 caps speed at .06 m/s regardless of CLI.
+    // Longer straight-leg lookahead reaches the requested cap; corners still
+    // truncate the target so the core slows before the stationary turn.
+    f["lookahead"]=real(std::max(f["lookahead"].as<double>(.12),1.5*s.speed/f["linear_kp"].as<double>(.5)));
+  }
+  auto planner=p.navigation["planner_server"]["ros__parameters"]["GridBased"];
+  planner["unknown_policy"]=s.unknown_policy;planner["unknown_penalty"]=real(s.unknown_penalty);
+  if(s.unknown_policy=="observe-before-enter"){
+    auto f=controller["FollowPath"];
+    f["delegate_plugin"]=f["plugin"].as<std::string>();f["plugin"]="body_route_controller::ObservationController";
+    controller["general_goal_checker"]["plugin"]="body_route_controller::ObservedGoalChecker";
+    for(const auto &name:{"local_costmap","global_costmap"}){
+      auto cost=p.navigation[name][name]["ros__parameters"];
+      cost["plugins"]=YAML::Load("[static_layer, obstacle_layer, observation_layer, inflation_layer]");
+      auto layer=cost["observation_layer"];layer["plugin"]="body_route_controller::ObservationLayer";
+      layer["unknown_policy"]=s.unknown_policy;layer["ttl"]=real(s.observation_ttl);
+      layer["linear_decel"]=real(s.linear_accel);layer["angular_decel"]=real(s.angular_accel);
+      layer["latency"]=real(.5);layer["scan_timeout"]=real(.3);
+      cost["obstacle_layer"]["combination_method"]=1;
+      cost["inflation_layer"]["inflate_around_unknown"]=false;
+    }
   }
   p.drive["max_linear"]=real(s.speed);p.drive["max_angular"]=real(s.yaw_rate);
   p.drive["max_linear_accel"]=real(s.linear_accel);p.drive["max_angular_accel"]=real(s.angular_accel);
   p.drive["heading_hold_kp"]=real(0.0); // Same drivetrain, navigation owns yaw in both modes.
   auto t=p.trial["body_route_trial"]["ros__parameters"];
+  t["unknown_policy"]=s.unknown_policy;t["unknown_penalty"]=real(s.unknown_penalty);t["observation_ttl"]=real(s.observation_ttl);
   t["controller_mode"]=s.mode;t["speed"]=real(s.speed);t["yaw_rate"]=real(s.yaw_rate);
   t["linear_accel"]=real(s.linear_accel);t["angular_accel"]=real(s.angular_accel);
   t["correction_speed"]=real(s.correction_speed);
   t["execute"]=false;t["require_live_view"]=true;
   const auto id=fingerprint(YAML::Dump(p.navigation)+YAML::Dump(p.drive)+YAML::Dump(p.trial));
   t["profile_id"]=id;p.manifest["profile_id"]=id;
-  p.manifest["controller_mode"]=s.mode;
+  p.manifest["controller_mode"]=s.mode;p.manifest["unknown_policy"]=s.unknown_policy;p.manifest["unknown_penalty"]=real(s.unknown_penalty);
   p.manifest["measured_speed_limit"]=s.measuredSpeed();p.manifest["measured_yaw_limit"]=s.measuredYawRate();
   p.manifest["common_input_id"]=fingerprint(YAML::Dump(common));
   p.manifest["original_input_id"]=fingerprint(YAML::Dump(original));

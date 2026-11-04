@@ -1,4 +1,5 @@
 #include "body_route_controller/profile.hpp"
+#include "body_route_controller/core.hpp"
 #include <gtest/gtest.h>
 #include <cmath>
 using namespace body_route_controller;
@@ -69,4 +70,35 @@ TEST(Profile, DefaultThresholdsAndDeterministicProvenance)
   EXPECT_EQ(YAML::Dump(a.manifest),YAML::Dump(b.manifest));
   EXPECT_NE(fingerprint("0 0 0\n"),fingerprint("0 1 0\n"));
   EXPECT_FALSE(a.trial["body_route_trial"]["ros__parameters"]["execute"].as<bool>());
+}
+
+TEST(Profile, LookaheadReachesCliSpeedAndStillStopsForCorner)
+{
+  TrialSettings s;s.speed=.08;s.yaw_rate=.3;
+  auto p=makeProfile(common(),original(),s);auto f=p.navigation["controller_server"]["ros__parameters"]["FollowPath"];
+  Settings cfg;cfg.max_speed=s.speed;cfg.lookahead=f["lookahead"].as<double>();Core core(cfg);
+  const std::vector<Point> path{{0,0},{1,0},{1,1}};
+  core.step({}, {}, path,{1,1,1.57},.05,s.speed);
+  Result result;for(int i=0;i<80;++i)result=core.step({}, {}, path,{1,1,1.57},.05,s.speed);
+  EXPECT_NEAR(result.command.x,s.speed,1e-12);
+  auto target=routeTarget(path,{.94,0,0},cfg);
+  EXPECT_NEAR(target.point.x,1,1e-12);EXPECT_NEAR(target.point.y,0,1e-12);EXPECT_NEAR(target.heading,0,1e-12);
+}
+
+TEST(Profile, ObservationPolicyUsesIdenticalGateAndGoalCheckForBothModes)
+{
+  for(const auto &mode:{"custom","original"}){
+    TrialSettings s;s.mode=mode;s.unknown_policy="observe-before-enter";s.unknown_penalty=3.5;
+    auto p=makeProfile(common(),original(),s);auto controller=p.navigation["controller_server"]["ros__parameters"];
+    EXPECT_EQ(controller["FollowPath"]["plugin"].as<std::string>(),"body_route_controller::ObservationController");
+    EXPECT_EQ(controller["general_goal_checker"]["plugin"].as<std::string>(),"body_route_controller::ObservedGoalChecker");
+    for(const auto &name:{"local_costmap","global_costmap"}){
+      auto layer=p.navigation[name][name]["ros__parameters"]["observation_layer"];
+      EXPECT_EQ(layer["unknown_policy"].as<std::string>(),s.unknown_policy);
+      EXPECT_DOUBLE_EQ(layer["linear_decel"].as<double>(),s.linear_accel);
+    }
+    EXPECT_DOUBLE_EQ(p.navigation["planner_server"]["ros__parameters"]["GridBased"]["unknown_penalty"].as<double>(),3.5);
+  }
+  TrialSettings s;s.unknown_policy="free";EXPECT_THROW(s.validate(),std::invalid_argument);
+  s={};s.unknown_penalty=0;EXPECT_THROW(s.validate(),std::invalid_argument);
 }

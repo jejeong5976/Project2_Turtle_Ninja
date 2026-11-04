@@ -10,12 +10,13 @@ int main(int argc,char ** argv)
 {
   try {
     std::map<std::string,std::string> args;
-    const std::set<std::string> keys{"--mode","--speed","--yaw-rate","--linear-accel","--angular-accel","--correction-speed","--output","--common-config","--original-config"};
+    const std::set<std::string> keys{"--unknown-policy","--unknown-penalty","--observation-ttl","--mode","--speed","--yaw-rate","--linear-accel","--angular-accel","--correction-speed","--output","--common-config","--original-config"};
     for(int i=1;i<argc;++i) {
       const std::string key=argv[i];
       if(key=="--help") {
         std::cout<<"configure_trial --output NEW_DIRECTORY [--mode custom|original] [--speed 0.025] [--yaw-rate 0.1]\n"
           "  [--linear-accel 0.05] [--angular-accel 0.2] [--correction-speed 0.6*speed]\n"
+          "  [--unknown-policy blocked|observe-before-enter] [--unknown-penalty 2.0] [--observation-ttl 4.0]\n"
           "  [--common-config YAML] [--original-config YAML]\n"
           "Creates matching navigation, wheel and trial profiles; starts no ROS nodes or hardware.\n";return 0;
       }
@@ -31,6 +32,8 @@ int main(int argc,char ** argv)
     };
     TrialSettings s;
     if(args.count("--mode")) {s.mode=args["--mode"];}
+    if(args.count("--unknown-policy"))s.unknown_policy=args["--unknown-policy"];
+    s.unknown_penalty=number("--unknown-penalty",s.unknown_penalty);s.observation_ttl=number("--observation-ttl",s.observation_ttl);
     s.speed=number("--speed",s.speed);s.yaw_rate=number("--yaw-rate",s.yaw_rate);
     s.linear_accel=number("--linear-accel",s.linear_accel);s.angular_accel=number("--angular-accel",s.angular_accel);
     s.correction_speed=number("--correction-speed",std::min(s.speed,std::max(.004,.6*s.speed)));s.validate();

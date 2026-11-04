@@ -1,0 +1,3 @@
+<library path="body_route_plugin">
+  <class name="body_route_controller::ObservationLayer" type="body_route_controller::ObservationLayer" base_class_type="nav2_costmap_2d::Layer"/>
+</library>

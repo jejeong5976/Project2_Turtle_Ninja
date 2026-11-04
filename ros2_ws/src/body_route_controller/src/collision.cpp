@@ -1,4 +1,4 @@
-#include "body_route_controller/collision.hpp"
+#include "body_route_controller/observation.hpp"
 #include <nav2_costmap_2d/cost_values.hpp>
 #include <algorithm>
 #include <cmath>
@@ -34,7 +34,8 @@ bool touchesCell(const std::vector<Point> & poly, Point p, double half_diagonal)
 double slow(double v, double step) {return std::copysign(std::max(0.0, std::abs(v) - step), v);}
 }
 
-bool footprintSafe(nav2_costmap_2d::Costmap2D & map, const Footprint & f, const Pose & pose)
+bool visitFootprint(nav2_costmap_2d::Costmap2D & map, const Footprint & f, Pose pose,
+  const std::function<bool(unsigned,unsigned)> & accept, bool only_blocking)
 {
   if (f.size() < 3 || !std::isfinite(pose.x) || !std::isfinite(pose.y) || !std::isfinite(pose.yaw)) {return false;}
   std::vector<Point> poly;
@@ -53,17 +54,27 @@ bool footprintSafe(nav2_costmap_2d::Costmap2D & map, const Footprint & f, const 
   const double half_diagonal = map.getResolution() / std::sqrt(2.0);
   for (unsigned int y = y0; y <= y1; ++y) {
     for (unsigned int x = x0; x <= x1; ++x) {
-      if (map.getCost(x, y) < nav2_costmap_2d::LETHAL_OBSTACLE) {continue;}
+      if(only_blocking&&map.getCost(x,y)<nav2_costmap_2d::LETHAL_OBSTACLE){continue;}
       Point p;
       map.mapToWorld(x, y, p.x, p.y);
-      if (touchesCell(poly, p, half_diagonal)) {return false;}
+      if (touchesCell(poly, p, half_diagonal) && !accept(x,y)) {return false;}
     }
   }
   return true;
 }
 
+bool footprintSafe(nav2_costmap_2d::Costmap2D & map,const Footprint & f,const Pose & pose,CollisionWitness * witness)
+{
+  if(witness)*witness={-1,pose.x,pose.y,0};
+  return visitFootprint(map,f,pose,[&](unsigned x,unsigned y){
+    if(map.getCost(x,y)<nav2_costmap_2d::LETHAL_OBSTACLE)return true;
+    if(witness){witness->cost=map.getCost(x,y);map.mapToWorld(x,y,witness->x,witness->y);}
+    return false;
+  },true);
+}
+
 bool motionSafe(nav2_costmap_2d::Costmap2D & map, const Footprint & f, Pose pose,
-  Velocity v, double seconds, double linear_decel, double angular_decel)
+  Velocity v, double seconds, double linear_decel, double angular_decel, CollisionWitness * witness)
 {
   if (!std::isfinite(seconds) || seconds < 0.0 || !std::isfinite(v.x) ||
     !std::isfinite(v.y) || !std::isfinite(v.yaw)) {return false;}
@@ -74,7 +85,7 @@ bool motionSafe(nav2_costmap_2d::Costmap2D & map, const Footprint & f, Pose pose
   const int n = std::max(1, static_cast<int>(count));
   const double dt = seconds / n;
   for (int i = 0; i <= n; ++i) {
-    if (!footprintSafe(map, f, pose)) {return false;}
+    if (!footprintSafe(map, f, pose,witness)) {if(witness)witness->time=i*dt;return false;}
     const double c = std::cos(pose.yaw + v.yaw * dt / 2), s = std::sin(pose.yaw + v.yaw * dt / 2);
     pose.x += (c * v.x - s * v.y) * dt;
     pose.y += (s * v.x + c * v.y) * dt;

@@ -66,6 +66,10 @@ def make_nodes(context):
         raise RuntimeError("localization:=amcl 이면 map:=<지도.yaml> 필요")
     sim = LaunchConfiguration("use_sim_time").perform(context).lower() == "true"
     mission_hold = LaunchConfiguration("mission_hold").perform(context).lower() == "true"
+    autostart = LaunchConfiguration("autostart", default="true").perform(context).lower()
+    if autostart not in ("true", "false"):
+        raise RuntimeError("autostart must be true or false")
+    autostart = autostart == "true"
     # allow_substs: yaml 안 $(find-pkg-share nav2_bt_navigator) 같은 치환을 풀어 줌 (bt_navigator 행동 트리 폴더)
     common = [ParameterFile(params, allow_substs=True), {"use_sim_time": sim}]
     # 출발 자세 (map 기준 "x,y,yaw_deg"): 주면 AMCL 이 그 자세로 시작 (출발 구역 고정, 발제). 비우면 /initialpose 를 기다림
@@ -86,7 +90,7 @@ def make_nodes(context):
                  parameters=common + [{"yaml_filename": map_yaml}]),
             Node(package="nav2_amcl", executable="amcl", name="amcl", output=out, parameters=common + amcl_init),
             Node(package="nav2_lifecycle_manager", executable="lifecycle_manager", name="lifecycle_manager_localization",
-                 output=out, parameters=[{"use_sim_time": sim, "autostart": True, "node_names": LOCALIZATION}]),
+                 output=out, parameters=[{"use_sim_time": sim, "autostart": autostart, "node_names": LOCALIZATION}]),
         ]
     nodes += [
         Node(package="nav2_planner", executable="planner_server", name="planner_server", output=out, parameters=common),
@@ -103,7 +107,7 @@ def make_nodes(context):
              parameters=[{"use_sim_time": sim, "cmd_vel_in": "cmd_vel_safe", "cmd_vel_out": "/cmd_vel",
                           "start_hold": mission_hold, "hold_timeout_s": HOLD_TIMEOUT_S if mission_hold else 0.0}]),
         Node(package="nav2_lifecycle_manager", executable="lifecycle_manager", name="lifecycle_manager_navigation",
-             output=out, parameters=[{"use_sim_time": sim, "autostart": True, "node_names": NAVIGATION}]),
+             output=out, parameters=[{"use_sim_time": sim, "autostart": autostart, "node_names": NAVIGATION}]),
     ]
     if LaunchConfiguration("rviz").perform(context).lower() == "true":
         rviz_cfg = os.path.join(get_package_share_directory("nav2_bringup"), "rviz", "nav2_default_view.rviz")
@@ -114,6 +118,7 @@ def make_nodes(context):
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument("autostart", default_value="true", description="false lets a startup coordinator activate lifecycle managers"),
         DeclareLaunchArgument("localization", default_value="slam",
                               description="slam = map -> odom 은 slam_toolbox (slam.launch.py) / amcl = map_server + AMCL"),
         DeclareLaunchArgument("map", default_value="", description="지도 yaml (localization:=amcl 일 때 map_server)"),

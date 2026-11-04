@@ -157,3 +157,76 @@ TEST(BodyRoute, FreshnessChecksReceiptHeaderAndClockDirection)
   EXPECT_FALSE(fresh(10, 11, 10, .3));
   EXPECT_FALSE(fresh(10, NAN, 10, .3));
 }
+
+TEST(BodyRoute, OverlappingReturnLegDoesNotCausePrematureTurn)
+{
+  const std::vector<Point> path{{0,0},{1,0},{.3,0}};Settings cfg;
+  EXPECT_NEAR(routeTarget(path,{.4,0,0},cfg).heading,0,1e-12);
+  EXPECT_NEAR(std::abs(routeTarget(path,{1,0,0},cfg).heading),pi,1e-12);
+}
+
+TEST(BodyRoute, TightMazeTrackingBrakesBeforeCorrectingSmallLateralDrift)
+{
+  Settings cfg; cfg.max_speed = .08; cfg.cross_track_enter = .01; cfg.cross_track_exit = .004;
+  Core c(cfg);
+  EXPECT_EQ(c.step({}, {}, straight, goal, .05, .08).mode, "aligned");
+  EXPECT_EQ(c.step({}, {}, straight, goal, .05, .08).mode, "forward");
+  // An 18 mm offset is below the old 25 mm threshold, but consumes the
+  // remaining clearance after local-map rasterization in the shifted L2 gap.
+  auto r = c.step({.2, -.018, 0}, {.08, 0, 0}, straight, goal, .05, .08);
+  EXPECT_EQ(r.mode, "stop_before_axis_change");
+  EXPECT_DOUBLE_EQ(r.command.x, 0); EXPECT_DOUBLE_EQ(r.command.y, 0);
+  r = c.step({.2, -.018, 0}, {}, straight, goal, .05, .08);
+  EXPECT_EQ(r.mode, "left"); EXPECT_DOUBLE_EQ(r.command.x, 0); EXPECT_GT(r.command.y, 0);
+  r = c.step({.2, -.003, 0}, {}, straight, goal, .05, .08);
+  EXPECT_EQ(r.mode, "forward"); EXPECT_GT(r.command.x, 0); EXPECT_DOUBLE_EQ(r.command.y, 0);
+}
+
+TEST(BodyRoute, CornerCommitmentSurvivesLocalizationJitterButReleasesAway)
+{
+  const std::vector<Point> path{{0, 0}, {1, 0}, {1, 1}};
+  Settings cfg; RouteProgress progress;
+  EXPECT_NEAR(routeTarget(path, {.97, 0, 0}, cfg, &progress).heading, 0, 1e-12);
+  EXPECT_FALSE(progress.committed);  // Do not use the exit tolerance to turn early.
+  EXPECT_NEAR(routeTarget(path, {.985, 0, 0}, cfg, &progress).heading, pi / 2, 1e-12);
+  EXPECT_TRUE(progress.committed);
+  EXPECT_NEAR(routeTarget(path, {.978, .002, .4}, cfg, &progress).heading, pi / 2, 1e-12);
+  EXPECT_NEAR(routeTarget(path, {.90, 0, .4}, cfg, &progress).heading, 0, 1e-12);
+  EXPECT_FALSE(progress.committed);
+}
+TEST(BodyRoute, ChangedPathCannotReuseCommittedCorner)
+{
+  Settings cfg; RouteProgress progress;
+  routeTarget({{0, 0}, {1, 0}, {1, 1}}, {.985, 0, 0}, cfg, &progress);
+  const auto target = routeTarget({{0, 0}, {1, 0}, {1, -1}}, {.978, 0, .4}, cfg, &progress);
+  EXPECT_NEAR(target.heading, 0, 1e-12); EXPECT_FALSE(progress.committed);
+}
+TEST(BodyRoute, CoreDoesNotReverseTurnAfterSmallPoseUpdateAndResetClearsCommitment)
+{
+  Core c; const std::vector<Point> path{{0, 0}, {1, 0}, {1, 1}};
+  const Pose finish{1, 1, pi / 2};
+  auto r = c.step({.985, 0, 0}, {}, path, finish, .05, .025);
+  ASSERT_EQ(r.mode, "route_turn"); EXPECT_GT(r.command.yaw, 0);
+  r = c.step({.978, 0, .4}, {}, path, finish, .05, .025);
+  EXPECT_NEAR(r.heading, pi / 2, 1e-12); EXPECT_GT(r.command.yaw, 0);
+  c.reset();
+  r = c.step({.978, 0, .4}, {}, path, finish, .05, .025);
+  EXPECT_NEAR(r.heading, 0, 1e-12); EXPECT_LT(r.command.yaw, 0);
+}
+
+TEST(BodyRoute, ArrivalTargetReservesMarginForSmallLocalizationHeadingBias)
+{
+  auto arrive = [](double yaw_tolerance) {
+      Settings cfg; cfg.goal_xy = .02; cfg.goal_yaw = yaw_tolerance; Core c(cfg);
+      Pose truth{1.01, 0, pi / 2 - .061}; Velocity measured;
+      for (int i = 0; i < 500; ++i) {
+        Pose estimated = truth; estimated.yaw += .012;
+        auto r = c.step(estimated, measured, straight, {1, 0, pi / 2}, .05, .025);
+        if (r.mode == "goal_stop" && std::abs(measured.yaw) < .01) {return std::abs(truth.yaw - pi / 2);}
+        measured = r.command; truth.yaw = wrap(truth.yaw + .05 * measured.yaw);
+      }
+      return pi;
+    };
+  EXPECT_GT(arrive(.05), .055);  // Estimated arrival alone consumed the truth margin.
+  EXPECT_LT(arrive(.03), .055);  // The acceptance threshold itself is unchanged.
+}
