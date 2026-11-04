@@ -395,10 +395,10 @@ STANDBY 준비 확인 (`wait_reasons` 표시 이름, 움직이지 않는 확인�
 | `LOCALIZATION_LOST` | 모든 이동 + PICK | map → odom 오래됨 또는 표준편차 x · y > 0.30 m · yaw > 30° → 1 s 안에 안 돌아오면 FAULT |
 
 - 시간 부족(`time_limit_s − return_margin_s`, 경기 시간은 첫 start 부터, 대기 원인 있어도 확인, 팔 작업 · HOME 중에는 끝나고 결과를 재고에 반영한 뒤 = `arm_busy()` false) → `RETURN_HOME`
-- FAULT 원인 코드: 실행기 `ODOM_LOST` · `CONTROL_LOST` · `HOME_FAILED` · `DRIVE_NOT_RESTORED` · `SCAN_LOST` · `DETECTION_LOST` · `LOCALIZATION_LOST`, 미션 `MAP_INVALID` · `BARCODE_UNREGISTERED` · `DICE_UNSOLVABLE`
+- FAULT 원인 코드: 실행기 `ODOM_LOST` · `CONTROL_LOST` · `HOME_FAILED` · `ARM_NO_RESULT` (팔 시간 초과 뒤 최종 결과 끝내 없음) · `DRIVE_NOT_RESTORED` · `SCAN_LOST` · `DETECTION_LOST` · `LOCALIZATION_LOST`, 미션 `MAP_INVALID` · `BARCODE_UNREGISTERED` · `DICE_UNSOLVABLE`
 - 실행기는 사건(단계 성공 · 실패 · DRIVE 받음 · FAULT)을 돌려주기만 함. FAULT 결정 · 실패 뒤 처리는 미션이 함. 미등록 바코드 · 계획 불가 FAULT 는 한 주기 처리가 끝난 뒤 적용
 - FAULT 뒤 재진입 (resume → start, 항상 HOME 부터): 바코드를 이미 처리했으면 복귀, RETURN_HOME 중이었으면 복귀 다시. 이전 팔 단계는 다시 실행 안 함
-- 취소 추적: 취소한 팔 · Nav2 목표는 최종 결과(또는 거절)를 받을 때까지 기다림 → resume 조건
+- 취소 추적: 취소한 팔 · Nav2 목표는 최종 결과(또는 거절)를 받을 때까지 기다림 → resume 조건. 서버가 없어지면 그 목표도 없어진 것으로 보고 안 기다림
 
 단계 종류 (`planning/types.hpp`, 미션을 모르는 형태)
 
