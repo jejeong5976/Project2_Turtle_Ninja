@@ -41,9 +41,12 @@ control_master:
     lazy_fold: false
     # PICK 쥐는 점 보정 [mm, base_link] — 윗면 태그가 안 보인 퍽만 (태그 보인 퍽은 인지가 태그로 중심 · 면 방향을 잡음)
     #   손목 인지 깊이 평균이 퍽 중심을 앞으로 · 왼쪽으로 밀어 잡음 (태그와 비교 9.6 · 1.7 mm). 실물에서 집어 S12 에 넣기까지 된 값
-    #   실행 중 바꾸기: ros2 param set /control_master pick_offset_x_mm <값> (±15 까지)
+    #   실행 중 바꾸기: ros2 param set /control_master pick_offset_x_mm <값> (25 mm 까지)
     pick_offset_x_mm: -12.0
     pick_offset_y_mm: -3.5
+    # 윗면 태그로 잰 퍽 (인지 중심 2 mm 안) 은 팔 쪽 치우침만 — 실물에서 태그 퍽을 집어 맞춘 값 (몸쪽 15.5 mm)
+    pick_offset_tagged_x_mm: -15.5
+    pick_offset_tagged_y_mm: 0.0
     # STORE 칸 근처 경로 보정 [mm, base_link, x+ = 앞 · y+ = 왼쪽, ±8 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 실행 중 ros2 param set 으로 바꿈
     # 수직 손이 안 닿는 먼 퍽: 손을 10° 씩 이만큼까지 바깥으로 기울여 쥠 (박스 끝 모서리 0.32 m 는 40°). 기울여 쥔 퍽은 다시 잡기로 세움
     pick_max_tilt_deg: 40.0
