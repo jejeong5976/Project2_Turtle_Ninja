@@ -182,6 +182,20 @@ TEST(TimePath, KeepsEveryWaypoint)
   EXPECT_LE(max_speed_dps(s, pts), 40.0 * 1.05);
 }
 
+// 9b) 끝 바로 앞 경유점 (마지막 구간이 아주 짧음): 이웃 시각이 1 ms 넘게 떨어짐 — JTC 는 나노초로 바꿔 같은 시각이면 거절
+//     (11-04 실물: "Time between points 19 and 20 is not strictly increasing, 0.999407 and 0.999407")
+TEST(TimePath, NoNearDuplicateTimes)
+{
+  const std::vector<double> s{0, 0, 0, 0, 0};
+  for (double tiny : {1e-9, 1e-6, 1e-3, 0.02}) {
+    const std::vector<PathNode> nodes{node("a", {12, -4, 1, 0, 0}), node("b", {12 + tiny, -4, 1, 0, 0})};
+    const auto pts = manipulation::time_path(s, nodes, PathTiming{});
+    ASSERT_FALSE(pts.empty());
+    for (std::size_t i = 1; i < pts.size(); ++i) {EXPECT_GT(pts[i].t - pts[i - 1].t, 1e-3) << "tiny " << tiny << " at " << i;}
+    for (std::size_t j = 0; j < 5; ++j) {EXPECT_NEAR(pts.back().q[j], nodes.back().q[j], 1e-12);}   // 끝 = 마지막 경유점
+  }
+}
+
 // 10) 실측 출발: 허용 오차만큼 어긋난 자세에서도 첫 구간이 속도 한계 안 (예전: 첫 0.05 s 에 몰아서 100 °/s 넘음)
 TEST(PathActions, StartsFromMeasuredPose)
 {

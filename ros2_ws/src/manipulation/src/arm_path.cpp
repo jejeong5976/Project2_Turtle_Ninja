@@ -92,6 +92,9 @@ std::vector<TrajPoint> time_path(
   }
 
   // 출력 시각 = dt 간격 + 경유점 도착 시각 (경유점에서 dt/4 안의 등간격 점은 뺌)
+  //   이웃 시각은 kMinGap 넘게 띄움: 끝 바로 앞 (1 ns 안) 경유점 도착 시각이 JTC 의 나노초 변환에서 끝 시각과 같아져
+  //   "Time between points … is not strictly increasing" 으로 그 동작 전체가 거절됨 (11-04 실물, 손 40° PICK)
+  constexpr double kMinGap = 1e-3;
   const auto n = static_cast<std::size_t>(std::max(1.0, std::ceil(T.back() / timing.dt_s)));
   std::vector<double> corner_t;
   for (std::size_t k = 1; k < segs; ++k) {corner_t.push_back(T[starts[k]]);}
@@ -100,11 +103,16 @@ std::vector<TrajPoint> time_path(
   for (std::size_t m = 1; m <= n; ++m) {
     const double t = T.back() * static_cast<double>(m) / static_cast<double>(n);
     while (c < corner_t.size() && corner_t[c] <= t) {
-      if (corner_t[c] > 0.0 && (times.empty() || corner_t[c] > times.back())) {times.push_back(corner_t[c]);}
+      const double last = times.empty() ? 0.0 : times.back();
+      if (corner_t[c] > kMinGap && corner_t[c] > last + kMinGap && corner_t[c] < T.back() - kMinGap) {times.push_back(corner_t[c]);}
       ++c;
     }
     const double last = times.empty() ? 0.0 : times.back();
-    if ((t - last > 0.25 * timing.dt_s) || (m == n && t > last)) {times.push_back(t);}
+    if (m == n) {
+      if (t - last <= kMinGap && !times.empty()) {times.back() = t;} else {times.push_back(t);}   // 끝 시각 = 마지막 점
+    } else if (t - last > 0.25 * timing.dt_s) {
+      times.push_back(t);
+    }
   }
 
   std::vector<TrajPoint> out;
