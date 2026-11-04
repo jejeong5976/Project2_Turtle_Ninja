@@ -125,3 +125,15 @@ TEST(GraspSelect, TargetOffsetAndPlaceGate)
   const TargetPuck unknown_place{true, false, 0.0, 0.0, false};
   EXPECT_TRUE(pick(unknown_place, closes, nb, 0.0).ok);   // PLACE: 퍽이 손 안 → 목표 검사 없이 넣기 폭
 }
+
+// 11) 누운 퍽 발자국 (긴축 ±30 · 옆 ±17.4 mm): 긴축 끝 쪽 이웃은 손가락 (폭 ±16.4 mm) 밖이라 손가락 여유로는 안 보임
+TEST(GraspSelect, LyingFootprintClearance)
+{
+  const Eigen::Vector2d c(0.25, 0.0), half(0.030, 0.0174);
+  const std::vector<NeighborPuck> end_nb{cyl(0.25 + 0.040, 0.0)};   // 긴축 (x) 끝에서 원기둥 중심까지 10 mm → 겹침
+  EXPECT_LT(manipulation::footprint_clearance(c, 0.0, half, end_nb), 0.0);
+  EXPECT_GT(manipulation::finger_clearance(c, M_PI / 2.0, kOpen, end_nb), 0.002);   // 닫힘축 = y: 손가락은 안 닿음
+  const std::vector<NeighborPuck> far_nb{cyl(0.25 + 0.052, 0.0)};   // 여유 = 52 − 긴축 반 30 − 반지름 15 − slop 2 = 5 mm
+  EXPECT_NEAR(manipulation::footprint_clearance(c, 0.0, half, far_nb), 0.005, 1e-9);
+  EXPECT_GT(manipulation::footprint_clearance(c, 0.0, half, {}), 1.0);   // 이웃 없음
+}

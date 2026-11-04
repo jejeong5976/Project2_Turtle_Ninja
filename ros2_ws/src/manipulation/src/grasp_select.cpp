@@ -60,6 +60,15 @@ double rect_rect(const V2 & ca, const V2 & ha, double aa, const V2 & cb, const V
 
 // 닫힘축은 180° 주기 → 기본 방향과 차이
 double axis_off(double a, double ref) {return std::fabs(std::remainder(a - ref, M_PI));}
+
+// 사각 (중심 c, 반 크기 h, 방향 a) ↔ 이웃 퍽 하나 거리 (겹치면 0 이하)
+double rect_puck(const V2 & c, const V2 & h, double a, const NeighborPuck & p, double puck_half, double slop)
+{
+  if (p.radius > 0.0) {return point_rect(rot(p.c - c, -a), h) - (p.radius + slop);}
+  if (p.square && p.yaw_known) {return rect_rect(c, h, a, p.c, V2(puck_half + slop, puck_half + slop), p.yaw);}
+  const double r = (p.square ? puck_half * std::sqrt(2.0) : puck_half) + slop;
+  return point_rect(rot(p.c - c, -a), h) - r;
+}
 }  // namespace
 
 double finger_clearance(
@@ -74,17 +83,20 @@ double finger_clearance(
     const V2 cf = center + rot(local, close_rad);
     for (const auto & p : nb) {
       if (!std::isfinite(p.c.x()) || !std::isfinite(p.c.y())) {continue;}
-      double d;
-      if (p.radius > 0.0) {
-        d = point_rect(rot(p.c - cf, -close_rad), hf) - (p.radius + slop);
-      } else if (p.square && p.yaw_known) {
-        d = rect_rect(cf, hf, close_rad, p.c, V2(puck_half + slop, puck_half + slop), p.yaw);
-      } else {
-        const double r = (p.square ? puck_half * std::sqrt(2.0) : puck_half) + slop;
-        d = point_rect(rot(p.c - cf, -close_rad), hf) - r;
-      }
-      best = std::min(best, d);
+      best = std::min(best, rect_puck(cf, hf, close_rad, p, puck_half, slop));
     }
+  }
+  return best;
+}
+
+double footprint_clearance(
+  const Eigen::Vector2d & center, double axis_rad, const Eigen::Vector2d & half, const std::vector<NeighborPuck> & nb,
+  double puck_half, double slop)
+{
+  double best = std::numeric_limits<double>::infinity();
+  for (const auto & p : nb) {
+    if (!std::isfinite(p.c.x()) || !std::isfinite(p.c.y())) {continue;}
+    best = std::min(best, rect_puck(center, half, axis_rad, p, puck_half, slop));
   }
   return best;
 }

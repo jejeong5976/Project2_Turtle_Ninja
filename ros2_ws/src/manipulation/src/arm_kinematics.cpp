@@ -232,6 +232,14 @@ double default_close_rad(const ArmModel & m, double x, double y, double yaw_deg)
   return std::atan2(close.y(), close.x());
 }
 
+double lying_close_rad(const ArmModel & m, double x, double y, double axis_deg)
+{
+  const double def = default_close_rad(m, x, y, std::nan(""));
+  double c = axis_deg / kDeg + M_PI / 2.0;
+  if (std::cos(c - def) < 0.0) {c += M_PI;}
+  return std::atan2(std::sin(c), std::cos(c));
+}
+
 std::vector<PickPose> pick_poses(
   const ArmModel & m, double x, double y, double top_z, double yaw_deg, const std::vector<double> & heights_mm,
   std::string & why, double close_deg, double max_tilt_deg, double prefer_tilt_deg, double max_dev_deg)
@@ -253,6 +261,7 @@ std::vector<PickPose> pick_poses(
       return std::fabs(a - prefer_tilt_deg) < std::fabs(b - prefer_tilt_deg) - 1e-9;
     });
   if (tilts.empty()) {why = "쥔 퍽 기울임에 맞는 손 기울임 없음"; return {};}
+  const double tilt_max = *std::max_element(tilts.begin(), tilts.end());   // 실제로 풀어 본 가장 큰 기울임 (이유 글)
   for (double tilt : tilts) {
     const double t = tilt / kDeg;
     const double cc = tilt > 0.0 ? tangential : ca;
@@ -281,7 +290,7 @@ std::vector<PickPose> pick_poses(
       if (!pick) {
         char buf[200];
         std::snprintf(buf, sizeof(buf), "높이 %.0f mm: 손 IK 안 됨 (퍽 %.3f, %.3f, 돌림 %.1f°, 기울임 %.0f° 까지) — 퍽이 팔에서 너무 멀거나 옆",
-          h, x, y, yaw_deg, max_tilt_deg);
+          h, x, y, yaw_deg, tilt_max);
         why = buf;
         ok = false;
         break;

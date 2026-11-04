@@ -142,3 +142,47 @@ TEST(ArmKinematics, PickDepth40Reachable)
     EXPECT_NEAR(g30.tip.z() - g40.tip.z(), 0.010, 0.0015) << c.x << ", " << c.y;
   }
 }
+
+// 누운 네모 퍽 (34.8 mm, 박스 위): 수직 손 · 닫힘축 = 긴축에 수직 (수평) 으로 위 40 · 10 · 쥐기 −20 이 풀림.
+//   쥐는 손끝 = 박스 윗면 위 14.8 mm (> 10 mm), 손가락 폭 방향 (닫힘축 × 접근축) = 긴축
+TEST(ArmKinematics, LyingBoxVerticalGrasp)
+{
+  const auto m = kin_data::model();
+  const double surface = 0.070 - 0.072;          // 박스 윗면 (모델 base 기준)
+  const double top = surface + 0.0348;            // 누운 네모 윗면
+  struct P {double x, y, axis;};
+  for (const P & c : {P{0.2102, 0.038, 0.0}, P{0.2102, 0.038, 90.0}, P{0.22, -0.06, 30.0}, P{0.22, 0.07, -60.0}, P{0.19, 0.0, 135.0}}) {
+    const double close = manipulation::lying_close_rad(m, c.x, c.y, c.axis);
+    const Eigen::Vector2d ax(std::cos(c.axis * M_PI / 180.0), std::sin(c.axis * M_PI / 180.0));
+    EXPECT_NEAR(ax.dot(Eigen::Vector2d(std::cos(close), std::sin(close))), 0.0, 1e-9);   // 긴축에 수직
+    const double def = manipulation::default_close_rad(m, c.x, c.y, std::nan(""));
+    EXPECT_GE(std::cos(close - def), 0.0);                                               // 기본 방향 쪽 반
+    std::string why;
+    const auto Pz = manipulation::pick_poses(m, c.x, c.y, top, c.axis, {40, 10, -20}, why, close * 180.0 / M_PI, 0.0);
+    ASSERT_EQ(Pz.size(), 3u) << c.x << ", " << c.y << " 긴축 " << c.axis << ": " << why;
+    for (int k = 0; k < 3; ++k) {
+      EXPECT_DOUBLE_EQ(Pz[k].tilt_deg, 0.0);
+      const auto g = manipulation::arm_grip(m, manipulation::ticks_to_q(m, Pz[k].ticks));
+      EXPECT_NEAR(g.app.z(), -1.0, 1e-3);                                 // 수직 손
+      EXPECT_NEAR(g.close.z(), 0.0, 0.02);                                // 닫힘축 수평
+      EXPECT_LT(std::fabs(Eigen::Vector2d(g.close.x(), g.close.y()).normalized().dot(ax)), std::sin(2.0 * M_PI / 180.0));   // 긴축에 수직 (2° 안)
+      const Eigen::Vector3d width = g.close.cross(g.app);                 // 손가락 폭 방향
+      EXPECT_GT(std::fabs(Eigen::Vector2d(width.x(), width.y()).normalized().dot(ax)), std::cos(2.0 * M_PI / 180.0));
+      EXPECT_NEAR(Eigen::Vector2d(g.tip.x() - c.x, g.tip.y() - c.y).norm(), 0.0, 0.0015);   // 손끝 = 퍽 중심 위
+    }
+    const auto g = manipulation::arm_grip(m, manipulation::ticks_to_q(m, Pz[2].ticks));
+    EXPECT_NEAR(g.tip.z() - surface, 0.0148, 0.0015);                     // 쥐기: 박스 윗면 위 14.8 mm
+    EXPECT_GT(g.tip.z() - surface, 0.010);
+  }
+}
+
+// 누운 네모 퍽이 먼 자리 (수직 손이 안 닿음): 기울임 0 만 허용하면 빈 목록 (control 은 거절)
+TEST(ArmKinematics, LyingBoxFarIsRejectedWithoutTilt)
+{
+  const auto m = kin_data::model();
+  const double top = 0.070 - 0.072 + 0.0348;
+  std::string why;
+  const double close = manipulation::lying_close_rad(m, 0.30, 0.0, 0.0);
+  EXPECT_TRUE(manipulation::pick_poses(m, 0.30, 0.0, top, 0.0, {40, 10, -20}, why, close * 180.0 / M_PI, 0.0).empty());
+  EXPECT_FALSE(why.empty());
+}

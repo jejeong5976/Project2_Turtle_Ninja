@@ -8,6 +8,7 @@
 //   - IK: 손끝 위치 · 접근축 · 닫힘축(90° 마다 같음) 잔차의 Levenberg–Marquardt, 관절 한계 안. 씨앗 여러 개
 //   - 처짐 앞먹임: 실제 관절 = 엔코더 + c · τ (J2 · J3 · J4 중력 토크) → 명령 = 실제 − c · τ
 //   - 퍽 집기 자세: 수직 손, 손끝이 퍽 윗면 위 h [mm] (위 40 · 10 · 쥐기 −40, control_master pick_heights_mm), 손목 롤은 받침 자세에 가까운 해
+//     누운 네모 퍽: 같은 수직 손, 닫힘축 = lying_close_rad (긴축에 수직), 윗면 = 누운 높이 (control_master pick_lying_heights_mm)
 
 #pragma once
 
@@ -102,5 +103,9 @@ std::vector<PickPose> pick_poses(
 
 // 기본 닫힘축 방향 [rad] (pick_poses 가 close_deg 없이 쓰는 방향): 원기둥 = J1 → 퍽 방향의 수직, 네모 = 그에 가장 가까운 면 법선
 double default_close_rad(const ArmModel & m, double x, double y, double yaw_deg);
+
+// 누운 네모 퍽 (긴축 수평 방향 axis_deg [°]) 의 닫힘축 [rad] = 긴축에 수직인 수평 방향 → 수직 손가락이 긴 옆면 두 개를 쥐고
+//   손가락 폭 방향 = 긴축. 180° 주기 중 기본 닫힘축 (J1 → 퍽 방향의 수직) 에 가까운 쪽 (손목이 덜 돎). pick_poses 의 close_deg 로 줌
+double lying_close_rad(const ArmModel & m, double x, double y, double axis_deg);
 
 }  // namespace manipulation

@@ -88,7 +88,7 @@ STORE · RETRIEVE 경로는 11-01 실물 적재함 12 칸 시험에서 성공한
 | LOOK · LOOK_BARCODE | 받침 · P0 | 손목 카메라 관찰 자세 | 그 자세 유지 | HOME · PICK · RETRIEVE | |
 | LOOK `slot: rack` | 받침 (빈 손. 칸에 퍽이 있으면 그 칸은 못 잼) | 적재함 스캔: 칸 두 개씩 손목 카메라를 칸 바닥 위 170 mm 에서 수직으로, 자세마다 2 s (경로 `rack_scan`, lazy_fold 여도 받침까지). `bringup/rack_tags.launch.py` 를 띄워 두면 칸 위치를 잼 → `/rack_tag_node/report` | 받침 (주행 가능) | | 46 s |
 
-- **target** (PICK · PLACE): `docs/planning/planning_interfaces.md` 6 절 약속 그대로 — `base_link` 기준 **그리퍼 중심이 갈 점** = 퍽 중심 + 쥘 끝(위) 방향 × `grasp_offset_m` (0.015) — control 은 이 값으로 퍽 윗면을 알아내고, 실제로는 윗면 40 mm 아래 (`pick_heights_mm`) 를 쥠, 방향 z 축 = 쥘 끝 · x 축 = 네모 퍽 면. 서 있는 퍽만 (누운 퍽은 실물 시험 전이라 거절). `base_link` 가 아닌 프레임 · NaN 은 거절. `z = 0` 이면 박스 위 기본 높이 (손 시험용). 팔이 닿지 않는 자리면 거절(이유가 result.message).
+- **target** (PICK · PLACE): `docs/planning/planning_interfaces.md` 6 절 약속 그대로 — `base_link` 기준 **그리퍼 중심이 갈 점** = 퍽 중심 + 쥘 끝(위) 방향 × `grasp_offset_m` (0.015) — control 은 이 값으로 퍽 윗면을 알아내고, 실제로는 윗면 40 mm 아래 (`pick_heights_mm`) 를 쥠, 방향 z 축 = 쥘 끝 · x 축 = 네모 퍽 면. **누운 네모 퍽** (z 축 = 로봇 쪽 긴축 끝, 수평 · x 축 = 위): 수직 손으로 긴 옆면 두 개를 쥠 (닫힘축 = 긴축에 수직), 누운 윗면 (34.8 mm) 위 40 → 10 → 쥐기 −20 mm (손끝이 놓인 면 위 약 15 mm). 손목 검출로 누운 네모 (윗면이 위) 를 확인해야 하고, 누운 원기둥 · 수직 손이 안 닿는 자리는 거절. 쥔 뒤 STORE 는 거절 (세우기 필요), PLACE 는 누운 채로 (퍽 바닥이 면 위 2 mm = −18 mm). `base_link` 가 아닌 프레임 · NaN 은 거절. `z = 0` 이면 박스 위 기본 높이 (손 시험용). 팔이 닿지 않는 자리면 거절(이유가 result.message).
 - **slot** (STORE · RETRIEVE): `S1` ~ `S12`. 시작 자세가 맞지 않으면 거절 (예: PICK 없이 STORE).
 - 실패 · 취소 · 시간 초과 뒤에는 STOP 잠금, HOME 이 성공해야 다시 주행.
 - HOME 이 검사된 복귀 경로 없이 받침으로 곧장 가는 건 받침 근처이거나 (켤 때 등) 팔이 경로 중간이 아닐 때만. **퍽을 쥔 채 · 경로 작업이 도중에 멈춘 뒤에는 HOME 거절** (칸 · 박스 안에서 직선으로 쓸고 나올 수 있음) → STORE · PLACE 로 끝내거나 사람이 팔을 받침 근처로 옮긴 뒤 HOME.

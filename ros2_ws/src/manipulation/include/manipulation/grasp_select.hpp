@@ -64,6 +64,12 @@ double finger_clearance(
   const Eigen::Vector2d & center, double close_rad, double grip, const std::vector<NeighborPuck> & nb,
   const FingerTip & f = FingerTip{}, double puck_half = 0.015, double slop = 0.002);
 
+// 놓을 퍽 발자국 (중심 center, 방향 axis_rad, 반 크기 half = (축 방향, 옆)) ↔ 이웃 퍽 최소 거리 [m] (이웃 없으면 무한)
+//   누운 퍽을 놓을 때: 긴축 끝 (±30 mm) 이 손가락 폭 (±16.4 mm) 밖으로 나옴 → 손가락 여유만으로는 모자람
+double footprint_clearance(
+  const Eigen::Vector2d & center, double axis_rad, const Eigen::Vector2d & half, const std::vector<NeighborPuck> & nb,
+  double puck_half = 0.015, double slop = 0.002);
+
 // 목표 퍽이 닫힘축 방향으로 차지하는 반 길이 [m] (원기둥 15 mm, 면 정렬 네모 15 mm, 모르는 네모 = 외접 21.2 mm)
 double target_half_along(const TargetPuck & t, double close_rad, double puck_half = 0.015);
 
