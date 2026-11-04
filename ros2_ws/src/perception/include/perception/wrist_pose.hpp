@@ -124,6 +124,11 @@ std::pair<std::optional<Vec3>, std::array<double, 2>> lying_face(
 // 선 퍽 윗면 점 → (면 방향 또는 없음, 사각형 두 변 m)
 std::pair<std::optional<Vec3>, std::array<double, 2>> upright_face(const std::vector<Vec3> & top, const Vec3 & up);
 
+// 선 퍽 윗면에 태그가 보이면 (puck_pose 가 고른 p.tag): 태그 네 모서리 화소 광선을 윗면 높이 평면과 만나게 해
+//   윗면 중심 · 퍽 중심 · 면 방향 (태그 변) 을 다시 잡음. 깊이 점 평균은 비스듬히 볼 때 약 10 mm 치우침 (11-04 실물, 태그와 비교)
+//   태그 한 변이 kPuckTagSideM 에서 4 mm 넘게 다르거나 윗면 중심에서 25 mm 넘게 떨어지면 그대로 (다른 퍽 태그 · 높이 틀림)
+bool tag_top_refine(PuckPose & p, const Intrinsics & K, const Vec3 & up);
+
 // 위쪽 알 때 선/누움 · 긴축 · 중심 · 면 방향 보정 (p 를 고침)
 void gravity_refine(PuckPose & p, const std::vector<Vec3> & pts, const Vec3 & up);
 
