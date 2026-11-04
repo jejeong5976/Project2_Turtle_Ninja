@@ -332,7 +332,7 @@ void Executor::update(double now)
   if (late_arm_ok_ && !arm_timeout_wait_) {   // 시간 초과 대기 중이면 run_arm 이 처리
     const Step late = *late_arm_ok_;
     late_arm_ok_.reset();
-    RCLCPP_WARN(logger(), "취소한 팔 작업이 성공으로 끝남 → 재고 반영: %s", late.name.c_str());
+    RCLCPP_WARN(logger(), "취소 · 중단한 팔 작업이 성공으로 끝남 → 재고 반영: %s", late.name.c_str());
     update_cargo(late);
   }
 }
@@ -930,6 +930,7 @@ StepResult Executor::run_arm(const Step & s, double now)
   }
   // 성공 → 퍽 기록부 · 재고 갱신 (팔 결과로만 바꿈)
   arm_unfolded_ = leaves_arm_unfolded(s);
+  arm_step_.reset();   // 반영함 → stop · 새 목표 때 다시 반영 안 함
   update_cargo(s);
   return StepResult::Success;
 }
@@ -1174,6 +1175,7 @@ bool Executor::send_nav(const Pose2D & p)
   nav_ = GoalTrack{};
   nav_.gen = ++gen_;
   nav_.active = true;
+  nav_handle_.reset();   // 끝난 이전 목표 핸들로 취소하지 않게 (수락 응답 전 취소는 응답 때 처리)
   nav_.sent_s = now_s();
   const uint64_t gen = nav_.gen;
 
@@ -1238,9 +1240,11 @@ bool Executor::send_arm(const ArmTask::Goal & goal)
     RCLCPP_WARN_THROTTLE(logger(), *node_.get_clock(), 2000, "/arm_task 서버 대기 중");
     return false;
   }
+  keep_unapplied_arm_ok();
   arm_ = GoalTrack{};
   arm_.gen = ++gen_;
   arm_.active = true;
+  arm_handle_.reset();   // 끝난 이전 목표 핸들로 취소하지 않게 (수락 응답 전 취소는 응답 때 처리)
   arm_.sent_s = now_s();
   arm_phase_.clear();
   const uint64_t gen = arm_.gen;
@@ -1298,9 +1302,20 @@ void Executor::cancel_arm()
     arm_needs_home_ = true;   // 수락 응답 전이라도 움직였을 수 있음 → 다음 단계 전에 HOME (접혀 있으면 바로 성공)
     if (arm_handle_) {arm_client_->async_cancel_goal(arm_handle_);}
   }
+  keep_unapplied_arm_ok();
   arm_ = GoalTrack{};
   arm_.gen = ++gen_;
   arm_handle_.reset();
+}
+
+// arm_ 을 비우기 전: 성공 결과는 왔는데 step() 이 아직 재고에 반영 안 함 → 늦은 성공으로 넘김 (update() 가 한 번 반영)
+void Executor::keep_unapplied_arm_ok()
+{
+  if (arm_.done && arm_.success && arm_step_) {
+    late_arm_ok_ = arm_step_;
+    arm_unfolded_ = leaves_arm_unfolded(*arm_step_);
+  }
+  arm_step_.reset();
 }
 
 // ================================================================ 기타

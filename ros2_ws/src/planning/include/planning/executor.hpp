@@ -32,6 +32,7 @@
 //   - 취소한 목표의 최종 결과가 오기 전에는 새 목표를 안 보냄, server_wait_s 넘으면 단계 실패
 //   - 팔 시간 초과는 취소 결과까지 기다려 판정, 결국 성공이면 단계 성공
 //   - FAULT 등으로 취소한 팔 작업이 결국 성공하면 update() 가 재고에 반영. 취소한 팔 작업은 HOME 필요로 봄
+//       성공 결과는 왔는데 step() 이 반영하기 전에 stop() 한 작업도 같음 (반영은 한 번만)
 //   - 미션 판단으로 단계 목록을 바꿀 때는 arm_busy() 가 false 일 때만, 팔 결과 처리 전 교체 방지
 //   - 팔이 LOOK · LOOK_BARCODE 로 펴진 채 이동 단계가 오면 HOME 을 먼저 끼움 (control 은 접힘 실측 뒤에만 DRIVE → 기다리면 drive_wait_s 손해)
 
@@ -254,6 +255,7 @@ private:
   StepResult poll_nav(double now, double timeout_s);
   bool send_arm(const ArmTask::Goal & goal);
   void cancel_arm();
+  void keep_unapplied_arm_ok();              // arm_ 비우기 전: 반영 안 한 성공 → late_arm_ok_
   bool cancel_blocked() const;               // 취소한 목표의 최종 결과 전 → 새 목표 안 보냄
 
   void poll_lifecycle();
@@ -363,6 +365,7 @@ private:
   uint64_t nav_cancel_gen_ = 0, arm_cancel_gen_ = 0;
   bool nav_cancel_pending_ = false, arm_cancel_pending_ = false;
   // 취소한 팔 작업이 결국 성공함 → 다음 step() 에서 재고에 반영 (실물이 기준)
+  //   arm_step_ = 보낸 팔 단계, 성공을 재고에 반영하면 비움 (반영 전에 arm_ 을 비우면 late_arm_ok_ 로 넘김)
   std::optional<Step> arm_step_, arm_cancel_step_, late_arm_ok_;   // 보낸 팔 단계 · 취소한 팔 단계 · 늦게 성공한 단계
   bool arm_timeout_wait_ = false;            // 팔 시간 초과 → 취소 결과 기다리는 중 (성공이면 그 단계 성공)
   double arm_cancel_s_ = 0.0;
