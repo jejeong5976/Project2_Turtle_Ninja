@@ -158,14 +158,16 @@ def cfg(name):
 
 
 def rack_cell_params():
-    """control_master: 칸 중심 표 (config/rack_cells.yaml) — 적재함 태그 스캔으로 칸 경로를 옮길 때 씀"""
+    """control_master: 칸 중심 · 넣는 점 보정 표 (config/rack_cells.yaml) — 적재함 태그 스캔 · STORE 넣는 점 맞추기에 씀"""
     path = os.path.join(get_package_share_directory("bringup"), "config", "rack_cells.yaml")
     with open(path, encoding="utf-8") as f:
         cells = yaml.safe_load(f)["rack_cells"]["cells"]
     names = list(cells)
     return {"rack_cell_names": names,
             "rack_cell_x": [float(cells[n]["xy"][0]) for n in names],
-            "rack_cell_y": [float(cells[n]["xy"][1]) for n in names]}
+            "rack_cell_y": [float(cells[n]["xy"][1]) for n in names],
+            "rack_cell_place_x": [float(cells[n].get("place_offset", [0.0, 0.0])[0]) for n in names],
+            "rack_cell_place_y": [float(cells[n].get("place_offset", [0.0, 0.0])[1]) for n in names]}
 
 
 def generate_launch_description():
