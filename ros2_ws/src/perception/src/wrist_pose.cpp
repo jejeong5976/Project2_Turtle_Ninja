@@ -301,6 +301,7 @@ bool tag_top_refine(PuckPose & p, const Intrinsics & K, const Vec3 & up_in)
   p.top_center = tc;
   p.center = tc - up * (PUCK_H / 2.0);
   p.face_dir = e.normalized();
+  p.tag_centre = true;
   return true;
 }
 

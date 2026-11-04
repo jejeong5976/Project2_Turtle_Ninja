@@ -90,6 +90,7 @@ struct PuckPose
   std::optional<Vec3> face_dir;             // 사각기둥 면 법선 방향 (90° 주기). 선 퍽 = 윗면 사각형 한 변, 누운 퍽 = 위쪽
   std::array<double, 2> face_size{};        // 선 퍽 = 윗면 사각형 두 변, 누운 퍽 = [띠 폭, 0] (m) — 확인용
   std::optional<Vec3> top_center;           // 윗면 중심 (위쪽 알 때만)
+  bool tag_centre{false};                   // tag_top_refine 이 윗면 중심 · 면 방향을 태그로 잡음 (마스크가 잘려도 중심은 믿음)
 };
 
 // ---- numpy 와 같은 통계 (percentile 은 numpy 기본 linear 보간)
@@ -127,6 +128,7 @@ std::pair<std::optional<Vec3>, std::array<double, 2>> upright_face(const std::ve
 // 선 퍽 윗면에 태그가 보이면 (puck_pose 가 고른 p.tag): 태그 네 모서리 화소 광선을 윗면 높이 평면과 만나게 해
 //   윗면 중심 · 퍽 중심 · 면 방향 (태그 변) 을 다시 잡음. 깊이 점 평균은 비스듬히 볼 때 약 10 mm 치우침 (11-04 실물, 태그와 비교)
 //   태그 한 변이 kPuckTagSideM 에서 4 mm 넘게 다르거나 윗면 중심에서 25 mm 넘게 떨어지면 그대로 (다른 퍽 태그 · 높이 틀림)
+//   잡으면 p.tag_centre = true → 마스크가 화면 가장자리에 닿아도 (truncated) 거르지 않음 (reject_reason)
 bool tag_top_refine(PuckPose & p, const Intrinsics & K, const Vec3 & up);
 
 // 위쪽 알 때 선/누움 · 긴축 · 중심 · 면 방향 보정 (p 를 고침)
