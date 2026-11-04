@@ -301,8 +301,18 @@ localization, turning drift, stopping response and battery condition need the
 next physical check. Collision geometry remains unchanged. The CLI supports new speed limits and
 route-relative supervisory bounds, which require physical qualification.
 
-Changed-wall static-map clearing and 5 cm wall-displacement robustness are not
-implemented here. NavFn can also propose a path whose footprint/rotation is
+Changed-wall maps can now be prepared with the offline workflow below; autonomous
+map adaptation during motion and physical 5 cm robustness remain unqualified.
+NavFn can also propose a path whose footprint/rotation is
 infeasible; the controller stops rather than inventing an evasive maneuver.
 Training remains on hold. See the accompanying November 4 offline validation
 record for exact test results and remaining evening checks.
+
+## Offline wall-layout adaptation
+
+`capture_layout` passively records stationary dual-lidar views, and `adapt_layout`
+fits bounded wall/assembly changes and robot poses, exports a separate map, and
+checks opening paths with the existing polygon collision code. Both controller
+modes can use the same accepted snapshot. See [WALL_LAYOUT.md](WALL_LAYOUT.md)
+for the input schema, commands, uncertainty gates and qualification limits.
+This experimental workflow does not enable live remapping or robot motion.

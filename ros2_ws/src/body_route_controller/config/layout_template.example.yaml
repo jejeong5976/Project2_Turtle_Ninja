@@ -1,0 +1,13 @@
+# Complete from registered physical geometry before capture. Deliberately invalid
+# until the map, known fixed start and wall annotations have been supplied.
+schema_version: 1
+map: /absolute/path/to/existing/map.yaml
+fixed_start: null # [map_x_metres, map_y_metres, heading_radians]
+start_uncertainty:
+  position_sigma_m: null # include placement AND map-registration uncertainty
+  yaw_sigma_rad: null
+walls: []
+# Each wall: {id: unique_name, a: [x, y], b: [x, y], assembly: optional_rigid_group}
+portals: []
+# Each portal: {first_wall: id, first_endpoint: a|b, second_wall: id,
+#              second_endpoint: a|b, heading: radians, approach: metres, exit: metres}
