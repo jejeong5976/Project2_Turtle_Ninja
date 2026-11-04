@@ -14,6 +14,9 @@ namespace
 {
 constexpr double kNearMm = 35.0, kFarMm = 90.0;
 constexpr int kRamp = 12;
+// 칸 경로를 옮긴 점은 관절 범위 (tick_lo · hi) 를 이만큼까지 넘어도 됨 [틱, 1.3°]. 실물 경로가 범위 끝에 붙어 있음
+//   (store_S10 칸 위 J4 2416 ~ 2431 틱, 범위 2430 → 칸 보정 (-9, -8) mm 로 2443). 실물 J4 멈춤은 약 2485 틱이라 범위 끝 + 15 도 그 안
+constexpr double kEdgeSlackTick = 15.0;
 constexpr double kDeg = 180.0 / M_PI;
 constexpr double kT2R = 2.0 * M_PI / 4096.0;
 
@@ -99,7 +102,7 @@ bool shift_cell_path(
     rep.max_joint_deg = std::max(rep.max_joint_deg, (c - c0).cwiseAbs().maxCoeff() * kDeg);
     for (int j = 0; j < 5; ++j) {
       const double t = tick_of_cmd(m, j, c[j]);
-      if (!std::isfinite(t) || t < m.tick_range[j][0] || t > m.tick_range[j][1]) {
+      if (!std::isfinite(t) || t < m.tick_range[j][0] - kEdgeSlackTick || t > m.tick_range[j][1] + kEdgeSlackTick) {
         why = path.name + ": " + path.nodes[i].name + " 를 옮기면 관절 " + std::to_string(j + 1) + " 범위 밖";
         return false;
       }

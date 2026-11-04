@@ -125,3 +125,29 @@ TEST(CellShift, RejectsNonFinite)
   std::string why;
   EXPECT_FALSE(manipulation::shift_cell_path(m, p, true, kCellS9, Eigen::Vector2d(std::nan(""), 0.0), rep, why));
 }
+
+// 칸 경로를 옮긴 점은 관절 범위를 15 틱까지 넘어도 됨 (store_S10 J4: 원래 2431 · 범위 2430)
+TEST(CellShift, ShiftedPointMayPassJointRangeBy15Ticks)
+{
+  const auto m = kin_data::model();
+  const ArmPath p0 = store_path();
+  const Eigen::Vector2d d(0.003, -0.002);
+  ArmPath p = p0;
+  manipulation::CellShiftReport rep;
+  std::string why;
+  ASSERT_TRUE(manipulation::shift_cell_path(m, p, true, kCellS9, d, rep, why)) << why;
+  double top = -1e9;   // 옮긴 점의 J4 틱 최대
+  for (size_t i = 0; i < p.nodes.size(); ++i) {
+    if (p.nodes[i].q == p0.nodes[i].q) {continue;}
+    top = std::max(top, m.zero_tick[3] + p.nodes[i].q[3] * 4096.0 / (2.0 * M_PI));
+  }
+  ASSERT_GT(top, -1e9);
+  auto tight = m;
+  tight.tick_range[3][1] = top - 10.0;   // 10 틱 넘음 → 됨
+  ArmPath q = p0;
+  EXPECT_TRUE(manipulation::shift_cell_path(tight, q, true, kCellS9, d, rep, why)) << why;
+  tight.tick_range[3][1] = top - 20.0;   // 20 틱 넘음 → 거절
+  q = p0;
+  EXPECT_FALSE(manipulation::shift_cell_path(tight, q, true, kCellS9, d, rep, why));
+  EXPECT_NE(why.find("관절 4 범위 밖"), std::string::npos) << why;
+}
