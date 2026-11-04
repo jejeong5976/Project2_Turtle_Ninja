@@ -60,6 +60,18 @@ void nav_block(Lines & L, const Snapshot & s);
 void percep_block(Lines & L, const Snapshot & s);
 void mission_block(Lines & L, const Snapshot & s);
 void hardware_block(Lines & L, const Snapshot & s);
+void temp_block(Lines & L, const Snapshot & s);                            // 모터 온도가 경고 넘을 때만
+
+// 모터 온도 칸: 글 "52" (모름 "-") · 수준 (경고 넘음 WARN · 위험 넘음 BAD · 안 옴 · 오래됨 OFF)
+//   하드웨어가 1 초마다 냄. ERROR 로 멈추면 더 안 옴 → 마지막 값이 kTempStaleS 뒤 회색 (뜨거웠던 값은 색 유지)
+constexpr double kTempStaleS = 5.0;
+struct TempCell
+{
+  std::string text{"-"};
+  Level level{Level::OFF};
+};
+TempCell temp_cell(const Snapshot & s, const std::string & joint);
+void drive_temp_table(Lines & L, const Snapshot & s);                      // 바퀴 · 조향 8 개 (2 쪽)
 
 // 표 (단위는 머리줄에만)
 void joint_table(Lines & L, const Snapshot & s, const Config & cfg, bool wide);

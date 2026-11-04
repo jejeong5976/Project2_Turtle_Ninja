@@ -9,7 +9,7 @@
 // 하는 일
 //   configure() : 켤 때 한 번. CONFIG 상자(모터 목록) 보내고 CONFIG_ACK(누가 대답했나) 기다림
 //   send_command(): 100 Hz. 관절 단위 목표 → CMD 상자 (NaN = "목표 없음")
-//   poll()      : 100 Hz. 들어온 바이트에서 STATE 상자 꺼내서 관절 단위로 바꿔 둠
+//   poll()      : 100 Hz. 들어온 바이트에서 STATE 상자 꺼내서 관절 단위로 바꿔 둠 (+ 1 초마다 DIAG · TEMP)
 //
 // 단위: 펌웨어는 모터 축 기준 rad · rad/s · A 로 말함 (nt_packet.h).
 //       관절이 rad 가 아닌 것(그리퍼 = 손가락 이동 m)만 scale 로 바꿈:  관절값 = 모터값 × scale
@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "nt_packet.h"   // firmware/nt_opencr/nt_packet.h — 펌웨어와 같은 파일 (CMakeLists 참고)
@@ -179,6 +180,29 @@ struct DiagSummary
   }
 };
 
+// 모터 온도 판정 (TEMP 상자, 1 초마다) — 플러그인 로그와 /diagnostics 가 같이 씀
+//   level = diagnostic_msgs/DiagnosticStatus 와 같은 숫자: 0 정상 · 1 경고 (≥ warn_c) · 2 위험 (≥ crit_c) · 3 하나도 못 읽음
+struct TempCheck
+{
+  int level = 3;
+  int hottest = -1;      // 가장 뜨거운 모터 번호 (-1 = 하나도 못 읽음)
+  int hottest_c = -1;
+  int unknown = 0;       // 못 읽은 모터 수
+};
+TempCheck check_temps(const std::vector<int> & c, int warn_c, int crit_c);
+
+// /diagnostics 한 줄의 내용 (플러그인이 DiagnosticStatus 로 옮김). ★ robot_cli 가 이 모양을 읽음 (model.cpp parse_temp_status)
+//   name = "<보드>" + TEMP_DIAG_SUFFIX, hardware_id = 보드, level = TempCheck::level
+//   values = 관절 이름 → 온도 (정수 °C, 못 읽으면 "-") + "warn_c" · "crit_c" (기준 °C)
+constexpr const char * TEMP_DIAG_SUFFIX = "/motor_temperature";
+struct TempReport
+{
+  int level = 3;
+  std::string message;
+  std::vector<std::pair<std::string, std::string>> values;
+};
+TempReport temp_report(const std::vector<JointSpec> & joints, const std::vector<int> & c, int warn_c, int crit_c);
+
 class OpenCRLink
 {
 public:
@@ -216,6 +240,9 @@ public:
   // 가장 최근 DIAG 하나와 받은 개수 (개수가 바뀌면 새 것 — 배터리 판단은 1 초마다 바로)
   const ntp::Diag & last_diag() const {return last_diag_;}
   uint32_t diag_count() const {return diag_count_;}
+  // 모터 온도 [°C] (관절 순서, -1 = 모름) — 가장 최근 TEMP. temp_count() 가 바뀌면 새 것 (0 = TEMP 를 안 보내는 옛 펌웨어거나 아직 1 초 전)
+  const std::vector<int> & temperatures() const {return temps_;}
+  uint32_t temp_count() const {return temp_count_;}
   uint32_t frames_received() const {return frames_;}
   std::size_t size() const {return joints_.size();}
   const std::vector<JointSpec> & joints() const {return joints_;}
@@ -242,6 +269,8 @@ private:
   DiagSummary diag_;
   ntp::Diag last_diag_{};
   uint32_t diag_count_ = 0;
+  std::vector<int> temps_;
+  uint32_t temp_count_ = 0;
 };
 
 }  // namespace hardware

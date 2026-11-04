@@ -117,6 +117,7 @@ OpenCRLink::OpenCRLink(std::vector<JointSpec> joints, uint8_t bus_watchdog)
 {
   state_.joints.resize(joints_.size());
   position_rates_.resize(joints_.size());
+  temps_.assign(joints_.size(), -1);
 }
 
 bool OpenCRLink::open(const std::string & port, int baud, std::string & err)
@@ -169,6 +170,7 @@ int OpenCRLink::configure(double timeout_s)
   // Do not carry a previous session's samples (or clock fault) across CONFIG.
   position_rates_.assign(joints_.size(), PositionRate{});
   for (auto & j : state_.joints) {j.position_velocity = NAN;}
+  temps_.assign(joints_.size(), -1);   // CONFIG 전 온도를 새 설정의 값처럼 보이지 않게
   return ack_mask_;
 }
 
@@ -237,6 +239,12 @@ int OpenCRLink::poll()
           last_diag_ = g;
           ++diag_count_;
         }
+      } else if (parser_.type() == ntp::TYPE_TEMP) {
+        ntp::Temp t;
+        if (ntp::decode_temp(parser_.data(), parser_.len(), t) && t.n == joints_.size()) {
+          for (std::size_t i = 0; i < joints_.size(); ++i) {temps_[i] = t.c[i] == ntp::TEMP_UNKNOWN ? -1 : t.c[i];}
+          ++temp_count_;
+        }
       } else if (parser_.type() == ntp::TYPE_CONFIG_ACK && waiting_ack_) {
         ntp::ConfigAck a;
         if (ntp::decode_ack(parser_.data(), parser_.len(), a) && a.n == joints_.size()) {
@@ -282,6 +290,54 @@ std::string OpenCRLink::missing_joints(int ok_mask) const
     out += joints_[i].name + "(ID " + std::to_string(joints_[i].id) + ")";
   }
   return out;
+}
+
+// ============================================================================ 모터 온도
+TempCheck check_temps(const std::vector<int> & c, int warn_c, int crit_c)
+{
+  TempCheck r;
+  for (std::size_t i = 0; i < c.size(); ++i) {
+    if (c[i] < 0) {
+      ++r.unknown;
+      continue;
+    }
+    if (c[i] > r.hottest_c) {
+      r.hottest_c = c[i];
+      r.hottest = static_cast<int>(i);
+    }
+  }
+  if (r.hottest >= 0) {r.level = r.hottest_c >= crit_c ? 2 : r.hottest_c >= warn_c ? 1 : 0;}
+  return r;
+}
+
+TempReport temp_report(const std::vector<JointSpec> & joints, const std::vector<int> & temps, int warn_c, int crit_c)
+{
+  TempReport r;
+  std::vector<int> c(joints.size(), -1);   // 관절 수에 맞춤 (모자라면 모름)
+  for (std::size_t i = 0; i < c.size() && i < temps.size(); ++i) {c[i] = temps[i];}
+  const TempCheck k = check_temps(c, warn_c, crit_c);
+  r.level = k.level;
+  const auto deg = [](int v) {return std::to_string(v) + " °C";};
+  if (k.level == 3) {
+    r.message = "온도 못 읽음";
+  } else if (k.level == 0) {
+    r.message = "최고 " + joints[k.hottest].name + " " + deg(k.hottest_c);
+  } else {
+    // 경고 기준을 넘은 모터 전부 (관절 순서)
+    r.message = k.level == 2 ? "위험 " : "경고 ";
+    bool first = true;
+    for (std::size_t i = 0; i < c.size(); ++i) {
+      if (c[i] < warn_c) {continue;}
+      r.message += (first ? "" : " · ") + joints[i].name + " " + deg(c[i]);
+      first = false;
+    }
+    r.message += " (경고 " + std::to_string(warn_c) + " · 위험 " + deg(crit_c) + ")";
+  }
+  if (k.unknown > 0 && k.level != 3) {r.message += " · 못 읽음 " + std::to_string(k.unknown);}
+  for (std::size_t i = 0; i < joints.size(); ++i) {r.values.emplace_back(joints[i].name, c[i] < 0 ? "-" : std::to_string(c[i]));}
+  r.values.emplace_back("warn_c", std::to_string(warn_c));
+  r.values.emplace_back("crit_c", std::to_string(crit_c));
+  return r;
 }
 
 }  // namespace hardware

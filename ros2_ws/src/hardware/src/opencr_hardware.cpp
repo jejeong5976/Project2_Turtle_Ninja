@@ -26,6 +26,11 @@
 //   - 펌웨어 고장 잠금(ST_FAULT_LATCHED: 목표 쓰기 실패 → 펌웨어가 바퀴를 세우고 잠금) — 바로
 //   - 배터리 전압 (DIAG 1 초마다): 구간 평균이 battery_stop_v 아래로 2 번 연속 → ERROR (경고는 battery_warn_v)
 //
+// 모터 온도 (TEMP 1 초마다): /diagnostics 에 보드마다 한 줄 "<보드>/motor_temperature" (robot_cli 2 쪽이 읽음)
+//   temp_warn_c(60) 넘으면 경고 로그, temp_crit_c(70) 넘으면 오류 로그 — 멈추지는 않음
+//   (멈춰도 토크는 그대로라 식지 않음. 모터는 Temperature Limit(기본 80 °C)에서 스스로 토크를 끄고 → 위 Hardware Error 로 멈춤)
+//   ⚠ ERROR 로 멈춘 뒤에는 read() 가 안 불려 온도도 더 안 나감 → 마지막 값은 Hardware Error 로그에 같이 적음
+//
 // 복구 (R6): ERROR 뒤에는 자동으로 다시 켜지 않음. 사람이 원인을 확인하고
 //   팔을 받친 뒤(CONFIG 가 모든 모터 토크를 끔 → 팔 처짐) 하드웨어를 다시 configure · activate → CONFIG 가 펌웨어 잠금을 풂
 //   → control_master 는 그동안 STOP 이고, HOME + 접힘 실측이 다시 성공해야 DRIVE
@@ -42,6 +47,7 @@
 #include <string>
 #include <vector>
 
+#include "diagnostic_msgs/msg/diagnostic_array.hpp"
 #include "hardware_interface/system_interface.hpp"
 #include "hardware_interface/types/hardware_interface_return_values.hpp"
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
@@ -97,6 +103,13 @@ private:
   double battery_stop_v_ = 10.2;
   uint32_t seen_diag_ = 0;
   int battery_low_count_ = 0;
+  // 모터 온도 [°C] 경고 · 위험 (로그만, 멈추지 않음). XM430 Temperature Limit 기본 80 °C 보다 낮게
+  int temp_warn_c_ = 60;
+  int temp_crit_c_ = 70;
+  uint32_t seen_temp_ = 0;
+  rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diag_pub_;   // 하드웨어 노드가 없으면 null (로그만)
+  void report_temps();
+  std::string temps_text() const;   // "joint1 41, joint2 63, …" (못 읽음 "-") — 로그용
   std::chrono::steady_clock::time_point write_fail_since_{};
   bool torque_waiting_ = false;          // 토크 켜라고 한 뒤 펌웨어가 "켜짐" 이라고 하기를 기다리는 중
   std::chrono::steady_clock::time_point torque_wait_since_{};
@@ -164,6 +177,12 @@ CallbackReturn OpenCRHardware::on_init(const hardware_interface::HardwareCompone
     torque_off_on_deactivate_ = param(hw, "torque_off_on_deactivate", "false") == "true";
     battery_warn_v_ = std::stod(param(hw, "battery_warn_v", "10.8"));
     battery_stop_v_ = std::stod(param(hw, "battery_stop_v", "10.2"));
+    temp_warn_c_ = std::stoi(param(hw, "temp_warn_c", "60"));
+    temp_crit_c_ = std::stoi(param(hw, "temp_crit_c", "70"));
+    if (temp_warn_c_ >= temp_crit_c_) {
+      RCLCPP_ERROR(get_logger(), "temp_warn_c %d 는 temp_crit_c %d 보다 낮아야 함", temp_warn_c_, temp_crit_c_);
+      return CallbackReturn::ERROR;
+    }
 
     for (const auto & j : info.joints) {
       const auto & p = j.parameters;
@@ -233,6 +252,12 @@ CallbackReturn OpenCRHardware::on_init(const hardware_interface::HardwareCompone
 
   targets_.assign(specs.size(), NaN);
   link_ = std::make_unique<OpenCRLink>(specs, bus_watchdog);
+  // 온도 → /diagnostics: controller_manager 가 하드웨어마다 만들어 주는 노드로 (rqt_robot_monitor · robot_cli 가 보는 표준 토픽)
+  if (const auto node = get_node()) {
+    diag_pub_ = node->create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", rclcpp::QoS(10));
+  } else {
+    RCLCPP_WARN(get_logger(), "하드웨어 노드가 없어 모터 온도를 /diagnostics 로 못 냄 (로그로만)");
+  }
   RCLCPP_INFO(get_logger(), "OpenCR 플러그인: 모터 %zu 개, 포트 %s, IMU %s",
     specs.size(), port_.c_str(), imu_name_.empty() ? "안 씀" : imu_name_.c_str());
   return CallbackReturn::SUCCESS;
@@ -394,9 +419,11 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
       }
     }
   }
+  report_temps();   // 모터 온도 (TEMP 가 새로 왔을 때만, 1 초마다)
   // (R5) 모터가 스스로 멈춤 (과부하 · 과열 · 전압 → Hardware Error, 토크 꺼짐) → 바로 ERROR (D20 전체 멈춤)
   if (s.status & ntp::ST_HW_ERROR) {
-    RCLCPP_ERROR(get_logger(), "모터 Hardware Error (과부하 · 과열 · 전압) → 전체 멈춤. 모터 재부팅 · 원인 확인 후 다시 켤 것");
+    RCLCPP_ERROR(get_logger(), "모터 Hardware Error (과부하 · 과열 · 전압) → 전체 멈춤. 모터 재부팅 · 원인 확인 후 다시 켤 것 "
+      "(마지막 온도 °C: %s)", temps_text().c_str());
     return return_type::ERROR;
   }
   // (R5) 목표 쓰기(Sync Write) 전송이 motor_fail_timeout_s 넘게 계속 실패 → ERROR
@@ -500,13 +527,55 @@ void OpenCRHardware::report_timing()
       (d.config_ms ? " · CONFIG 처리 " + std::to_string(d.config_ms) + " ms" : std::string()) +
       (d.fault_stop_us ? " · 고장 정지 시도 " + std::to_string(d.fault_stop_us) + " us" : std::string()) +
       (d.volt_mean_dv ? " · 배터리 " + std::to_string(d.volt_mean_dv / 10) + "." + std::to_string(d.volt_mean_dv % 10) +
-        " V (최저 " + std::to_string(d.volt_min_dv / 10) + "." + std::to_string(d.volt_min_dv % 10) + ")" : std::string());
+        " V (최저 " + std::to_string(d.volt_min_dv / 10) + "." + std::to_string(d.volt_min_dv % 10) + ")" : std::string()) +
+      (link_->temp_count() ? " · 온도 °C " + temps_text() : std::string(" · 온도 상자 없음 (옛 펌웨어 → 다시 올릴 것)"));
     if (warn) {
       RCLCPP_WARN(get_logger(), "%s", msg.c_str());
     } else {
       RCLCPP_INFO(get_logger(), "%s", msg.c_str());
     }
   }
+}
+
+// 모터 온도: TEMP 가 새로 왔을 때 (1 초마다) /diagnostics 한 줄 + 기준을 넘으면 로그
+void OpenCRHardware::report_temps()
+{
+  if (link_->temp_count() == seen_temp_) {return;}
+  seen_temp_ = link_->temp_count();
+  const TempReport r = temp_report(link_->joints(), link_->temperatures(), temp_warn_c_, temp_crit_c_);
+  const std::string & board = get_hardware_info().name;
+  if (r.level == 2) {
+    RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 5000, "%s 모터 온도 %s — 부하를 줄이고 식힐 것 (팔은 받침에 접기). "
+      "모터는 Temperature Limit(기본 80 °C)에서 스스로 토크를 끔", board.c_str(), r.message.c_str());
+  } else if (r.level == 1) {
+    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 10000, "%s 모터 온도 %s", board.c_str(), r.message.c_str());
+  }
+  if (!diag_pub_) {return;}
+  diagnostic_msgs::msg::DiagnosticArray a;
+  a.header.stamp = get_clock()->now();
+  diagnostic_msgs::msg::DiagnosticStatus st;
+  st.level = static_cast<uint8_t>(r.level);
+  st.name = board + TEMP_DIAG_SUFFIX;
+  st.hardware_id = board;
+  st.message = r.message;
+  for (const auto & [k, v] : r.values) {
+    diagnostic_msgs::msg::KeyValue kv;
+    kv.key = k;
+    kv.value = v;
+    st.values.push_back(kv);
+  }
+  a.status.push_back(st);
+  diag_pub_->publish(a);
+}
+
+std::string OpenCRHardware::temps_text() const
+{
+  std::string out;
+  const auto & c = link_->temperatures();
+  for (std::size_t i = 0; i < c.size(); ++i) {
+    out += (out.empty() ? "" : ", ") + link_->joints()[i].name + " " + (c[i] < 0 ? std::string("-") : std::to_string(c[i]));
+  }
+  return out;
 }
 
 void OpenCRHardware::publish_states()

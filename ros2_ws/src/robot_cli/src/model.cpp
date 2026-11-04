@@ -204,6 +204,30 @@ bool parse_battery_log(const std::string & msg, std::string & board, double & me
   return false;
 }
 
+bool parse_temp_status(const std::string & name, const std::vector<std::pair<std::string, std::string>> & values,
+  std::string & board, std::map<std::string, int> & temps, int & warn, int & crit)
+{
+  static const std::string suffix = "/motor_temperature";
+  if (name.size() <= suffix.size() || name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) {return false;}
+  // 0~255 정수만 (다른 글은 "모름")
+  auto number = [](const std::string & v) {
+      if (v.empty() || v.size() > 3 || !std::all_of(v.begin(), v.end(), [](unsigned char ch) {return std::isdigit(ch);})) {return -1;}
+      const int n = std::stoi(v);
+      return n <= 255 ? n : -1;
+    };
+  board = name.substr(0, name.size() - suffix.size());
+  temps.clear();
+  for (const auto & [k, v] : values) {
+    const int n = number(v);
+    if (k == "warn_c" || k == "crit_c") {
+      if (n >= 0) {(k == "warn_c" ? warn : crit) = n;}
+    } else if (!k.empty()) {
+      temps[k] = n;
+    }
+  }
+  return true;
+}
+
 bool gripper_holding(const ArmRef & ref, double q)
 {
   return std::isfinite(q) && std::isfinite(ref.grip_open) && std::isfinite(ref.grip_close) &&

@@ -53,6 +53,13 @@ struct BatteryView
   double t{-1};
 };
 
+// 모터 온도 하나 (OpenCR 하드웨어 /diagnostics "<보드>/motor_temperature", 1 초마다 — mock 에는 없음)
+struct TempView
+{
+  int c{-1};       // [°C], -1 = 보드가 이 모터를 못 읽음
+  double t{-1};    // 받은 시각
+};
+
 struct DiagView
 {
   std::string name, message;
@@ -151,6 +158,8 @@ struct Snapshot
   double scan_front_t{-1}, scan_rear_t{-1};   // /lidar_front/scan · /lidar_rear/scan
   double imu_t{-1};                           // /imu_sensor_broadcaster/imu (OpenCR 일 때만)
   std::map<std::string, BatteryView> battery; // 보드 이름 → 전압
+  std::map<std::string, TempView> temps;      // 관절 이름 → 모터 온도 (팔 · 그리퍼 · 바퀴 · 조향)
+  int temp_warn{60}, temp_crit{70};           // 경고 · 위험 [°C] — 하드웨어가 보낸 값 (못 받으면 이 기본값)
   std::set<std::string> nodes;    // "/control_master" 같은 전체 이름
   // 이 CLI
   bool estop{false};

@@ -4,6 +4,7 @@
 
 #include "robot_cli/status_view.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdarg>
 #include <cstdint>
@@ -278,6 +279,106 @@ void limit_block(Lines & L, const Snapshot & s, const Config & cfg)
   block(L, "관절", worst == Level::BAD ? "문제" : "주의", worst, t);
 }
 
+namespace
+{
+// "drive_fl_joint" → "바퀴 fl", "steer_fl_joint" → "조향 fl", "gripper_left_joint" → "그리퍼", 팔은 그대로
+std::string motor_name(const std::string & joint)
+{
+  for (const char * kind : {"drive_", "steer_"}) {
+    const std::string k = kind;
+    if (joint.rfind(k, 0) == 0 && joint.size() > k.size() + 2) {
+      return std::string(k == "drive_" ? "바퀴 " : "조향 ") + joint.substr(k.size(), 2);
+    }
+  }
+  return joint == "gripper_left_joint" ? "그리퍼" : joint;
+}
+
+Level worse(Level a, Level b)
+{
+  auto rank = [](Level l) {return l == Level::BAD ? 3 : l == Level::WARN ? 2 : l == Level::NORMAL ? 1 : 0;};
+  return rank(a) >= rank(b) ? a : b;
+}
+
+// 줄 하나에 온도 칸 색: 경고 · 위험이면 그 칸만 그 색 · 안 옴이면 (줄이 보통일 때) 그 칸만 회색
+Line temp_line(const std::string & head, const std::string & cell, const std::string & tail, Level row, Level cell_lv)
+{
+  Line l{head + cell + tail, row};
+  if (cell_lv == Level::WARN || cell_lv == Level::BAD || (cell_lv == Level::OFF && row == Level::NORMAL)) {
+    l.level = cell_lv;
+    l.mark_from = head.size();
+    l.mark_len = cell.size();
+  }
+  return l;
+}
+
+// 온도를 받은 가장 최근 시각 (names 중, 없으면 -1)
+double temp_time(const Snapshot & s, const std::vector<std::string> & names)
+{
+  double t = -1.0;
+  for (const auto & n : names) {
+    const auto it = s.temps.find(n);
+    if (it != s.temps.end()) {t = std::max(t, it->second.t);}
+  }
+  return t;
+}
+
+const std::vector<std::string> kDriveMotors = {
+  "drive_fl_joint", "drive_fr_joint", "drive_rl_joint", "drive_rr_joint",
+  "steer_fl_joint", "steer_fr_joint", "steer_rl_joint", "steer_rr_joint"};
+}  // namespace
+
+TempCell temp_cell(const Snapshot & s, const std::string & joint)
+{
+  const auto it = s.temps.find(joint);
+  if (it == s.temps.end()) {return {};}
+  const TempView & v = it->second;
+  TempCell c;
+  c.text = v.c < 0 ? "-" : fmt("%d", v.c);
+  c.level = v.c < 0 ? Level::OFF : v.c >= s.temp_crit ? Level::BAD : v.c >= s.temp_warn ? Level::WARN : Level::NORMAL;
+  if (c.level == Level::NORMAL && s.now - v.t > kTempStaleS) {c.level = Level::OFF;}
+  return c;
+}
+
+void temp_block(Lines & L, const Snapshot & s)
+{
+  Level worst = Level::NORMAL;
+  std::string t;
+  double oldest = s.now;
+  for (const auto & [joint, v] : s.temps) {
+    const TempCell c = temp_cell(s, joint);
+    if (c.level != Level::WARN && c.level != Level::BAD) {continue;}
+    worst = worse(worst, c.level);
+    oldest = std::min(oldest, v.t);
+    t += fmt("%s%s %d °C", t.empty() ? "" : " · ", motor_name(joint).c_str(), v.c);
+  }
+  if (t.empty()) {return;}
+  t += worst == Level::BAD ? fmt(" — 위험 %d °C 넘음: 부하 줄이고 식히기 (팔은 받침에 접기)", s.temp_crit) :
+    fmt(" — 경고 %d °C 넘음: 오래 버티는 자세 피하기", s.temp_warn);
+  if (s.now - oldest > kTempStaleS) {t += fmt(" · 마지막 값 %.0f s 전", s.now - oldest);}
+  block(L, "온도", worst == Level::BAD ? "문제" : "주의", worst, t);
+}
+
+void drive_temp_table(Lines & L, const Snapshot & s)
+{
+  const double t = temp_time(s, kDriveMotors);
+  head(L, "주행 모터 온도 [°C] (" + (t < 0.0 ? std::string("없음") : age(s, t) + " 전") + ")");
+  if (t < 0.0) {
+    L.push_back({"없음 — OpenCR 하드웨어 + 온도를 보내는 펌웨어일 때만 (mock 에는 없음)", Level::OFF});
+    return;
+  }
+  L.push_back({pad("", 9) + rjust("fl", 6) + rjust("fr", 6) + rjust("rl", 6) + rjust("rr", 6), Level::NORMAL});
+  for (const char * kind : {"drive", "steer"}) {
+    std::string r = pad(std::string(kind) == "drive" ? "바퀴" : "조향", 9);
+    Level lv = Level::OFF;
+    for (const char * w : {"fl", "fr", "rl", "rr"}) {
+      const TempCell c = temp_cell(s, std::string(kind) + "_" + w + "_joint");
+      r += rjust(c.text, 6);
+      lv = worse(lv, c.level);
+    }
+    L.push_back({r, lv});
+  }
+}
+
 void battery_block(Lines & L, const Snapshot & s, const Config & cfg)
 {
   std::string t;
@@ -438,50 +539,58 @@ void hardware_block(Lines & L, const Snapshot & s)
 // ---------------------------------------------------------------- 표
 void joint_table(Lines & L, const Snapshot & s, const Config & cfg, bool wide)
 {
-  head(L, "관절 (측정 " + age(s, s.joints_t) + " 전 · 처짐 보정 " + age(s, s.corrected_t) + " 전)");
-  std::string h = pad("관절", 9) + rjust("눈금", 6) + rjust("[rad]", 10) + rjust("[°]", 9) + rjust("전류[A]", 9);
-  if (wide) {h += rjust("보정[rad]", 11) + rjust("보정[°]", 9) + rjust("보정눈금", 9) + rjust("처짐[°]", 9) + rjust("받침과[°]", 11);}
+  const double temp_t = temp_time(s, kArmJoints);
+  head(L, "관절 (측정 " + age(s, s.joints_t) + " 전 · 처짐 보정 " + age(s, s.corrected_t) + " 전 · 온도 " +
+    (temp_t < 0.0 ? std::string("없음") : age(s, temp_t) + " 전") + ")");
+  // 온도 칸은 전류 바로 뒤 (경고 · 위험이면 그 칸만 색, 기준은 하드웨어가 보낸 값)
+  std::string h = pad("관절", 9) + rjust("눈금", 6) + rjust("[rad]", 10) + rjust("[°]", 9) + rjust("전류[A]", 9) + rjust("온도[°C]", 9);
+  if (wide) {h += rjust("보정[rad]", 11) + rjust("보정[°]", 9) + rjust("보정눈금", 9) + rjust("처짐[°]", 9) + rjust("받침과[°]", 10);}
   L.push_back({h, Level::NORMAL});
   const std::vector<double> * home = cfg.arm.poses.empty() ? nullptr : &cfg.arm.poses.front().q;
   for (std::size_t k = 0; k < 5; ++k) {
     const std::string & j = kArmJoints[k];
     const auto it = s.joints.find(j);
+    const TempCell tc = temp_cell(s, j);
     if (it == s.joints.end() || !std::isfinite(it->second)) {
-      L.push_back({pad(j, 9) + "측정 없음", Level::WARN});
+      // 하드웨어가 ERROR 로 멈춰도 마지막 온도는 보이게 (과열로 멈췄을 때 어느 모터인지)
+      L.push_back(temp_line(pad(j, 9) + pad("측정 없음", 34), rjust(tc.text, 9), "", Level::WARN, tc.level));
       continue;
     }
     const double q = it->second;
     const auto c = cfg.cal.find(j);
     const auto a = s.current.find(j);
-    std::string r = pad(j, 9) + rjust(c != cfg.cal.end() ? fmt("%.0f", std::round(joint_to_tick(c->second, q))) : "?", 6) +
+    const std::string r = pad(j, 9) + rjust(c != cfg.cal.end() ? fmt("%.0f", std::round(joint_to_tick(c->second, q))) : "?", 6) +
       rjust(fmt("%+.4f", q), 10) + rjust(fmt("%+.2f", deg(q)), 9) +
       rjust(a != s.current.end() && std::isfinite(a->second) ? fmt("%+.2f", a->second) : "-", 9);
+    std::string tail;
     if (wide) {
       const auto kc = s.corrected.find(j);
       if (kc != s.corrected.end() && std::isfinite(kc->second)) {
-        r += rjust(fmt("%+.4f", kc->second), 11) + rjust(fmt("%+.2f", deg(kc->second)), 9) +
+        tail += rjust(fmt("%+.4f", kc->second), 11) + rjust(fmt("%+.2f", deg(kc->second)), 9) +
           rjust(c != cfg.cal.end() ? fmt("%.0f", std::round(joint_to_tick(c->second, kc->second))) : "?", 9) +
           rjust(fmt("%+.2f", deg(kc->second - q)), 9);
       } else {
-        r += rjust("-", 11) + rjust("-", 9) + rjust("-", 9) + rjust("-", 9);
+        tail += rjust("-", 11) + rjust("-", 9) + rjust("-", 9) + rjust("-", 9);
       }
-      r += rjust(home && k < home->size() ? fmt("%+.2f", deg(q - (*home)[k])) : "-", 11);
+      tail += rjust(home && k < home->size() ? fmt("%+.2f", deg(q - (*home)[k])) : "-", 10);
     }
-    L.push_back({r, age_level(s, s.joints_t)});
+    L.push_back(temp_line(r, rjust(tc.text, 9), tail, age_level(s, s.joints_t), tc.level));
   }
   const auto g = s.joints.find("gripper_left_joint");
-  L.push_back({pad("그리퍼", 9) + rjust("눈금", 6) + rjust("[m]", 10) + rjust("간격[mm]", 9) + rjust("전류[A]", 9) + "  상태", Level::NORMAL});
+  const TempCell gt = temp_cell(s, "gripper_left_joint");
+  L.push_back({pad("그리퍼", 9) + rjust("눈금", 6) + rjust("[m]", 10) + rjust("간격[mm]", 9) + rjust("전류[A]", 9) + rjust("온도[°C]", 9) +
+    "  상태", Level::NORMAL});
   if (g == s.joints.end() || !std::isfinite(g->second)) {
-    L.push_back({pad("", 9) + "측정 없음", Level::WARN});
+    L.push_back(temp_line(pad("", 9) + pad("측정 없음", 34), rjust(gt.text, 9), "", Level::WARN, gt.level));
   } else {
     const auto c = cfg.cal.find("gripper_left_joint");
     const auto a = s.current.find("gripper_left_joint");
     const bool hold = gripper_holding(cfg.arm, g->second);
     const bool open = std::isfinite(cfg.arm.grip_open) && g->second >= cfg.arm.grip_open - 0.004;
-    L.push_back({pad("", 9) + rjust(c != cfg.cal.end() ? fmt("%.0f", std::round(joint_to_tick(c->second, g->second))) : "?", 6) +
+    L.push_back(temp_line(pad("", 9) + rjust(c != cfg.cal.end() ? fmt("%.0f", std::round(joint_to_tick(c->second, g->second))) : "?", 6) +
       rjust(fmt("%+.4f", g->second), 10) + rjust(fmt("%.1f", gripper_gap(g->second) * 1000.0), 9) +
-      rjust(a != s.current.end() && std::isfinite(a->second) ? fmt("%+.2f", a->second) : "-", 9) +
-      (hold ? "  퍽 쥠 (반쯤 닫힘)" : open ? "  열림" : "  닫힘"), hold ? Level::GOOD : age_level(s, s.joints_t)});
+      rjust(a != s.current.end() && std::isfinite(a->second) ? fmt("%+.2f", a->second) : "-", 9), rjust(gt.text, 9),
+      hold ? "  퍽 쥠 (반쯤 닫힘)" : open ? "  열림" : "  닫힘", hold ? Level::GOOD : age_level(s, s.joints_t), gt.level));
   }
 }
 
@@ -862,6 +971,7 @@ std::vector<Line> status_lines(const Snapshot & s, const Config & cfg)
   wheels_block(L, s, cfg);
   arm_block(L, s, cfg);
   limit_block(L, s, cfg);
+  temp_block(L, s);
   manual_block(L, s, false);
   L.push_back({"", Level::NORMAL});
   loc_block(L, s, cfg);

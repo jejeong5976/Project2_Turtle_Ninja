@@ -99,6 +99,30 @@ TEST(Model, ArmRef)
   EXPECT_FALSE(load_arm_ref("/nonexistent.yaml", TEST_CONFIG_DIR "/arm_paths.yaml", ref, err));
 }
 
+// OpenCR 하드웨어 모터 온도 /diagnostics 한 줄 (hardware test_opencr Temp.CheckAndReport 와 같은 모양)
+TEST(Model, TempStatus)
+{
+  std::string board;
+  std::map<std::string, int> t;
+  int warn = 60, crit = 70;
+  ASSERT_TRUE(parse_temp_status("bus_arm/motor_temperature",
+    {{"joint1", "41"}, {"joint2", "63"}, {"gripper_left_joint", "-"}, {"warn_c", "55"}, {"crit_c", "65"}}, board, t, warn, crit));
+  EXPECT_EQ(board, "bus_arm");
+  EXPECT_EQ(t.size(), 3u);
+  EXPECT_EQ(t["joint1"], 41);
+  EXPECT_EQ(t["joint2"], 63);
+  EXPECT_EQ(t["gripper_left_joint"], -1);
+  EXPECT_EQ(warn, 55);
+  EXPECT_EQ(crit, 65);
+  // 기준이 없거나 글이 이상하면 기준은 그대로 · 온도는 모름
+  ASSERT_TRUE(parse_temp_status("bus_drive/motor_temperature", {{"drive_fl_joint", "4x"}, {"warn_c", "?"}}, board, t, warn, crit));
+  EXPECT_EQ(board, "bus_drive");
+  EXPECT_EQ(t["drive_fl_joint"], -1);
+  EXPECT_EQ(warn, 55);
+  EXPECT_FALSE(parse_temp_status("localization", {{"joint1", "41"}}, board, t, warn, crit));
+  EXPECT_FALSE(parse_temp_status("/motor_temperature", {}, board, t, warn, crit));
+}
+
 TEST(Model, BatteryLogAndLimits)
 {
   std::string b;
@@ -108,6 +132,11 @@ TEST(Model, BatteryLogAndLimits)
   EXPECT_EQ(b, "bus_arm");
   EXPECT_DOUBLE_EQ(mean, 12.3);
   EXPECT_DOUBLE_EQ(min, 12.1);
+  // 온도가 뒤에 붙은 10 s 줄 (온도 펌웨어부터)
+  ASSERT_TRUE(parse_battery_log("bus_arm 보드 안 (10 s): 한 바퀴 980/1200 us (1000회, 실패 0) · 배터리 12.0 V (최저 11.8) · "
+    "온도 °C joint1 38, joint2 70, joint5 -", b, mean, min));
+  EXPECT_DOUBLE_EQ(mean, 12.0);
+  EXPECT_DOUBLE_EQ(min, 11.8);
   ASSERT_TRUE(parse_battery_log("bus_drive 배터리 낮음: 평균 10.7 V · 최저 10.5 V (경고 10.8 / 정지 10.2 V)", b, mean, min));
   EXPECT_EQ(b, "bus_drive");
   EXPECT_DOUBLE_EQ(min, 10.5);

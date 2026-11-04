@@ -20,6 +20,7 @@ const float CUR_A_PER_TICK = 0.00269f;
 const uint16_t ADDR_GOAL_VELOCITY = 104;
 const uint16_t ADDR_GOAL_POSITION = 116;
 const uint16_t ADDR_PRESENT_CURRENT = 126;   // 126 전류(2) · 128 속도(4) · 132 위치(4) 가 붙어 있음 → 한 번에 10 바이트
+const uint16_t ADDR_PRESENT_INPUT_VOLTAGE = 144;   // 144 입력 전압(2, 0.1 V) · 146 온도(1, °C) 가 붙어 있음 → 한 번에 3 바이트 (X 시리얼 공통)
 
 Dynamixel2Arduino dxl(DXL_SERIAL, DXL_DIR_PIN);
 using namespace ControlTableItem;
@@ -60,6 +61,9 @@ TimeAcc t_sync_read_, t_sync_write_, t_read_, t_write_;
 // 배터리 전압 (되읽기 때 1 모터씩 Present Input Voltage) [0.1 V]
 uint32_t volt_sum_dv_ = 0, volt_n_ = 0;
 uint8_t volt_min_dv_ = 0;   // 0 = 이번 구간에 못 읽음
+// 모터 온도 (전압과 같은 읽기) [°C] — 구간(1 s)마다 TEMP 로. 그 구간에 못 읽은 모터는 TEMP_UNKNOWN 으로 보냄 (옛 값을 새 값처럼 안 보내게)
+uint8_t temp_c_[ntp::MAX_JOINTS];
+uint16_t temp_fresh_ = 0;   // 비트 i = 이 구간에 i 번째 온도를 읽었음
 uint32_t stop_attempt_us_ = 0;
 
 bool last_ok()   // 바로 앞 단일 읽기 · 쓰기가 통신까지 성공했나
@@ -74,6 +78,17 @@ int32_t timed_read(uint8_t item, uint8_t id)
   const int32_t v = dxl.readControlTableItem(item, id, IO_TIMEOUT_MS);
   t_read_.add(micros() - t, last_ok());
   return v;
+}
+
+// 주소로 바로 읽기 (붙어 있는 여러 칸을 한 번에). 성공 = 통신 성공 + len 바이트 다 받음
+//   cap 은 len 보다 넉넉히: 라이브러리는 받은 바이트를 칸 검사보다 먼저 써서 cap == len 이면 대답이 길 때 1 바이트 넘침
+bool timed_read_raw(uint8_t id, uint16_t addr, uint16_t len, uint8_t *buf, uint16_t cap)
+{
+  const uint32_t t = micros();
+  const int32_t got = dxl.read(id, addr, len, buf, cap, IO_TIMEOUT_MS);
+  const bool ok = last_ok() && got == static_cast<int32_t>(len);
+  t_read_.add(micros() - t, ok);
+  return ok;
 }
 
 bool timed_write(uint8_t item, uint8_t id, int32_t value)
@@ -212,6 +227,7 @@ uint16_t bus_configure(const ntp::Config &c)
   torque_ = false;
   torque_lost_ = 0;
   hw_err_ = 0;
+  temp_fresh_ = 0;
   write_fail_streak_ = 0;
   // 고장 잠금을 푸는 유일한 길 = CONFIG (사람이 원인 확인 후 하드웨어를 다시 설정할 때). 자동으로 다시 보내는 곳은 없음
   //   ⚠ 위에서 모든 모터 토크를 끔 → 팔이 들려 있으면 처짐. 복구 전에 팔을 받치거나 안정 자세에 둘 것
@@ -282,11 +298,19 @@ void bus_health_step()
   }
   if (he != 0) {hw_err_ |= bit;} else {hw_err_ &= static_cast<uint16_t>(~bit);}
   // 배터리 전압: 모터 입력 전압 = 그 보드 배터리 전압 (선 손실만큼 낮게). 출발 순간 처짐도 잡히게 매 바퀴
-  const int32_t dv = timed_read(PRESENT_INPUT_VOLTAGE, ids_[i]);
-  if (last_ok() && dv > 0 && dv < 256) {
-    volt_sum_dv_ += static_cast<uint32_t>(dv);
-    ++volt_n_;
-    if (volt_min_dv_ == 0 || dv < volt_min_dv_) {volt_min_dv_ = static_cast<uint8_t>(dv);}
+  // 온도: 전압 바로 뒤 칸이라 같은 읽기로 (읽기 횟수 그대로, 대답만 1 바이트 김)
+  uint8_t vt[8];
+  if (timed_read_raw(ids_[i], ADDR_PRESENT_INPUT_VOLTAGE, 3, vt, sizeof(vt))) {
+    const int32_t dv = static_cast<int32_t>(vt[0] | (vt[1] << 8));
+    if (dv > 0 && dv < 256) {
+      volt_sum_dv_ += static_cast<uint32_t>(dv);
+      ++volt_n_;
+      if (volt_min_dv_ == 0 || dv < volt_min_dv_) {volt_min_dv_ = static_cast<uint8_t>(dv);}
+    }
+    if (vt[2] != ntp::TEMP_UNKNOWN) {
+      temp_c_[i] = vt[2];
+      temp_fresh_ |= bit;
+    }
   }
   if (torque_) {
     const int32_t te = timed_read(TORQUE_ENABLE, ids_[i]);
@@ -446,4 +470,11 @@ void bus_timing_take(ntp::Diag &g)
   g.volt_mean_dv = static_cast<uint8_t>(volt_n_ ? volt_sum_dv_ / volt_n_ : 0);
   volt_sum_dv_ = volt_n_ = 0;
   volt_min_dv_ = 0;
+}
+
+void bus_temp_take(ntp::Temp &t)
+{
+  t.n = n_;
+  for (uint8_t i = 0; i < n_; ++i) {t.c[i] = (temp_fresh_ & (1u << i)) ? temp_c_[i] : ntp::TEMP_UNKNOWN;}
+  temp_fresh_ = 0;
 }

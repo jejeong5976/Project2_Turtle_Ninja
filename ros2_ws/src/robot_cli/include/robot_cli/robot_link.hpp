@@ -12,7 +12,7 @@
 //   /localization_health · /amcl_pose                   위치 추정 (SLAM pose_guard · AMCL)
 //   /perception/traffic_light · wrist · wide detections · task_text
 //   /mission/status · /mission/hold · /mission/cargo
-//   /diagnostics · /scan
+//   /diagnostics · /scan                                (/diagnostics 의 "<보드>/motor_temperature" = OpenCR 모터 온도, 2 쪽)
 //   서비스 1 Hz: /controller_manager/list_controllers · list_hardware_components,
 //                /lifecycle_manager_navigation/is_active · /lifecycle_manager_localization/is_active
 //   노드 목록 1 Hz, /slam_toolbox 파라미터 mode (mapping · localization)

@@ -214,6 +214,32 @@ TEST(Packet, DiagRoundTrip)
   EXPECT_FALSE(ntp::decode_diag(p.data(), static_cast<uint8_t>(p.len() - 1), d));
 }
 
+// TEMP: 모터 온도 [°C] 가 그대로 오가나 (1 초마다). 못 읽은 모터 = TEMP_UNKNOWN. 모양이 틀리면 거부
+TEST(Packet, TempRoundTrip)
+{
+  ntp::Temp t{};
+  t.n = ntp::MAX_JOINTS;
+  for (uint8_t i = 0; i < t.n; ++i) {t.c[i] = static_cast<uint8_t>(30 + i);}
+  t.c[3] = ntp::TEMP_UNKNOWN;
+  uint8_t buf[ntp::MAX_FRAME];
+  const uint16_t len = ntp::encode_temp(t, buf, sizeof(buf));
+  ASSERT_EQ(len, 5 + 1 + ntp::MAX_JOINTS);
+  ntp::Parser p;
+  ASSERT_EQ(feed_all(p, buf, len), 1);
+  ASSERT_EQ(p.type(), ntp::TYPE_TEMP);
+  ntp::Temp d{};
+  ASSERT_TRUE(ntp::decode_temp(p.data(), p.len(), d));
+  EXPECT_EQ(d.n, ntp::MAX_JOINTS);
+  EXPECT_EQ(d.c[0], 30);
+  EXPECT_EQ(d.c[3], ntp::TEMP_UNKNOWN);
+  EXPECT_EQ(d.c[15], 45);
+  EXPECT_FALSE(ntp::decode_temp(p.data(), static_cast<uint8_t>(p.len() - 1), d));   // 길이가 n 과 안 맞음
+  t.n = ntp::MAX_JOINTS + 1;
+  EXPECT_EQ(ntp::encode_temp(t, buf, sizeof(buf)), 0);
+  const uint8_t too_many[1] = {17};
+  EXPECT_FALSE(ntp::decode_temp(too_many, 1, d));
+}
+
 TEST(Packet, DecodeRejectsBadShape)
 {
   ntp::Cmd c{};
@@ -262,6 +288,8 @@ public:
   std::atomic<bool> stop_sending{false};
   std::atomic<uint16_t> comm_err{0};
   std::atomic<bool> send_diag{false};   // 시험용: STATE 마다 DIAG 도 하나 (실제 펌웨어는 1 초마다)   // 시험용: 이 비트의 모터를 "못 읽음" 으로 (값은 옛날 그대로 = 펌웨어와 같게)
+  std::atomic<bool> send_temp{false};   // 시험용: STATE 마다 TEMP 도 하나 (모터 i = 40 + i °C, 마지막 모터는 못 읽음)
+  std::atomic<bool> temp_bad_n{false};  // 시험용: TEMP 의 모터 수를 CONFIG 와 다르게
 
 private:
   void run()
@@ -313,6 +341,13 @@ private:
             g.single_read = {200, 2, 300, 3100};
             g.fault_stop_us = 0;
             write_all(out, ntp::encode_diag(g, out, sizeof(out)));
+          }
+          if (send_temp) {
+            ntp::Temp t{};
+            t.n = static_cast<uint8_t>(cfg_.n + (temp_bad_n ? 1 : 0));
+            for (uint8_t i = 0; i < t.n; ++i) {t.c[i] = static_cast<uint8_t>(40 + i);}
+            if (cfg_.n > 0) {t.c[cfg_.n - 1] = ntp::TEMP_UNKNOWN;}
+            write_all(out, ntp::encode_temp(t, out, sizeof(out)));
           }
         }
       }
@@ -496,6 +531,64 @@ TEST(OpenCRLink, DiagIsCollectedAndDoesNotDisturbState)
   EXPECT_EQ(d.single_read.fail, 2u * d.packets);
   EXPECT_EQ(link.take_diag().packets, 0u) << "꺼낸 뒤에는 0 부터";
   EXPECT_TRUE(link.state().joints_valid);
+}
+
+// TEMP(모터 온도)를 받아 관절 순서 °C 로 둠 (못 읽음 = -1). 모터 수가 틀린 TEMP 는 버림, CONFIG 하면 다시 모름
+TEST(OpenCRLink, TempIsReceivedAndResetByConfig)
+{
+  Pty pty;
+  FakeOpenCR fake(pty.master);
+  OpenCRLink link(small_robot(), 15);
+  link.adopt_fd(pty.slave);
+  ASSERT_GE(link.configure(2.0), 0);
+  EXPECT_EQ(link.temp_count(), 0u);
+  EXPECT_EQ(link.temperatures(), (std::vector<int>{-1, -1, -1}));
+  const std::vector<double> none(3, std::nan(""));
+  auto exchange = [&]() {
+      for (int k = 0; k < 20; ++k) {
+        link.send_command(none, false);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        link.poll();
+      }
+    };
+  fake.temp_bad_n = true;
+  fake.send_temp = true;
+  exchange();
+  EXPECT_EQ(link.temp_count(), 0u) << "모터 수가 다른 TEMP 는 버림";
+  fake.temp_bad_n = false;
+  exchange();
+  ASSERT_GT(link.temp_count(), 0u);
+  EXPECT_EQ(link.temperatures(), (std::vector<int>{40, 41, -1}));
+  EXPECT_TRUE(link.state().joints_valid) << "TEMP 가 STATE 처리를 방해하지 않음";
+  fake.send_temp = false;
+  ASSERT_GE(link.configure(2.0), 0);
+  EXPECT_EQ(link.temperatures(), (std::vector<int>{-1, -1, -1})) << "CONFIG 전 온도를 새 설정 값처럼 안 보임";
+}
+
+// 온도 판정 · /diagnostics 내용 — ★ robot_cli (model.cpp parse_temp_status) 가 이 모양을 읽음
+TEST(Temp, CheckAndReport)
+{
+  const auto j = small_robot();
+  EXPECT_EQ(hardware::check_temps({-1, -1, -1}, 60, 70).level, 3);
+  const auto ok = hardware::temp_report(j, {41, 52, -1}, 60, 70);
+  EXPECT_EQ(ok.level, 0);
+  EXPECT_EQ(ok.message, "최고 steer_fl_joint 52 °C · 못 읽음 1");
+  ASSERT_EQ(ok.values.size(), 5u);
+  EXPECT_EQ(ok.values[0], (std::pair<std::string, std::string>{"drive_fl_joint", "41"}));
+  EXPECT_EQ(ok.values[2], (std::pair<std::string, std::string>{"gripper_left_joint", "-"}));
+  EXPECT_EQ(ok.values[3], (std::pair<std::string, std::string>{"warn_c", "60"}));
+  EXPECT_EQ(ok.values[4], (std::pair<std::string, std::string>{"crit_c", "70"}));
+  const auto warn = hardware::temp_report(j, {60, 59, 61}, 60, 70);
+  EXPECT_EQ(warn.level, 1) << "경고 기준 그 값부터 경고";
+  EXPECT_EQ(warn.message, "경고 drive_fl_joint 60 °C · gripper_left_joint 61 °C (경고 60 · 위험 70 °C)");
+  const auto crit = hardware::temp_report(j, {45, 70, 63}, 60, 70);
+  EXPECT_EQ(crit.level, 2);
+  EXPECT_EQ(crit.message, "위험 steer_fl_joint 70 °C · gripper_left_joint 63 °C (경고 60 · 위험 70 °C)");
+  const auto none = hardware::temp_report(j, {}, 60, 70);
+  EXPECT_EQ(none.level, 3);
+  EXPECT_EQ(none.message, "온도 못 읽음");
+  EXPECT_EQ(none.values[1].second, "-");
+  EXPECT_STREQ(hardware::TEMP_DIAG_SUFFIX, "/motor_temperature");
 }
 
 // 첫 판 DIAG(53 B)도 읽음 — 새 칸은 0. 길이가 둘 다 아니면 거부

@@ -11,6 +11,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -38,6 +39,7 @@ set_target_properties(opencr_link PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_library(hardware SHARED src/opencr_hardware.cpp src/mock_dynamics.cpp)   # mock_dynamics: 속도 · 가속 한계 가짜 모터
 target_link_libraries(hardware PUBLIC
   opencr_link
+  ${diagnostic_msgs_TARGETS}
   hardware_interface::hardware_interface
   pluginlib::pluginlib
   rclcpp::rclcpp
@@ -59,5 +61,5 @@ if(BUILD_TESTING)
   target_link_libraries(test_position_rate opencr_link)
 endif()
 
-ament_export_dependencies(hardware_interface pluginlib rclcpp rclcpp_lifecycle)
+ament_export_dependencies(diagnostic_msgs hardware_interface pluginlib rclcpp rclcpp_lifecycle)
 ament_package()

@@ -11,17 +11,18 @@
 //   숫자는 전부 리틀 엔디언, float = 4바이트
 //   길이 칸이 있는 이유: 모터 수가 hardware_map.yaml 에 따라 바뀌어서 상자 크기가 고정이 아님
 //
-// 종류 5개 (바이트 정의는 아래 구조체와 encode/decode 함수 참고)
+// 종류 6개 (바이트 정의는 아래 구조체와 encode/decode 함수 참고)
 //   0x03 CONFIG     Jetson → OpenCR  켤 때 한 번: "모터 n개, 각각 ID · 모드 · 속도/가속 한계"
 //   0x04 CONFIG_ACK OpenCR → Jetson  "몇 번 모터가 대답했나" (ping 결과)
 //   0x01 CMD        Jetson → OpenCR  100 Hz: 토크 켜기 + 모터별 목표 (rad 또는 rad/s)
 //   0x02 STATE      OpenCR → Jetson  100 Hz: 시간 + IMU + 모터별 위치 · 속도 · 전류
 //   0x05 DIAG       OpenCR → Jetson  1 Hz: 보드 안에서 잰 시간 (한 바퀴 · Sync Read/Write · 개별 읽기/쓰기 · 고장 정지 · USB 보내기)
 //                   + CONFIG 를 받으면 그 순간 구간을 끊어 "CONFIG 전" 표시로 한 번 보냄 (전후 숫자가 섞이지 않게)
-//                   모르는 종류는 받는 쪽이 그냥 버림 → 이 종류를 모르는 옛 플러그인과도 같이 쓸 수 있음
+//   0x06 TEMP       OpenCR → Jetson  1 Hz (DIAG 바로 뒤): 모터별 Present Temperature [°C]
+//                   모르는 종류는 받는 쪽이 그냥 버림 → DIAG · TEMP 를 모르는 옛 플러그인과도 같이 쓸 수 있음
 //
 // 단위 약속 (단위는 한 가지로 — deg/rad 가 섞이면 층마다 헷갈림)
-//   위치 rad, 속도 rad/s, 전류 A, 자이로 rad/s, 가속도 m/s², 자세 쿼터니언(w, x, y, z)
+//   위치 rad, 속도 rad/s, 전류 A, 자이로 rad/s, 가속도 m/s², 자세 쿼터니언(w, x, y, z), 온도 °C
 //   다이나믹셀 눈금(0~4095 등) ↔ rad 변환은 **펌웨어** 가 한다 (motor_bus.cpp). 그리퍼 rad ↔ m 은 플러그인이 한다.
 
 #pragma once
@@ -40,6 +41,7 @@ const uint8_t TYPE_STATE = 0x02;
 const uint8_t TYPE_CONFIG = 0x03;
 const uint8_t TYPE_CONFIG_ACK = 0x04;
 const uint8_t TYPE_DIAG = 0x05;
+const uint8_t TYPE_TEMP = 0x06;
 
 const uint8_t MAX_JOINTS = 16;        // 상태 상자가 255 바이트 안에 들어가는 최대 (49 + 12 × 17 = 253)
 const uint16_t MAX_FRAME = 4 + 255 + 1;
@@ -147,6 +149,16 @@ struct Diag
 const uint8_t DIAG_FLAG_LATCHED = 1;        // 고장 잠금
 const uint8_t DIAG_FLAG_SILENT = 2;         // 버스 침묵
 const uint8_t DIAG_FLAG_BEFORE_CONFIG = 4;  // CONFIG 를 받는 순간 끊어 보낸 구간 = CONFIG 전 상태의 숫자 (그 뒤 구간과 섞지 말 것)
+
+// 모터 온도 (TEMP) — 되읽기 때 1 모터씩 전압과 한 번에 읽은 Present Temperature (XM430 주소 146, 1 °C 단위)
+//   과열 Hardware Error 는 모터 Temperature Limit(기본 80 °C) 에서 걸림 → 그 전에 사람이 보고 쉬게 하려고
+const uint8_t TEMP_UNKNOWN = 0xFF;          // 이 구간(약 1 s)에 한 번도 못 읽음 (대답 없음 · 쓰지 않는 모터)
+
+struct Temp
+{
+  uint8_t n;
+  uint8_t c[MAX_JOINTS];   // °C, TEMP_UNKNOWN = 모름
+};
 
 // ------------------------------------------------------------------ 바이트 넣기 · 꺼내기 (리틀 엔디언)
 inline void put(uint8_t *&p, const void *v, uint8_t size) {memcpy(p, v, size); p += size;}
@@ -354,6 +366,26 @@ inline bool decode_diag(const uint8_t *d, uint8_t len, Diag &g)
     get_stat(p, g.usb_tx);
     get(p, &g.config_ms, 2);
   }
+  return true;
+}
+
+inline uint16_t encode_temp(const Temp &t, uint8_t *out, uint16_t cap)
+{
+  if (t.n > MAX_JOINTS) {return 0;}
+  uint8_t d[1 + MAX_JOINTS];
+  uint8_t *p = d;
+  put(p, &t.n, 1);
+  put(p, t.c, t.n);
+  return frame(out, cap, TYPE_TEMP, d, static_cast<uint8_t>(p - d));
+}
+
+inline bool decode_temp(const uint8_t *d, uint8_t len, Temp &t)
+{
+  if (len < 1) {return false;}
+  const uint8_t *p = d;
+  get(p, &t.n, 1);
+  if (t.n > MAX_JOINTS || len != 1 + t.n) {return false;}
+  get(p, t.c, t.n);
   return true;
 }
 
