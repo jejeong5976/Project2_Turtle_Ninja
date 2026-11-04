@@ -102,6 +102,7 @@ STORE · RETRIEVE 경로는 11-01 실물 적재함 12 칸 시험에서 성공한
   손가락 끝 실측 치수 (안쪽 면 9.1 mm + 손가락 위치, 두께 18 mm, 폭 ±16.4 mm) 로 닫힘 방향 (네모 = 면 방향 2 개, 원기둥 = 15° 간격) 과 벌림 (다 열기 → 넣기 폭) 을 고름.
   이웃과 2 mm · 목표 퍽과 3 mm 여유가 안 되면 거절 (이유가 result.message). 놓을 자리 25 mm 안에 이미 퍽이 보이면 PLACE 거절. 이웃이 없으면 예전과 같은 동작.
 - 박스 위 기준점 = 실물 빼기 시험 때 내려놓던 자리 (base_link 기준 x 210.2, y 38.0 mm, −4°) 위 40 mm.
+- **PICK 쥐는 점 보정**: 손목 카메라로 잡은 퍽을 늘 한쪽으로 비껴 쥐면 `pick_offset_x_mm` · `pick_offset_y_mm` (base_link, ±15 mm) 만큼 옮김. 실행 중 `ros2 param set /control_master pick_offset_x_mm -5.0` 으로 바로 바꿈 (기본 0).
 - **적재함이 움직였을 때**: LOOK `slot: rack` 동안 `/rack_tags/detections` (rack_tag_node) 의 칸 태그를 모아 칸마다 중앙값.
   적재함이 제자리일 때 한 번 `ros2 service call /control_master/save_rack_reference std_srvs/srv/Trigger` → 기준 (`~/.ros/rack_reference.txt`).
   그 뒤 스캔마다 기준과 비교한 적재함 움직임 (dx · dy · 회전) 만큼 STORE · RETRIEVE 경로의 칸 근처만 옮김 (`shift_cell_paths.py` 와 같은 규칙).
