@@ -188,6 +188,11 @@ public:
     // 윗면 태그로 잰 퍽 (인지 중심이 2 mm 안) 은 팔 쪽 치우침만: ros2 param set /control_master pick_offset_tagged_x_mm -3.0
     declare_parameter<double>("pick_offset_tagged_x_mm", 0.0);
     declare_parameter<double>("pick_offset_tagged_y_mm", 0.0);
+    // 손목을 돌려 쥘 때 보정 [mm]: 손가락 가운데가 J5 축에서 12 mm 떨어져 있어, 팔 모델의 그 거리가 조금 틀리면 쥐는 점 오차가 손목 방향에 따라 달라짐.
+    //   값 = 손목을 기본 (닫힘축 ≈ 접선) 에서 90° 돌려 쥘 때 (실물 11-04: 닫힘축이 반지름 방향) 더할 보정 [앞 · 왼쪽], 팔 바로 앞 퍽 기준.
+    //   다른 각도 · 자리는 같은 오차 (손 좌표의 손끝 어긋남) 로 계산: (R(돌린 각) − I) · h. 기본 방향 (돌림 0) 은 0 → 다른 보정 그대로
+    //   실행 중: ros2 param set /control_master pick_offset_rot_mm "[3.0, 0.0]"
+    declare_parameter<std::vector<double>>("pick_offset_rot_mm", std::vector<double>{0.0, 0.0});
     // STORE 때 칸 근처 경로를 더 옮김 [mm, base_link, 넣는 점 맞추기와 합해 20 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 적재함 태그 보정 · 칸별 store_offset.<칸> 과 더해짐
     //   실행 중 바로 바꿈: ros2 param set /control_master store_offset_y_mm 3.0 (다음 STORE 부터, x+ = 앞 · y+ = 왼쪽)
     declare_parameter<double>("store_offset_x_mm", 0.0);
@@ -733,6 +738,29 @@ private:
     RCLCPP_INFO(get_logger(), "적재함 기준 스캔: 칸 %zu 개 (%s). 스캔하면 이것과 비교해 칸 경로를 옮김", rack_ref_.size(), rack_ref_file_.c_str());
   }
 
+  // 쥐는 자세의 손목 돌림 [°] (닫힘축이 접선에서 얼마나 돌았나, 손가락 방향 포함 ±180) 과 그 돌림 보정 d [m, base_link]
+  bool rot_offset(double x, double y, const Ticks & t, Eigen::Vector2d & d, double & rot_deg, std::string & why) const
+  {
+    d.setZero();
+    rot_deg = 0.0;
+    const auto r = get_parameter("pick_offset_rot_mm").as_double_array();
+    if (r.size() != 2 || !std::isfinite(r[0]) || !std::isfinite(r[1]) || std::hypot(r[0], r[1]) > 15.0) {
+      why = "pick_offset_rot_mm 는 [앞, 왼쪽] mm 두 개 (15 mm 까지)";
+      return false;
+    }
+    const Eigen::Vector3d c = arm_grip(model_, ticks_to_q(model_, t)).close;
+    const double az = std::atan2(y - model_.j1_xy.y(), x - model_.j1_xy.x());
+    const double a = std::remainder(std::atan2(c.y(), c.x()) - az - M_PI / 2.0, 2.0 * M_PI);   // 기본 = 닫힘축 +접선
+    rot_deg = a * 180.0 / M_PI;
+    if (r[0] == 0.0 && r[1] == 0.0) {return true;}
+    // 90° 돌렸을 때 보정 r (팔 방향 기준, 기준 돌림 = 실물에서 본 −90°) = (R(−90°) − I) h → h, 이 돌림의 보정 = (R(a) − I) h
+    auto rot2 = [](double t) {Eigen::Matrix2d R; R << std::cos(t), -std::sin(t), std::sin(t), std::cos(t); return R;};
+    const Eigen::Matrix2d I = Eigen::Matrix2d::Identity();
+    const Eigen::Vector2d h = (rot2(-M_PI / 2.0) - I).inverse() * Eigen::Vector2d(r[0], r[1]);
+    d = rot2(az) * ((rot2(a) - I) * h) / 1000.0;
+    return true;
+  }
+
   // 경로의 첫 놓는 점 (grip release) 손끝 [m, 모델 base = base_link 와 x · y 같음]
   bool release_tip(const std::string & path_name, Eigen::Vector2d & tip) const
   {
@@ -961,17 +989,9 @@ private:
         nb.empty() ? 0.0 : ranked.front().clearance * 1000.0);
       return true;
     }
-    if (nb.empty()) {
-      // 기본 방향을 정해서 보냄: 방향 없이 (NaN) 보내면 IK 가 네모 면 4 방향 중 수직 손이 닿는 아무 방향으로 쥐어, 손이 닿는 끝자리에서는
-      //   J5 가 90° 다른 손으로 쥠 (실물 11-04 (0.241, -0.026): 닫힘 2°, 다른 때 93 ~ 97°) → 쥐는 점 오차가 J5 에 따라 달라 STORE 에서 다르게 걸림.
-      //   이제 기본 방향이 수직으로 안 닿으면 기울여 쥐고 가까운 자리에 세워 다시 쥠 (regrasp_nodes). 원기둥은 접선 (원기둥도 네모 면으로 보던 것 고침)
-      const bool sq = found ? tgt.square && tgt.yaw_known : std::isfinite(yaw_deg);
-      const double yd = found ? tgt.yaw * 180.0 / M_PI : yaw_deg;
-      const double def = default_close_rad(model_, x, y, sq ? yd : std::nan(""));
-      cands.push_back({def * 180.0 / M_PI, "open"});
-      if (sq) {cands.push_back({def * 180.0 / M_PI + 90.0, "open"});}   // 기본 방향이 기울여도 안 닿을 때만 다른 면
-      RCLCPP_INFO(get_logger(), "%s: 이웃 퍽 %s → 기본 방향 %.0f° · 다 열기", what, stale ? "정보 없음 (손목 인지 결과가 없거나 오래됨)" : "없음",
-        cands.front().first);
+    if (nb.empty()) {   // 방향 없이 → IK 가 네모 면 4 방향 중 J5 가 받침 자세에 가까운 쪽 (끝자리는 J5 를 90° 돌려 쥠 → pick_offset_rot_mm)
+      RCLCPP_INFO(get_logger(), "%s: 이웃 퍽 %s → 기본 방향 · 다 열기", what, stale ? "정보 없음 (손목 인지 결과가 없거나 오래됨)" : "없음");
+      cands.push_back({std::nan(""), "open"});
       return true;
     }
     // 좁게 열기(넣기 폭)는 목표 검출이 맞춰졌을 때만 (planning 은 원기둥 · 면 모르는 네모에도 x 축을 채워 보냄 → goal 방향만으로는 못 믿음)
@@ -1144,6 +1164,20 @@ private:
       return pick_path(unfold->second, P, open_kw, {}, why, x, y, yaw, true);
     }
     auto P = poses_for(x, y, top, yaw, pick_heights_, cands, open_kw, why, 0.0, kStoreMaxTilt);
+    if (P.size() == 3 && P.back().tilt_deg < 0.5) {
+      Eigen::Vector2d d;
+      double rot = 0.0;
+      if (!rot_offset(x, y, P.back().ticks, d, rot, why)) {return {};}
+      if (std::fabs(rot) >= 20.0 || d.norm() > 1e-4) {   // 보정이 0 이어도 돌려 쥔 것은 알림 (pick_offset_rot_mm 을 맞출 때)
+        RCLCPP_INFO(get_logger(), "PICK: 손목을 기본에서 %+.0f° 돌려 쥠 → 돌림 보정 (%+.1f, %+.1f) mm (pick_offset_rot_mm)", rot, d.x() * 1000.0,
+          d.y() * 1000.0);
+      }
+      if (d.norm() > 1e-4) {
+        x += d.x();
+        y += d.y();
+        P = poses_for(x, y, top, yaw, pick_heights_, cands, open_kw, why, 0.0, kStoreMaxTilt);
+      }
+    }
     double depth = -pick_heights_.back();
     if (P.size() != 3 && max_tilt_deg_ >= kStoreMaxTilt + 10.0 - 1e-6) {
       auto h = pick_heights_;
