@@ -164,6 +164,10 @@ public:
     // 수직 손이 안 닿는 먼 퍽 · 자리: 손을 10° 씩 바깥으로 기울여 봄 (20° ≈ 31 cm). 0 = 수직 손만
     //   기울여 집은 퍽은 손 안에서 그만큼 기울어 있음 → STORE 는 10° 까지, PLACE 는 쥘 때 기울임과 20° 안으로 놓음 (넘어지지 않게)
     max_tilt_deg_ = declare_parameter<double>("pick_max_tilt_deg", 20.0);
+    // 손목 카메라로 잡은 퍽을 실물에서 늘 한쪽으로 비껴 쥐면 그만큼 PICK 쥐는 점을 옮김 [mm, base_link] (±15 까지)
+    //   실행 중 바로 바꿈: ros2 param set /control_master pick_offset_x_mm -5.0 (다음 PICK 부터)
+    declare_parameter<double>("pick_offset_x_mm", 0.0);
+    declare_parameter<double>("pick_offset_y_mm", 0.0);
     tf_buf_ = std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listen_ = std::make_unique<tf2_ros::TransformListener>(*tf_buf_);
     sub_dets_ = create_subscription<interfaces::msg::DetectionArray>(
@@ -861,6 +865,18 @@ private:
     std::string open_kw;
     const double zc = top - model_.team_base_z_floor + model_.base_z_floor - puck_h_ / 2.0;   // 퍽 중심 (base_link)
     if (!grasp_for(x, y, zc, yaw, false, cands, why, "PICK")) {return {};}
+    {
+      const double ox = get_parameter("pick_offset_x_mm").as_double(), oy = get_parameter("pick_offset_y_mm").as_double();
+      if (!std::isfinite(ox) || !std::isfinite(oy) || std::hypot(ox, oy) > 15.0) {
+        why = "pick_offset_x_mm · pick_offset_y_mm 가 숫자가 아니거나 15 mm 넘음";
+        return {};
+      }
+      if (ox != 0.0 || oy != 0.0) {
+        x += ox / 1000.0;
+        y += oy / 1000.0;
+        RCLCPP_INFO(get_logger(), "PICK: 쥐는 점을 (%+.1f, %+.1f) mm 옮김 (pick_offset_x_mm · y_mm)", ox, oy);
+      }
+    }
     // 손 기울임 10° 까지 = pick_heights_ (−40, 적재함 경로와 같은 깊이), 그보다 기울여야 하면 pick_tilted_depth_mm (퍽 무게중심)
     //   기울임 후보는 10° 간격 (pick_poses): 2 번째 풀이는 20° 부터 max_tilt 까지, 수직에 가까운 것부터
     auto P = poses_for(x, y, top, yaw, pick_heights_, cands, open_kw, why, 0.0, kStoreMaxTilt);
