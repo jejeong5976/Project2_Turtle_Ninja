@@ -168,6 +168,11 @@ public:
     //   윗면 태그가 보인 퍽 (검출 id 있음) 은 인지가 태그로 중심을 잡으므로 옮기지 않음
     //   실행 중 바로 바꿈: ros2 param set /control_master pick_offset_x_mm -5.0 (다음 PICK 부터)
     declare_parameter<double>("pick_offset_x_mm", 0.0);
+    // 다시 잡기: 수직 손이 안 닿아 기울여 쥔 퍽은 손 안에서 그만큼 기울어 STORE 때 칸 테두리에 걸림 (11-04 실물, 10° 에서 매번)
+    //   → 같은 PICK 안에서 아래 자리 중 빈 곳 (손목 인지로 확인) 에 세워 내려놓고 수직 손으로 다시 쥠. 빈 곳이 없으면 PICK 거절
+    //   자리 [x, y, x, y, …] (base_link m): 박스 앞면이 0.19 m (정차 3 cm) 여도 퍽이 박스 위, 수직 손이 닿는 곳
+    regrasp_ = declare_parameter<bool>("regrasp_tilted", true);
+    regrasp_spots_ = declare_parameter<std::vector<double>>("regrasp_spots", {0.215, 0.0, 0.225, 0.065, 0.225, -0.065});
     declare_parameter<double>("pick_offset_y_mm", 0.0);
     // STORE 때 칸 근처 경로를 더 옮김 [mm, base_link, ±8 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 적재함 태그 보정 · 칸별 store_offset.<칸> 과 더해짐
     //   실행 중 바로 바꿈: ros2 param set /control_master store_offset_y_mm 3.0 (다음 STORE 부터, x+ = 앞 · y+ = 왼쪽)
@@ -890,6 +895,42 @@ private:
     return {};
   }
 
+  // 다시 잡기 경유점: (px, py) 에서 손을 tilt 기울여 depth 깊이로 쥔 퍽을 regrasp_spots 중 빈 자리에 내려놓고 (쥘 때 기울임 그대로
+  //   = 퍽은 수직, 퍽 바닥이 면 위 place_clear_mm) 수직 손으로 다시 쥠 (pick_heights_). 놓기 · 다시 쥐기 모두 같은 닫힘 방향 =
+  //   그 자리의 접선 (기울인 손은 닫힘축이 접선뿐) → 퍽 면이 손가락과 맞은 채로 놓이고 그대로 다시 쥠
+  bool regrasp_nodes(double px, double py, double top, double tilt, double depth, std::vector<PathNode> & out, double & sx, double & sy,
+    std::string & why)
+  {
+    const double zc = top - model_.team_base_z_floor + model_.base_z_floor - puck_h_ / 2.0;
+    std::string last = "자리 설정 없음";
+    for (size_t i = 0; i + 1 < regrasp_spots_.size(); i += 2) {
+      const double x = regrasp_spots_[i], y = regrasp_spots_[i + 1];
+      if (std::hypot(x - px, y - py) < 0.05) {last = "집는 퍽과 겹침"; continue;}
+      std::vector<std::pair<double, std::string>> cands;
+      double gx = x, gy = y;
+      std::string w;
+      if (!grasp_for(gx, gy, zc, std::nan(""), true, cands, w, "다시 잡기 자리")) {last = w; continue;}   // 빈 자리 · 손가락 여유 (놓기 검사)
+      const double c_deg = (std::atan2(y - model_.j1_xy.y(), x - model_.j1_xy.x()) + M_PI / 2.0) * 180.0 / M_PI;
+      std::string kw;
+      const std::vector<double> hp{place_heights_[0], place_heights_[1], place_clear_mm_ - depth};
+      const auto Pp = poses_for(x, y, top, c_deg, hp, {{c_deg, "release"}}, kw, w, tilt, 0.5);
+      if (Pp.size() != 3) {last = "놓기: " + w; continue;}
+      const auto Pr = poses_for(x, y, top, c_deg, pick_heights_, {{c_deg, "open"}}, kw, w, 0.0, 0.5);
+      if (Pr.size() != 3 || Pr.back().tilt_deg > 0.5) {last = "수직으로 다시 쥐기: " + w; continue;}
+      out = {model_node("re_place_above", Pp[0].enc, slow_dps_), model_node("re_place_down", Pp[1].enc, slow_dps_),
+        model_node("re_place", Pp[2].enc, slow_dps_, "release"), model_node("re_place_up", Pp[1].enc, slow_dps_),
+        model_node("re_place_clear", Pp[0].enc, slow_dps_), model_node("re_above", Pr[0].enc, slow_dps_, "open"),
+        model_node("re_down", Pr[1].enc, slow_dps_), model_node("re_grasp", Pr[2].enc, slow_dps_, "close"),
+        model_node("re_up", Pr[1].enc, slow_dps_), model_node("re_lift", Pr[0].enc, slow_dps_)};
+      sx = x;
+      sy = y;
+      return true;
+    }
+    why = "손을 " + std::to_string(static_cast<int>(std::lround(tilt))) + "° 기울여 쥐어야 하는데 다시 잡을 빈 자리가 없음 (" + last +
+      ") — 퍽을 차체 쪽으로 옮기기";
+    return false;
+  }
+
   std::vector<ArmAction> pick_plan(const ArmTask::Goal & goal, std::string & why)
   {
     const auto unfold = paths_.find("unfold");
@@ -929,6 +970,14 @@ private:
     if (P.size() != 3) {return {};}
     pending_tilt_ = P.back().tilt_deg;
     pending_depth_ = depth;
+    std::vector<PathNode> again;
+    if (regrasp_ && pending_tilt_ > 0.5) {
+      double sx = 0.0, sy = 0.0;
+      if (!regrasp_nodes(x, y, top, pending_tilt_, depth, again, sx, sy, why)) {return {};}
+      RCLCPP_INFO(get_logger(), "PICK: 손을 %.0f° 기울여 쥐어야 함 → (%.3f, %.3f) 에 세워 내려놓고 수직 손으로 다시 쥠", pending_tilt_, sx, sy);
+      pending_tilt_ = 0.0;
+      pending_depth_ = -pick_heights_.back();
+    }
     ArmPath path = unfold->second;
     path.name = "pick";
     path.ends_home = false;
@@ -937,6 +986,7 @@ private:
     path.nodes.push_back(model_node("grasp", P[2].enc, slow_dps_, "close"));
     path.nodes.push_back(model_node("up", P[1].enc, slow_dps_));
     path.nodes.push_back(model_node("lift", P[0].enc, slow_dps_));
+    path.nodes.insert(path.nodes.end(), again.begin(), again.end());
     path.nodes.push_back({"staging", staging_, false, slow_dps_, "", false});
     std::string look_why;
     if (!path_start_ok(path, joint_buf_, path_start_tol_, look_why) && !start_at_look(path, "PICK") && !join_from_p0(path, "PICK") &&
@@ -1300,6 +1350,8 @@ private:
   struct SeenPuck {Eigen::Vector3d p; bool square; bool yaw_known; double yaw; bool round_r30; double t; bool tagged;};   // p · yaw = odom 기준, tagged = 윗면 태그로 잰 중심
   std::vector<SeenPuck> seen_;
   bool target_tagged_{false};     // 마지막 grasp_for 가 맞춘 목표 검출이 윗면 태그로 잰 퍽
+  bool regrasp_{true};            // 기울여 쥔 퍽을 세워 내려놓고 수직으로 다시 쥠
+  std::vector<double> regrasp_spots_;   // 다시 잡기 자리 [x, y, …] base_link
   double seen_t_{std::nan("")};   // 마지막 손목 인지 결과 시각
   double nb_age_s_{10.0}, nb_radius_{0.12}, nb_min_clear_{0.002}, nb_target_clear_{0.003};
   std::string odom_frame_{"odom"};
