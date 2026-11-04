@@ -456,7 +456,8 @@ private:
   }
 
   // 지금 LOOK 끝 자세 (박스를 내려다봄) 면 받침 출발 경로의 펼치기를 빼고 그 자세에서 바로 다음 점으로 (PICK: 관찰 자세 → 퍽 위 40 mm)
-  //   관찰 자세 → 박스 위 퍽 자리 (앞뒤 3 줄 × 좌우 3 칸, 닿는 곳) 위 40 mm 는 차체 · 적재함 · 박스 · 퍽과 22 mm 넘게 떨어짐 (pose_safety)
+  //   관찰 자세 → 박스 위 퍽 자리 (박스가 차체에 붙음 · 3 cm 띄움 각각 앞뒤 3 줄 × 좌우 3 칸, 닿는 곳) 위 40 mm 는
+  //   차체 · 적재함 · 박스 · 퍽과 22 mm 넘게 떨어짐 (pose_safety)
   bool start_at_look(ArmPath & path, const char * what)
   {
     const auto look = paths_.find("look");
