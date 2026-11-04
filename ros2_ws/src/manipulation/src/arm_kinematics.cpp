@@ -13,7 +13,7 @@ namespace manipulation
 namespace
 {
 constexpr double kDeg = 180.0 / M_PI;
-constexpr double kTiltFaceTol = 10.0 * M_PI / 180.0;   // 기울인 손: 닫힘축(접선)과 퍽 면 · 고른 방향 차이 허용
+constexpr double kTiltFaceTol = 20.0 * M_PI / 180.0;   // 기울인 손: 닫힘축(접선)과 퍽 면 · 고른 방향 차이 허용 (손가락이 닫히며 면에 맞춤. 박스 끝 퍽까지, 11-04)
 constexpr double kG = 9.81;
 
 Eigen::Matrix4d axis_angle(const Eigen::Vector3d & axis, double a)

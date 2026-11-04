@@ -45,6 +45,8 @@ control_master:
     pick_offset_x_mm: -12.0
     pick_offset_y_mm: -3.5
     # STORE 칸 근처 경로 보정 [mm, base_link, x+ = 앞 · y+ = 왼쪽, ±8 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 실행 중 ros2 param set 으로 바꿈
+    # 수직 손이 안 닿는 먼 퍽: 손을 10° 씩 이만큼까지 바깥으로 기울여 쥠 (박스 끝 모서리 0.32 m 는 40°). 기울여 쥔 퍽은 다시 잡기로 세움
+    pick_max_tilt_deg: 40.0
     store_offset_x_mm: 0.0
     store_offset_y_mm: 0.0
     # 칸마다 더하는 STORE 보정 [x, y] mm (없는 칸 = 0). 실행 중: ros2 param set /control_master store_offset.S7 "[0.0, 5.0]"
