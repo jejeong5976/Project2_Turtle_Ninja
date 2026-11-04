@@ -43,6 +43,14 @@ TEST(Command, Arm)
   ASSERT_TRUE(parse("arm LOOK_BARCODE", c));
   EXPECT_EQ(c.task, ArmTask::Goal::LOOK_BARCODE);
   EXPECT_FALSE(parse("look 1", c));
+  ASSERT_TRUE(parse("look rack", c));   // 빈 손 적재함 스캔
+  EXPECT_EQ(c.task, ArmTask::Goal::LOOK);
+  EXPECT_EQ(c.slot, "rack");
+  ASSERT_TRUE(parse("scan", c));
+  EXPECT_EQ(c.task, ArmTask::Goal::LOOK);
+  EXPECT_EQ(c.slot, "rack");
+  ASSERT_TRUE(parse("look", c));
+  EXPECT_EQ(c.slot, "");
   EXPECT_FALSE(parse("arm JUMP", c));
 }
 

@@ -369,15 +369,17 @@ void nav_block(Lines & L, const Snapshot & s)
 
 void percep_block(Lines & L, const Snapshot & s)
 {
-  if (s.light_t < 0.0 && s.wrist_t < 0.0 && s.wide_t < 0.0 && s.text_t < 0.0) {
+  if (s.light_t < 0.0 && s.wrist_t < 0.0 && s.wide_t < 0.0 && s.text_t < 0.0 && s.rack_t < 0.0) {
     block(L, "인지", "꺼짐", Level::OFF, "신호등 · 손목 · 광각 없음");
     return;
   }
-  const bool stale = (s.light_t >= 0.0 && s.now - s.light_t > kStaleS) || (s.wrist_t >= 0.0 && s.now - s.wrist_t > kStaleS);
+  const bool stale = (s.light_t >= 0.0 && s.now - s.light_t > kStaleS) || (s.wrist_t >= 0.0 && s.now - s.wrist_t > kStaleS) ||
+    (s.rack_t >= 0.0 && s.now - s.rack_t > kStaleS);
   std::string t = s.light_t < 0.0 ? "신호등 없음" : "신호등 " + light_name(s.light) + (s.light_visible ? "" : " (안 보임)");
   t += s.wrist_t < 0.0 ? " · 손목 없음" : fmt(" · 손목 검출 %d 개", s.wrist_n);
   t += s.wide_t < 0.0 ? " · 광각 없음" : fmt(" · 광각 검출 %d 개", s.wide_n);
   if (s.text_t >= 0.0) {t += " · 바코드 \"" + s.task_text + "\"";}
+  if (s.rack_t >= 0.0) {t += fmt(" · 칸 태그 %zu 칸 · 칸 안 퍽 %zu", s.rack_count('c'), s.rack_count('p'));}
   block(L, "인지", stale ? "주의" : "정상", stale ? Level::WARN : Level::GOOD, t + (stale ? " · 끊김" : ""));
 }
 

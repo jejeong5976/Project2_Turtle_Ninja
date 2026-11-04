@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <thread>
 
 #include "diagnostic_msgs/msg/diagnostic_array.hpp"
@@ -312,6 +313,20 @@ RobotLink::RobotLink(Config cfg)
       s_.wide_n = static_cast<int>(m->detections.size());
       s_.wide_t = now_s();
       s_.wide_dets = std::move(dets);
+    }));
+  keep(create_subscription<interfaces::msg::DetectionArray>("/rack_tags/detections", stream,
+    [this](interfaces::msg::DetectionArray::ConstSharedPtr m) {
+      std::lock_guard<std::mutex> lk(mu_);
+      const double t = now_s();
+      s_.rack_n = static_cast<int>(m->detections.size());
+      s_.rack_t = t;
+      for (const auto & d : m->detections) {
+        const int cell = d.label.size() > 1 && d.label[0] == 'S' ? std::atoi(d.label.c_str() + 1) : 0;
+        if (cell <= 0 || cell > 99) {continue;}
+        char key[16];
+        std::snprintf(key, sizeof(key), "%c%02d", d.kind == "rack_puck" ? 'p' : 'c', cell);
+        s_.rack_seen[key] = {det_of(d), t};
+      }
     }));
   keep(create_subscription<interfaces::msg::TaskText>("/perception/task_text", stream,
     [this](interfaces::msg::TaskText::ConstSharedPtr m) {

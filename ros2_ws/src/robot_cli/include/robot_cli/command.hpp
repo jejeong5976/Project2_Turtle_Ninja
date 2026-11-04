@@ -27,7 +27,7 @@ constexpr double kClockTolS = 0.25;   // 로봇과 시계 차이 한계 (swerve_
 struct Command
 {
   Cmd cmd{Cmd::HELP};
-  // ARM — task 는 interfaces/action/ArmTask 번호, slot 은 S1~S12 또는 HOME 의 "force"
+  // ARM — task 는 interfaces/action/ArmTask 번호, slot 은 S1~S12 · HOME 의 "force" · LOOK 의 "rack" (빈 손 적재함 스캔)
   uint8_t task{0};
   std::string slot;
   double x{0.0}, y{0.0}, z{0.0};      // PICK · PLACE target, base_link [m]. z = 0 → control_master 박스 위 기본 높이

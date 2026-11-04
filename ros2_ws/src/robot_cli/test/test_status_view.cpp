@@ -245,6 +245,44 @@ TEST(StatusView, Pages)
   EXPECT_NE(t->text.find("15.0"), std::string::npos);
   EXPECT_NE(t->text.find("release 9.0 · grasp 2.5 · retreat 2.5"), std::string::npos);
   EXPECT_NE(find(arm, "1 HOME · 2 LOOK"), nullptr);
+  // 인지 쪽: 칸 태그 (칸마다 마지막으로 본 것)
+  DetView r;
+  r.kind = "rack_tag";
+  r.label = "S12";
+  r.id = "28";
+  r.conf = 1.0;
+  r.x = 0.0140;
+  r.y = -0.0713;
+  r.z = 0.1325;
+  s.rack_t = 99.5;
+  s.rack_n = 1;
+  s.rack_seen["c12"] = {r, 99.5};
+  const auto per = page_lines(4, s, kCfg, UiState{});
+  const Line * rk = find(per, "S12");
+  ASSERT_NE(rk, nullptr);
+  EXPECT_NE(rk->text.find("28"), std::string::npos);
+  EXPECT_NE(rk->text.find("+14.0"), std::string::npos);
+  EXPECT_NE(rk->text.find("-71.3"), std::string::npos);
+  EXPECT_NE(rk->text.find("멈춤"), std::string::npos);
+  // 같은 칸의 태그 · 퍽은 따로 셈, 칸 태그만 받다가 끊기면 요약이 주의
+  DetView pk = r;
+  pk.kind = "rack_puck";
+  pk.id = "3";
+  s.rack_seen["p12"] = {pk, 99.5};
+  EXPECT_EQ(s.rack_count('c'), 1u);
+  EXPECT_EQ(s.rack_count('p'), 1u);
+  EXPECT_NE(find(page_lines(4, s, kCfg, UiState{}), "본 칸 태그 1 · 칸 안 퍽 1"), nullptr);
+  Snapshot rs;
+  rs.now = 100.0;
+  rs.rack_t = 99.5;
+  rs.rack_seen["c12"] = {r, 99.5};
+  const Line * ok = find(page_lines(4, rs, kCfg, UiState{}), "칸 태그 1 칸");
+  ASSERT_NE(ok, nullptr);
+  EXPECT_EQ(ok->level, Level::GOOD);
+  rs.now = 110.0;
+  const Line * old = find(page_lines(4, rs, kCfg, UiState{}), "칸 태그 1 칸");
+  ASSERT_NE(old, nullptr);
+  EXPECT_EQ(old->level, Level::WARN);
   // 실험 쪽: mark 와 눈금 차이
   set_arm(s, {0.0, -1.0, 0.0, 0.0, 0.0});
   UiState ui;
