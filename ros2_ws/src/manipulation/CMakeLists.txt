@@ -36,11 +36,19 @@ target_link_libraries(control_master manipulation_core rclcpp::rclcpp rclcpp_act
   tf2::tf2 tf2_ros::tf2_ros tf2_geometry_msgs::tf2_geometry_msgs)
 add_executable(arm_state_publisher src/arm_state_publisher.cpp)
 target_link_libraries(arm_state_publisher manipulation_core rclcpp::rclcpp ${sensor_msgs_TARGETS})
-# 칸 바닥 AprilTag 로 칸 위치 재기 (팔은 안 움직임). OpenCV 4.6 은 contrib aruco, 4.7+ 는 objdetect
+# 칸 바닥 AprilTag 로 칸 위치 재기 (팔은 안 움직임). apriltag 없을 때 OpenCV aruco: 4.6 은 contrib, 4.7+ 는 objdetect
 add_executable(rack_tag_node src/rack_tag_node.cpp)
 target_include_directories(rack_tag_node PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(rack_tag_node manipulation_core rclcpp::rclcpp ${sensor_msgs_TARGETS} ${std_srvs_TARGETS}
   ${interfaces_TARGETS} cv_bridge::cv_bridge ${OpenCV_LIBS} tf2::tf2 tf2_ros::tf2_ros)
+# AprilTag 3 (ros-lyrical-apriltag) 있으면 씀: 그림자 진 컵 바닥 태그를 OpenCV aruco 보다 잘 읽음 (실물 11-03 스캔 12 칸 ↔ 2 칸)
+find_package(apriltag QUIET)
+if(apriltag_FOUND)
+  target_link_libraries(rack_tag_node apriltag::apriltag)
+  target_compile_definitions(rack_tag_node PRIVATE RACK_TAG_HAVE_APRILTAG)
+else()
+  message(WARNING "apriltag 없음 → 칸 태그는 OpenCV aruco (그림자 진 칸을 덜 읽음). sudo apt install ros-lyrical-apriltag")
+endif()
 install(TARGETS manipulation_core control_master arm_state_publisher rack_tag_node ARCHIVE DESTINATION lib LIBRARY DESTINATION lib RUNTIME DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
 if(BUILD_TESTING)
