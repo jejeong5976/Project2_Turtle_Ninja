@@ -39,10 +39,21 @@
 //   - 취소: 진행 중 궤적에 취소를 보내고 **끝났다는 답(또는 cancel_timeout_s)** 을 기다린 뒤 "취소됨"
 //     (취소 요청 ≠ 실제로 멈춤 이라서)
 //   - 늦게 받아들여진 궤적(이미 포기한 것)은 그 궤적만 골라 취소 (안 그러면 팔이 혼자 움직임)
+//
+// 적재함이 움직였을 때 (칸 바닥 AprilTag, manipulation rack_tag_node)
+//   - LOOK slot "rack" (빈 손 스캔) 동안 /rack_tags/detections 의 멈춘 장 칸 태그를 모아 칸마다 중앙값
+//   - ~/save_rack_reference (std_srvs/Trigger): 적재함이 제자리일 때 (넣기 · 빼기가 되는 때) 마지막 스캔을 기준으로 파일에 저장
+//   - 그 뒤 스캔마다 기준과 비교해 적재함 전체 움직임 (dx · dy · 회전) 을 맞춤 → STORE · RETRIEVE 경로의 칸 근처만 그 칸 만큼 옮김
+//     (cell_shift: shift_cell_paths.py 와 같은 규칙). 같은 스캔 자세 · 같은 카메라끼리 빼서 카메라 치우침이 빠짐
+//     rack_shift_min_m 보다 작으면 그대로, rack_shift_max_m 넘으면 거절 (적재함을 제자리로 · 다시 스캔)
 
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -55,6 +66,7 @@
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "trajectory_msgs/msg/joint_trajectory_point.hpp"
 #include "interfaces/msg/detection_array.hpp"
+#include "std_srvs/srv/trigger.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2_ros/buffer.hpp"
 #include "tf2_ros/transform_listener.hpp"
@@ -64,6 +76,8 @@
 #include "manipulation/grasp_select.hpp"
 #include "manipulation/arm_model_params.hpp"
 #include "manipulation/arm_path.hpp"
+#include "manipulation/cell_shift.hpp"
+#include "manipulation/rack_tags.hpp"
 #include "interfaces/action/arm_task.hpp"
 #include "interfaces/msg/motion_mode.hpp"
 
@@ -155,6 +169,33 @@ public:
     sub_dets_ = create_subscription<interfaces::msg::DetectionArray>(
       declare_parameter<std::string>("neighbor_topic", "/perception/wrist/detections"), rclcpp::QoS(10),
       [this](interfaces::msg::DetectionArray::ConstSharedPtr m) {on_detections(*m);});
+    // ---- 적재함 태그로 칸 경로 옮기기 (위 머리말) ----
+    {
+      rack_names_ = declare_parameter<std::vector<std::string>>("rack_cell_names", std::vector<std::string>{});
+      const auto rx = declare_parameter<std::vector<double>>("rack_cell_x", std::vector<double>{});
+      const auto ry = declare_parameter<std::vector<double>>("rack_cell_y", std::vector<double>{});
+      if (rack_names_.empty() || rx.size() != rack_names_.size() || ry.size() != rack_names_.size()) {
+        RCLCPP_WARN(get_logger(), "rack_cell_names · x · y 없음 (config/rack_cells.yaml) → 적재함 태그로 칸 경로를 안 옮김");
+        rack_names_.clear();
+      } else {
+        for (size_t i = 0; i < rx.size(); ++i) {rack_xy_.emplace_back(rx[i], ry[i]);}
+        for (const auto & c : rack_xy_) {rack_pivot_ += c / static_cast<double>(rack_xy_.size());}
+      }
+    }
+    rack_ref_file_ = declare_parameter<std::string>("rack_reference_file", "~/.ros/rack_reference.txt");
+    if (rack_ref_file_.rfind("~/", 0) == 0 && std::getenv("HOME")) {rack_ref_file_ = std::getenv("HOME") + rack_ref_file_.substr(1);}
+    rack_min_shift_m_ = declare_parameter<double>("rack_shift_min_m", 0.0015);
+    rack_max_shift_m_ = declare_parameter<double>("rack_shift_max_m", 0.008);
+    rack_max_rms_m_ = declare_parameter<double>("rack_fit_max_rms_m", 0.003);
+    rack_min_samples_ = declare_parameter<int>("rack_min_samples", 5);
+    load_rack_reference();
+    sub_rack_ = create_subscription<interfaces::msg::DetectionArray>(
+      declare_parameter<std::string>("rack_tag_topic", "/rack_tags/detections"), rclcpp::QoS(10),
+      [this](interfaces::msg::DetectionArray::ConstSharedPtr m) {on_rack_tags(*m);});
+    srv_rack_ref_ = create_service<std_srvs::srv::Trigger>("~/save_rack_reference",
+      [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>, std::shared_ptr<std_srvs::srv::Trigger::Response> res) {
+        res->success = save_rack_reference(res->message);
+      });
     slow_dps_ = declare_parameter<double>("near_puck_speed_dps", 15.0);
     model_ok_ = load_model();
     for (const char * p : {"home", "pick_above", "pick_down", "place_above", "place_down"}) {
@@ -305,6 +346,8 @@ private:
     const auto plan = std::move(pending_plan_);
     pending_plan_.clear();
     runner_.start(plan);
+    scanning_ = gh->get_goal()->task == ArmTask::Goal::LOOK && gh->get_goal()->slot == "rack";
+    scan_seen_.clear();
     arbiter_.request_arm();   // 바퀴부터 세우기 → 잠금 답 + 몸통이 멈추면 ARM
     publish_turn();
     RCLCPP_INFO(get_logger(), "팔 작업 %u 받음 (동작 %zu개) → 바퀴 세우는 중",
@@ -314,6 +357,7 @@ private:
   // ======================================================================== 작업 → 동작 목록
   // STORE · RETRIEVE · LOOK 류 · 접기는 실물에서 검사 · 실행한 경로(config/arm_paths.yaml) 그대로. 팔이 경로 출발 자세에 있어야 함
   //   STORE <칸>   : 박스 위 들기(퍽 쥠) → 칸에 넣기 → 받침 (주행 허용). lazy_fold 면 P0 (아래)
+  //     STORE · RETRIEVE 는 적재함이 기준 스캔에서 움직였으면 칸 근처를 옮긴 경로 (rack_adjust, 머리말)
   //   RETRIEVE <칸>: 받침 → 칸에서 꺼내기 → 박스 위 들기 (퍽 쥠, 바퀴 잠금 유지 — 이어서 PLACE). LOOK 자세면 복귀 경로로 받침을 거쳐 감
   //     (경로 앞이 unfold 그대로면 P0 에서 이음)
   //   LOOK · LOOK_BARCODE: 받침 → 관찰 자세 (그 자세 유지). 이미 그 자세면 그대로
@@ -374,6 +418,7 @@ private:
     const auto it = paths_.find(name);
     if (it == paths_.end()) {why = "경로 " + name + " 없음 (config/arm_paths.yaml)"; return {};}
     ArmPath path = it->second;
+    if (!rack_adjust(name, path, why)) {return {};}
     if (!keep_fold && cut_fold_tail(path)) {RCLCPP_INFO(get_logger(), "%s: P0 에서 멈춤 (나중에 접기, 주행 전 HOME 이 접음)", name.c_str());}
     if (!path_start_ok(path, joint_buf_, path_start_tol_, why)) {
       if (!join_from_p0(path, name.c_str()) && (!from_look || !join_from_look(path, name.c_str()))) {
@@ -533,6 +578,120 @@ private:
   }
 
   // 손목 인지 결과 → odom 기준 퍽 목록 (촬영 시각 TF, 안 되면 최신 TF). 쓸 때 base_link 로 (그 사이 차체가 움직여도 맞게)
+  // ---- 적재함 태그 → 칸 경로 옮기기 ----
+  // 스캔 (LOOK rack) 중에만: 멈춘 장 (confidence 1) 칸 태그 중심 [base_link]
+  void on_rack_tags(const interfaces::msg::DetectionArray & m)
+  {
+    if (!scanning_) {return;}
+    for (const auto & d : m.detections) {
+      const auto & p = d.pose.position;
+      if (d.kind != "rack_tag" || d.confidence < 0.99f || !std::isfinite(p.x) || !std::isfinite(p.y)) {continue;}
+      scan_seen_[d.label].emplace_back(p.x, p.y);
+    }
+  }
+
+  // 스캔이 끝나면 칸마다 중앙값 → 기준이 있으면 적재함 전체 움직임을 맞춤
+  void finish_rack_scan()
+  {
+    last_scan_.clear();
+    for (const auto & [name, v] : scan_seen_) {
+      if (static_cast<int>(v.size()) < rack_min_samples_) {continue;}
+      std::vector<double> xs, ys;
+      for (const auto & p : v) {xs.push_back(p.x()); ys.push_back(p.y());}
+      last_scan_[name] = Eigen::Vector2d(median(xs), median(ys));
+    }
+    scan_seen_.clear();
+    rack_fit_ok_ = false;
+    if (rack_ref_.empty()) {
+      RCLCPP_WARN(get_logger(), "적재함 스캔: 칸 %zu 개 잼. 기준 스캔 없음 → 칸 경로 그대로. 지금 적재함이 제자리면 "
+        "ros2 service call /control_master/save_rack_reference std_srvs/srv/Trigger", last_scan_.size());
+      return;
+    }
+    std::vector<Eigen::Vector2d> ref, cur;
+    for (const auto & [name, p] : last_scan_) {
+      const auto r = rack_ref_.find(name);
+      if (r != rack_ref_.end()) {ref.push_back(r->second); cur.push_back(p);}
+    }
+    if (ref.size() < 3) {
+      RCLCPP_WARN(get_logger(), "적재함 스캔: 기준과 같이 잰 칸 %zu 개 (3 개 넘어야) → 칸 경로 그대로", ref.size());
+      return;
+    }
+    rack_fit_ = fit_rack(ref, cur, rack_pivot_);
+    rack_fit_ok_ = rack_fit_.ok && rack_fit_.rotation && rack_fit_.rms <= rack_max_rms_m_;
+    RCLCPP_INFO(get_logger(), "적재함 움직임 (기준 스캔 대비, 칸 %d 개): dx %+.1f · dy %+.1f mm · 회전 %+.2f° · 남는 오차 %.1f mm → %s",
+      rack_fit_.n, rack_fit_.dx * 1000.0, rack_fit_.dy * 1000.0, rack_fit_.dyaw * 180.0 / M_PI, rack_fit_.rms * 1000.0,
+      rack_fit_ok_ ? "STORE · RETRIEVE 칸 경로를 옮김" : "맞춤이 나빠 안 씀 (칸 경로 그대로, 다시 스캔)");
+  }
+
+  // 마지막 스캔을 기준으로 저장 (적재함이 제자리 = 지금 경로로 넣기 · 빼기가 되는 때)
+  bool save_rack_reference(std::string & msg)
+  {
+    if (last_scan_.size() < 6) {
+      msg = "칸 6 개 넘게 잰 스캔이 없음 (빈 손으로 scan 먼저, 지금 " + std::to_string(last_scan_.size()) + " 칸)";
+      return false;
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path(rack_ref_file_).parent_path(), ec);
+    std::ofstream f(rack_ref_file_);
+    f << "# 적재함 기준 스캔 (control_master ~/save_rack_reference): 칸 · 칸 바닥 태그 중심 x y [m, base_link]\n";
+    f.precision(6);
+    for (const auto & [name, p] : last_scan_) {f << name << " " << std::fixed << p.x() << " " << p.y() << "\n";}
+    f.close();
+    if (!f) {msg = "기준 파일을 못 씀: " + rack_ref_file_; return false;}
+    rack_ref_ = last_scan_;
+    rack_fit_ = RackFit{};
+    rack_fit_.ok = rack_fit_.rotation = true;   // 기준 = 지금 → 움직임 0
+    rack_fit_ok_ = true;
+    msg = "기준 저장: 칸 " + std::to_string(rack_ref_.size()) + " 개 → " + rack_ref_file_;
+    RCLCPP_INFO(get_logger(), "%s", msg.c_str());
+    return true;
+  }
+
+  void load_rack_reference()
+  {
+    std::ifstream f(rack_ref_file_);
+    if (!f) {
+      RCLCPP_INFO(get_logger(), "적재함 기준 스캔 없음 (%s) → 스캔해도 칸 경로 그대로 (save_rack_reference 로 저장)", rack_ref_file_.c_str());
+      return;
+    }
+    std::string line;
+    while (std::getline(f, line)) {
+      if (line.empty() || line[0] == '#') {continue;}
+      std::istringstream in(line);
+      std::string name;
+      double x, y;
+      if (in >> name >> x >> y && std::isfinite(x) && std::isfinite(y)) {rack_ref_[name] = Eigen::Vector2d(x, y);}
+    }
+    RCLCPP_INFO(get_logger(), "적재함 기준 스캔: 칸 %zu 개 (%s). 스캔하면 이것과 비교해 칸 경로를 옮김", rack_ref_.size(), rack_ref_file_.c_str());
+  }
+
+  // STORE · RETRIEVE: 마지막 스캔이 기준에서 움직였으면 그 칸 경로의 칸 근처를 옮김. false = 거절 (why)
+  bool rack_adjust(const std::string & name, ArmPath & path, std::string & why)
+  {
+    const bool store = name.rfind("store_", 0) == 0;
+    if ((!store && name.rfind("retrieve_", 0) != 0) || !rack_fit_ok_) {return true;}
+    const std::string cell = name.substr(name.find('_') + 1);
+    size_t i = 0;
+    while (i < rack_names_.size() && rack_names_[i] != cell) {++i;}
+    if (i == rack_names_.size()) {return true;}
+    const Eigen::Vector2d d = rack_shift(rack_fit_, rack_xy_[i], rack_pivot_);
+    char buf[240];
+    if (d.norm() > rack_max_shift_m_) {
+      std::snprintf(buf, sizeof(buf), "적재함이 칸 %s 에서 %.1f mm 움직임 (기준 스캔 대비, 한도 %.0f mm) — 적재함을 제자리로 놓고 다시 scan",
+        cell.c_str(), d.norm() * 1000.0, rack_max_shift_m_ * 1000.0);
+      why = buf;
+      return false;
+    }
+    if (d.norm() < rack_min_shift_m_) {return true;}
+    if (!model_ok_) {why = "팔 모델 없음 → 적재함이 움직인 칸 경로를 못 옮김"; return false;}
+    CellShiftReport rep;
+    std::string err;
+    if (!shift_cell_path(model_, path, store, rack_xy_[i], d, rep, err)) {why = "칸 경로 옮기기 실패: " + err; return false;}
+    RCLCPP_INFO(get_logger(), "%s: 적재함 움직임만큼 칸 근처를 (%+.1f, %+.1f) mm 옮김 (점 %d 개 · 관절 최대 %.2f° · 손끝 어긋남 %.2f mm)",
+      name.c_str(), d.x() * 1000.0, d.y() * 1000.0, rep.moved, rep.max_joint_deg, rep.worst_pos_mm);
+    return true;
+  }
+
   void on_detections(const interfaces::msg::DetectionArray & m)
   {
     std::vector<SeenPuck> out;
@@ -932,6 +1091,10 @@ private:
             else if (task == ArmTask::Goal::RETRIEVE) {held_depth_mm_ = retrieve_depth_mm_;}
             else if (!carrying_) {held_depth_mm_ = 0.0;}
           }
+          if (scanning_) {
+            scanning_ = false;
+            if (c.end == ArmEnd::SUCCEEDED) {finish_rack_scan();} else {scan_seen_.clear();}
+          }
           if (c.end == ArmEnd::SUCCEEDED) {
             arm_goal_->succeed(result);
           } else if (c.end == ArmEnd::CANCELED) {
@@ -1096,6 +1259,20 @@ private:
   std::unique_ptr<tf2_ros::Buffer> tf_buf_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listen_;
   rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr sub_dets_;
+  // 적재함 태그 → 칸 경로 옮기기
+  std::vector<std::string> rack_names_;
+  std::vector<Eigen::Vector2d> rack_xy_;     // 칸 중심 표 (config/rack_cells.yaml)
+  Eigen::Vector2d rack_pivot_{Eigen::Vector2d::Zero()};
+  std::string rack_ref_file_;
+  double rack_min_shift_m_{0.0015}, rack_max_shift_m_{0.008}, rack_max_rms_m_{0.003};
+  int rack_min_samples_{5};
+  bool scanning_{false};                     // LOOK rack 진행 중
+  std::map<std::string, std::vector<Eigen::Vector2d>> scan_seen_;   // 이번 스캔 칸 태그 중심
+  std::map<std::string, Eigen::Vector2d> last_scan_, rack_ref_;      // 마지막 스캔 · 기준 스캔 (칸별 중앙값)
+  RackFit rack_fit_;                         // 기준 → 마지막 스캔 적재함 움직임
+  bool rack_fit_ok_{false};
+  rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr sub_rack_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr srv_rack_ref_;
   double home_near_tol_{0.2};           // [rad] 받침에서 이만큼 안이면 HOME 한 점 직행 허용
   bool arm_off_path_{false};            // 경로 작업이 도중에 멈춤 (성공한 작업 · HOME 뒤 지움)
   bool home_was_path_{false};           // 지금 HOME 이 검사된 경로 (fold · home_from_*) 로 감
