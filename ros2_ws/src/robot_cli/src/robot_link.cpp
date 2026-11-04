@@ -376,7 +376,17 @@ RobotLink::RobotLink(Config cfg)
   keep(create_subscription<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", stream,
     [this](diagnostic_msgs::msg::DiagnosticArray::ConstSharedPtr m) {
       std::lock_guard<std::mutex> lk(mu_);
-      for (const auto & d : m->status) {diag_by_name_[d.name] = {DiagView{d.name, d.message, static_cast<int>(d.level)}, now_s()};}
+      for (const auto & d : m->status) {
+        diag_by_name_[d.name] = {DiagView{d.name, d.message, static_cast<int>(d.level)}, now_s()};
+        // 모터 온도 (OpenCR 하드웨어, 보드마다 1 초에 한 줄) → 관절별 칸
+        std::vector<std::pair<std::string, std::string>> kv;
+        for (const auto & v : d.values) {kv.emplace_back(v.key, v.value);}
+        std::string board;
+        std::map<std::string, int> temps;
+        if (parse_temp_status(d.name, kv, board, temps, s_.temp_warn, s_.temp_crit)) {
+          for (const auto & [joint, c] : temps) {s_.temps[joint] = TempView{c, now_s()};}
+        }
+      }
       s_.diag_t = now_s();
     }));
   keep(create_subscription<sensor_msgs::msg::LaserScan>("/scan", rclcpp::SensorDataQoS(),

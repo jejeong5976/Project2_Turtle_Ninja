@@ -75,7 +75,7 @@ Nav2      [꺼짐]      nav 명령 안 됨
 | 쪽 | 보이는 것 |
 |---|---|
 | 1 위치·SLAM | odom · map (TF, 나이) · amcl 위치 표, 위치 추정 종류 · 건강 · 노드 · lifecycle, 라이다 앞 · 뒤 · 합친 scan · IMU 나이, 시계 차이, 다시 띄울 launch 명령 |
-| 2 팔 | 관절 표: 눈금 · rad · ° · 전류 A · 보정 rad · ° · 눈금 · 처짐 · 받침과 차이, 그리퍼 간격 · 전류 · 퍽 쥠, 이름 자세 · 접힘 · lazy_fold · URDF 한계, 차례, 최근 팔 작업 8 개 (걸린 시간 · phase 마다) |
+| 2 팔 | 관절 표: 눈금 · rad · ° · 전류 A · 모터 온도 °C · 보정 rad · ° · 눈금 · 처짐 · 받침과 차이, 그리퍼 간격 · 전류 · 온도 · 퍽 쥠, 주행 모터 (바퀴 · 조향) 온도, 이름 자세 · 접힘 · lazy_fold · URDF 한계, 차례, 최근 팔 작업 8 개 (걸린 시간 · phase 마다) |
 | 3 주행·Nav2 | Nav2 goal · 남은 거리 · ETA, hold, drive 가 되는지 (안 되면 이유), 정차 11 곳 (번호 · 좌표 · 거리 · 방향 차이) |
 | 4 인지 | 신호등, 손목 · 광각 검출 하나하나 (태그 · 위치), 적재함 칸 태그 · 칸 안 퍽 (칸마다 마지막으로 본 위치 · 언제), 바코드 |
 | 5 미션 | 상태 · 퍽 수 · 고장, 적재 칸 표 |
@@ -90,6 +90,7 @@ Nav2      [꺼짐]      nav 명령 안 됨
 경고 출처:
 
 - **모터 전류**: `/joint_states` effort 칸 = 전류 [A] (OpenCR, mock 은 0). 그리퍼 반쯤 닫힘 (control_master 와 같은 식) = 퍽 쥠.
+- **모터 온도**: OpenCR 하드웨어가 `/diagnostics` 에 보드마다 1 초에 한 줄 `<보드>/motor_temperature` (관절 이름 → °C, 경고 · 위험 기준). 경고(기본 60 °C) 넘으면 그 칸 노랑 · 위험(70 °C) 빨강 + 0 · 2 쪽에 `온도` 배지 줄. 5 s 넘게 안 오면 회색 (뜨거웠던 값은 색 유지 — 하드웨어가 ERROR 로 멈추면 더 안 옴). mock · 옛 펌웨어는 `-`.
 - **배터리**: OpenCR 하드웨어가 전압을 토픽이 아니라 로그로만 냄 → `/rosout` 의 "… 배터리 12.3 V (최저 12.1)" (10 s 마다) · "배터리 낮음" 줄을 읽음.
   `hardware_map.yaml` 의 `battery_warn_v` (10.8) 아래 주의, `battery_stop_v` (10.2) 아래 문제. 로그가 없으면 (mock) 모름.
 - **관절 한계**: `/robot_description` (URDF) 의 limit. 한계까지 0.03 rad (1.7°) 안이면 주의, 넘으면 문제. 예 joint4 위쪽 한계 0.6735 rad ≈ 눈금 2487 (실물 멈춤 약 2485).
@@ -209,4 +210,4 @@ nt check || echo "점검 실패"
 - 설정: `hardware_map.yaml` · `rack_cells.yaml` · `control.yaml` · `arm_paths.yaml` · `controllers.yaml` = bringup share/config, `dice_map.yaml` = 레포 `maps/`
   (빌드 때 경로 `ros2_ws/src/robot_cli/../../../maps`, 레포 밖에서 빌드하면 `--cmake-args -DROBOT_CLI_MAPS_DIR=<레포>/maps`, 실행 때 `--dice-map`)
 - `tools/robot_cli/robot_cli.sh` 실행기 · `tools/robot_cli/install.sh` `nt` 설치
-- 시험: `colcon test --packages-select robot_cli` (명령 · 별칭 · Tab · 집은 자리 place · 눈금 · 정차 · 팔 자세 · 배터리 로그 · 주행 한계 · 배지 · 쪽 · 점검 · 한계 · mark 파일 · cycle 순서)
+- 시험: `colcon test --packages-select robot_cli` (명령 · 별칭 · Tab · 집은 자리 place · 눈금 · 정차 · 팔 자세 · 배터리 로그 · 모터 온도 · 주행 한계 · 배지 · 쪽 · 점검 · 한계 · mark 파일 · cycle 순서)

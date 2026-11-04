@@ -12,6 +12,7 @@
 //   ④ 목표 쓰기 (Sync Write) → 상태 읽기 (Sync Read)
 //   ⑤ 상태 상자 보내기 (시간 · IMU · 모터 14개 위치/속도/전류)
 //   ⑥ 1 초마다 보드 안 시간 측정 상자(DIAG) — 한 바퀴 · Sync Read/Write · 개별 읽기/쓰기 · 고장 정지 시간
+//      + 바로 뒤에 모터 온도 상자(TEMP) — 되읽기(④ 뒤, 1 모터씩)가 전압과 같이 읽은 온도
 //
 // 안전장치 3겹 (위에서부터)
 //   1. swerve_controller (ros2_control 안) : cmd_vel 끊김 · 차례 아님 → 바퀴 0
@@ -114,6 +115,15 @@ static void send_diag(uint8_t extra_flags)
   diag_since_ms = g.ms;
   const uint16_t dlen = ntp::encode_diag(g, tx, sizeof(tx));
   if (dlen) {usb_send(tx, dlen);}   // 이 보내기는 다음 구간의 usb_tx 에 들어감
+}
+
+// 모터 온도 (TEMP) — CONFIG 뒤에만 (그 전에는 모터 목록이 없음)
+static void send_temp()
+{
+  ntp::Temp t;
+  bus_temp_take(t);
+  const uint16_t tlen = ntp::encode_temp(t, tx, sizeof(tx));
+  if (tlen) {usb_send(tx, tlen);}
 }
 
 // CONFIG 직후: 모은 숫자를 버리고 새 구간 시작 (CONFIG 전 구간은 바로 앞에서 send_diag 로 따로 보냄)
@@ -219,5 +229,8 @@ void loop()
   // ⑥ 보드 안 시간 (DIAG). 한 바퀴 = ③~⑤ (모터 쓰기 · 읽기 · 되읽기 + 상태 보내기). 10 ms 넘으면 실패로 셈
   const uint32_t exec_us = micros() - now_us;
   t_loop.add(exec_us, exec_us <= PERIOD_US);
-  if (millis() - diag_since_ms >= DIAG_PERIOD_MS) {send_diag(0);}
+  if (millis() - diag_since_ms >= DIAG_PERIOD_MS) {
+    send_diag(0);
+    if (configured) {send_temp();}
+  }
 }

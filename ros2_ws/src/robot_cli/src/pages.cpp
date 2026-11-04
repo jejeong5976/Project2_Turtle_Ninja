@@ -95,7 +95,9 @@ Lines arm_page(const Snapshot & s, const Config & cfg)
   wheels_block(L, s, cfg);
   arm_block(L, s, cfg);
   limit_block(L, s, cfg);
+  temp_block(L, s);
   joint_table(L, s, cfg, true);
+  drive_temp_table(L, s);
   head(L, "자세");
   const PoseView pv = pose_view(s, cfg);
   if (cfg.arm.poses.empty()) {

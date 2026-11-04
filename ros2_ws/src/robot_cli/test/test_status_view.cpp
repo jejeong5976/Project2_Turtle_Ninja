@@ -136,6 +136,77 @@ TEST(StatusView, BatteryAndLimits)
   EXPECT_EQ(block_of(status_lines(s, kCfg), "관절"), nullptr);   // 멀면 줄이 없음
 }
 
+// 모터 온도: 2 쪽 관절 표 온도 칸 (경고 · 위험이면 그 칸만 색) · 주행 모터 표 · 경고 넘으면 0 · 2 쪽 배지 줄
+TEST(StatusView, MotorTemperature)
+{
+  Snapshot s;
+  s.now = 100.0;
+  s.mode_t = 99.9;
+  set_arm(s, {0.0, -1.0, 0.5, 0.0, 0.0});
+  s.joints["gripper_left_joint"] = 0.0164;
+  const auto none = page_lines(2, s, kCfg, UiState{});
+  EXPECT_NE(find(none, "온도[°C]"), nullptr);
+  const Line * j1 = find(none, "joint1  ");
+  ASSERT_NE(j1, nullptr);
+  EXPECT_EQ(j1->level, Level::OFF) << "온도를 못 받으면 그 칸만 회색";
+  EXPECT_EQ(j1->text.substr(j1->mark_from, j1->mark_len), "        -");
+  EXPECT_NE(find(none, "없음 — OpenCR 하드웨어"), nullptr);
+  EXPECT_EQ(block_of(status_lines(s, kCfg), "온도"), nullptr);
+
+  s.temps = {{"joint1", {41, 99.5}}, {"joint2", {63, 99.5}}, {"joint3", {72, 99.5}}, {"joint4", {-1, 99.5}},
+    {"gripper_left_joint", {45, 99.5}}, {"drive_fl_joint", {38, 99.6}}, {"steer_rr_joint", {61, 99.6}}};
+  const auto p = page_lines(2, s, kCfg, UiState{});
+  for (const auto & l : p) {EXPECT_LE(text_width(l.text), kMaxWidth) << l.text;}
+  auto cell = [](const Line & l) {return l.text.substr(l.mark_from, l.mark_len);};
+  const Line * a1 = find(p, "joint1  ");
+  ASSERT_NE(a1, nullptr);
+  EXPECT_EQ(a1->level, Level::NORMAL);
+  EXPECT_EQ(a1->mark_len, 0u) << "보통 온도는 색 없음";
+  EXPECT_NE(a1->text.find("      41"), std::string::npos);
+  const Line * a2 = find(p, "joint2  ");
+  ASSERT_NE(a2, nullptr);
+  EXPECT_EQ(a2->level, Level::WARN);
+  EXPECT_EQ(cell(*a2), "       63");
+  const Line * a3 = find(p, "joint3  ");
+  ASSERT_NE(a3, nullptr);
+  EXPECT_EQ(a3->level, Level::BAD);
+  EXPECT_EQ(cell(*a3), "       72");
+  EXPECT_EQ(find(p, "joint4  ")->level, Level::OFF) << "보드가 못 읽은 모터 = 회색 -";
+  EXPECT_NE(find(p, "열림")->text.find("45"), std::string::npos);
+  const Line * wheel = find(p, "바퀴       ");
+  ASSERT_NE(wheel, nullptr);
+  EXPECT_NE(wheel->text.find("38"), std::string::npos);
+  EXPECT_EQ(wheel->level, Level::NORMAL);
+  EXPECT_EQ(find(p, "조향       ")->level, Level::WARN);
+  const auto sum = status_lines(s, kCfg);
+  const Line * tb = block_of(sum, "온도");
+  ASSERT_NE(tb, nullptr);
+  EXPECT_EQ(badge(*tb), "[문제]");
+  EXPECT_EQ(tb->level, Level::BAD);
+  EXPECT_NE(tb->text.find("joint2 63 °C · joint3 72 °C"), std::string::npos) << tb->text;
+  EXPECT_NE(find(sum, "조향 rr 61 °C"), nullptr);
+  EXPECT_NE(block_of(p, "온도"), nullptr);
+
+  // 하드웨어가 멈춰 온도가 끊김: 보통 값은 회색, 뜨거웠던 값은 색 유지 + 관절 측정이 없어도 온도는 보임
+  s.now = 120.2;
+  s.joints.erase("joint3");
+  const auto old = page_lines(2, s, kCfg, UiState{});
+  EXPECT_EQ(find(old, "joint1  ")->level, Level::WARN) << "관절 측정도 오래됨 → 줄 전체 주의";
+  const Line * gone = find(old, "joint3  ");
+  ASSERT_NE(gone, nullptr);
+  EXPECT_NE(gone->text.find("측정 없음"), std::string::npos);
+  EXPECT_EQ(gone->level, Level::BAD);
+  EXPECT_EQ(cell(*gone), "       72");
+  EXPECT_NE(find(status_lines(s, kCfg), "마지막 값 21 s 전"), nullptr);
+  // 기준은 하드웨어가 보낸 값
+  s.now = 100.0;
+  s.temps = {{"joint1", {41, 99.5}}};
+  s.temp_warn = 40;
+  const auto low = status_lines(s, kCfg);
+  ASSERT_NE(block_of(low, "온도"), nullptr);
+  EXPECT_EQ(badge(*block_of(low, "온도")), "[주의]");
+}
+
 TEST(StatusView, DriveBlock)
 {
   Snapshot s;

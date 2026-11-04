@@ -8,6 +8,7 @@
 #include <cmath>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace robot_cli
@@ -82,6 +83,11 @@ bool load_arm_ref(const std::string & control_yaml, const std::string & arm_path
 // OpenCR 하드웨어 로그 한 줄에서 배터리 전압 읽기 ("bus_arm 보드 안 (10 s): … · 배터리 12.3 V (최저 12.1)" ·
 //   "bus_arm 배터리 낮음: 평균 10.7 V · 최저 10.5 V …" · "bus_arm 배터리 10.1 V (정지 기준 …"). 아니면 false
 bool parse_battery_log(const std::string & msg, std::string & board, double & mean, double & min);
+// OpenCR 하드웨어의 모터 온도 /diagnostics 한 줄 읽기 (hardware opencr_link.hpp temp_report 와 같은 모양)
+//   name "<보드>/motor_temperature" · values = 관절 이름 → "52" (°C, 못 읽음 "-") + "warn_c" · "crit_c"
+//   맞으면 true + temps 에 관절 → °C (못 읽음 -1), warn · crit 은 값이 있을 때만 바꿈. 아니면 false
+bool parse_temp_status(const std::string & name, const std::vector<std::pair<std::string, std::string>> & values,
+  std::string & board, std::map<std::string, int> & temps, int & warn, int & crit);
 // 그리퍼가 반쯤 닫힘 = 퍽을 쥔 것으로 봄 (control_master home_plan 과 같은 식: 닫힘 + 3 mm < q < 열림 − 4 mm)
 bool gripper_holding(const ArmRef & ref, double q);
 

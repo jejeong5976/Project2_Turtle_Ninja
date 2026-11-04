@@ -8,6 +8,7 @@
 //   위치 : 눈금 0~4095 = 한 바퀴, 2048 = 0 rad            → rad = (눈금 − 2048) × 2π/4096
 //   속도 : 1 눈금 = 0.229 rpm                            → rad/s = 눈금 × 0.229 × 2π/60
 //   전류 : 1 눈금 = 2.69 mA                              → A = 눈금 × 0.00269
+//   온도 : 1 눈금 = 1 °C (Present Temperature, 바꾸지 않고 그대로)
 
 #pragma once
 
@@ -28,11 +29,14 @@ void bus_set_torque(bool on);
 //   = 위의 쓰기가 전부 성공했고 + 운전 중 되읽은 Torque Enable 이 꺼진 모터가 없음 (R5)
 //   예전에는 "마지막 쓰기 성공" 만 기억해서, 운전 중 모터가 스스로 토크를 끄거나(과부하 shutdown) 재부팅돼도 몰랐음
 bool bus_torque_is_on();
-// 모터 상태 되읽기 한 칸 (매 주기 1 모터씩 돌아가며: Hardware Error Status · 입력 전압(배터리) · Torque Enable). 14 개면 0.14 s 에 한 바퀴
+// 모터 상태 되읽기 한 칸 (매 주기 1 모터씩 돌아가며: Hardware Error Status · 입력 전압(배터리) + 온도 · Torque Enable). 14 개면 0.14 s 에 한 바퀴
 //   한 번에 모두 읽으면 버스 시간이 늘어서 하나씩. 통신 실패는 bus_read_states 의 comm_err 가 이미 잡음
+//   전압(144, 2 바이트) · 온도(146, 1 바이트)는 붙어 있어서 읽기 1 번에 3 바이트 → 온도 때문에 늘어난 버스 시간 = 1 바이트 (1 Mbps 에서 10 µs)
 void bus_health_step();
 // Hardware Error Status 가 0 이 아닌 모터 비트 → ST_HW_ERROR
 uint16_t bus_hw_error_mask();
+// 모터 온도 (TEMP 상자, 1 초마다): 이 구간에 읽은 마지막 값 · 못 읽은 모터는 TEMP_UNKNOWN. 꺼내면 새 구간
+void bus_temp_take(ntp::Temp &t);
 
 // 목표 쓰기 (Sync Write 2번: 바퀴 속도, 위치 모터 위치).
 // host_ok = false (Jetson 끊김) 이면 바퀴만 0, 위치 모터는 마지막 목표 그대로 = 그 자리에서 버팀 (팔이 떨어지지 않게)
