@@ -35,6 +35,8 @@ struct Command
   // PICK det · PICK tag: 손목 인지 검출로 집기 — det_tag 비면 퍽이 하나뿐일 때 그것, 아니면 그 퍽 태그 ID
   bool from_det{false};
   std::string det_tag;
+  // PLACE 인자 없음 (pl): 마지막으로 성공한 PICK 목표에 다시 놓기 — 목표는 보낼 때 LastPick 으로 채움
+  bool from_last{false};
   // NAV — stop 이름이 있으면 그것, 없으면 map 기준 x y yaw
   std::string stop;
   double yaw_nav_deg{0.0};
@@ -62,6 +64,30 @@ struct Names
   std::vector<std::string> stops;     // dice_map 정차 자세 이름
   std::vector<std::string> slots;     // rack_cells 칸 이름
   double max_linear{0.20}, max_angular{0.5};   // drive 한계 [m/s] · [rad/s]
+};
+
+// PICK · PLACE 목표 (base_link) 를 보낸 그대로: 위치 + 방향 (모르면 0,0,0,0). yaw_deg 는 표시용
+struct ArmTarget
+{
+  double x{0}, y{0}, z{0};
+  double qx{0}, qy{0}, qz{0}, qw{0};
+  double yaw_deg{NAN};
+};
+
+// 인자 없는 place 가 놓을 자리 = 이 CLI 가 보낸 마지막 성공 PICK 의 목표 그대로 (RobotLink 가 팔 결과마다 알림)
+//   그 뒤 PLACE · STORE 가 성공했으면 (퍽을 이미 놓음) 없음. 다른 작업 · 실패는 상관없음.
+//   다른 노드가 보낸 팔 작업은 모름 (status 토픽에 작업 종류가 없음) · 한 줄 명령은 프로세스마다 새로 시작
+class LastPick
+{
+public:
+  void on_result(uint8_t task, const ArmTarget & t, bool ok);
+  // 놓을 목표. 없으면 false + why (한 줄)
+  bool place_target(ArmTarget & out, std::string & why) const;
+
+private:
+  bool have_{false};
+  ArmTarget t_;
+  std::string used_by_;   // PICK 뒤 성공한 PLACE · STORE (have_ 가 꺼진 까닭)
 };
 
 // Tab 자동 완성: 입력줄 → 후보 (마지막 낱말을 채울 것들, 명령 · 칸 · 정차 이름)

@@ -17,7 +17,7 @@
 //                /lifecycle_manager_navigation/is_active · /lifecycle_manager_localization/is_active
 //   노드 목록 1 Hz, /slam_toolbox 파라미터 mode (mapping · localization)
 // 보내는 것
-//   /arm_task (ArmTask)          팔 작업. 받기 → 결과까지
+//   /arm_task (ArmTask)          팔 작업. 받기 → 결과까지. 인자 없는 place = 이 CLI 의 마지막 성공 PICK 목표 그대로 (LastPick)
 //   navigate_to_pose             Nav2 목표 (map 프레임)
 //   /cmd_vel (TwistStamped)      수동 주행 drive · teleop, 20 Hz, 끝나면 0 몇 번
 //                                Nav2 가 떠 있으면 거절 (nav2.launch.py 규칙: Nav2 중 teleop 금지), force 로 무시
@@ -139,6 +139,7 @@ private:
   // 보낸 번호 · 취소한 번호 (mu_): 번호 ≤ cancel_upto 인 goal 이 늦게 받아지면 바로 취소 (cancel 이 받음보다 먼저 처리된 경우)
   uint64_t arm_seq_{0}, nav_seq_{0}, arm_cancel_upto_{0}, nav_cancel_upto_{0};
   std::map<std::string, double> joint_seen_, corr_seen_;   // 관절마다 받은 시각 (mu_)
+  LastPick last_pick_;                    // 인자 없는 place 가 놓을 자리 (mu_, 이 CLI 의 팔 결과로)
   const std::atomic<bool> * interrupt_{nullptr};
   bool quiet_{false};
   std::mutex pub_mu_;                     // /cmd_vel 고르기 · 보내기 (drive 틱 · estop). 순서: pub_mu_ → mu_

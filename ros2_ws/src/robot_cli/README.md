@@ -32,7 +32,12 @@ install.sh 는 같은 이름 `nt` 가 이미 있으면 알려 주고 덮어쓸�
 | `r5` | `retrieve S5` | | `m 이름` | `mark 이름` |
 | `p x y` | `pick x y` | | `n 메모` | `note 메모` |
 | `p det` · `p tag 3` | 손목 인지가 본 퍽 집기 (퍽이 하나뿐일 때 · 여러 개면 퍽 태그) | | | |
-| `pl x y` | `place x y` | | `?` · `q` | `help` · `quit` |
+| `pl` | `place` — 마지막으로 성공한 PICK 목표 그대로 다시 놓기 (아래) | | `?` · `q` | `help` · `quit` |
+| `pl x y` | `place x y` — 좌표로 놓기 | | | |
+
+**집은 자리에 놓기** `pl`: 이 CLI 가 보낸 PICK (`p det` · `p tag` · `p x y`) 중 마지막으로 성공한 것의 목표 (x · y · z · 방향) 를 그대로 PLACE 로 보냄.
+성공한 PICK 이 없거나 그 뒤 PLACE · STORE 가 이미 성공했으면 거절 (이유 한 줄). 다른 노드 (미션) 가 보낸 팔 작업은 셈에 없고,
+한 줄 명령 `nt pl` 은 프로세스가 새로 켜져 기억이 없음 → 화면 `nt` 안에서 `l` → `p det` → `pl`.
 
 화면 입력줄: `Tab` = 명령 · 칸 · 정차 이름 자동 완성 (후보가 여러 개면 기록 칸에), `↑ ↓` = 앞 명령.
 
@@ -101,6 +106,7 @@ robot_state_publisher · arm_state_publisher), 보드 2 개 active, 컨트롤러
 ```
 팔   home [force] · look [rack] · barcode · store <칸> · retrieve <칸>   (칸 = S5 또는 5, look rack = 빈 손 적재함 스캔)
      pick x y [z] [yaw°] · place x y [z] [yaw°]   (base_link m, z 0 = 박스 위 기본 높이) · arm <TASK> …
+     place   (인자 없음: 마지막으로 성공한 PICK 목표 그대로, 그 뒤 PLACE · STORE 가 성공했으면 거절)
      pick det · pick tag <ID>   (LOOK 자세에서 손목 인지 검출로: planning 과 같은 집기 점 · 방향, 2 s 넘은 검출은 안 씀)
 주행 go <정차|x y [yaw°]> (접고 이동) · nav <정차|x y [yaw°]> (바로) · stops
      drive vx vy wz [초] [force] · stop · teleop [force] (화면만: w/s a/d q/e · +/- · space · Esc)
@@ -203,4 +209,4 @@ nt check || echo "점검 실패"
 - 설정: `hardware_map.yaml` · `rack_cells.yaml` · `control.yaml` · `arm_paths.yaml` · `controllers.yaml` = bringup share/config, `dice_map.yaml` = 레포 `maps/`
   (빌드 때 경로 `ros2_ws/src/robot_cli/../../../maps`, 레포 밖에서 빌드하면 `--cmake-args -DROBOT_CLI_MAPS_DIR=<레포>/maps`, 실행 때 `--dice-map`)
 - `tools/robot_cli/robot_cli.sh` 실행기 · `tools/robot_cli/install.sh` `nt` 설치
-- 시험: `colcon test --packages-select robot_cli` (명령 · 별칭 · Tab · 눈금 · 정차 · 팔 자세 · 배터리 로그 · 주행 한계 · 배지 · 쪽 · 점검 · 한계 · mark 파일 · cycle 순서)
+- 시험: `colcon test --packages-select robot_cli` (명령 · 별칭 · Tab · 집은 자리 place · 눈금 · 정차 · 팔 자세 · 배터리 로그 · 주행 한계 · 배지 · 쪽 · 점검 · 한계 · mark 파일 · cycle 순서)

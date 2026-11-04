@@ -114,8 +114,9 @@ std::string arm_what(const Command & c)
 {
   char b[160];
   if (c.task == RobotLink::ArmTask::Goal::PICK || c.task == RobotLink::ArmTask::Goal::PLACE) {
-    std::snprintf(b, sizeof(b), "%s (%.3f, %.3f, %.3f) yaw %s", task_name(c.task), c.x, c.y, c.z,
-      std::isfinite(c.yaw_deg) ? (std::to_string(static_cast<int>(std::lround(c.yaw_deg))) + "°").c_str() : "모름");
+    std::snprintf(b, sizeof(b), "%s (%.3f, %.3f, %.3f) yaw %s%s", task_name(c.task), c.x, c.y, c.z,
+      std::isfinite(c.yaw_deg) ? (std::to_string(static_cast<int>(std::lround(c.yaw_deg))) + "°").c_str() : "모름",
+      c.from_last ? " = 마지막 PICK 자리" : "");
     return b;
   }
   return std::string(task_name(c.task)) + (c.slot.empty() ? "" : " " + c.slot);
@@ -490,6 +491,21 @@ void RobotLink::send_arm(const Command & c, Done done, std::function<void()> acc
   if (estop) {fail(done, 2, "팔 거절: E-STOP 중 — estop off 뒤에"); return;}
   Command cc = c;
   DetPick dp;
+  ArmTarget tgt;   // PICK · PLACE 로 보낼 목표 그대로 (성공한 PICK 이면 last_pick_ 에)
+  // place (인자 없음): 마지막 성공 PICK 목표 — 없으면 서버를 기다리지 않고 바로 거절
+  if (c.from_last) {
+    std::string why;
+    bool have = false;
+    {
+      std::lock_guard<std::mutex> lk(mu_);
+      have = last_pick_.place_target(tgt, why);
+    }
+    if (!have) {fail(done, 2, "place 거절: " + why); return;}
+    cc.x = tgt.x;
+    cc.y = tgt.y;
+    cc.z = tgt.z;
+    cc.yaw_deg = tgt.yaw_deg;
+  }
   // 서버 찾기 — Ctrl-C 면 보내지 않음
   const auto until = std::chrono::steady_clock::now() + std::chrono::duration<double>(discovery_wait_s_);
   while (!arm_->action_server_is_ready()) {
@@ -566,22 +582,32 @@ void RobotLink::send_arm(const Command & c, Done done, std::function<void()> acc
   ArmTask::Goal g;
   g.task = cc.task;
   g.slot = cc.slot;
+  if (!cc.from_last) {   // from_last 는 위에서 기억한 목표 (방향까지) 그대로
+    tgt.x = cc.x;
+    tgt.y = cc.y;
+    tgt.z = cc.z;
+    tgt.yaw_deg = cc.yaw_deg;
+    if (cc.from_det) {   // planning grasp_orientation 그대로 (방향 모르면 0,0,0,0)
+      tgt.qx = dp.qx;
+      tgt.qy = dp.qy;
+      tgt.qz = dp.qz;
+      tgt.qw = dp.qw;
+    } else if (std::isfinite(cc.yaw_deg)) {
+      const auto q = quat_of(cc.yaw_deg * M_PI / 180.0);
+      tgt.qz = q.z;
+      tgt.qw = q.w;
+    }   // 아니면 방향 모름 = 0,0,0,0 (Detection.msg 약속, control_master 가 기본 방향)
+  }
   if (cc.task == ArmTask::Goal::PICK || cc.task == ArmTask::Goal::PLACE) {
     g.target.header.frame_id = "base_link";
     g.target.header.stamp = now();
-    g.target.pose.position.x = cc.x;
-    g.target.pose.position.y = cc.y;
-    g.target.pose.position.z = cc.z;
-    if (cc.from_det) {   // planning grasp_orientation 그대로 (방향 모르면 0,0,0,0)
-      g.target.pose.orientation.x = dp.qx;
-      g.target.pose.orientation.y = dp.qy;
-      g.target.pose.orientation.z = dp.qz;
-      g.target.pose.orientation.w = dp.qw;
-    } else if (std::isfinite(cc.yaw_deg)) {
-      g.target.pose.orientation = quat_of(cc.yaw_deg * M_PI / 180.0);
-    } else {
-      g.target.pose.orientation.w = 0.0;   // 방향 모름 = 0,0,0,0 (Detection.msg 약속, control_master 가 기본 방향)
-    }
+    g.target.pose.position.x = tgt.x;
+    g.target.pose.position.y = tgt.y;
+    g.target.pose.position.z = tgt.z;
+    g.target.pose.orientation.x = tgt.qx;
+    g.target.pose.orientation.y = tgt.qy;
+    g.target.pose.orientation.z = tgt.qz;
+    g.target.pose.orientation.w = tgt.qw;
   }
   auto last_phase = std::make_shared<std::string>();
   auto opt = rclcpp_action::Client<ArmTask>::SendGoalOptions();
@@ -616,15 +642,17 @@ void RobotLink::send_arm(const Command & c, Done done, std::function<void()> acc
       *last_phase = f->phase;
       log("팔 " + what + " · phase " + f->phase);
     };
-  opt.result_callback = [this, what, done](const rclcpp_action::ClientGoalHandle<ArmTask>::WrappedResult & r) {
+  opt.result_callback = [this, what, done, task = cc.task, tgt](const rclcpp_action::ClientGoalHandle<ArmTask>::WrappedResult & r) {
       const bool ok = r.code == rclcpp_action::ResultCode::SUCCEEDED && r.result && r.result->success;
       const std::string text = what + " → " + (ok ? "성공" : "실패") + " [" + rclcpp_code(r.code) + "] " +
         (r.result ? r.result->message : "");
       {
         std::lock_guard<std::mutex> lk(mu_);
         s_.my_arm = text;
+        last_pick_.on_result(task, tgt, ok);
       }
       log("팔 " + text);
+      if (ok && task == ArmTask::Goal::PICK) {log("pl = 이 PICK 자리에 다시 놓기");}
       done(ok ? 0 : 2, text);
     };
   if (interrupted()) {fail(done, 1, "팔: 중단 (Ctrl-C) — 안 보냄"); return;}
