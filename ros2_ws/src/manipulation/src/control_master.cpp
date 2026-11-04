@@ -168,6 +168,10 @@ public:
     //   실행 중 바로 바꿈: ros2 param set /control_master pick_offset_x_mm -5.0 (다음 PICK 부터)
     declare_parameter<double>("pick_offset_x_mm", 0.0);
     declare_parameter<double>("pick_offset_y_mm", 0.0);
+    // STORE 때 칸 근처 경로를 더 옮김 [mm, base_link, ±8 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 적재함 태그 보정과 더해짐
+    //   실행 중 바로 바꿈: ros2 param set /control_master store_offset_y_mm 3.0 (다음 STORE 부터, x+ = 앞 · y+ = 왼쪽)
+    declare_parameter<double>("store_offset_x_mm", 0.0);
+    declare_parameter<double>("store_offset_y_mm", 0.0);
     tf_buf_ = std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listen_ = std::make_unique<tf2_ros::TransformListener>(*tf_buf_);
     sub_dets_ = create_subscription<interfaces::msg::DetectionArray>(
@@ -670,30 +674,46 @@ private:
     RCLCPP_INFO(get_logger(), "적재함 기준 스캔: 칸 %zu 개 (%s). 스캔하면 이것과 비교해 칸 경로를 옮김", rack_ref_.size(), rack_ref_file_.c_str());
   }
 
-  // STORE · RETRIEVE: 마지막 스캔이 기준에서 움직였으면 그 칸 경로의 칸 근처를 옮김. false = 거절 (why)
+  // STORE · RETRIEVE: 마지막 스캔이 기준에서 움직였으면 그 칸 경로의 칸 근처를 옮김 + STORE 는 store_offset_*_mm 도 더함. false = 거절 (why)
   bool rack_adjust(const std::string & name, ArmPath & path, std::string & why)
   {
     const bool store = name.rfind("store_", 0) == 0;
-    if ((!store && name.rfind("retrieve_", 0) != 0) || !rack_fit_ok_) {return true;}
+    if (!store && name.rfind("retrieve_", 0) != 0) {return true;}
     const std::string cell = name.substr(name.find('_') + 1);
     size_t i = 0;
     while (i < rack_names_.size() && rack_names_[i] != cell) {++i;}
-    if (i == rack_names_.size()) {return true;}
-    const Eigen::Vector2d d = rack_shift(rack_fit_, rack_xy_[i], rack_pivot_);
+    const bool known = i < rack_names_.size();
     char buf[240];
-    if (d.norm() > rack_max_shift_m_) {
-      std::snprintf(buf, sizeof(buf), "적재함이 칸 %s 에서 %.1f mm 움직임 (기준 스캔 대비, 한도 %.0f mm) — 적재함을 제자리로 놓고 다시 scan",
-        cell.c_str(), d.norm() * 1000.0, rack_max_shift_m_ * 1000.0);
-      why = buf;
-      return false;
+    Eigen::Vector2d d_rack = Eigen::Vector2d::Zero();
+    if (rack_fit_ok_ && known) {
+      d_rack = rack_shift(rack_fit_, rack_xy_[i], rack_pivot_);
+      if (d_rack.norm() > rack_max_shift_m_) {
+        std::snprintf(buf, sizeof(buf), "적재함이 칸 %s 에서 %.1f mm 움직임 (기준 스캔 대비, 한도 %.0f mm) — 적재함을 제자리로 놓고 다시 scan",
+          cell.c_str(), d_rack.norm() * 1000.0, rack_max_shift_m_ * 1000.0);
+        why = buf;
+        return false;
+      }
+      if (d_rack.norm() < rack_min_shift_m_) {d_rack.setZero();}
     }
-    if (d.norm() < rack_min_shift_m_) {return true;}
-    if (!model_ok_) {why = "팔 모델 없음 → 적재함이 움직인 칸 경로를 못 옮김"; return false;}
+    Eigen::Vector2d d_set = Eigen::Vector2d::Zero();
+    if (store) {
+      const double ox = get_parameter("store_offset_x_mm").as_double(), oy = get_parameter("store_offset_y_mm").as_double();
+      if (!std::isfinite(ox) || !std::isfinite(oy) || std::hypot(ox, oy) > 8.0) {
+        why = "store_offset_x_mm · store_offset_y_mm 가 숫자가 아니거나 8 mm 넘음";
+        return false;
+      }
+      d_set = Eigen::Vector2d(ox, oy) / 1000.0;
+    }
+    const Eigen::Vector2d d = d_rack + d_set;
+    if (d.norm() < 1e-6) {return true;}
+    if (!known) {why = "칸 " + cell + " 이 칸 표 (rack_cell_names) 에 없어 칸 경로를 못 옮김"; return false;}
+    if (!model_ok_) {why = "팔 모델 없음 → 칸 경로를 못 옮김"; return false;}
     CellShiftReport rep;
     std::string err;
     if (!shift_cell_path(model_, path, store, rack_xy_[i], d, rep, err)) {why = "칸 경로 옮기기 실패: " + err; return false;}
-    RCLCPP_INFO(get_logger(), "%s: 적재함 움직임만큼 칸 근처를 (%+.1f, %+.1f) mm 옮김 (점 %d 개 · 관절 최대 %.2f° · 손끝 어긋남 %.2f mm)",
-      name.c_str(), d.x() * 1000.0, d.y() * 1000.0, rep.moved, rep.max_joint_deg, rep.worst_pos_mm);
+    RCLCPP_INFO(get_logger(), "%s: 칸 근처를 (%+.1f, %+.1f) mm 옮김 = 적재함 움직임 (%+.1f, %+.1f) + store_offset (%+.1f, %+.1f) "
+      "(점 %d 개 · 관절 최대 %.2f° · 손끝 어긋남 %.2f mm)", name.c_str(), d.x() * 1000.0, d.y() * 1000.0,
+      d_rack.x() * 1000.0, d_rack.y() * 1000.0, d_set.x() * 1000.0, d_set.y() * 1000.0, rep.moved, rep.max_joint_deg, rep.worst_pos_mm);
     return true;
   }
 
