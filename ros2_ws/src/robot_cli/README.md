@@ -24,6 +24,7 @@ install.sh 는 같은 이름 `nt` 가 이미 있으면 알려 주고 덮어쓸�
 |---|---|---|---|---|
 | `h` | `home` | | `g B1` | `go B1` — 접고 이동 (아래) |
 | `l` | `look` | | `x` | `cancel all` |
+| `scan` | `look rack` — 빈 손 적재함 스캔 (칸 태그 재기) | | | |
 | `b` | `barcode` | | `!` | `estop` (화면 어디서나 F9) |
 | `s5` · `s 5` | `store S5` (S 생략 가능) | | `c` | `check` |
 | `r5` | `retrieve S5` | | `m 이름` | `mark 이름` |
@@ -68,7 +69,7 @@ Nav2      [꺼짐]      nav 명령 안 됨
 | 1 위치·SLAM | odom · map (TF, 나이) · amcl 위치 표, 위치 추정 종류 · 건강 · 노드 · lifecycle, 라이다 앞 · 뒤 · 합친 scan · IMU 나이, 시계 차이, 다시 띄울 launch 명령 |
 | 2 팔 | 관절 표: 눈금 · rad · ° · 전류 A · 보정 rad · ° · 눈금 · 처짐 · 받침과 차이, 그리퍼 간격 · 전류 · 퍽 쥠, 이름 자세 · 접힘 · lazy_fold · URDF 한계, 차례, 최근 팔 작업 8 개 (걸린 시간 · phase 마다) |
 | 3 주행·Nav2 | Nav2 goal · 남은 거리 · ETA, hold, drive 가 되는지 (안 되면 이유), 정차 11 곳 (번호 · 좌표 · 거리 · 방향 차이) |
-| 4 인지 | 신호등, 손목 · 광각 검출 하나하나 (태그 · 위치), 바코드 |
+| 4 인지 | 신호등, 손목 · 광각 검출 하나하나 (태그 · 위치), 적재함 칸 태그 · 칸 안 퍽 (칸마다 마지막으로 본 위치 · 언제), 바코드 |
 | 5 미션 | 상태 · 퍽 수 · 고장, 적재 칸 표 |
 | 6 진단 | 노드, 보드 · 컨트롤러 표, 센서 나이, `/diagnostics` 전부, 배터리 |
 | 7 실험 | mark · cycle · 세션 기록 · 메모 · bag (아래 '실험') |
@@ -95,7 +96,7 @@ robot_state_publisher · arm_state_publisher), 보드 2 개 active, 컨트롤러
 ## 명령 (긴 이름)
 
 ```
-팔   home [force] · look · barcode · store <칸> · retrieve <칸>   (칸 = S5 또는 5)
+팔   home [force] · look [rack] · barcode · store <칸> · retrieve <칸>   (칸 = S5 또는 5, look rack = 빈 손 적재함 스캔)
      pick x y [z] [yaw°] · place x y [z] [yaw°]   (base_link m, z 0 = 박스 위 기본 높이) · arm <TASK> …
 주행 go <정차|x y [yaw°]> (접고 이동) · nav <정차|x y [yaw°]> (바로) · stops
      drive vx vy wz [초] [force] · stop · teleop [force] (화면만: w/s a/d q/e · +/- · space · Esc)

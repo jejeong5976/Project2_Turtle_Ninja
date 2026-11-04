@@ -117,6 +117,17 @@ struct Snapshot
   int wide_n{0};
   double wide_t{-1};
   std::vector<DetView> wide_dets;
+  // 적재함 칸 태그 (/rack_tags/detections, manipulation rack_tag_node, base_link): 이번 장 + 칸마다 마지막으로 본 것
+  int rack_n{0};
+  double rack_t{-1};
+  std::map<std::string, std::pair<DetView, double>> rack_seen;   // 키 "c03" (칸 태그) · "p03" (칸 안 퍽) → (검출, 받은 시각)
+  // rack_seen 에서 칸 태그 ('c') · 칸 안 퍽 ('p') 를 본 칸 수 (같은 칸의 태그 · 퍽은 따로 셈)
+  std::size_t rack_count(char kind) const
+  {
+    std::size_t n = 0;
+    for (const auto & kv : rack_seen) {n += !kv.first.empty() && kv.first[0] == kind ? 1 : 0;}
+    return n;
+  }
   std::string task_text;
   double text_t{-1};
   // 미션

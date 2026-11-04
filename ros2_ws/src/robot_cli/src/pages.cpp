@@ -220,6 +220,22 @@ Lines percep_page(const Snapshot & s, const Config & cfg)
         Level::NORMAL});
     }
   }
+  head(L, "적재함 칸 태그 (rack_tag_node · base_link)");
+  if (s.rack_t < 0.0) {
+    row(L, "상태", "없음 (ros2 launch bringup rack_tags.launch.py)", Level::OFF);
+  } else {
+    row(L, "상태", fmt("이번 장 %d 개 · %s 전 · 본 칸 태그 %zu · 칸 안 퍽 %zu", s.rack_n, age(s, s.rack_t).c_str(), s.rack_count('c'),
+      s.rack_count('p')), age_level(s, s.rack_t));
+    if (!s.rack_seen.empty()) {
+      L.push_back({pad("칸", 5) + pad("종류", 6) + rj("태그", 5) + rj("x[mm]", 9) + rj("y[mm]", 9) + "  팔    본 지", Level::NORMAL});
+    }
+    for (const auto & [key, v] : s.rack_seen) {
+      const DetView & d = v.first;
+      L.push_back({pad(d.label, 5) + pad(d.kind == "rack_puck" ? "퍽" : "칸", 6) + rj(d.id.empty() ? "-" : d.id, 5) +
+        rj(fmt("%+.1f", d.x * 1000.0), 9) + rj(fmt("%+.1f", d.y * 1000.0), 9) + (d.conf >= 0.99 ? "  멈춤  " : "  움직임") + "  " +
+        age(s, v.second) + " 전", age_level(s, v.second)});
+    }
+  }
   head(L, "바코드");
   row(L, "글", s.text_t < 0.0 ? std::string("없음 (barcode → call /perception/barcode_enable on)") : "\"" + s.task_text + "\" · " +
     age(s, s.text_t) + " 전", s.text_t < 0.0 ? Level::OFF : Level::NORMAL);

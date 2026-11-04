@@ -98,6 +98,7 @@ std::vector<std::string> expand_alias(const std::vector<std::string> & tok)
     if (c == w.first) {t[0] = w.second; return t;}
   }
   if (c == "x" && t.size() == 1) {return {"cancel", "all"};}
+  if (c == "scan" && t.size() == 1) {return {"look", "rack"};}   // 빈 손 적재함 스캔
   if (c.size() >= 2 && (c[0] == 's' || c[0] == 'r') && all_digits(c.substr(1))) {
     t[0] = c[0] == 's' ? "store" : "retrieve";
     t.insert(t.begin() + 1, c.substr(1));
@@ -126,7 +127,9 @@ bool parse_arm(const std::vector<std::string> & tok, const Names & names, Comman
   }
   if (t == "look" || t == "look_barcode" || t == "barcode") {
     out.task = t == "look" ? ArmTask::Goal::LOOK : ArmTask::Goal::LOOK_BARCODE;
-    if (tok.size() != 1) {err = t + " 는 인자 없음"; return false;}
+    // look rack = 빈 손 적재함 스캔 (control_master 경로 rack_scan, 받침에서 시작해 받침으로 끝남)
+    if (t == "look" && tok.size() == 2 && lower(tok[1]) == "rack") {out.slot = "rack"; return true;}
+    if (tok.size() != 1) {err = t == "look" ? "look [rack]" : t + " 는 인자 없음"; return false;}
     return true;
   }
   if (t == "store" || t == "retrieve") {
@@ -349,7 +352,7 @@ namespace robot_cli
 std::vector<std::string> complete_candidates(const std::string & line, const Names & names)
 {
   static const std::vector<std::string> cmds = {
-    "home", "look", "barcode", "store", "retrieve", "pick", "place", "arm", "go", "nav", "drive", "stop", "stops", "teleop",
+    "home", "look", "scan", "barcode", "store", "retrieve", "pick", "place", "arm", "go", "nav", "drive", "stop", "stops", "teleop",
     "cancel", "estop", "check", "mark", "markdir", "cycle", "note", "bag", "teach", "call", "mission", "status", "loc", "snap",
     "help", "quit"};
   const auto tok = split_words(line);
