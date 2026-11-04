@@ -21,6 +21,7 @@ import os
 import tempfile
 
 import yaml
+from ament_index_python.packages import get_package_share_directory
 from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import (Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution,
@@ -156,6 +157,17 @@ def cfg(name):
     return PathJoinSubstitution([FindPackageShare("bringup"), "config", name])
 
 
+def rack_cell_params():
+    """control_master: 칸 중심 표 (config/rack_cells.yaml) — 적재함 태그 스캔으로 칸 경로를 옮길 때 씀"""
+    path = os.path.join(get_package_share_directory("bringup"), "config", "rack_cells.yaml")
+    with open(path, encoding="utf-8") as f:
+        cells = yaml.safe_load(f)["rack_cells"]["cells"]
+    names = list(cells)
+    return {"rack_cell_names": names,
+            "rack_cell_x": [float(cells[n]["xy"][0]) for n in names],
+            "rack_cell_y": [float(cells[n]["xy"][1]) for n in names]}
+
+
 def generate_launch_description():
     desc = FindPackageShare("description")
     arg = LaunchConfiguration
@@ -241,7 +253,8 @@ def generate_launch_description():
              parameters=[ctrl_yaml, {"enforce_command_limits": ParameterValue(arg("enforce_command_limits"), value_type=bool)}], remappings=[("~/robot_description", "/robot_description")], output="both"),
 
         Node(package="manipulation", executable="control_master",
-             parameters=[cfg("control.yaml"), cfg("arm_paths.yaml"), cfg("arm_kinematics.yaml")], condition=IfCondition(with_arm), output="both"),
+             parameters=[cfg("control.yaml"), cfg("arm_paths.yaml"), cfg("arm_kinematics.yaml"), rack_cell_params()],
+             condition=IfCondition(with_arm), output="both"),
 
         Node(package="rviz2", executable="rviz2", condition=IfCondition(arg("use_rviz")),
              arguments=["-d", PathJoinSubstitution([desc, "rviz", "navigation.rviz"]), "-f", "odom"]),

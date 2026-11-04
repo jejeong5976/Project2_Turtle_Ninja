@@ -81,7 +81,7 @@ STORE · RETRIEVE 경로는 11-01 실물 적재함 12 칸 시험에서 성공한
 | 작업 | 시작 자세 | 하는 일 | 끝 자세 | 다음 | 가짜 로봇 시간 |
 |---|---|---|---|---|---|
 | HOME | 아무 자세 | 접기 (LOOK 자세면 정해진 복귀 경로, P0 면 fold 경로) | 받침 (주행 가능) | | 5 s |
-| PICK | 받침 · P0 · LOOK 자세 (P0 면 펼치기 생략, LOOK 이면 검사된 복귀 경로로 P0 를 거쳐 감) | target 퍽 위 40 mm → 10 → −40 mm 에서 쥠 (11-01 실물 넣기 때 깊이, 칸 경로 기준) → 들기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | STORE 또는 PLACE | 16 s (P0 에서 11 s, LOOK 에서 14 s) |
+| PICK | 받침 · P0 · LOOK 자세 (P0 면 펼치기 생략, LOOK 이면 그 자세에서 바로 퍽 위로, LOOK_BARCODE 면 복귀 경로로 P0 를 거쳐 감) | target 퍽 위 40 mm → 10 → −40 mm 에서 쥠 (11-01 실물 넣기 때 깊이, 칸 경로 기준) → 들기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | STORE 또는 PLACE | 16 s (P0 에서 11 s, LOOK 에서 14 s) |
 | STORE | 박스 위 기준점 (PICK 뒤) | slot 칸에 놓기 | 받침 (주행 가능). `lazy_fold` 면 **P0** (받침 바로 위, 바퀴 잠금 유지) | `lazy_fold` 면 PICK · RETRIEVE · LOOK 또는 HOME | 19~31 s (`lazy_fold` 14~26 s) |
 | RETRIEVE | 받침 · P0 · LOOK 자세 (P0 면 펼치기 생략, LOOK 이면 복귀 경로로 P0 를 거쳐 감) | slot 칸에서 꺼내기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | PLACE | 19~32 s (P0 에서 14~27 s) |
 | PLACE | 박스 위 기준점 (PICK · RETRIEVE 뒤) | target 위 40 → 10 → 놓기 (퍽 바닥이 면 위 2 mm: RETRIEVE 뒤 −23 · PICK 뒤 −38 mm) → 들기 | 받침 (주행 가능). `lazy_fold` 면 **P0** (바퀴 잠금 유지) | `lazy_fold` 면 PICK · RETRIEVE · LOOK 또는 HOME | 17 s (`lazy_fold` 12 s) |
@@ -102,6 +102,10 @@ STORE · RETRIEVE 경로는 11-01 실물 적재함 12 칸 시험에서 성공한
   손가락 끝 실측 치수 (안쪽 면 9.1 mm + 손가락 위치, 두께 18 mm, 폭 ±16.4 mm) 로 닫힘 방향 (네모 = 면 방향 2 개, 원기둥 = 15° 간격) 과 벌림 (다 열기 → 넣기 폭) 을 고름.
   이웃과 2 mm · 목표 퍽과 3 mm 여유가 안 되면 거절 (이유가 result.message). 놓을 자리 25 mm 안에 이미 퍽이 보이면 PLACE 거절. 이웃이 없으면 예전과 같은 동작.
 - 박스 위 기준점 = 실물 빼기 시험 때 내려놓던 자리 (base_link 기준 x 210.2, y 38.0 mm, −4°) 위 40 mm.
+- **적재함이 움직였을 때**: LOOK `slot: rack` 동안 `/rack_tags/detections` (rack_tag_node) 의 칸 태그를 모아 칸마다 중앙값.
+  적재함이 제자리일 때 한 번 `ros2 service call /control_master/save_rack_reference std_srvs/srv/Trigger` → 기준 (`~/.ros/rack_reference.txt`).
+  그 뒤 스캔마다 기준과 비교한 적재함 움직임 (dx · dy · 회전) 만큼 STORE · RETRIEVE 경로의 칸 근처만 옮김 (`shift_cell_paths.py` 와 같은 규칙).
+  1.5 mm 보다 작으면 그대로, 8 mm 넘으면 거절 (`rack_shift_min_m` · `rack_shift_max_m`). 같은 스캔 자세끼리 빼서 카메라 치우침이 빠짐. 실물 확인 전.
 
 ## 지도 파일
 

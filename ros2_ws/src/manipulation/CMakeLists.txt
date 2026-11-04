@@ -24,7 +24,8 @@ find_package(Eigen3 REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
-add_library(manipulation_core STATIC src/arm.cpp src/arm_path.cpp src/arm_kinematics.cpp src/arm_state.cpp src/grasp_select.cpp src/rack_tags.cpp)
+add_library(manipulation_core STATIC src/arm.cpp src/arm_path.cpp src/arm_kinematics.cpp src/arm_state.cpp src/grasp_select.cpp src/rack_tags.cpp
+  src/cell_shift.cpp)
 set_target_properties(manipulation_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(manipulation_core PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_compile_features(manipulation_core PUBLIC cxx_std_17)
@@ -32,7 +33,7 @@ target_link_libraries(manipulation_core Eigen3::Eigen)
 add_executable(control_master src/control_master.cpp)
 target_link_libraries(control_master manipulation_core rclcpp::rclcpp rclcpp_action::rclcpp_action
   ${control_msgs_TARGETS} ${trajectory_msgs_TARGETS} ${nav_msgs_TARGETS} ${sensor_msgs_TARGETS}
-  ${controller_manager_msgs_TARGETS} ${lifecycle_msgs_TARGETS} ${interfaces_TARGETS}
+  ${controller_manager_msgs_TARGETS} ${lifecycle_msgs_TARGETS} ${interfaces_TARGETS} ${std_srvs_TARGETS}
   tf2::tf2 tf2_ros::tf2_ros tf2_geometry_msgs::tf2_geometry_msgs)
 add_executable(arm_state_publisher src/arm_state_publisher.cpp)
 target_link_libraries(arm_state_publisher manipulation_core rclcpp::rclcpp ${sensor_msgs_TARGETS})
@@ -65,5 +66,7 @@ if(BUILD_TESTING)
   target_link_libraries(test_grasp_select manipulation_core)
   ament_add_gtest(test_rack_tags test/test_rack_tags.cpp)
   target_link_libraries(test_rack_tags manipulation_core)
+  ament_add_gtest(test_cell_shift test/test_cell_shift.cpp)
+  target_link_libraries(test_cell_shift manipulation_core)
 endif()
 ament_package()
