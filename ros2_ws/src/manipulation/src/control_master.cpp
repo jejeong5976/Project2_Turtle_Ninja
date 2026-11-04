@@ -180,7 +180,7 @@ public:
     // 윗면 태그로 잰 퍽 (인지 중심이 2 mm 안) 은 팔 쪽 치우침만: ros2 param set /control_master pick_offset_tagged_x_mm -3.0
     declare_parameter<double>("pick_offset_tagged_x_mm", 0.0);
     declare_parameter<double>("pick_offset_tagged_y_mm", 0.0);
-    // STORE 때 칸 근처 경로를 더 옮김 [mm, base_link, ±8 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 적재함 태그 보정 · 칸별 store_offset.<칸> 과 더해짐
+    // STORE 때 칸 근처 경로를 더 옮김 [mm, base_link, 15 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 적재함 태그 보정 · 칸별 store_offset.<칸> 과 더해짐
     //   실행 중 바로 바꿈: ros2 param set /control_master store_offset_y_mm 3.0 (다음 STORE 부터, x+ = 앞 · y+ = 왼쪽)
     declare_parameter<double>("store_offset_x_mm", 0.0);
     declare_parameter<double>("store_offset_y_mm", 0.0);
@@ -724,8 +724,8 @@ private:
         ox += c[0];
         oy += c[1];
       }
-      if (!std::isfinite(ox) || !std::isfinite(oy) || std::hypot(ox, oy) > 8.0) {
-        why = "store_offset (전체 + 칸 " + cell + ") 가 숫자가 아니거나 8 mm 넘음";
+      if (!std::isfinite(ox) || !std::isfinite(oy) || std::hypot(ox, oy) > 15.0) {
+        why = "store_offset (전체 + 칸 " + cell + ") 가 숫자가 아니거나 15 mm 넘음";
         return false;
       }
       d_set = Eigen::Vector2d(ox, oy) / 1000.0;
