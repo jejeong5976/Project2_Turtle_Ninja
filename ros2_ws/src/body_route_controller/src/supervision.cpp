@@ -5,7 +5,7 @@
 namespace body_route_controller
 {
 std::string TrackingGuard::check(const Pose & map, const Pose & odom,
-  const Velocity & v, const std::vector<Point> & path, const std::string & mode, double heading)
+  const Velocity & v, const std::vector<Point> & path, const std::string & mode, double heading, bool custom_mode)
 {
   for (double value : {map.x,map.y,map.yaw,odom.x,odom.y,odom.yaw,v.x,v.y,v.yaw,heading}) {
     if (!std::isfinite(value)) {return "non_finite_tracking_state";}
@@ -23,6 +23,8 @@ std::string TrackingGuard::check(const Pose & map, const Pose & odom,
     nearest=std::min(nearest,std::hypot(map.x-a.x-t*dx,map.y-a.y-t*dy));
   }
   if (nearest>limits_.route_distance) {return "outside_route_corridor";}
+  // MPPI legitimately combines translation and yaw; it has no discrete-mode status.
+  if(!custom_mode) {turning_=false;return {};}
   const bool turn=mode=="route_turn"||mode=="final_turn"||mode=="settle_turn"||mode=="stop_before_turn";
   if (turn) {
     if (!turning_) {turn_start_={odom.x,odom.y};}

@@ -43,3 +43,56 @@ def test_overlay_inclusion_parameter_substitution_and_main_launch(tmp_path):
         assert config["controller_server"]["ros__parameters"]["FollowPath"]["require_hold_signal"]
     finally:
         params.cleanup()
+
+
+def test_generated_profiles_and_cli_rejections(tmp_path):
+    import subprocess
+    from ament_index_python.packages import get_package_prefix
+    binary = Path(get_package_prefix("body_route_controller")) / "lib/body_route_controller/configure_trial"
+    share = Path(get_package_share_directory("body_route_controller"))
+    entry = load_module(share / "launch/body_route.launch.py", "comparison_launch")
+    map_file = tmp_path / "map.yaml"
+    map_file.write_text("image: test.pgm\nresolution: 0.01\n")
+    for mode in ("custom", "original"):
+        folder = tmp_path / mode
+        result = subprocess.run([str(binary), "--mode", mode, "--speed", "0.08", "--yaw-rate", "0.3",
+                                 "--output", str(folder)], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        drive = yaml.safe_load((folder / "drive_limits.yaml").read_text())
+        trial = yaml.safe_load((folder / "trial.yaml").read_text())["body_route_trial"]["ros__parameters"]
+        assert type(drive["heading_hold_kp"]) is float
+        assert drive["max_linear"] == trial["speed"] == 0.08
+        assert drive["max_angular"] == trial["yaw_rate"] == 0.3
+        assert trial["execute"] is False
+        context = LaunchContext()
+        context.launch_configurations.update(map=str(map_file), params=str(folder / "nav2.yaml"),
+                                             use_sim_time="false", initial_pose="", rviz="false")
+        actions = entry.start(context)
+        assert dict(actions[0].launch_arguments)["params"] == str(folder / "nav2.yaml")
+        params = ParameterFile(str(folder / "nav2.yaml"), allow_substs=True)
+        try:
+            resolved = yaml.safe_load(Path(params.evaluate(context)).read_text())
+            assert Path(resolved["bt_navigator"]["ros__parameters"]["default_nav_to_pose_bt_xml"]).is_file()
+            plugin = resolved["controller_server"]["ros__parameters"]["FollowPath"]["plugin"]
+            assert plugin == ("body_route_controller::BodyRouteController" if mode == "custom" else "nav2_mppi_controller::MPPIController")
+        finally:
+            params.cleanup()
+        assert subprocess.run([str(binary), "--output", str(folder)], capture_output=True).returncode != 0
+    for option, value in (("--mode", "typo"), ("--speed", "nan"), ("--speed", "0"),
+                          ("--speed", "0.5"), ("--speed", "0.05oops"), ("--yaw-rate", "0")):
+        folder = tmp_path / "invalid"
+        assert subprocess.run([str(binary), option, value, "--output", str(folder)], capture_output=True).returncode != 0
+        assert not folder.exists()
+
+    folder = tmp_path / "integral_doubles"
+    assert subprocess.run([str(binary), "--mode", "original", "--speed", "0.1", "--yaw-rate", "1.0",
+                           "--linear-accel", "1.0", "--angular-accel", "6.0", "--output", str(folder)], capture_output=True).returncode == 0
+    drive = yaml.safe_load((folder / "drive_limits.yaml").read_text())
+    trial = yaml.safe_load((folder / "trial.yaml").read_text())["body_route_trial"]["ros__parameters"]
+    nav = yaml.safe_load((folder / "nav2.yaml").read_text())["controller_server"]["ros__parameters"]["FollowPath"]
+    for name in ("heading_hold_kp", "max_angular", "max_linear_accel", "max_angular_accel"):
+        assert type(drive[name]) is float
+    for name in ("yaw_rate", "linear_accel", "angular_accel"):
+        assert type(trial[name]) is float
+    for name in ("wz_max", "ax_max", "ax_min", "ay_max", "ay_min", "az_max"):
+        assert type(nav[name]) is float

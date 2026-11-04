@@ -17,7 +17,7 @@ public:
   explicit TrackingGuard(TrackingLimits limits = {}) : limits_(limits) {}
   std::string check(const Pose & map_pose, const Pose & odom_pose,
     const Velocity & measured, const std::vector<Point> & path,
-    const std::string & mode, double target_heading);
+    const std::string & mode, double target_heading, bool custom_mode = true);
   void reset() {turning_ = false;}
 private:
   TrackingLimits limits_;

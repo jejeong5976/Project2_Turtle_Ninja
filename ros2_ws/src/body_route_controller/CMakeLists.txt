@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(body_route_controller LANGUAGES CXX)
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
+find_package(yaml-cpp REQUIRED)
 find_package(nav2_core REQUIRED)
 find_package(nav2_costmap_2d REQUIRED)
 find_package(nav2_ros_common REQUIRED)
@@ -32,13 +34,21 @@ target_link_libraries(body_route_plugin PUBLIC body_route_core
   ${geometry_msgs_TARGETS} ${nav_msgs_TARGETS} ${std_msgs_TARGETS})
 target_include_directories(body_route_plugin SYSTEM PUBLIC
   ${nav2_core_INCLUDE_DIRS} ${nav2_costmap_2d_INCLUDE_DIRS} ${nav2_ros_common_INCLUDE_DIRS})
+add_library(trial_profile STATIC src/profile.cpp)
+target_compile_features(trial_profile PUBLIC cxx_std_17)
+target_include_directories(trial_profile PUBLIC include)
+target_link_libraries(trial_profile PUBLIC yaml-cpp)
+target_compile_options(trial_profile PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_executable(configure_trial src/configure_trial.cpp)
+target_link_libraries(configure_trial trial_profile ament_index_cpp::ament_index_cpp)
+target_compile_options(configure_trial PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_executable(route_trial src/route_trial.cpp)
 target_compile_features(route_trial PRIVATE cxx_std_17)
 target_compile_options(route_trial PRIVATE -Wall -Wextra -Wpedantic -Werror)
-target_link_libraries(route_trial body_route_core rclcpp::rclcpp rclcpp_action::rclcpp_action
+target_link_libraries(route_trial trial_profile body_route_core rclcpp::rclcpp rclcpp_action::rclcpp_action
   tf2_ros::tf2_ros ${nav2_msgs_TARGETS} ${nav_msgs_TARGETS} ${sensor_msgs_TARGETS}
   ${geometry_msgs_TARGETS} ${std_msgs_TARGETS})
-install(TARGETS route_trial DESTINATION lib/${PROJECT_NAME})
+install(TARGETS route_trial configure_trial DESTINATION lib/${PROJECT_NAME})
 pluginlib_export_plugin_description_file(nav2_core body_route_plugins.xml)
 install(TARGETS body_route_core body_route_plugin ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
 install(DIRECTORY include/ DESTINATION include)
@@ -50,15 +60,27 @@ if(BUILD_TESTING)
   target_compile_options(replay_map PRIVATE -Wall -Wextra -Wpedantic -Werror)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_cmake_pytest REQUIRED)
-  ament_add_gtest(test_body_route test/test_core.cpp test/test_collision.cpp test/test_plugin.cpp test/test_routes.cpp test/test_supervision.cpp)
+  ament_add_gtest(test_body_route test/test_core.cpp test/test_collision.cpp test/test_plugin.cpp test/test_routes.cpp test/test_supervision.cpp test/test_profile.cpp)
   target_compile_definitions(test_body_route PRIVATE BODY_ROUTE_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/test/data")
-  target_link_libraries(test_body_route body_route_plugin)
+  target_link_libraries(test_body_route body_route_plugin trial_profile)
   target_compile_options(test_body_route PRIVATE -Wall -Wextra -Wpedantic -Werror)
   ament_add_gtest(test_body_route_adapter test/test_adapter.cpp)
   target_link_libraries(test_body_route_adapter body_route_plugin)
   target_compile_options(test_body_route_adapter PRIVATE -Wall -Wextra -Wpedantic -Werror)
   set_tests_properties(test_body_route_adapter PROPERTIES ENVIRONMENT
     "ROS_DOMAIN_ID=231;ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST;ROS_LOG_DIR=/tmp/body-route-ros-test-log")
+  add_executable(trial_fixture test/trial_fixture.cpp)
+  target_compile_features(trial_fixture PRIVATE cxx_std_17)
+  target_compile_options(trial_fixture PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  target_link_libraries(trial_fixture yaml-cpp rclcpp::rclcpp rclcpp_action::rclcpp_action tf2_ros::tf2_ros
+    ${nav_msgs_TARGETS} ${nav2_msgs_TARGETS} ${sensor_msgs_TARGETS} ${geometry_msgs_TARGETS} ${std_msgs_TARGETS})
+  # Interface fixture only: no drivetrain or hardware. Serial tests share a local domain.
+  foreach(scenario preview owner_conflict rear_loss view_loss interrupt invalid_scan profile_mismatch
+    custom_success original_success custom_fast_success custom_fixed_success original_fixed_success original_rear_loss original_overspeed navigation_abort)
+    add_test(NAME trial_${scenario} COMMAND trial_fixture $<TARGET_FILE:route_trial> ${scenario} ${CMAKE_CURRENT_BINARY_DIR}/trial_results)
+    set_tests_properties(trial_${scenario} PROPERTIES TIMEOUT 55 RUN_SERIAL TRUE
+      ENVIRONMENT "ROS_DOMAIN_ID=232;ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST;ROS_LOG_DIR=/tmp/body-route-interface-test-log")
+  endforeach()
   ament_add_pytest_test(test_body_route_launch test/test_launch.py
     APPEND_ENV ROS_LOG_DIR=/tmp/body-route-launch-test-log)
 endif()

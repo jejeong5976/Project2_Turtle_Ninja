@@ -19,12 +19,14 @@ def start(context):
         raise RuntimeError("Supply the existing scanned occupancy map YAML with map:=...")
     # The main launch supports YAML substitutions through ParameterFile.
     nav = Path(get_package_share_directory("navigation")) / "launch" / "nav2.launch.py"
-    config = yaml.safe_load((share / "config" / "nav2.yaml").read_text())
-    if config["controller_server"]["ros__parameters"]["FollowPath"]["plugin"] != \
-            "body_route_controller::BodyRouteController":
+    params = LaunchConfiguration("params", default="").perform(context)
+    params = Path(params).expanduser() if params else share / "config" / "nav2.yaml"
+    config = yaml.safe_load(params.read_text())
+    if config["controller_server"]["ros__parameters"]["FollowPath"]["plugin"] not in (
+            "body_route_controller::BodyRouteController", "nav2_mppi_controller::MPPIController"):
         raise RuntimeError("Unexpected controller profile")
     return [IncludeLaunchDescription(PythonLaunchDescriptionSource(str(nav)), launch_arguments={
-        "params": str(share / "config" / "nav2.yaml"),
+        "params": str(params),
         "map": str(map_file), "localization": "amcl", "mission_hold": "true",
         "use_sim_time": LaunchConfiguration("use_sim_time").perform(context),
         "initial_pose": LaunchConfiguration("initial_pose").perform(context),
@@ -34,6 +36,7 @@ def start(context):
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument("params", default_value="", description="Generated comparison nav2.yaml; empty uses slow custom profile"),
         DeclareLaunchArgument("map", description="Scanned occupancy map YAML"),
         DeclareLaunchArgument("use_sim_time", default_value="true"),
         DeclareLaunchArgument("initial_pose", default_value="", description="Map x,y,yaw_degrees; no truth default"),

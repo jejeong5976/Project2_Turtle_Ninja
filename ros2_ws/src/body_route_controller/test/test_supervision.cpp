@@ -28,3 +28,12 @@ TEST(Supervision, CorridorSpeedInvalidStateAndBlockedModeStop)
   EXPECT_EQ(g.check({}, {}, {},{},"forward",0),"missing_route");
   EXPECT_EQ(g.check({NAN,0,0}, {}, {},path,"forward",0),"non_finite_tracking_state");
 }
+TEST(Supervision, OriginalAllowsHolonomicMotionButKeepsCorridorAndSpeedChecks)
+{
+  TrackingLimits limits;limits.measured_speed=.12;limits.measured_yaw_rate=.45;
+  TrackingGuard g(limits);
+  EXPECT_TRUE(g.check({}, {}, {.05,.05,.2},path,"",0,false).empty());
+  EXPECT_EQ(g.check({}, {}, {.1,.1,0},path,"",0,false),"measured_speed_limit");
+  EXPECT_EQ(g.check({.2,0,0}, {}, {},path,"",0,false),"outside_route_corridor");
+  EXPECT_EQ(g.check({}, {}, {NAN,0,0},path,"",0,false),"non_finite_tracking_state");
+}

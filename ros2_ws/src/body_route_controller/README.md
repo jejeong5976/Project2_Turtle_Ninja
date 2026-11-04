@@ -11,7 +11,8 @@ and oriented arrival at a shelf. Development workspace:
 - Only one translation axis at a time. Forward is preferred; side/backward
   corrections have distance and time bounds. Small yaw corrections may accompany
   translation.
-- Forward/correction/turn caps remain 0.025 m/s, 0.015 m/s, 0.1 rad/s.
+- Default forward/correction/turn caps are 0.025 m/s, 0.015 m/s, 0.1 rad/s.
+  Generate a matching speed profile with the CLI below to change them.
 - Occupied and unknown cells, the entire rotation, and the measured stopping
   envelope are checked against the padded footprint. Blocked motion aborts.
 - Fresh odometry, pose, costmaps, and a continuing released mission-hold heartbeat
@@ -40,8 +41,8 @@ not run alongside mission_manager, teleop, or another trial client.
 
 AMCL owns map->odom; measured swerve odometry owns odom->base_footprint. Front
 filtered scans localize; both filtered scans feed obstacle costmaps and collision
-monitoring. The original MPPI profile, firmware, mounting transforms, and arm
-implementation are unchanged.
+monitoring. The original MPPI source profile, firmware, mounting transforms, and arm
+implementation are unchanged. Comparison profiles select either controller.
 
 Use `config/drive_limits.yaml` with the existing wheel-only bringup. It disables
 the low-level controller's separate heading-hold gain because this plugin owns
@@ -94,6 +95,138 @@ current independently measured initial pose in RViz. Historical coordinates
 must not be reused after teammates move the robot. Preserve the recorded slow
 hardware map, steering limits, filtered scans, and current USB topology.
 
+## CLI speed and controller comparison
+
+`configure_trial` is an offline C++ utility. It generates **three matching files**
+for navigation, the wheel controller, and the trial supervisor; it starts no nodes.
+Choose `custom` for body-forward motion or `original` for the existing omni MPPI
+plugin. Use a new output directory for each profile; existing files are not overwritten.
+
+```bash
+ros2 run body_route_controller configure_trial \
+  --mode custom --speed 0.025 --yaw-rate 0.1 \
+  --output /tmp/custom-025
+ros2 run body_route_controller configure_trial \
+  --mode original --speed 0.025 --yaw-rate 0.1 \
+  --output /tmp/original-025
+```
+
+`--speed` is m/s; `--yaw-rate` is rad/s. Additional flags:
+`--linear-accel` (default 0.05 m/s²), `--angular-accel` (0.2 rad/s²),
+`--correction-speed` (custom only, normally 60% of speed).
+The accepted software range is 0.005–0.26 m/s and 0.02–1.6 rad/s; these upper
+bounds come from the original software profile and **are not physically qualified
+speeds**. Acceleration must be positive, at most 1 m/s² and 6 rad/s² respectively.
+Defaults remain slow. Increasing a maximum alone does not guarantee faster travel:
+acceleration, corner/goal slowing, steering settling and collision limits still apply.
+
+Select a profile in each terminal (example uses custom):
+
+```bash
+trial_profile=/tmp/custom-025
+```
+
+1. Start the existing wheel-only bringup with its verified hardware map and port
+   arguments, replacing its `drive_test_params` argument with:
+   `drive_test_params:=$trial_profile/drive_limits.yaml`.
+2. Start navigation with that profile and the current measured start pose:
+
+```bash
+ros2 launch body_route_controller body_route.launch.py \
+  params:=$trial_profile/nav2.yaml map:=/absolute/path/to/scanned/map.yaml \
+  use_sim_time:=false initial_pose:=X,Y,YAW_DEGREES rviz:=false
+```
+
+3. Preview or execute with matching trial settings:
+
+```bash
+ros2 run body_route_controller route_trial --ros-args \
+  --params-file "$trial_profile/trial.yaml" \
+  -p goals_file:=/absolute/path/to/goals.path
+
+# After the normal physical preflight; a fresh results filename is required.
+ros2 run body_route_controller route_trial --ros-args \
+  --params-file "$trial_profile/trial.yaml" \
+  -p goals_file:=/absolute/path/to/goals.path -p execute:=true \
+  -p results_file:=/absolute/path/to/custom-run-01.yaml
+```
+
+The client queries the running controller plugin and its speed/acceleration
+parameters, and the wheel controller's corresponding limits and heading-hold
+setting, **before every release**. A mismatch remains held. Parameter values are
+readback checks, not evidence that a controller has reconfigured its cached state:
+**stop the trial, shut down navigation and wheel bringup, then restart both with
+the selected profile**. Do not switch plugins or use `ros2 param set` while moving.
+For the other mode repeat with `/tmp/original-025`. Keep sensors/localization under
+one owner, and re-establish the same measured start pose before each run.
+
+The comparison substitutes only `FollowPath` and its speed/acceleration/noise
+settings into the shared navigation profile. MPPI retains its original motion
+model and critics; sampling noise scales with the requested speed to preserve
+its original noise-to-limit ratio. Map resolution, footprint, planner, BT,
+collision monitor, progress checker and stopped goal tolerances are shared.
+This compares **controller modes under common trial conditions**, not the entire
+untouched legacy launch. Both modes disable separate wheel heading hold. MPPI
+has per-axis XY limits; the shared wheel controller enforces the requested XY
+vector magnitude. Its route supervisor permits simultaneous XY and yaw, while
+retaining speed, corridor, sensing, ownership and deadline checks.
+
+### Replay exactly the same path
+
+For controller-only timing, save one planned path while held. The goal file must
+have exactly one destination. This does not release hold or send a motion goal:
+
+```bash
+ros2 run body_route_controller route_trial --ros-args \
+  --params-file "$trial_profile/trial.yaml" \
+  -p goals_file:=/absolute/path/to/one-goal.path \
+  -p save_path_file:=/absolute/path/to/comparison.path
+```
+
+Use **that same saved file** for both modes:
+
+```bash
+ros2 run body_route_controller route_trial --ros-args \
+  --params-file "$trial_profile/trial.yaml" \
+  -p path_file:=/absolute/path/to/comparison.path -p execute:=true \
+  -p results_file:=/absolute/path/to/custom-fixed-01.yaml
+```
+
+`path_file` directly invokes Nav2 `FollowPath` with the same map-frame
+`x y yaw-radians` samples and goal orientation; it performs no replanning or
+recovery. It refuses a start more than 3.5 cm from the first sample. Reset the
+**heading as well as position** to the same measured start before each trial;
+planner sample headings need not represent the robot's original starting yaw.
+The normal collision monitor, controller collision checks, hold, scans and
+freshness checks stay active. Use `goals_file` instead for whole-maze navigation
+with ordinary NavigateToPose replanning. These two measurements answer different
+questions and must be labelled separately.
+
+### Timing results
+
+Each invocation creates a new YAML results stream and prints its path. If
+`results_file` is omitted it uses a unique `/tmp/route-trial-*.yaml` file; copy
+results off a robot before shutdown. Each leg records:
+
+- `status` and failure reason; failed/aborted runs are never marked successful.
+- `navigation_s`: steady-clock time from the first released hold heartbeat to
+  the action result (or fault). Startup, preflight and initial planning are excluded.
+- `completion_s`: time from that same release through the measured stopped,
+  oriented arrival check. This includes the one-second arrival confirmation.
+- `distance_m`, peak measured speed/yaw rate, start/end/goal poses, planned length,
+  and a stable `path_id`. The run header records mode, profile/input identifiers,
+  speed, yaw rate and acceleration. Identifiers detect differences; they are not
+  cryptographic signatures.
+
+The final `summary` records `route_wall_s`, total navigation time and travel.
+Route wall time includes waits and planning **between** goals. A result without a
+successful final summary (including a process killed before cleanup) is incomplete
+or failed. For the same saved path, compare successful `completion_s` values with
+matching `path_id`, map, start pose, limits and robot configuration. Repeat at
+least three runs per mode, alternate their order and compare medians plus failure
+counts; a mode that aborts is not a faster completion. Do not infer physical gains
+from a mock test. Raise one speed/acceleration setting at a time after qualification.
+
 ## Optional route trial client
 
 Write an explicit goal file: one **map-frame x y yaw-radians** row per destination;
@@ -141,7 +274,9 @@ The former 25 cm length and fixed initial-heading limits are replaced by:
   while translating above 0.008 m/s.
 - During turn phases, 0.025 m odometry drift and 0.008 m/s translation bounds.
   The controller's tighter measured-stop gate remains 0.003 m/s.
-- Measured speed caps 0.04 m/s and 0.15 rad/s; odometry/scans/map pose freshness
+- Default measured speed caps 0.04 m/s and 0.15 rad/s. Generated profiles use
+  requested speed + max(0.015 m/s, 20%) and yaw rate + max(0.05 rad/s, 20%)
+  as fault thresholds, not extra commanded speed. Odometry/scans/map pose freshness
   0.35 s; controller-status freshness 0.4 s after startup.
 - Both scans require 50 valid returns and fewer than two combined returns inside
   the existing 0.38 m square stop region. Sensor transforms come from TF.
@@ -163,8 +298,8 @@ Offline passes establish software behavior under the stated fixtures, not a
 physical L2 crossing or complete competition mission. The 0.36 m padded square
 and 0.38 m stop region remain provisional; full stowed-body/arm/cable geometry,
 localization, turning drift, stopping response and battery condition need the
-next physical check. Speed and collision limits remain unchanged; the new
-route-relative supervisory bounds still require physical qualification.
+next physical check. Collision geometry remains unchanged. The CLI supports new speed limits and
+route-relative supervisory bounds, which require physical qualification.
 
 Changed-wall static-map clearing and 5 cm wall-displacement robustness are not
 implemented here. NavFn can also propose a path whose footprint/rotation is
