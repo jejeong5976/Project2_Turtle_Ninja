@@ -47,6 +47,7 @@
 //     (cell_shift: shift_cell_paths.py 와 같은 규칙). 같은 스캔 자세 · 같은 카메라끼리 빼서 카메라 치우침이 빠짐
 //     rack_shift_min_m 보다 작으면 그대로, rack_shift_max_m 넘으면 거절 (적재함을 제자리로 · 다시 스캔)
 
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -331,7 +332,13 @@ private:
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000, "%s → 팔 작업 거절", why.c_str());
       return rclcpp_action::GoalResponse::REJECT;
     }
+    // 계획 (IK 여러 번, 다시 잡기면 젯슨에서 0.5 s 넘음) 동안 이 노드는 관절 측정을 못 받음 → 끝난 뒤 밀린 측정을 받을 때까지
+    //   하드웨어 감시가 '측정 끊김' 으로 오판하지 않게 잠깐 이전 판정을 유지 (11-04 실물: 0.59 s 로 PICK 중단)
+    const auto t_plan = std::chrono::steady_clock::now();
     pending_plan_ = build_plan(goal, why);
+    const double plan_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t_plan).count();
+    hw_grace_until_ = now().seconds() + 0.3;
+    if (plan_s > 0.2) {RCLCPP_INFO(get_logger(), "팔 작업 %u 계획 %.2f s", static_cast<unsigned>(goal.task), plan_s);}
     if (pending_plan_.empty()) {
       RCLCPP_WARN(get_logger(), "팔 작업 %u%s%s 거절: %s", static_cast<unsigned>(goal.task),
         goal.slot.empty() ? "" : " 칸 ", goal.slot.c_str(), why.c_str());
@@ -1122,7 +1129,7 @@ private:
   {
     const rclcpp::Time t = now();
     // ⓪ 하드웨어 이상 → STOP + 진행 중 팔 작업 실패 (HOME 확인 무효). 정상으로 돌아와도 여기서 DRIVE 로 안 감
-    const bool hw_ok = hw_->healthy(t.seconds());
+    const bool hw_ok = t.seconds() < hw_grace_until_ ? hw_ok_before_ : hw_->healthy(t.seconds());   // 계획 직후 잠깐은 이전 판정 (on_arm_goal)
     if (!hw_ok) {
       if (hw_ok_before_) {
         RCLCPP_ERROR(get_logger(), "하드웨어 이상: %s → STOP, HOME 확인 무효 (복구 후 HOME 필요)",
@@ -1412,6 +1419,7 @@ private:
   bool hw_list_pending_{false};
   double hw_list_sent_{0.0};
   bool hw_ok_before_{false}, have_hw_once_{false};
+  double hw_grace_until_{0.0};   // 이 시각까지 하드웨어 감시는 이전 판정 유지 (계획으로 노드가 잠깐 멈춘 뒤)
   bool ready_sent_{false};   // 마지막으로 방송한 ready (바뀔 때 바로 다시 보내려고)
   std::vector<double> joint_buf_;            // /joint_states → arm_joints 순서 (콜백마다 재사용)
 
