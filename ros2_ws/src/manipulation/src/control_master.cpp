@@ -881,8 +881,16 @@ private:
       tgt.offset = 0.0;
     }
     if (nb.empty()) {
-      RCLCPP_INFO(get_logger(), "%s: 이웃 퍽 %s → 기본 방향 · 다 열기", what, stale ? "정보 없음 (손목 인지 결과가 없거나 오래됨)" : "없음");
-      cands.push_back({std::nan(""), "open"});
+      // 기본 방향을 정해서 보냄: 방향 없이 (NaN) 보내면 IK 가 네모 면 4 방향 중 수직 손이 닿는 아무 방향으로 쥐어, 손이 닿는 끝자리에서는
+      //   J5 가 90° 다른 손으로 쥠 (실물 11-04 (0.241, -0.026): 닫힘 2°, 다른 때 93 ~ 97°) → 쥐는 점 오차가 J5 에 따라 달라 STORE 에서 다르게 걸림.
+      //   이제 기본 방향이 수직으로 안 닿으면 기울여 쥐고 가까운 자리에 세워 다시 쥠 (regrasp_nodes). 원기둥은 접선 (원기둥도 네모 면으로 보던 것 고침)
+      const bool sq = found ? tgt.square && tgt.yaw_known : std::isfinite(yaw_deg);
+      const double yd = found ? tgt.yaw * 180.0 / M_PI : yaw_deg;
+      const double def = default_close_rad(model_, x, y, sq ? yd : std::nan(""));
+      cands.push_back({def * 180.0 / M_PI, "open"});
+      if (sq) {cands.push_back({def * 180.0 / M_PI + 90.0, "open"});}   // 기본 방향이 기울여도 안 닿을 때만 다른 면
+      RCLCPP_INFO(get_logger(), "%s: 이웃 퍽 %s → 기본 방향 %.0f° · 다 열기", what, stale ? "정보 없음 (손목 인지 결과가 없거나 오래됨)" : "없음",
+        cands.front().first);
       return true;
     }
     // 좁게 열기(넣기 폭)는 목표 검출이 맞춰졌을 때만 (planning 은 원기둥 · 면 모르는 네모에도 x 축을 채워 보냄 → goal 방향만으로는 못 믿음)
@@ -945,7 +953,8 @@ private:
   //   = 퍽은 수직, 퍽 바닥이 면 위 place_clear_mm) 수직 손으로 다시 쥠 (pick_heights_). 놓기 · 다시 쥐기 모두 같은 닫힘 방향 =
   //   그 자리의 접선 (기울인 손은 닫힘축이 접선뿐) → 퍽 면이 손가락과 맞은 채로 놓이고 그대로 다시 쥠
   //   자리 후보: 같은 방향 (J1 → 퍽) 에서 박스 위 가장 가까운 곳 (x = regrasp_min_x) 부터 1 cm 씩 바깥으로 퍽 1 cm 앞까지,
-  //   각각 그대로 · 좌우 4 · 8 cm. 수직 손이 넉넉히 닿는 곳에 먼저 놓음 (끝자리에 놓으면 다시 쥘 때 덜 정확)
+  //   각각 그대로 · 좌우 4 · 8 cm. 수직 손이 넉넉히 닿는 곳에 먼저 놓음 (끝자리에 놓으면 다시 쥘 때 덜 정확).
+  //   그래도 없으면 박스 앞쪽 끝 (x = regrasp_min_x ~ +2 cm) 을 따라 가운데 (y = 0) 쪽으로 1 cm 씩 (구석 퍽)
   bool regrasp_nodes(double px, double py, double top, double tilt, double depth, std::vector<PathNode> & out, double & sx, double & sy,
     std::string & why)
   {
@@ -957,23 +966,22 @@ private:
     exclude_ = p0;
     std::string last = "후보 없음";
     bool ok = false;
-    const double r_near = dir.x() > 0.1 ? (regrasp_min_x_ + 0.002 - j1.x()) / dir.x() : r0 - 0.01;   // x = regrasp_min_x 가 되는 반지름
-    for (double r = std::min(r_near, r0 - 0.01); r <= r0 - 0.01 + 1e-9 && !ok; r += 0.01) {
-      for (double lat : {0.0, 0.04, -0.04, 0.08, -0.08}) {
-        const Eigen::Vector2d q = j1 + dir * r + side * lat;
-        const double x = q.x(), y = q.y();
-        if (x < regrasp_min_x_) {last = "박스 앞쪽 끝 (regrasp_min_x)"; continue;}
+    auto try_spot = [&](double x, double y) {
+        if (x < regrasp_min_x_) {
+          if (last == "후보 없음") {last = "박스 앞쪽 끝 (regrasp_min_x)";}   // 다른 이유가 있으면 그것을 남김
+          return false;
+        }
         std::vector<std::pair<double, std::string>> cands;
         double gx = x, gy = y;
         std::string w;
-        if (!grasp_for(gx, gy, zc, std::nan(""), true, cands, w, "다시 잡기 자리")) {last = w; continue;}   // 빈 자리 · 손가락 여유
+        if (!grasp_for(gx, gy, zc, std::nan(""), true, cands, w, "다시 잡기 자리")) {last = w; return false;}   // 빈 자리 · 손가락 여유
         const double c_deg = (std::atan2(y - j1.y(), x - j1.x()) + M_PI / 2.0) * 180.0 / M_PI;
         std::string kw;
         const std::vector<double> hp{place_heights_[0], place_heights_[1], place_clear_mm_ - depth};
         const auto Pp = poses_for(x, y, top, c_deg, hp, {{c_deg, "release"}}, kw, w, tilt, 0.5);
-        if (Pp.size() != 3) {last = "놓기: " + w; continue;}
+        if (Pp.size() != 3) {last = "놓기: " + w; return false;}
         const auto Pr = poses_for(x, y, top, c_deg, pick_heights_, {{c_deg, "open"}}, kw, w, 0.0, 0.5);
-        if (Pr.size() != 3 || Pr.back().tilt_deg > 0.5) {last = "수직으로 다시 쥐기: " + (Pr.size() == 3 ? std::string("수직 손이 안 닿음") : w); continue;}
+        if (Pr.size() != 3 || Pr.back().tilt_deg > 0.5) {last = "수직으로 다시 쥐기: " + (Pr.size() == 3 ? std::string("수직 손이 안 닿음") : w); return false;}
         out = {model_node("re_place_above", Pp[0].enc, slow_dps_), model_node("re_place_down", Pp[1].enc, slow_dps_),
           model_node("re_place", Pp[2].enc, slow_dps_, "release"), model_node("re_place_up", Pp[1].enc, slow_dps_),
           model_node("re_place_clear", Pp[0].enc, slow_dps_), model_node("re_above", Pr[0].enc, slow_dps_, "open"),
@@ -981,9 +989,19 @@ private:
           model_node("re_up", Pr[1].enc, slow_dps_), model_node("re_lift", Pr[0].enc, slow_dps_)};
         sx = x;
         sy = y;
-        ok = true;
-        break;
+        return true;
+      };
+    const double r_near = dir.x() > 0.1 ? (regrasp_min_x_ + 0.002 - j1.x()) / dir.x() : r0 - 0.01;   // x = regrasp_min_x 가 되는 반지름
+    for (double r = std::min(r_near, r0 - 0.01); r <= r0 - 0.01 + 1e-9 && !ok; r += 0.01) {
+      for (double lat : {0.0, 0.04, -0.04, 0.08, -0.08}) {
+        const Eigen::Vector2d q = j1 + dir * r + side * lat;
+        if ((ok = try_spot(q.x(), q.y()))) {break;}
       }
+    }
+    // 구석 퍽 (J1 에서 옆으로 많이 돈 방향): 그 방향은 박스 앞쪽 끝에서도 J1 에서 멀어 수직 손이 안 닿음 → 박스 앞쪽 끝을 따라 가운데 (y = 0) 쪽으로
+    for (double dx = 0.002; dx <= 0.0221 && !ok; dx += 0.01) {
+      const double x = regrasp_min_x_ + dx, y_line = std::fabs(dir.x()) > 0.1 ? j1.y() + dir.y() * (x - j1.x()) / dir.x() : py;
+      for (double y = y_line; std::fabs(y) > 1e-9 && y * y_line > 0.0 && !ok; y -= std::copysign(0.01, y_line)) {ok = try_spot(x, y);}
     }
     exclude_.reset();
     if (!ok) {

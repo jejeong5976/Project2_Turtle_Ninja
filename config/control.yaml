@@ -58,7 +58,9 @@ control_master:
     store_offset_y_mm: 0.0
     # 칸마다 더하는 STORE 보정 [x, y] mm (없는 칸 = 0). 실행 중: ros2 param set /control_master store_offset.S7 "[0.0, 5.0]"
     store_offset:
-      S7: [0.0, 0.0]
+      S12: [-0.6, -1.8]   # 실물: 넣는 점 맞추기 (+0.6, +6.8) 에 더해 합계 (0, +5) 에서 들어감
+      S9: [4.0, -4.0]     # 실물 (S4 와 같은 쪽으로 같은 만큼 걸림)
+      S4: [4.0, -4.0]
     # 넣는 점 맞추기: 경로의 놓는 점을 팔 모델로 칸 표 (config/rack_cells.yaml 칸 중심 + place_offset) 로 옮김 (칸마다 자동, 위 보정은 그 위에 더함)
     store_to_cell: true
 
