@@ -16,8 +16,8 @@ nt h · nt s5 · nt g B1            # 짧은 명령 (아래 표)
 
 install.sh 는 같은 이름 `nt` 가 이미 있으면 알려 주고 덮어쓸지 묻는다. `~/.local/bin` 이 PATH 에 없으면 넣는 줄만 알려 준다.
 실행기는 심볼릭 링크로 불려도 레포를 찾는다 (`readlink -f`). `ROS_DOMAIN_ID` 는 안 정했으면 팀 로봇 17.
-`FASTDDS_BUILTIN_TRANSPORTS` 는 안 정했으면 `LARGE_DATA` (bringup.launch.py 카메라 · 인지와 같음, 큰 영상은 TCP). 같은 기계 안에서는
-공유 메모리라 달라도 보이지만, PC 에서 Wi-Fi 로 볼 때는 로봇 쪽 노드와 같은 값이어야 보인다 (화면 맨 위에 지금 값). `''` 로 export 하면 기본 UDP.
+`FASTDDS_BUILTIN_TRANSPORTS` 는 그 창 값을 그대로 쓴다 (화면 맨 위에 지금 값). **로봇 노드와 같은 값이어야 보인다**: 젯슨에서 CLI 만 `LARGE_DATA` 면
+`run_robot.sh` (기본) 노드가 안 보였다. `bringup.launch.py` (`LARGE_DATA`) 와 같이 쓸 때는 모든 창에서 같은 값을 export.
 가짜 로봇으로 해 볼 때: `ROS_DOMAIN_ID=96 ros2 launch bringup robot.launch.py hardware:=mock` → `ROS_DOMAIN_ID=96 nt`
 
 ## 짧은 명령
