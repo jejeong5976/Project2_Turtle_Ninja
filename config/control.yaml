@@ -39,10 +39,13 @@ control_master:
     # 나중에 접기: STORE · PLACE 를 P0 (받침 바로 위) 에서 끝냄 → 다음 팔 작업이 접기 · 펼치기 (약 10 s) 를 건너뜀. 주행 전 HOME 이 접음
     #   꺼 둠: P0 에서 약 15 s 기다리는 동안 팔 모터가 버티다 Hardware Error (과열). 일정 시간 뒤 자동 접기를 넣은 뒤 켬
     lazy_fold: false
-    # PICK 쥐는 점 보정 [mm, base_link]: 손목 인지가 퍽 중심을 앞으로 약 16 · 옆으로 약 4 mm 밀어 잡음 (퍽 윗면 태그와 비교)
-    #   → 실물에서 맞춘 값. 실행 중 바꾸기: ros2 param set /control_master pick_offset_x_mm <값> (±15 까지)
-    pick_offset_x_mm: -12.0
-    pick_offset_y_mm: -3.5
+    # PICK 쥐는 점 보정 [mm, base_link]: 손목 인지가 퍽 중심을 앞으로 약 9.6 · 왼쪽으로 약 1.7 mm 밀어 잡음
+    #   (같은 장에서 퍽 윗면 AprilTag 중심과 비교, 실제 렌즈 값). 실행 중 바꾸기: ros2 param set /control_master pick_offset_x_mm <값> (±15 까지)
+    pick_offset_x_mm: -9.5
+    pick_offset_y_mm: -1.5
+    # STORE 칸 근처 경로 보정 [mm, base_link, x+ = 앞 · y+ = 왼쪽, ±8 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 실행 중 ros2 param set 으로 바꿈
+    store_offset_x_mm: 0.0
+    store_offset_y_mm: 0.0
 
     # 고정 자세표
     #   - 팔을 수평으로 쭉 뻗지 않는다 (손목 모터 82 g + 판 + 그리퍼 44 mm 전진 → 어깨 부담 ↑)
