@@ -177,6 +177,9 @@ public:
     regrasp_ = declare_parameter<bool>("regrasp_tilted", true);
     regrasp_min_x_ = declare_parameter<double>("regrasp_min_x", 0.212);
     declare_parameter<double>("pick_offset_y_mm", 0.0);
+    // 윗면 태그로 잰 퍽 (인지 중심이 2 mm 안) 은 팔 쪽 치우침만: ros2 param set /control_master pick_offset_tagged_x_mm -3.0
+    declare_parameter<double>("pick_offset_tagged_x_mm", 0.0);
+    declare_parameter<double>("pick_offset_tagged_y_mm", 0.0);
     // STORE 때 칸 근처 경로를 더 옮김 [mm, base_link, ±8 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 적재함 태그 보정 · 칸별 store_offset.<칸> 과 더해짐
     //   실행 중 바로 바꿈: ros2 param set /control_master store_offset_y_mm 3.0 (다음 STORE 부터, x+ = 앞 · y+ = 왼쪽)
     declare_parameter<double>("store_offset_x_mm", 0.0);
@@ -968,13 +971,17 @@ private:
     const double zc = top - model_.team_base_z_floor + model_.base_z_floor - puck_h_ / 2.0;   // 퍽 중심 (base_link)
     if (!grasp_for(x, y, zc, yaw, false, cands, why, "PICK")) {return {};}
     {
-      const double ox = get_parameter("pick_offset_x_mm").as_double(), oy = get_parameter("pick_offset_y_mm").as_double();
+      const char * px = target_tagged_ ? "pick_offset_tagged_x_mm" : "pick_offset_x_mm";
+      const char * py = target_tagged_ ? "pick_offset_tagged_y_mm" : "pick_offset_y_mm";
+      const double ox = get_parameter(px).as_double(), oy = get_parameter(py).as_double();
       if (!std::isfinite(ox) || !std::isfinite(oy) || std::hypot(ox, oy) > 15.0) {
-        why = "pick_offset_x_mm · pick_offset_y_mm 가 숫자가 아니거나 15 mm 넘음";
+        why = std::string(px) + " · " + py + " 가 숫자가 아니거나 15 mm 넘음";
         return {};
       }
       if (target_tagged_) {
-        RCLCPP_INFO(get_logger(), "PICK: 윗면 태그로 잰 퍽 → 쥐는 점 보정 안 함");
+        x += ox / 1000.0;
+        y += oy / 1000.0;
+        RCLCPP_INFO(get_logger(), "PICK: 윗면 태그로 잰 퍽 → 태그 퍽 보정 (%+.1f, %+.1f) mm (pick_offset_tagged_*)", ox, oy);
       } else if (ox != 0.0 || oy != 0.0) {
         x += ox / 1000.0;
         y += oy / 1000.0;
