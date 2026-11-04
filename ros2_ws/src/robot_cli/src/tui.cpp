@@ -612,7 +612,9 @@ int run_tui(RobotLink & link, const std::atomic<bool> & interrupted, const std::
     const int H = LINES, W = COLS;
     const int log_rows = std::min(kLogRows, std::max(2, H / 5));
     const int top_rows = std::max(1, H - 4 - log_rows);
-    std::string title = " robot_cli · ROS_DOMAIN_ID=" + std::string(domain ? domain : "0") + " · " + clock_text() +
+    const char * dds = std::getenv("FASTDDS_BUILTIN_TRANSPORTS");   // 로봇과 PC 가 다르면 Wi-Fi 너머로 안 보임
+    std::string title = " robot_cli · ROS_DOMAIN_ID=" + std::string(domain ? domain : "0") + " · DDS " +
+      std::string(dds && *dds ? dds : "기본") + " · " + clock_text() +
       " · ? 도움말 · q 끝 · F9 E-STOP";
     if (snap.estop) {title += "  [E-STOP]";}
     if (teleop) {title += "  [TELEOP]";}

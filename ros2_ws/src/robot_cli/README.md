@@ -16,6 +16,8 @@ nt h · nt s5 · nt g B1            # 짧은 명령 (아래 표)
 
 install.sh 는 같은 이름 `nt` 가 이미 있으면 알려 주고 덮어쓸지 묻는다. `~/.local/bin` 이 PATH 에 없으면 넣는 줄만 알려 준다.
 실행기는 심볼릭 링크로 불려도 레포를 찾는다 (`readlink -f`). `ROS_DOMAIN_ID` 는 안 정했으면 팀 로봇 17.
+`FASTDDS_BUILTIN_TRANSPORTS` 는 안 정했으면 `LARGE_DATA` (bringup.launch.py 카메라 · 인지와 같음, 큰 영상은 TCP). 같은 기계 안에서는
+공유 메모리라 달라도 보이지만, PC 에서 Wi-Fi 로 볼 때는 로봇 쪽 노드와 같은 값이어야 보인다 (화면 맨 위에 지금 값). `''` 로 export 하면 기본 UDP.
 가짜 로봇으로 해 볼 때: `ROS_DOMAIN_ID=96 ros2 launch bringup robot.launch.py hardware:=mock` → `ROS_DOMAIN_ID=96 nt`
 
 ## 짧은 명령
@@ -29,6 +31,7 @@ install.sh 는 같은 이름 `nt` 가 이미 있으면 알려 주고 덮어쓸�
 | `s5` · `s 5` | `store S5` (S 생략 가능) | | `c` | `check` |
 | `r5` | `retrieve S5` | | `m 이름` | `mark 이름` |
 | `p x y` | `pick x y` | | `n 메모` | `note 메모` |
+| `p det` · `p tag 3` | 손목 인지가 본 퍽 집기 (퍽이 하나뿐일 때 · 여러 개면 퍽 태그) | | | |
 | `pl x y` | `place x y` | | `?` · `q` | `help` · `quit` |
 
 화면 입력줄: `Tab` = 명령 · 칸 · 정차 이름 자동 완성 (후보가 여러 개면 기록 칸에), `↑ ↓` = 앞 명령.
@@ -98,6 +101,7 @@ robot_state_publisher · arm_state_publisher), 보드 2 개 active, 컨트롤러
 ```
 팔   home [force] · look [rack] · barcode · store <칸> · retrieve <칸>   (칸 = S5 또는 5, look rack = 빈 손 적재함 스캔)
      pick x y [z] [yaw°] · place x y [z] [yaw°]   (base_link m, z 0 = 박스 위 기본 높이) · arm <TASK> …
+     pick det · pick tag <ID>   (LOOK 자세에서 손목 인지 검출로: planning 과 같은 집기 점 · 방향, 2 s 넘은 검출은 안 씀)
 주행 go <정차|x y [yaw°]> (접고 이동) · nav <정차|x y [yaw°]> (바로) · stops
      drive vx vy wz [초] [force] · stop · teleop [force] (화면만: w/s a/d q/e · +/- · space · Esc)
 멈춤 cancel [arm|nav|all] · estop [on|off]

@@ -138,6 +138,20 @@ bool parse_arm(const std::vector<std::string> & tok, const Names & names, Comman
     if (!find_slot(names.slots, tok[1], out.slot)) {err = "모르는 칸 " + tok[1] + " (" + joined(names.slots) + ")"; return false;}
     return true;
   }
+  // pick det · pick tag <ID>: 손목 인지가 본 퍽으로 집기 (목표는 보낼 때 TF 로 만듦)
+  //   번호로 고르기는 없음: 화면을 그린 뒤 검출 순서가 바뀌면 다른 퍽을 고를 수 있음 → 여러 개면 태그로
+  if (t == "pick" && tok.size() >= 2 && (lower(tok[1]) == "det" || lower(tok[1]) == "tag")) {
+    out.task = ArmTask::Goal::PICK;
+    out.from_det = true;
+    if (lower(tok[1]) == "tag") {
+      if (tok.size() != 3) {err = "pick tag <퍽 태그 ID>"; return false;}
+      out.det_tag = tok[2];
+      return true;
+    }
+    if (tok.size() == 2) {return true;}
+    err = "pick det (퍽이 하나일 때) · pick tag <퍽 태그 ID> (여러 개일 때)";
+    return false;
+  }
   if (t == "pick" || t == "place") {
     out.task = t == "pick" ? ArmTask::Goal::PICK : ArmTask::Goal::PLACE;
     if (!read_nums(tok, 1, 2, 4, v, err)) {err = t + " x y [z] [yaw°] — " + err; return false;}

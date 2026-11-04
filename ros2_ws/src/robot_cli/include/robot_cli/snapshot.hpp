@@ -113,6 +113,7 @@ struct Snapshot
   double wrist_t{-1};
   std::string wrist_frame;
   double wrist_lag{0};      // 받은 시각 − 촬영 stamp [s] (이 PC 시계 기준, 시계 차이 포함)
+  double wrist_stamp{0};    // 마지막 손목 검출 촬영 시각 (header.stamp) [s]
   std::vector<DetView> wrist_dets;
   int wide_n{0};
   double wide_t{-1};
