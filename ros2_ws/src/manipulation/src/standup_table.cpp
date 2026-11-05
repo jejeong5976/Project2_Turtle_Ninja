@@ -3,6 +3,7 @@
 #include "manipulation/standup_table.hpp"
 
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -67,6 +68,48 @@ int nearest_standup(const std::vector<StandupPath> & table, double x, double y, 
     }
   }
   return best;
+}
+
+bool standup_retarget(const ArmModel & m, const Q5 & q_table, const StandupRetarget & r, bool scale, RetargetResult & out)
+{
+  out = RetargetResult{};
+  out.q = q_table;
+  const Grip g = arm_grip(m, q_table);
+  Eigen::Vector2d xy = r.to + Eigen::Rotation2Dd(r.da) * (g.tip.head<2>() - r.from);
+  if (scale) {xy = r.anchor + r.reach_scale * (xy - r.anchor);}
+  Eigen::Vector3d p(xy.x(), xy.y(), g.tip.z() + r.dz);
+  if (p.z() < r.tip_min_z) {
+    out.lifted_mm = (r.tip_min_z - p.z()) * 1000.0;
+    p.z() = r.tip_min_z;
+  }
+  if ((p - g.tip).norm() < 1e-6 && std::abs(r.da) < 1e-6) {return true;}
+  const Eigen::Matrix3d R = Eigen::AngleAxisd(r.da, Eigen::Vector3d::UnitZ()).toRotationMatrix();
+  const auto sols = arm_ik(m, p, R * g.app, R * g.close, {q_table}, 180.0);
+  double best = 1e9;
+  const IkSolution * c = nullptr;   // 가장 가까운 해 (실패 설명)
+  for (const auto & sl : sols) {
+    if (!c || sl.pos_mm + sl.app_deg < c->pos_mm + c->app_deg) {c = &sl;}
+    if (sl.pos_mm < 1.0 && sl.app_deg < 10.0 && sl.roll_deg < 10.0 && ticks_in_range(m, q_to_ticks(m, sl.q))) {
+      double d = 0.0;
+      for (int j = 0; j < 5; ++j) {d += std::abs(sl.q[j] - q_table[j]);}
+      const double score = sl.app_deg + sl.roll_deg + d * 180.0 / M_PI * 0.2;   // 방향 먼저, 같으면 원래 자세에 가까운 해
+      if (score < best) {
+        best = score;
+        out.q = sl.q;
+        out.app_err_deg = std::max(sl.app_deg, sl.roll_deg);
+      }
+    }
+  }
+  if (best < 1e8) {return true;}
+  char buf[160];
+  if (c) {
+    std::snprintf(buf, sizeof(buf), "가장 가까운 해: 손끝 %.1f mm · 접근축 %.1f° · 닫힘축 %.1f° · 관절 범위 %s", c->pos_mm, c->app_deg, c->roll_deg,
+      ticks_in_range(m, q_to_ticks(m, c->q)) ? "안" : "밖");
+  } else {
+    std::snprintf(buf, sizeof(buf), "IK 해 없음");
+  }
+  out.fail = buf;
+  return false;
 }
 
 }  // namespace manipulation

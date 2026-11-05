@@ -233,6 +233,54 @@ TEST(Geometry, PuckPoseFromDepthImage)
   EXPECT_FALSE(puck_pose(tiny, depth, K, {}, nullptr).has_value());   // 점 < 30
 }
 
+TEST(Geometry, SupportHeightDecidesUpright)
+{
+  // 카메라가 바로 아래를 봄 (위쪽 = 광학 −z). 박스 윗면 깊이 0.30 m, 퍽 윗면은 그보다 퍽 높이만큼 가까움
+  const Intrinsics K{600.0, 600.0, 320.0, 240.0};
+  const Vec3 up(0, 0, -1);
+  auto scene = [&](double top_above, double len_m, double wid_m) {
+      cv::Mat1f depth(480, 640, 0.30f);
+      cv::Mat1b mask(480, 640, uint8_t(0));
+      const double z = 0.30 - top_above;
+      const cv::Rect r(320 - static_cast<int>(len_m / 2 * K.fx / z), 240 - static_cast<int>(wid_m / 2 * K.fy / z),
+        static_cast<int>(len_m * K.fx / z), static_cast<int>(wid_m * K.fy / z));
+      cv::rectangle(depth, r, cv::Scalar(z), cv::FILLED);
+      cv::rectangle(mask, r, cv::Scalar(255), cv::FILLED);
+      return std::make_pair(mask, depth);
+    };
+  {   // 누운 네모 퍽 (윗면 34.8 mm 높이, 60 × 34.8)
+    auto [mask, depth] = scene(0.0348, 0.060, 0.0348);
+    std::vector<double> hs;
+    for (const auto & q : deproject(mask, depth, K)) {hs.push_back(q.dot(up));}
+    const double top_h = top_height(hs);
+    const auto sh = support_height(mask, depth, K, up, top_h);
+    ASSERT_TRUE(sh.has_value());
+    EXPECT_NEAR(top_h - *sh, 0.0348, 0.002);
+    const auto p = puck_pose(mask, depth, K, {}, &up);
+    ASSERT_TRUE(p.has_value() && p->upright.has_value());
+    EXPECT_FALSE(*p->upright);
+  }
+  {   // 누운 퍽 윗면이 반만 보임 (발자국 30 mm < 48 → 예전 규칙은 선 퍽) — 놓인 면 높이로는 누움
+    auto [mask, depth] = scene(0.0348, 0.030, 0.0348);
+    const auto p = puck_pose(mask, depth, K, {}, &up);
+    ASSERT_TRUE(p.has_value() && p->upright.has_value());
+    EXPECT_FALSE(*p->upright);
+  }
+  {   // 선 퍽 (윗면 60 mm 높이, 34.8 × 34.8)
+    auto [mask, depth] = scene(0.060, 0.0348, 0.0348);
+    const auto p = puck_pose(mask, depth, K, {}, &up);
+    ASSERT_TRUE(p.has_value() && p->upright.has_value());
+    EXPECT_TRUE(*p->upright);
+  }
+  {   // 둘레 깊이 없음 → 예전 규칙 (발자국 60 mm → 누움)
+    auto [mask, depth] = scene(0.0348, 0.060, 0.0348);
+    depth.setTo(0.0f, ~mask);
+    const auto p = puck_pose(mask, depth, K, {}, &up);
+    ASSERT_TRUE(p.has_value() && p->upright.has_value());
+    EXPECT_FALSE(*p->upright);
+  }
+}
+
 TEST(Frame, AxisFrameAndQuat)
 {
   const Vec3 axis = Vec3(0.2, -0.9, 0.3).normalized();

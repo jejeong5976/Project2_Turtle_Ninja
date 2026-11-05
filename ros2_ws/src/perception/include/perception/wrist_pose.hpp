@@ -51,6 +51,8 @@ constexpr double DEPTH_MAX = 1.20;
 constexpr double OUTLIER_R = 0.06;          // 중앙값에서 이 거리 밖 점 버림 (퍽 대각 약 7 cm)
 constexpr int MIN_POSE_POINTS = 30;         // 이보다 적으면 자세 안 냄
 constexpr double UPRIGHT_MIN_H = 0.045;     // 높이 범위가 이보다 크면 선 퍽
+constexpr double SUPPORT_UPRIGHT_H = 0.047;  // 윗면 − 놓인 면 이보다 크면 선 퍽 (누운 34.8 · 선 60 mm 가운데)
+constexpr int RING_IN = 4, RING_OUT = 14, RING_MIN_POINTS = 40;
 constexpr double FLAT_MIN_LEN = 0.048;      // 발자국 긴 길이가 이보다 짧으면 선 퍽 (누운 퍽 60 mm, 선 퍽 ≤ 42 mm)
 constexpr double TOP_WIN = 0.004;           // 윗면 높이 반복 창 (± m)
 constexpr double TOP_BAND = 0.008;          // 윗면 점 씨앗 = 윗면 높이에서 이만큼 아래까지
@@ -132,7 +134,14 @@ std::pair<std::optional<Vec3>, std::array<double, 2>> upright_face(const std::ve
 bool tag_top_refine(PuckPose & p, const Intrinsics & K, const Vec3 & up);
 
 // 위쪽 알 때 선/누움 · 긴축 · 중심 · 면 방향 보정 (p 를 고침)
-void gravity_refine(PuckPose & p, const std::vector<Vec3> & pts, const Vec3 & up);
+//   support_h (놓인 면 높이, 위쪽 방향 내적) 가 있으면 선/누움 = 윗면이 놓인 면에서 SUPPORT_UPRIGHT_H 넘게 높은가 (누운 퍽 34.8 · 선 퍽 60 mm)
+//   없으면 예전 규칙 (점 높이 범위 · 발자국 길이). 11-05 실물: LOOK 에서 누운 퍽을 장마다 섰다 누웠다 함 (윗면 높이는 누운 퍽)
+void gravity_refine(PuckPose & p, const std::vector<Vec3> & pts, const Vec3 & up, std::optional<double> support_h = std::nullopt);
+
+// 마스크 둘레 고리 (마스크에서 RING_IN ~ RING_OUT 화소) 깊이 점 → 놓인 면 높이 (위쪽 내적). 윗면 − 10 mm 보다 낮은 점의 중앙값
+//   (옆 퍽 · 박스 끝 바닥은 고리 일부). 점이 RING_MIN_POINTS 보다 적으면 없음
+std::optional<double> support_height(const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K, const Vec3 & up,
+  double top_h);
 
 // 마스크 1개 → 퍽 자세. 점 부족이면 없음. up_cam 은 카메라 좌표 월드 위쪽 (없으면 nullptr)
 std::optional<PuckPose> puck_pose(

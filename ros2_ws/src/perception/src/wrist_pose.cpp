@@ -231,7 +231,24 @@ std::pair<std::optional<Vec3>, std::array<double, 2>> lying_face(
   return {(up - axis * up.dot(axis)).normalized(), {w, 0.0}};
 }
 
-void gravity_refine(PuckPose & p, const std::vector<Vec3> & pts, const Vec3 & up_in)
+std::optional<double> support_height(const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K, const Vec3 & up_in,
+  double top_h)
+{
+  const Vec3 up = up_in.normalized();
+  cv::Mat1b out_d, in_d;
+  cv::dilate(mask, out_d, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(2 * RING_OUT + 1, 2 * RING_OUT + 1)));
+  cv::dilate(mask, in_d, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(2 * RING_IN + 1, 2 * RING_IN + 1)));
+  const cv::Mat1b ring = out_d & ~in_d;
+  std::vector<double> h;
+  for (const auto & q : deproject(ring, depth_m, K)) {
+    const double hq = q.dot(up);
+    if (hq < top_h - 0.010) {h.push_back(hq);}
+  }
+  if (static_cast<int>(h.size()) < RING_MIN_POINTS) {return std::nullopt;}
+  return percentile(h, 50.0);   // 둘레 대부분이 놓인 면 (옆 퍽 · 박스 끝 바닥은 일부)
+}
+
+void gravity_refine(PuckPose & p, const std::vector<Vec3> & pts, const Vec3 & up_in, std::optional<double> support_h)
 {
   const Vec3 up = up_in.normalized();
   const auto h = dots(pts, up);
@@ -245,7 +262,8 @@ void gravity_refine(PuckPose & p, const std::vector<Vec3> & pts, const Vec3 & up
   const Vec3 long_dir = es.eigenvectors().col(2);
   const auto pr = dots(flat, long_dir, fm);
   const double length = percentile(pr, 97.0) - percentile(pr, 3.0);
-  const bool upright = (top_h - percentile(h, 5.0)) > UPRIGHT_MIN_H || length < FLAT_MIN_LEN;
+  const bool upright = support_h ? (top_h - *support_h) > SUPPORT_UPRIGHT_H
+                                  : ((top_h - percentile(h, 5.0)) > UPRIGHT_MIN_H || length < FLAT_MIN_LEN);
   if (upright) {
     p.axis = up;
     p.axis_source = "gravity_up";
@@ -369,7 +387,9 @@ std::optional<PuckPose> puck_pose(
     break;
   }
   if (up_cam != nullptr) {
-    gravity_refine(p, pts, *up_cam);
+    const Vec3 upn = up_cam->normalized();
+    const auto hs = dots(pts, upn);
+    gravity_refine(p, pts, *up_cam, support_height(mask, depth_m, K, upn, top_height(hs)));
     tag_top_refine(p, K, *up_cam);
   }
   return p;
