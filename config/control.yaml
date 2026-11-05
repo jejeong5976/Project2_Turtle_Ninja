@@ -68,6 +68,14 @@ control_master:
     # 쥔 퍽 손 안 위치 (손목 카메라, rack_tag_node 를 띄워야 잼): false = STORE 때 로그만, true = 기준과 차이만큼 칸 근처 경로를 옮김
     #   기준: STORE 가 잘 들어간 PICK 뒤 (넣기 전, 기준점에서) ros2 service call /control_master/save_held_reference std_srvs/srv/Trigger
     held_correct: false
+    # 누운 네모 퍽 PICK 때 세움 (경로 표 config/standup_paths.txt, Isaac 강화학습 → 피드백 없이 재생). false = 누운 채 PICK (예전)
+    #   실물 첫 시험: ros2 param set /control_master stand_lying true → 누운 네모 퍽 pick det
+    stand_lying: false
+    standup_speed_dps: 32.0   # 시뮬 정책 40 °/s 의 0.8 배 (시뮬 재생: 여는 때 팔 멈춤 + 0.8 배 = 88.3 %)
+    standup_max_gap_mm: 6.0
+    standup_max_gap_deg: 6.0
+    # 세운 뒤 바로 다시 쥠 (true) · LOOK 자세에서 끝내고 다음 pick det 로 카메라로 다시 재서 집음 (false, 기본 — 선 자리가 시뮬에서 90 % 12 mm 안)
+    standup_regrasp: false
 
     # 고정 자세표
     #   - 팔을 수평으로 쭉 뻗지 않는다 (손목 모터 82 g + 판 + 그리퍼 44 mm 전진 → 어깨 부담 ↑)

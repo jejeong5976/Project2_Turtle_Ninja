@@ -158,7 +158,7 @@ def cfg(name):
 
 
 def rack_cell_params():
-    """control_master: 칸 중심 · 넣는 점 보정 표 (config/rack_cells.yaml) — 적재함 태그 스캔 · STORE 넣는 점 맞추기에 씀"""
+    """control_master: 칸 중심 · 넣는 점 보정 표 (config/rack_cells.yaml) — 적재함 태그 스캔 · STORE 넣는 점 맞추기에 씀, 세우기 경로 표 위치"""
     path = os.path.join(get_package_share_directory("bringup"), "config", "rack_cells.yaml")
     with open(path, encoding="utf-8") as f:
         cells = yaml.safe_load(f)["rack_cells"]["cells"]
@@ -167,7 +167,9 @@ def rack_cell_params():
             "rack_cell_x": [float(cells[n]["xy"][0]) for n in names],
             "rack_cell_y": [float(cells[n]["xy"][1]) for n in names],
             "rack_cell_place_x": [float(cells[n].get("place_offset", [0.0, 0.0])[0]) for n in names],
-            "rack_cell_place_y": [float(cells[n].get("place_offset", [0.0, 0.0])[1]) for n in names]}
+            "rack_cell_place_y": [float(cells[n].get("place_offset", [0.0, 0.0])[1]) for n in names],
+            # 누운 네모 퍽 세우기 경로 표 (config/standup_paths.txt, 없으면 누운 채 PICK)
+            "standup_paths_file": os.path.join(get_package_share_directory("bringup"), "config", "standup_paths.txt")}
 
 
 def generate_launch_description():
