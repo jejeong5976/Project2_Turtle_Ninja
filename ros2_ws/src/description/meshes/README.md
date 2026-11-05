@@ -14,6 +14,7 @@
 | `lidar/` | LDS-03 몸체 · 광학부 · 장착 귀 | ROBOTIS LDS-03 CAD |
 | `electronics/` | 젯슨 Orin Nano (캐리어 · 모듈 · 방열판 · 팬 · SSD), 배터리 2 개, OpenCR 2 장 (주행 · 팔) | 제조사 CAD, 위치는 위에서 찍은 사진으로 맞춤 |
 | `structure/` | 2020 프로파일 기둥 450 mm, 기둥 고정판 | 실측 |
+| `rack/` | 퍽 적재함 8 칸 판 · 4 칸 판 (`rack_8cell.obj` · `rack_4cell.obj`, 판 · 나사 구멍 · 옆 홈 포함). 충돌은 URDF 단순 도형 | 팀 Onshape CAD (shak3, 11-05) |
 
 ## 원칙
 - 파일 하나 10 MB 이하, 전체 30 MB 이하 — 판처럼 평평한 것은 원본 CAD 에서 적은 삼각형으로, 복잡한 부품은 모양을 지키는 줄이기(quadric)로. 원본과 표면 차이 0.5 mm 안.

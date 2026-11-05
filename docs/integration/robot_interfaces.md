@@ -64,10 +64,11 @@ T_5c · T_5d 는 광학축 회전까지 포함하므로 optical 회전을 다시
 
 적재함 시각 프레임은 `rack_cell_S1_link` ~ `rack_cell_S12_link` 이다. 번호는 팔 J1 축에서 먼 칸부터이다. 채우는 순서는 `config/planning.yaml` `cargo_slots` (실물 시험 순서 S12, S7, S9, …), 칸끼리 제약은 `config/rack_cells.yaml` `rack_constraints`.
 옛 이름 (`arm_tests/rack_cells.json`) 대응: S1 = L8, S2 = L7, S3 = L6, S4 = B, S5 = L2, S6 = L4, S7 = D, S8 = L5, S9 = A, S10 = L1, S11 = L3, S12 = C.
-`base_link → rack_cell_<칸>_link` 고정 관절은 `rack_cell_<칸>_fixed` 이며, 원점은 각 칸 바닥 중심이다.
-`arm_tests/rack_cells.json` 의 `cells.*.xy` 를 그대로 쓰고, z 는 `floor_z + 0.039 = 0.1325` m, yaw 는 칸별 `yaw_deg` (없으면 전체값 1°) 를 쓴다.
-컵 테두리 윗면은 팀 base_link 기준 `rim_z + 0.039 = 0.1605` m (칸 원점에서 +0.028 m) 이다.
-적재함도 `with_accessories:=true` 조건의 링크이다. 칸마다 바닥 + 벽 4 장 충돌 상자가 있어 MoveIt 이 팔과의 충돌을 본다 (관성은 없음). 집기 보정용 `place_offset` 은 컵 프레임 위치에 더하지 않는다.
+적재함 (11-05 새 적재함) 은 `rack_link` 에 팀 Onshape CAD 메시 두 개 (`meshes/rack/rack_8cell.obj` · `rack_4cell.obj`, 판 · 나사 구멍 · 옆 홈 포함) 를 그대로 붙인다.
+`base_link → rack_link` 고정 관절 `rack_fixed` 는 (−0.102, 0.0671, 0.1385) m, 회전 없음: CAD 칸 중심 12 개를 `config/rack_cells.yaml` 옛 칸 표에 평행 이동으로 맞춘 자리 (8 칸 판은 옛 8 칸, 4 칸 판은 옛 4 칸 자리). 판 밑면이 상판 (z 0.1305) 위.
+`rack_link → rack_cell_<칸>_link` 고정 관절은 `rack_cell_<칸>_fixed` 이며, 원점은 CAD 칸 바닥 중심 (z 0.1335, yaw 0, 칸 간격 60 × 45 mm) 이다. 컵 테두리는 z 0.1605 (칸 원점에서 +0.027 m).
+CAD 칸 중심은 칸 표 (팔이 가는 자리, 칸 간격 약 65 mm) 와 칸마다 최대 약 10 mm 다르다. 팔 · 제어는 칸 표를 쓰고 URDF 칸 위치는 안 쓴다.
+적재함도 `with_accessories:=true` 조건의 링크이다. 충돌은 판 상자 2 개 + 칸마다 컵 벽 8 장 (안쪽 32 mm, 바닥 위 12.5 mm 부터 14° 벌어져 테두리 39.3 mm) 이라 MoveIt 이 팔과의 충돌을 본다 (관성은 없음). 집기 보정용 `place_offset` 은 컵 프레임 위치에 더하지 않는다.
 칸 위치 그림: `config/rack_cells.yaml` (S1~S12 의 xy · yaw · 옛 이름).
 
 스워브 관절 이름의 fl · fr · rl · rr 은 옛 이름을 유지한다. 새 좌표계에서 같은 순서의 조향축 `(x,y)` 는

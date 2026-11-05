@@ -726,35 +726,50 @@
   <joint name="profile_joint" type="fixed"><parent link="profile_fixing_plate_link" /><child link="profile_link" /><origin xyz="0.110213045 0.09580939 -0.0885" rpy="0 0 0" /></joint>
   <joint name="profile_camera_bracket_link_mount" type="fixed"><parent link="profile_link" /><child link="profile_camera_bracket_link" /><origin xyz="-0.110213045 -0.09580939 0.53649997" rpy="0 0 0.274506446118" /></joint>
   <joint name="gripper_park_stand_mount" type="fixed"><parent link="base_link" /><child link="gripper_park_stand_link" /><origin xyz="0.1008 0.00115 0.1305" rpy="0 0 0" /></joint>
-    <xacro:macro name="rack_cell_visual" params="name x y yaw">
-      <link name="rack_cell_${name}_link">
-        <visual><origin xyz="0 0 -0.001"/><geometry><box size="0.040 0.040 0.002"/></geometry><material name="rack_visual"><color rgba="0.25 0.65 0.85 0.65"/></material></visual>
-        <visual><origin xyz="0.019 0 0.014"/><geometry><box size="0.002 0.040 0.028"/></geometry><material name="rack_visual"/></visual>
-        <visual><origin xyz="-0.019 0 0.014"/><geometry><box size="0.002 0.040 0.028"/></geometry><material name="rack_visual"/></visual>
-        <visual><origin xyz="0 0.019 0.014"/><geometry><box size="0.036 0.002 0.028"/></geometry><material name="rack_visual"/></visual>
-        <visual><origin xyz="0 -0.019 0.014"/><geometry><box size="0.036 0.002 0.028"/></geometry><material name="rack_visual"/></visual>
-        <!-- 충돌 = 보이는 벽 4 장 + 바닥 (MoveIt 이 손가락 · 쥔 퍽이 칸 벽에 닿는지 봄) -->
-        <collision name="rack_cell_${name}_collision_floor"><origin xyz="0 0 -0.001"/><geometry><box size="0.040 0.040 0.002"/></geometry></collision>
-        <collision name="rack_cell_${name}_collision_wall_px"><origin xyz="0.019 0 0.014"/><geometry><box size="0.002 0.040 0.028"/></geometry></collision>
-        <collision name="rack_cell_${name}_collision_wall_nx"><origin xyz="-0.019 0 0.014"/><geometry><box size="0.002 0.040 0.028"/></geometry></collision>
-        <collision name="rack_cell_${name}_collision_wall_py"><origin xyz="0 0.019 0.014"/><geometry><box size="0.036 0.002 0.028"/></geometry></collision>
-        <collision name="rack_cell_${name}_collision_wall_ny"><origin xyz="0 -0.019 0.014"/><geometry><box size="0.036 0.002 0.028"/></geometry></collision>
-      </link>
-      <joint name="rack_cell_${name}_fixed" type="fixed"><parent link="base_link"/><child link="rack_cell_${name}_link"/><origin xyz="${x} ${y} 0.1325" rpy="0 0 ${yaw}"/></joint>
+    <!-- 적재함 = 11-05 새 적재함 CAD (Onshape shak3) 메시 그대로: 8 칸 판 · 4 칸 판 (판 · 나사 구멍 · 옆 홈 포함, 홈은 와플 판 바깥쪽)
+         rack_link = CAD 원점 (S2 칸 중심, 칸 바닥 위 5 mm). 판 밑면이 상판 (z 0.1305, 받침대와 같은 면) 위
+         놓은 자리 = 옛 적재함 자리: 8 칸은 옛 8 칸, 4 칸은 옛 4 칸 자리 (CAD 칸 중심을 옛 config/rack_cells.yaml 12 칸에 평행 이동으로 맞춤)
+         config/rack_cells.yaml 은 팔이 가는 자리 (실물 성공 값) 라 그대로 — 칸 간격이 약 65 mm 로 CAD 60 mm 와 달라 칸마다 최대 약 10 mm (S7) 차이 -->
+    <link name="rack_link">
+      <visual><geometry><mesh filename="${mesh}/rack/rack_8cell.obj"/></geometry><material name="rack_visual"><color rgba="0.55 0.74 0.90 1"/></material></visual>
+      <visual><geometry><mesh filename="${mesh}/rack/rack_4cell.obj"/></geometry><material name="rack_visual"/></visual>
+      <!-- 충돌: 판 (상판 면과 0.5 mm · 칸 벽과 0.1 mm 띄움 — 면이 닿으면 MoveIt 거리 계산이 겹침으로 봄) + 칸 벽 (rack_cell_<칸>_link) -->
+      <collision name="rack_plate_8cell"><origin xyz="0.090 0.0225 -0.0063"/><geometry><box size="0.216 0.081 0.0024"/></geometry></collision>
+      <collision name="rack_plate_4cell"><origin xyz="0.138 -0.1605 -0.0063"/><geometry><box size="0.120 0.081 0.0024"/></geometry></collision>
+    </link>
+    <joint name="rack_fixed" type="fixed"><parent link="base_link"/><child link="rack_link"/><origin xyz="-0.102 0.0671 0.1385" rpy="0 0 0"/></joint>
+    <!-- 칸 벽 충돌 (메시와 같은 모양): 안쪽 32 mm 정사각 (바닥 위 12.5 mm 까지) → 14° 벌어져 테두리 (바닥 위 27 mm) 에서 39.3 mm, 벽 2 mm -->
+    <xacro:property name="rack_flare" value="0.24663"/>
+    <xacro:macro name="rack_wall" params="name part xyz rpy size">
+      <collision name="rack_cell_${name}_collision_${part}"><origin xyz="${xyz}" rpy="${rpy}"/><geometry><box size="${size}"/></geometry></collision>
     </xacro:macro>
-    <!-- 칸 이름 S1–S12 = 팔 J1 축(base_link 0.0225, 0)에서 먼 칸부터. planning 이 S1 부터 채움. 옛 이름 (arm_tests/rack_cells.json) 은 줄 끝 주석 -->
-    <xacro:rack_cell_visual name="S1" x="-0.110130" y="0.106931" yaw="-0.042638393626"/>   <!-- 옛 L8, J1 축까지 170 mm -->
-    <xacro:rack_cell_visual name="S2" x="-0.109317" y="0.064428" yaw="-0.026232298657"/>   <!-- 옛 L7, J1 축까지 147 mm -->
-    <xacro:rack_cell_visual name="S3" x="-0.043400" y="0.111000" yaw="0.009564404301"/>   <!-- 옛 L6, J1 축까지 129 mm -->
-    <xacro:rack_cell_visual name="S4" x="0.079500" y="-0.114000" yaw="-0.057246799465"/>   <!-- 옛 B, J1 축까지 127 mm -->
-    <xacro:rack_cell_visual name="S5" x="0.084300" y="0.107300" yaw="-0.013456488533"/>   <!-- 옛 L2, J1 축까지 124 mm -->
-    <xacro:rack_cell_visual name="S6" x="0.021900" y="0.109700" yaw="-0.012583823907"/>   <!-- 옛 L4, J1 축까지 110 mm -->
-    <xacro:rack_cell_visual name="S7" x="0.011600" y="-0.108400" yaw="-0.099658300289"/>   <!-- 옛 D, J1 축까지 109 mm -->
-    <xacro:rack_cell_visual name="S8" x="-0.043572" y="0.070504" yaw="0.039147735122"/>   <!-- 옛 L5, J1 축까지 97 mm -->
-    <xacro:rack_cell_visual name="S9" x="0.081200" y="-0.072100" yaw="0.017453292520"/>   <!-- 옛 A, J1 축까지 93 mm -->
-    <xacro:rack_cell_visual name="S10" x="0.084142" y="0.066838" yaw="-0.014259339989"/>   <!-- 옛 L1, J1 축까지 91 mm -->
-    <xacro:rack_cell_visual name="S11" x="0.023953" y="0.069231" yaw="0.009512044423"/>   <!-- 옛 L3, J1 축까지 69 mm -->
-    <xacro:rack_cell_visual name="S12" x="0.015800" y="-0.068100" yaw="-0.088662726001"/>   <!-- 옛 C, J1 축까지 68 mm -->
+    <!-- 칸 링크 = CAD 칸 바닥 가운데 (x y = rack_link 기준 CAD 칸 중심 [m]) -->
+    <xacro:macro name="rack_cell" params="name x y">
+      <link name="rack_cell_${name}_link">
+        <xacro:rack_wall name="${name}" part="wall_px" xyz="0.017 0 0.00625" rpy="0 0 0" size="0.002 0.036 0.0125"/>
+        <xacro:rack_wall name="${name}" part="wall_nx" xyz="-0.017 0 0.00625" rpy="0 0 0" size="0.002 0.036 0.0125"/>
+        <xacro:rack_wall name="${name}" part="wall_py" xyz="0 0.017 0.00625" rpy="0 0 0" size="0.032 0.002 0.0125"/>
+        <xacro:rack_wall name="${name}" part="wall_ny" xyz="0 -0.017 0.00625" rpy="0 0 0" size="0.032 0.002 0.0125"/>
+        <xacro:rack_wall name="${name}" part="flare_px" xyz="0.018825 0 0.01975" rpy="0 ${rack_flare} 0" size="0.00194 0.0397 0.01495"/>
+        <xacro:rack_wall name="${name}" part="flare_nx" xyz="-0.018825 0 0.01975" rpy="0 ${-rack_flare} 0" size="0.00194 0.0397 0.01495"/>
+        <xacro:rack_wall name="${name}" part="flare_py" xyz="0 0.018825 0.01975" rpy="${-rack_flare} 0 0" size="0.0397 0.00194 0.01495"/>
+        <xacro:rack_wall name="${name}" part="flare_ny" xyz="0 -0.018825 0.01975" rpy="${rack_flare} 0 0" size="0.0397 0.00194 0.01495"/>
+      </link>
+      <joint name="rack_cell_${name}_fixed" type="fixed"><parent link="rack_link"/><child link="rack_cell_${name}_link"/><origin xyz="${x} ${y} -0.005" rpy="0 0 0"/></joint>
+    </xacro:macro>
+    <!-- 칸 이름 S1–S12 = 팔 J1 축(base_link 0.0225, 0)에서 먼 칸부터. planning 이 S1 부터 채움. 줄 끝 = 옛 이름 · base_link 위치 · 옛 표와 차이 -->
+    <xacro:rack_cell name="S1" x="0.000" y="0.045"/>     <!-- 옛 L8, base_link (-0.102, 0.112), 표와 (+8.1, +5.2) mm -->
+    <xacro:rack_cell name="S2" x="0.000" y="0.000"/>     <!-- 옛 L7, (-0.102, 0.067), (+7.3, +2.7) -->
+    <xacro:rack_cell name="S3" x="0.060" y="0.045"/>     <!-- 옛 L6, (-0.042, 0.112), (+1.4, +1.1) -->
+    <xacro:rack_cell name="S4" x="0.180" y="-0.183"/>    <!-- 옛 B, (0.078, -0.116), (-1.5, -1.9) -->
+    <xacro:rack_cell name="S5" x="0.180" y="0.045"/>     <!-- 옛 L2, (0.078, 0.112), (-6.3, +4.8) -->
+    <xacro:rack_cell name="S6" x="0.120" y="0.045"/>     <!-- 옛 L4, (0.018, 0.112), (-3.9, +2.4) -->
+    <xacro:rack_cell name="S7" x="0.120" y="-0.183"/>    <!-- 옛 D, (0.018, -0.116), (+6.4, -7.5) -->
+    <xacro:rack_cell name="S8" x="0.060" y="0.000"/>     <!-- 옛 L5, (-0.042, 0.067), (+1.6, -3.4) -->
+    <xacro:rack_cell name="S9" x="0.180" y="-0.138"/>    <!-- 옛 A, (0.078, -0.071), (-3.2, +1.2) -->
+    <xacro:rack_cell name="S10" x="0.180" y="0.000"/>    <!-- 옛 L1, (0.078, 0.067), (-6.1, +0.3) -->
+    <xacro:rack_cell name="S11" x="0.120" y="0.000"/>    <!-- 옛 L3, (0.018, 0.067), (-6.0, -2.1) -->
+    <xacro:rack_cell name="S12" x="0.120" y="-0.138"/>   <!-- 옛 C, (0.018, -0.071), (+2.2, -2.8) -->
   </xacro:if>
 
   <!-- 스워브 모듈 4 개: 위치 · 바퀴 offset 은 controllers.yaml 과 같은 값 -->
