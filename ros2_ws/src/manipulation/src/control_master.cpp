@@ -77,6 +77,7 @@
 #include "control_msgs/action/follow_joint_trajectory.hpp"
 #include "controller_manager_msgs/srv/list_hardware_components.hpp"
 #include "lifecycle_msgs/msg/state.hpp"
+#include "geometry_msgs/msg/quaternion_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -218,6 +219,18 @@ public:
     declare_parameter<double>("store_offset_y_mm", 0.0);
     tf_buf_ = std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listen_ = std::make_unique<tf2_ros::TransformListener>(*tf_buf_);
+    // 손목 카메라가 손목에서 돈 만큼 (camera_drift_node, 홈 사진) — 손목 검출을 카메라 좌표에서 되돌린 뒤 TF 로 바꿈
+    drift_correct_ = declare_parameter<bool>("wrist_cam_drift_correct", true);
+    sub_drift_ = create_subscription<geometry_msgs::msg::QuaternionStamped>(
+      declare_parameter<std::string>("wrist_cam_drift_topic", "/wrist_cam/drift"), rclcpp::QoS(1).transient_local().reliable(),
+      [this](geometry_msgs::msg::QuaternionStamped::ConstSharedPtr m) {
+        const Eigen::Quaterniond q(m->quaternion.w, m->quaternion.x, m->quaternion.y, m->quaternion.z);
+        if (!(std::abs(q.norm() - 1.0) < 0.01)) {return;}
+        drift_frame_ = m->header.frame_id;
+        drift_q_ = q.normalized();
+        RCLCPP_INFO(get_logger(), "손목 카메라 보정 받음: %.2f° (%s)%s", Eigen::AngleAxisd(drift_q_).angle() * 180.0 / M_PI, drift_frame_.c_str(),
+          drift_correct_ ? "" : " — wrist_cam_drift_correct false 라 안 씀");
+      });
     sub_dets_ = create_subscription<interfaces::msg::DetectionArray>(
       declare_parameter<std::string>("neighbor_topic", "/perception/wrist/detections"), rclcpp::QoS(10),
       [this](interfaces::msg::DetectionArray::ConstSharedPtr m) {on_detections(*m);});
@@ -1052,6 +1065,20 @@ private:
       const auto & q0 = d.pose.orientation;
       const bool q_known = q0.x * q0.x + q0.y * q0.y + q0.z * q0.z + q0.w * q0.w > 0.5;
       if (!q_known) {in.pose.orientation.w = 1.0;}
+      if (drift_correct_ && !drift_frame_.empty() && in.header.frame_id == drift_frame_) {   // 카메라가 돈 만큼 되돌림 (실제 = 명목 · R → p 를 R · p 로)
+        const Eigen::Vector3d p = drift_q_ * Eigen::Vector3d(in.pose.position.x, in.pose.position.y, in.pose.position.z);
+        in.pose.position.x = p.x();
+        in.pose.position.y = p.y();
+        in.pose.position.z = p.z();
+        if (q_known) {
+          const auto & o = in.pose.orientation;
+          const Eigen::Quaterniond r = drift_q_ * Eigen::Quaterniond(o.w, o.x, o.y, o.z);
+          in.pose.orientation.x = r.x();
+          in.pose.orientation.y = r.y();
+          in.pose.orientation.z = r.z();
+          in.pose.orientation.w = r.w();
+        }
+      }
       try {
         o = tf_buf_->transform(in, odom_frame_, tf2::durationFromSec(0.0));
       } catch (const tf2::TransformException &) {
@@ -2085,6 +2112,10 @@ private:
   std::unique_ptr<tf2_ros::Buffer> tf_buf_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listen_;
   rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr sub_dets_;
+  rclcpp::Subscription<geometry_msgs::msg::QuaternionStamped>::SharedPtr sub_drift_;
+  bool drift_correct_{true};
+  std::string drift_frame_;
+  Eigen::Quaterniond drift_q_{Eigen::Quaterniond::Identity()};
   // 적재함 태그 → 칸 경로 옮기기
   std::vector<std::string> rack_names_;
   std::vector<Eigen::Vector2d> rack_xy_;     // 칸 중심 표 (config/rack_cells.yaml)

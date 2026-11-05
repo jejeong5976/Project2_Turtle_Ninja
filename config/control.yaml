@@ -76,6 +76,8 @@ control_master:
     # 쥔 퍽 손 안 위치 (손목 카메라, rack_tag_node 를 띄워야 잼): false = STORE 때 로그만, true = 기준과 차이만큼 칸 근처 경로를 옮김
     #   기준: STORE 가 잘 들어간 PICK 뒤 (넣기 전, 기준점에서) ros2 service call /control_master/save_held_reference std_srvs/srv/Trigger
     held_correct: false
+    # 손목 카메라가 손목에서 돈 만큼 손목 검출을 되돌림 (camera_drift_node 의 /wrist_cam/drift, 아래 camera_drift_node 설명)
+    wrist_cam_drift_correct: true
     # 누운 네모 퍽 PICK 때 세움 (경로 표 config/standup_paths.txt, Isaac 강화학습 → 피드백 없이 재생). false = 누운 채 PICK (예전)
     #   실물 첫 시험: ros2 param set /control_master stand_lying true → 누운 네모 퍽 pick det
     # 누운 퍽 쥐기 [mm, 누운 윗면 기준]: 위 · 내림 · 쥐기. 실물은 명령보다 약 10 mm 얕게 쥠 (11-05: −20 은 끝만 걸침, −30 도 얕음) → −45
@@ -122,3 +124,13 @@ control_master:
     still_linear: 0.01             # [m/s] /odom 이 이보다 느리면 "멈춤"
     still_angular: 0.05            # [rad/s]
     odom_timeout_s: 0.5            # /odom 의 측정 시각이 이만큼 오래되면 "멈췄는지 모름" → 팔 시작 안 함
+
+# 손목 카메라 홈 사진 보정 (manipulation camera_drift_node) — 팔이 홈에 멈출 때마다 기준 사진 (config/camera_home_ref.png, 11-04 저녁 잘 될 때)
+#   과 비교해 카메라가 손목에서 돈 만큼 /wrist_cam/drift → control_master 가 손목 검출을 되돌림 (wrist_cam_drift_correct)
+#   새 기준: 집기 · 적재가 잘 되는 상태에서 홈에 두고 ros2 service call /camera_drift_node/save_reference std_srvs/srv/Trigger
+camera_drift_node:
+  ros__parameters:
+    home_q: [-0.0046, -1.4511, 0.9434, -0.1166, 0.0215]   # 홈 자세 실측 (11-04 · 11-05 같음)
+    home_tol_rad: 0.01
+    max_deg: 8.0        # 이보다 크게 돌았으면 보정 안 하고 경고 (경첩 · 나사 확인)
+    max_resid_px: 8.0
