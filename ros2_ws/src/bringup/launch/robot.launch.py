@@ -259,6 +259,10 @@ def generate_launch_description():
         Node(package="manipulation", executable="control_master",
              parameters=[cfg("control.yaml"), cfg("arm_paths.yaml"), cfg("arm_kinematics.yaml"), rack_cell_params()],
              condition=IfCondition(with_arm), output="both"),
+        # 홈 자세마다 손목 사진으로 카메라가 돈 만큼 → /wrist_cam/drift (control_master 가 손목 검출을 되돌림, 11-05)
+        Node(package="manipulation", executable="camera_drift_node",
+             parameters=[cfg("control.yaml"), {"reference_image": cfg("camera_home_ref.png")}],
+             condition=IfCondition(with_arm), output="both"),
 
         Node(package="rviz2", executable="rviz2", condition=IfCondition(arg("use_rviz")),
              arguments=["-d", PathJoinSubstitution([desc, "rviz", "navigation.rviz"]), "-f", "odom"]),
