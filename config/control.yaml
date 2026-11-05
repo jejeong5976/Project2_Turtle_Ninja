@@ -13,6 +13,11 @@ control_master:
     move_time_s: 4.0               # 동작 하나에 걸리는 시간 (느리게 = 전류 작음, D16)
     accept_timeout_s: 2.0          # 재생기(JTC)가 동작을 받아 주기까지 기다리는 최대 시간
     motion_margin_s: 3.0           # move_time_s 보다 이만큼 더 걸리면 시간 초과 → 취소 + 실패
+    # 퍽 · 칸 근처 속도 [°/s] (작업마다 다시 읽음, 실행 중 ros2 param set 은 다음 작업부터). 11-05 사용자: 적재가 너무 느림 → 15 에서 25
+    near_puck_speed_dps: 25.0      # PICK · PLACE 의 퍽 위 내림 · 쥐기 · 다시 쥐기
+    path_slow_min_dps: 25.0        # 실물 경로 (arm_paths.yaml) 칸 근처 느린 구간 (기록 15) 의 최소 속도. 0 = 기록 그대로
+    path_stand_speed_dps: 25.0     # 받침 근처 (접기 · 펴기) 구간, 기본 20. 빈 공간 path_speed_dps 는 40 그대로 (전류)
+    #   가짜 로봇 STORE S7 (칸 근처 · 받침): 25.1 s (15 · 20) → 21.8 s (25 · 20) · 20.2 s (25 · 30)
     cancel_timeout_s: 2.0          # 취소를 보내고 재생기가 "멈췄다" 고 답하기를 기다리는 최대 시간 (취소 요청 ≠ 실제 정지)
     # ---- 접힘 실측 확인 — 바퀴를 푸는 조건 ----
     #   마지막 home 동작 뒤, 측정 시각이 새로운 /joint_states 의 joint1~5 가 poses.home ± fold_tolerance 안에
@@ -51,7 +56,8 @@ control_master:
     # 윗면 태그로 잰 퍽 (인지 중심 2 mm 안) 은 팔 쪽 치우침만 — 실물에서 태그 퍽을 집어 맞춘 값 (몸쪽 17 mm)
     pick_offset_tagged_x_mm: -17.0
     # 손목을 90° 돌려 쥘 때 더할 보정 [앞, 왼쪽] mm (팔 바로 앞 퍽 기준, 다른 각도 · 자리는 계산). 실물에서 돌려 쥔 뒤 어긋난 만큼 넣기
-    pick_offset_rot_mm: [0.0, 0.0]
+    #   11-04 실물: −73° 돌려 쥐니 손가락이 2 mm 오른쪽 → [0.4, 2.4] (그 뒤 −38° 쥐기 "완벽"). 실행 중에만 넣어 11-05 재시작 때 0 으로 돌아감 → 설정에 넣음
+    pick_offset_rot_mm: [0.4, 2.4]
     pick_offset_tagged_y_mm: 0.0
     # STORE 칸 근처 경로 보정 [mm, base_link, x+ = 앞 · y+ = 왼쪽, 15 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 실행 중 ros2 param set 으로 바꿈
     # 수직 손이 안 닿는 먼 퍽: 손을 10° 씩 이만큼까지 바깥으로 기울여 쥠 (박스 끝 모서리 0.32 m 는 40°). 기울여 쥔 퍽은 다시 잡기로 세움
@@ -63,6 +69,8 @@ control_master:
       S12: [-0.6, -1.8]   # 실물: 넣는 점 맞추기 (+0.6, +6.8) 에 더해 합계 (0, +5) 에서 들어감
       S9: [4.0, -4.0]     # 실물 (S4 와 같은 쪽으로 같은 만큼 걸림)
       S4: [4.0, -4.0]
+      S10: [4.0, 4.0]     # 11-04 실물에서 넣은 값 (S9 · S4 대칭). 11-05 적재함을 바꿨으니 다시 확인
+      S5: [4.0, 4.0]
     # 넣는 점 맞추기: 경로의 놓는 점을 팔 모델로 칸 표 (config/rack_cells.yaml 칸 중심 + place_offset) 로 옮김 (칸마다 자동, 위 보정은 그 위에 더함)
     store_to_cell: true
     # 쥔 퍽 손 안 위치 (손목 카메라, rack_tag_node 를 띄워야 잼): false = STORE 때 로그만, true = 기준과 차이만큼 칸 근처 경로를 옮김
@@ -70,13 +78,15 @@ control_master:
     held_correct: false
     # 누운 네모 퍽 PICK 때 세움 (경로 표 config/standup_paths.txt, Isaac 강화학습 → 피드백 없이 재생). false = 누운 채 PICK (예전)
     #   실물 첫 시험: ros2 param set /control_master stand_lying true → 누운 네모 퍽 pick det
-    # 누운 퍽 쥐기 [mm, 누운 윗면 기준]: 위 · 내림 · 쥐기. 실물은 명령보다 약 10 mm 얕게 쥠 (11-05: −20 은 끝만 걸침) → −30 (실제 약 −20)
-    pick_lying_heights_mm: [40.0, 10.0, -30.0]
-    pick_lying_tip_clear_mm: 0.0   # 쥐기 깊이 한도: 손끝이 놓인 면 위 0 mm (모델) = 실제 약 10 mm
+    # 누운 퍽 쥐기 [mm, 누운 윗면 기준]: 위 · 내림 · 쥐기. 실물은 명령보다 약 10 mm 얕게 쥠 (11-05: −20 은 끝만 걸침, −30 도 얕음) → −45
+    pick_lying_heights_mm: [40.0, 10.0, -45.0]
+    pick_lying_tip_clear_mm: -15.0   # 쥐기 깊이 한도: 손끝이 놓인 면 아래 15 mm (모델) = 실제 약 −5 mm (11-05 실물 −45 로 쥠 확인)
     stand_lying: false
     # 세우기 경로 전체를 위아래로 [mm]: 실물이 명령보다 약 10 mm 얕게 쥠 → −10 이면 시뮬 (윗면 아래 20 mm 쥐기) 과 같아짐
+    #   더 내리지 말 것 (11-05 실물 −25: 경로 전체가 시뮬보다 15 mm 낮아 손가락이 박스를 긁음)
     standup_dz_mm: -10.0
-    standup_speed_dps: 15.0   # 첫 실물 시험은 느리게 (시뮬 정책 40 °/s, 0.8 배 = 32 에서 시뮬 88.3 %). 실행 중 바꾸면 다음 PICK 부터
+    standup_tip_clear_mm: 2.0   # 표 점 중 손끝이 박스 윗면 + 이 값 (모델) 아래를 가리키면 그 높이까지 올림 (v10 표는 윗면 아래 10 mm 까지 가리킴)
+    standup_speed_dps: 15.0   # 천천히 (11-05 사용자). 시뮬 정책 40 °/s (0.8 배 = 32 에서 시뮬 88.3 %). 실행 중 바꾸면 다음 PICK 부터
     standup_max_gap_mm: 6.0
     standup_max_gap_deg: 6.0
     # 세운 뒤 바로 다시 쥠 (true) · LOOK 자세에서 끝내고 다음 pick det 로 카메라로 다시 재서 집음 (false, 기본 — 선 자리가 시뮬에서 90 % 12 mm 안)
