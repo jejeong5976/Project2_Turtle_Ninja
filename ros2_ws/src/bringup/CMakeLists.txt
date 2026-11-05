@@ -8,6 +8,7 @@ set(REPOSITORY_CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../config")
 install(DIRECTORY "${REPOSITORY_CONFIG_DIR}/"
   DESTINATION share/${PROJECT_NAME}/config
   FILES_MATCHING PATTERN "*.yaml"
+  PATTERN "standup_paths.txt"   # 누운 퍽 세우기 경로 표 (control_master stand_lying)
 )
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 
