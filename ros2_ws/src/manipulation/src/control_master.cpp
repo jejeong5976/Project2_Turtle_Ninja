@@ -259,7 +259,8 @@ public:
     declare_parameter<double>("pick_lying_tip_clear_mm", 10.0);
     // 세우기 경로 전체를 위아래로 옮김 [mm, − = 아래]: 실물이 명령보다 얕게 쥐어 시뮬 (−20 mm 쥐기) 과 같게 하려면 −10
     declare_parameter<double>("standup_dz_mm", 0.0);
-    declare_parameter<double>("standup_tip_clear_mm", 2.0);   // 세우기 경로 손끝 최저 = 박스 윗면 위 이만큼 (모델)
+    declare_parameter<double>("standup_tip_clear_mm", 2.0);
+    declare_parameter<double>("standup_reach_scale", 1.0);   // 쥔 뒤 경로의 수평 이동 배율 (1 = 표 그대로, 0.5 = 절반만 뻗음)   // 세우기 경로 손끝 최저 = 박스 윗면 위 이만큼 (모델)
     // 누운 네모 퍽을 PICK 하면서 세움 (false = 누운 채 쥐고 기준점으로, 예전대로). 실행 중: ros2 param set /control_master stand_lying true
     declare_parameter<bool>("stand_lying", false);
     standup_speed_dps_ = declare_parameter<double>("standup_speed_dps", 32.0);   // 시뮬 정책은 40 °/s (스텝 0.05 s 마다 2°). 1.25 배 느리게 재생해도 시뮬 91.8 % (40 은 89.9 %)
@@ -1446,64 +1447,6 @@ private:
     return true;
   }
 
-  // 표 칸 퍽 → 실제 퍽: 수평으로 퍽 중심 (from → to) 옮기고 그 둘레로 da 돌림, 손끝은 dz 위아래
-  struct StandupShift
-  {
-    Eigen::Vector2d from{Eigen::Vector2d::Zero()}, to{Eigen::Vector2d::Zero()};
-    double da{0.0}, dz{0.0};   // [rad] · [m]
-    double tip_min_z{-1e9};    // 손끝이 이보다 낮으면 여기까지 올림 [m, 모델] — 표는 정책의 목표 관절이라 박스 윗면 아래를 가리키는 점이 있음
-    Eigen::Vector2d xy(const Eigen::Vector2d & p) const {return to + Eigen::Rotation2Dd(da) * (p - from);}
-  };
-
-  // 표 틱 (시뮬 관절 = 실제 자세) → 실제 퍽에 맞춘 실제 자세 (q_true) · 처짐 앞먹임 명령 (out)
-  //   손끝 · 접근축 · 닫힘축을 StandupShift 로 옮겨 그 자세에서 가장 가까운 IK 해 (11-05 실물: 표 칸 그대로 내려가 손가락이 퍽에 얹힘)
-  //   5 축 팔은 기울인 손을 팔 평면 밖으로 못 돌려서 기울인 점은 접근축이 몇 ° 어긋날 수 있음 → 손끝 1 mm · 접근축 10° 까지 (수직 손은 정확). 안 되면 false
-  bool standup_enc(const std::array<int, 5> & t, double held_kg, const StandupShift & s, Ticks & out, Q5 & q_true,
-    double & app_err_deg, double & lifted_mm, std::string * fail = nullptr) const
-  {
-    Ticks tt;
-    for (int j = 0; j < 5; ++j) {tt[j] = t[j];}
-    Q5 q = ticks_to_q(model_, tt);
-    app_err_deg = 0.0;
-    lifted_mm = 0.0;
-    const Grip g = arm_grip(model_, q);
-    Eigen::Vector3d p = g.tip;
-    p.head<2>() = s.xy(g.tip.head<2>());
-    p.z() += s.dz;
-    if (p.z() < s.tip_min_z) {lifted_mm = (s.tip_min_z - p.z()) * 1000.0; p.z() = s.tip_min_z;}
-    if ((p - g.tip).norm() > 1e-6 || std::abs(s.da) > 1e-6) {
-      const Eigen::Matrix3d R = Eigen::AngleAxisd(s.da, Eigen::Vector3d::UnitZ()).toRotationMatrix();
-      const auto sols = arm_ik(model_, p, R * g.app, R * g.close, {q}, 180.0);
-      double best = 1e9;
-      Q5 qb = q;
-      if (fail) {   // 가장 가까운 해가 무엇에 걸렸는지 (로그)
-        const IkSolution * c = nullptr;
-        for (const auto & sl : sols) {if (!c || sl.pos_mm + sl.app_deg < c->pos_mm + c->app_deg) {c = &sl;}}
-        char buf[160];
-        if (c) {
-          std::snprintf(buf, sizeof(buf), "가장 가까운 해: 손끝 %.1f mm · 접근축 %.1f° · 닫힘축 %.1f° · 관절 범위 %s", c->pos_mm, c->app_deg, c->roll_deg,
-            ticks_in_range(model_, q_to_ticks(model_, c->q)) ? "안" : "밖");
-        } else {
-          std::snprintf(buf, sizeof(buf), "IK 해 없음");
-        }
-        *fail = buf;
-      }
-      for (const auto & sl : sols) {
-        if (sl.pos_mm < 1.0 && sl.app_deg < 10.0 && sl.roll_deg < 10.0 && ticks_in_range(model_, q_to_ticks(model_, sl.q))) {
-          double d = 0.0;
-          for (int j = 0; j < 5; ++j) {d += std::abs(sl.q[j] - q[j]);}
-          const double score = sl.app_deg + sl.roll_deg + d * 180.0 / M_PI * 0.2;   // 방향 먼저, 같으면 원래 자세에 가까운 해
-          if (score < best) {best = score; qb = sl.q; app_err_deg = std::max(sl.app_deg, sl.roll_deg);}
-        }
-      }
-      if (best > 1e8) {return false;}
-      q = qb;
-    }
-    q_true = q;
-    out = q_to_ticks(model_, encoder_goal_q(model_, q, held_kg));
-    return true;
-  }
-
   // 누운 네모 퍽 PICK + 세우기 (stand_lying): 표 위 → 쥐기 → 세우기 경로 → 손 5 cm 위 → 선 퍽 다시 쥐기 → 기준점
   std::vector<ArmAction> standup_plan(const ArmPath & unfold, double x, double y, double top, std::string & why)
   {
@@ -1527,65 +1470,89 @@ private:
     }
     const double kg = 0.017;   // 누운 퍽 (세울 때 쥔 무게)
     const double dz = get_parameter("standup_dz_mm").as_double() / 1000.0;
-    // 경로 전체 (위 · 쥐기 포함) 를 표 칸 퍽에서 실제 퍽으로 옮김 — 넣기 폭이 퍽 양쪽 1 mm 뿐이라 칸 차이 (최대 6 mm · 6°) 그대로면 손가락이 퍽에 얹힘
-    StandupShift sh;
-    sh.from = Eigen::Vector2d(e.x, e.y);
-    sh.to = Eigen::Vector2d(x, y);
-    sh.da = da * M_PI / 180.0;
-    sh.dz = dz;
-    // 박스 윗면 (누운 퍽 아래면) + standup_tip_clear_mm 아래를 가리키는 점은 그 높이까지 올림 (11-05 실물: 표가 박스 윗면 아래 10 mm 를 가리켜
-    //   시뮬은 팔이 물러 막히지만 실물 모터는 거기까지 가려고 눌러 긁음). 쥐기 점은 dz 로 정한 깊이 그대로 (윗면보다 위)
+    // 경로 전체 (위 · 쥐기 포함) 를 표 칸 퍽에서 실제 퍽으로 옮김 — 넣기 폭이 퍽 양쪽 1 mm 뿐이라 칸 차이 그대로면 손가락이 퍽에 얹힘
+    //   박스 윗면 (누운 퍽 아래면) + standup_tip_clear_mm 아래를 가리키는 점은 그 높이까지 올림 (11-05 실물: 표가 박스 윗면 아래 10 mm 를 가리켜
+    //   시뮬은 팔이 물러 막히지만 실물 모터는 거기까지 가려고 눌러 긁음). 쥔 뒤 점은 쥐는 손끝에서 수평 거리를 standup_reach_scale 배로 (덜 뻗기)
+    StandupRetarget rt;
+    rt.from = Eigen::Vector2d(e.x, e.y);
+    rt.to = Eigen::Vector2d(x, y);
+    rt.da = da * M_PI / 180.0;
+    rt.dz = dz;
     const double floor_z = top - lying_h_;   // top 은 모델 높이 (target_in_model)
-    sh.tip_min_z = floor_z + get_parameter("standup_tip_clear_mm").as_double() / 1000.0;
-    double lifted = 0.0, lifted_max = 0.0;
+    rt.tip_min_z = floor_z + get_parameter("standup_tip_clear_mm").as_double() / 1000.0;
+    rt.reach_scale = get_parameter("standup_reach_scale").as_double();
+    double lifted_max = 0.0, app_err_max = 0.0;
     int lifted_n = 0;
     Ticks enc;
     Q5 q_true{};
-    double app_err = 0.0, app_err_max = 0.0;
     Eigen::Vector3d tip_low(0.0, 0.0, std::numeric_limits<double>::infinity());   // 경로에서 가장 낮은 손끝 [m, 모델]
-    auto enc_of = [&](const std::array<int, 5> & t, double held_kg, const std::string & nm) {
-        std::string fail;
-        if (!standup_enc(t, held_kg, sh, enc, q_true, app_err, lifted, &fail)) {
-          char buf[200];
-          std::snprintf(buf, sizeof(buf), "세우기: %s 를 실제 퍽으로 (%+.1f, %+.1f) mm %+.1f° · 위아래 %+.0f mm 옮긴 자세 (IK) 가 없음 — ", nm.c_str(),
-            dx * 1000.0, dy * 1000.0, da, dz * 1000.0);
-          why = buf + fail;
-          return false;
-        }
-        app_err_max = std::max(app_err_max, app_err);
-        if (lifted > 0.0) {++lifted_n; lifted_max = std::max(lifted_max, lifted);}
+    std::string fail;
+    auto enc_of = [&](const std::array<int, 5> & t, double held_kg, bool scale) {
+        Ticks tt;
+        for (int j = 0; j < 5; ++j) {tt[j] = t[j];}
+        RetargetResult rr;
+        if (!standup_retarget(model_, ticks_to_q(model_, tt), rt, scale, rr)) {fail = rr.fail; return false;}
+        q_true = rr.q;
+        enc = q_to_ticks(model_, encoder_goal_q(model_, rr.q, held_kg));
+        app_err_max = std::max(app_err_max, rr.app_err_deg);
+        if (rr.lifted_mm > 0.0) {++lifted_n; lifted_max = std::max(lifted_max, rr.lifted_mm);}
         const Eigen::Vector3d tp = arm_grip(model_, q_true).tip;
         if (tp.z() < tip_low.z()) {tip_low = tp;}
         return true;
       };
+    auto refuse = [&](const char * nm) {
+        char buf[200];
+        std::snprintf(buf, sizeof(buf), "세우기: %s 를 실제 퍽으로 (%+.1f, %+.1f) mm %+.1f° · 위아래 %+.0f mm 옮긴 자세 (IK) 가 없음 — ", nm,
+          dx * 1000.0, dy * 1000.0, da, dz * 1000.0);
+        why = buf + fail;
+        return std::vector<ArmAction>{};
+      };
     ArmPath path = unfold;
     path.name = "pick_standup";
     path.ends_home = false;
-    if (!enc_of(e.above, 0.0, "위")) {return {};}
+    if (!enc_of(e.above, 0.0, false)) {return refuse("위");}
     path.nodes.push_back(model_node("above", enc, 0.0, "open"));
-    if (!enc_of(e.grasp, 0.0, "쥐기")) {return {};}
+    if (!enc_of(e.grasp, 0.0, false)) {return refuse("쥐기");}
     path.nodes.push_back(model_node("grasp", enc, slow_dps_, "close"));
+    rt.anchor = arm_grip(model_, q_true).tip.head<2>();
     {   // 쥐는 손끝이 실제 퍽 중심 위에 오는지 (옮기기 전 표 그대로면 얼마나 빗나갔을지)
       Ticks tg;
       for (int j = 0; j < 5; ++j) {tg[j] = e.grasp[j];}
-      const Eigen::Vector2d tip = arm_grip(model_, q_true).tip.head<2>(), tip0 = arm_grip(model_, ticks_to_q(model_, tg)).tip.head<2>();
-      RCLCPP_INFO(get_logger(), "PICK 세우기: 쥐는 손끝 (%.3f, %.3f) — 퍽 중심과 %.1f mm (표 칸 그대로였으면 %.1f mm)", tip.x(), tip.y(),
-        (tip - Eigen::Vector2d(x, y)).norm() * 1000.0, (tip0 - Eigen::Vector2d(x, y)).norm() * 1000.0);
+      const Eigen::Vector2d tip0 = arm_grip(model_, ticks_to_q(model_, tg)).tip.head<2>();
+      RCLCPP_INFO(get_logger(), "PICK 세우기: 쥐는 손끝 (%.3f, %.3f) — 퍽 중심과 %.1f mm (표 칸 그대로였으면 %.1f mm)", rt.anchor.x(), rt.anchor.y(),
+        (rt.anchor - Eigen::Vector2d(x, y)).norm() * 1000.0, (tip0 - Eigen::Vector2d(x, y)).norm() * 1000.0);
     }
     // 확인은 보낸 명령 (처짐 앞먹임 포함) 의 손끝과 실측 (엔코더) 손끝을 비교 — 앞먹임이 손끝을 약 18 mm 올려 보이게 함
-    standup_check_ = StandupCheck{"stand" + std::to_string(e.release), arm_grip(model_, ticks_to_q(model_, enc)).tip};
+    standup_check_ = StandupCheck{"", arm_grip(model_, ticks_to_q(model_, enc)).tip};   // 구간 이름은 경로 점을 다 만든 뒤
+    // 경로 점이 IK 로 안 풀리면 그 점만 건너뜀 (11-05 사용자: 막지 말 것). 여는 점이 빠지면 다음 점에서 엶
+    int skipped = 0;
+    bool opened = false, any = false;
     for (size_t i = 0; i < e.q.size(); ++i) {
       const bool held = static_cast<int>(i) < e.release;
-      if (!enc_of(e.q[i], held ? kg : 0.0, "세우기 경로 점 " + std::to_string(i) + "/" + std::to_string(e.q.size()))) {return {};}
-      path.nodes.push_back(model_node("stand" + std::to_string(i), enc, standup_speed_dps_, static_cast<int>(i) == e.release ? "open" : ""));
+      if (!enc_of(e.q[i], held ? kg : 0.0, true)) {
+        ++skipped;
+        RCLCPP_WARN(get_logger(), "PICK 세우기: 경로 점 %zu/%zu 건너뜀 (%s)", i, e.q.size(), fail.c_str());
+        continue;
+      }
+      const bool open_here = !opened && static_cast<int>(i) >= e.release;
+      opened = opened || open_here;
+      any = true;
+      path.nodes.push_back(model_node("stand" + std::to_string(i), enc, standup_speed_dps_, open_here ? "open" : ""));
+    }
+    if (!any) {return refuse("세우기 경로 점 전부");}
+    if (!opened) {path.nodes.back().grip = "open";}
+    for (const auto & n : path.nodes) {   // 확인은 쥔 뒤 첫 구간 (끝 = 여는 점) 을 보내기 전 — 구간 이름 = 끝 점 이름
+      if (n.name.rfind("stand", 0) == 0 && n.grip == "open") {standup_check_->pose = n.name; break;}
     }
     RCLCPP_INFO(get_logger(), "PICK 세우기: 경로 손끝 최저 = 박스 윗면 위 %.0f mm @ (%.3f, %.3f) (모델, 실물은 약 10 mm 높음 · standup_dz_mm %.0f) · "
-      "윗면 아래를 가리켜 올린 점 %d 개 (최대 %.0f mm)", (tip_low.z() - floor_z) * 1000.0, tip_low.x(), tip_low.y(), dz * 1000.0, lifted_n, lifted_max);
+      "윗면 아래를 가리켜 올린 점 %d 개 (최대 %.0f mm) · 덜 뻗기 %.2f 배 · 건너뛴 점 %d 개", (tip_low.z() - floor_z) * 1000.0, tip_low.x(),
+      tip_low.y(), dz * 1000.0, lifted_n, lifted_max, rt.reach_scale, skipped);
     // 손을 위로 (옮긴 마지막 자세의 접근축 · 닫힘축 그대로): 5 cm, LOOK 으로 끝낼 때는 12 cm 도
     const Q5 q_last = q_true;
     const Grip g = arm_grip(model_, q_last);
-    // 시뮬에서 선 자리 · 면도 같이 옮김
-    const Eigen::Vector2d end_xy = sh.xy(Eigen::Vector2d(e.end_x, e.end_y));
+    // 시뮬에서 선 자리 · 면도 같이 옮김 (덜 뻗기 포함)
+    const Eigen::Vector2d end0 = rt.to + Eigen::Rotation2Dd(rt.da) * (Eigen::Vector2d(e.end_x, e.end_y) - rt.from);
+    const Eigen::Vector2d end_xy = rt.anchor + rt.reach_scale * (end0 - rt.anchor);
     const double end_face = e.end_face_deg + da;
     auto lift_q = [&](double dz, Q5 & out) {
         const auto sols = arm_ik(model_, g.tip + Eigen::Vector3d(0.0, 0.0, dz), g.app, g.close, {q_last}, 180.0);

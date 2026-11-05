@@ -10,6 +10,10 @@
 #include <string>
 #include <vector>
 
+#include <Eigen/Dense>
+
+#include "manipulation/arm_kinematics.hpp"
+
 namespace manipulation
 {
 
@@ -33,5 +37,29 @@ bool load_standup_table(const std::string & file, std::vector<StandupPath> & out
 //   d각 은 180° 마다 같음. 없으면 -1. dx · dy · dyaw 에 차이를 돌려줌 (실제 − 표)
 int nearest_standup(const std::vector<StandupPath> & table, double x, double y, double axis_deg, double side,
   double & dx, double & dy, double & dyaw_deg, double step_x = 0.0075, double step_y = 0.01, double step_deg = 7.5);
+
+// 표 자세 하나를 실물에 맞게 옮김 (control_master 세우기 · 시뮬 재생 시험이 같은 계산)
+//   1) 표 칸 퍽 (from) → 실제 퍽 (to): 수평 이동 + 퍽 둘레 da 회전 (손끝 · 접근축 · 닫힘축)
+//   2) scale 이 켜진 점 (쥔 뒤 경로) 은 anchor (쥐는 손끝) 에서 수평 거리를 reach_scale 배로 (덜 뻗기)
+//   3) 손끝을 dz 위아래로, tip_min_z 아래면 그 높이까지 올림 (표는 정책의 목표 관절이라 박스 윗면 아래를 가리키는 점이 있음)
+//   그 자세에서 가장 가까운 IK 해. 5 축 팔은 기울인 손을 팔 평면 밖으로 못 돌려 접근축이 몇 ° 어긋날 수 있음 → 손끝 1 mm · 접근축 10° 까지
+struct StandupRetarget
+{
+  Eigen::Vector2d from{Eigen::Vector2d::Zero()}, to{Eigen::Vector2d::Zero()};   // [m, 모델 xy = base_link xy]
+  double da{0.0}, dz{0.0};             // [rad] · [m]
+  double tip_min_z{-1e9};              // [m, 모델]
+  Eigen::Vector2d anchor{Eigen::Vector2d::Zero()};   // 덜 뻗기 기준 (옮긴 뒤 쥐는 손끝 xy)
+  double reach_scale{1.0};             // 1 = 그대로
+};
+
+struct RetargetResult
+{
+  Q5 q{};                    // 옮긴 실제 자세
+  double app_err_deg{0.0};   // 접근축 · 닫힘축 어긋남 [°]
+  double lifted_mm{0.0};     // tip_min_z 로 올린 높이 [mm]
+  std::string fail;          // 실패 때 가장 가까운 해 설명
+};
+
+bool standup_retarget(const ArmModel & m, const Q5 & q_table, const StandupRetarget & r, bool scale, RetargetResult & out);
 
 }  // namespace manipulation
