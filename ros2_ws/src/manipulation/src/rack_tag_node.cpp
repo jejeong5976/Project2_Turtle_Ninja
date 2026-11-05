@@ -15,7 +15,12 @@
 //   경로 옮길 양 = 칸 − 퍽 (STORE 가 퍽을 놓은 자리 기준). 같은 자세의 빈 칸 값이 없으면 차이를 안 냄
 //   빠지는 건 카메라 위치 치우침. 카메라 기울기 치우침은 바닥 · 퍽 윗면 높이 차 (60 mm) 만큼 남음 (2° 면 약 2 mm)
 //   퍽이 컵 벽에 닿으면 (틈 약 ±2 mm) 그 이상은 못 잼, 턱에 걸려 기울면 높이가 달라 크기 검사에서 빠짐
+// 쥔 퍽: 퍽 윗면 태그가 카메라에서 held_max_dist_m 안 (손목 카메라는 J5 뒤 wrist_link 에 붙어 손과 같이 움직임) 이면 쥔 퍽으로 봄
+//   → 태그 크기 (puck_tag_size_m) 로 PnP 해서 태그 중심 · 면 방향 (z 축) 을 wrist_link 좌표로 /held_puck/tag
+//      (interfaces/DetectionArray, kind "held_tag", id = 태그 ID, frame wrist_link)
+//   control_master 가 PICK 뒤 박스 위 기준점에서 이것을 모아 손 안 퍽 위치를 잼 (기준점에서 보이는 것은 대개 퍽 옆면 태그, 11-04 화면)
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <deque>
@@ -143,6 +148,9 @@ public:
     tf_buf_ = std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listen_ = std::make_unique<tf2_ros::TransformListener>(*tf_buf_);
     pub_ = create_publisher<interfaces::msg::DetectionArray>("/rack_tags/detections", 10);
+    held_max_dist_m_ = declare_parameter<double>("held_max_dist_m", 0.15);   // 카메라에서 이보다 가까운 퍽 태그 = 쥔 퍽
+    wrist_frame_ = declare_parameter<std::string>("wrist_frame", "wrist_link");
+    held_pub_ = create_publisher<interfaces::msg::DetectionArray>("/held_puck/tag", 10);
     // 영상 구독 QoS: reliable (기본, 인지 노드 image_qos 와 같음) | best_effort (큰 영상은 조각이 빠지면 장째 없어짐). camera_info 는 best_effort
     const auto qos_name = declare_parameter<std::string>("image_qos", "reliable");
     const rclcpp::QoS qos = qos_name == "best_effort" ? rclcpp::QoS(rclcpp::SensorDataQoS()) : rclcpp::QoS(rclcpp::KeepLast(2)).reliable();
@@ -225,6 +233,69 @@ private:
     return false;
   }
 
+  // 왜곡 푼 모서리 4 개 (정규 좌표) → 태그 중심 [m, 카메라 좌표] (PnP, 정사각 태그). held_max_dist_m 안이면 true
+  //   모서리 순서는 검출기마다 (AprilTag 반시계 · OpenCV aruco 시계) 달라서 두 순서 중 재투영 오차가 작은 쪽
+  bool held_tag(const std::vector<cv::Point2f> & n, double size, Eigen::Vector3d & c, Eigen::Matrix3d & R) const
+  {
+    const float h = static_cast<float>(size / 2.0);
+    const std::vector<cv::Point3f> obj{{-h, h, 0.0f}, {h, h, 0.0f}, {h, -h, 0.0f}, {-h, -h, 0.0f}};   // SOLVEPNP_IPPE_SQUARE 순서
+    double best = 1e9;
+    for (int order = 0; order < 2; ++order) {
+      std::vector<cv::Point2f> img = n;
+      if (order == 1) {std::reverse(img.begin() + 1, img.end());}
+      cv::Mat rvec, tvec;
+      if (!cv::solvePnP(obj, img, cv::Mat::eye(3, 3, CV_64F), cv::Mat(), rvec, tvec, false, cv::SOLVEPNP_IPPE_SQUARE)) {continue;}
+      std::vector<cv::Point2f> back;
+      cv::projectPoints(obj, rvec, tvec, cv::Mat::eye(3, 3, CV_64F), cv::Mat(), back);
+      double e = 0.0;
+      for (int j = 0; j < 4; ++j) {e += cv::norm(back[j] - img[j]);}
+      if (e < best && tvec.at<double>(2) > 0.0) {
+        best = e;
+        c = Eigen::Vector3d(tvec.at<double>(0), tvec.at<double>(1), tvec.at<double>(2));
+        cv::Mat Rm;
+        cv::Rodrigues(rvec, Rm);
+        for (int i = 0; i < 3; ++i) {for (int j = 0; j < 3; ++j) {R(i, j) = Rm.at<double>(i, j);}}
+      }
+    }
+    return best < 1e8 && c.z() > 0.02 && c.norm() < held_max_dist_m_;
+  }
+
+  void publish_held(const builtin_interfaces::msg::Time & stamp, const std::string & cam, int id, const Eigen::Vector3d & c,
+    const Eigen::Matrix3d & Rc)
+  {
+    geometry_msgs::msg::TransformStamped tf;
+    try {
+      tf = tf_buf_->lookupTransform(wrist_frame_, cam, tf2::TimePointZero);   // 고정 관절 (카메라 ↔ 손목)
+    } catch (const tf2::TransformException & e) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "TF %s ← %s 없음: %s", wrist_frame_.c_str(), cam.c_str(), e.what());
+      return;
+    }
+    const auto & r = tf.transform.rotation;
+    const auto & t = tf.transform.translation;
+    const Eigen::Quaterniond qw = Eigen::Quaterniond(r.w, r.x, r.y, r.z).normalized();
+    const Eigen::Vector3d w = qw * c + Eigen::Vector3d(t.x, t.y, t.z);
+    const Eigen::Quaterniond qt(qw.toRotationMatrix() * Rc);
+    interfaces::msg::DetectionArray m;
+    m.header.stamp = stamp;
+    m.header.frame_id = wrist_frame_;
+    interfaces::msg::Detection d;
+    d.header = m.header;
+    d.kind = "held_tag";
+    d.id = std::to_string(id);
+    d.confidence = 1.0;
+    d.pose.position.x = w.x();
+    d.pose.position.y = w.y();
+    d.pose.position.z = w.z();
+    d.pose.orientation.x = qt.x();
+    d.pose.orientation.y = qt.y();
+    d.pose.orientation.z = qt.z();
+    d.pose.orientation.w = qt.w();
+    m.detections.push_back(d);
+    held_pub_->publish(m);
+    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000, "쥔 퍽 태그 %d: 카메라에서 %.0f mm · 손목 좌표 (%.1f, %.1f, %.1f) mm", id,
+      c.norm() * 1000.0, w.x() * 1000.0, w.y() * 1000.0, w.z() * 1000.0);
+  }
+
   void on_image(const sensor_msgs::msg::Image::ConstSharedPtr & msg)
   {
     const rclcpp::Time stamp(msg->header.stamp, get_clock()->get_clock_type());
@@ -272,6 +343,7 @@ private:
     interfaces::msg::DetectionArray out;
     out.header.stamp = msg->header.stamp;
     out.header.frame_id = base_frame_;
+    bool held_seen = false;
     for (size_t k = 0; k < ids.size(); ++k) {
       const bool puck = puck_ids_.count(ids[k]) > 0;
       const auto it = index_.find(ids[k]);
@@ -284,6 +356,13 @@ private:
       }
       std::array<Eigen::Vector2d, 4> cn;
       for (int j = 0; j < 4; ++j) {cn[j] = Eigen::Vector2d(n[j].x, n[j].y);}
+      Eigen::Vector3d held;
+      Eigen::Matrix3d held_R;
+      if (puck && held_tag(n, cfg_puck_.tag_size_m, held, held_R)) {
+        publish_held(msg->header.stamp, cam, ids[k], held, held_R);
+        held_seen = true;
+        continue;
+      }
       if (still && raw_.size() < 20000) {   // 원본 (크기 · 각도 검사 전) — ~/dump
         raw_.push_back({stamp.seconds(), ids[k], T.translation(), Eigen::Quaterniond(T.linear()), cn});
       }
@@ -318,6 +397,26 @@ private:
       }
     }
     pub_->publish(out);
+#ifdef RACK_TAG_HAVE_APRILTAG
+    // 쥔 퍽은 늘 화면 오른쪽 아래 끝에 걸쳐 보임 (손목 카메라가 손과 같이 움직임) → 흰 테두리가 잘리면 AprilTag 3 가 놓침
+    //   (11-04 화면 2 장 중 1 장) → OpenCV aruco 로 한 번 더 (퍽 태그만). 대비 올린 (CLAHE) 영상에서는 그 장도 못 찾아서 원본으로
+    if (!held_seen) {
+      std::vector<std::vector<cv::Point2f>> c2;
+      std::vector<int> i2;
+      detect_aruco(gray->image, c2, i2);
+      for (size_t k = 0; k < i2.size(); ++k) {
+        std::vector<cv::Point2f> n;
+        Eigen::Vector3d held;
+        Eigen::Matrix3d held_R;
+        if (puck_ids_.count(i2[k]) && c2[k].size() == 4 && undistort(*info, c2[k], n) && n.size() == 4 &&
+          held_tag(n, cfg_puck_.tag_size_m, held, held_R))
+        {
+          publish_held(msg->header.stamp, cam, i2[k], held, held_R);
+          break;
+        }
+      }
+    }
+#endif
   }
 
   // 컵 벽 그림자로 태그 종이가 어둡게 찍힘 (자동 노출은 밝은 책상에 맞음) → 대비를 조각마다 올린 뒤 (CLAHE) 검출
@@ -341,7 +440,15 @@ private:
       ids.push_back(d->id);
     }
     apriltag_detections_destroy(dets);
-#elif defined(RACK_TAG_ARUCO_NEW)
+#else
+    detect_aruco(eq, corners, ids);
+#endif
+  }
+
+  // OpenCV aruco (AprilTag 3 가 없을 때 · 쥔 퍽 태그 다시 찾기)
+  static void detect_aruco(const cv::Mat & eq, std::vector<std::vector<cv::Point2f>> & corners, std::vector<int> & ids)
+  {
+#if defined(RACK_TAG_ARUCO_NEW)
     static const cv::aruco::ArucoDetector det = [] {
         cv::aruco::DetectorParameters p;
         p.cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;   // 모서리를 화소 아래까지 (평면 교점 정확도)
@@ -569,6 +676,9 @@ private:
   int samples_{60}, min_samples_{5}, max_hamming_{1};
   double min_margin_{30.0};
   cv::Ptr<cv::CLAHE> clahe_;
+  double held_max_dist_m_{0.15};
+  std::string wrist_frame_;
+  rclcpp::Publisher<interfaces::msg::DetectionArray>::SharedPtr held_pub_;
 #ifdef RACK_TAG_HAVE_APRILTAG
   apriltag_family_t * at_fam_{nullptr};
   apriltag_detector_t * at_det_{nullptr};

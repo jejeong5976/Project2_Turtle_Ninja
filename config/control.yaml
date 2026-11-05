@@ -65,6 +65,9 @@ control_master:
       S4: [4.0, -4.0]
     # 넣는 점 맞추기: 경로의 놓는 점을 팔 모델로 칸 표 (config/rack_cells.yaml 칸 중심 + place_offset) 로 옮김 (칸마다 자동, 위 보정은 그 위에 더함)
     store_to_cell: true
+    # 쥔 퍽 손 안 위치 (손목 카메라, rack_tag_node 를 띄워야 잼): false = STORE 때 로그만, true = 기준과 차이만큼 칸 근처 경로를 옮김
+    #   기준: STORE 가 잘 들어간 PICK 뒤 (넣기 전, 기준점에서) ros2 service call /control_master/save_held_reference std_srvs/srv/Trigger
+    held_correct: false
 
     # 고정 자세표
     #   - 팔을 수평으로 쭉 뻗지 않는다 (손목 모터 82 g + 판 + 그리퍼 44 mm 전진 → 어깨 부담 ↑)
