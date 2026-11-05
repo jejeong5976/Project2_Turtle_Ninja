@@ -46,10 +46,18 @@
 //   - 그 뒤 스캔마다 기준과 비교해 적재함 전체 움직임 (dx · dy · 회전) 을 맞춤 → STORE · RETRIEVE 경로의 칸 근처만 그 칸 만큼 옮김
 //     (cell_shift: shift_cell_paths.py 와 같은 규칙). 같은 스캔 자세 · 같은 카메라끼리 빼서 카메라 치우침이 빠짐
 //     rack_shift_min_m 보다 작으면 그대로, rack_shift_max_m 넘으면 거절 (적재함을 제자리로 · 다시 스캔)
+//
+// 쥔 퍽 손 안 위치 (손목 카메라, manipulation rack_tag_node /held_puck/tag)
+//   - PICK 이 끝나 박스 위 기준점에 있을 때 손목 카메라 가까이 보이는 퍽 태그 (손목 좌표) 를 모아 중앙값
+//   - ~/save_held_reference (std_srvs/Trigger): STORE 가 잘 들어간 PICK 의 값을 기준으로 저장 (~/.ros/held_reference.txt)
+//   - STORE 때 기준과 차이를 로그로 남기고, held_correct 가 true 면 그 차이를 놓는 자세의 손 방향으로 돌려 칸 근처 경로를 옮김
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -238,6 +246,18 @@ public:
     srv_rack_ref_ = create_service<std_srvs::srv::Trigger>("~/save_rack_reference",
       [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>, std::shared_ptr<std_srvs::srv::Trigger::Response> res) {
         res->success = save_rack_reference(res->message);
+      });
+    declare_parameter<std::string>("held_reference_file", "~/.ros/held_reference.txt");
+    // 손 안 위치로 STORE 경로 옮기기 (false = 재서 로그만). 실행 중: ros2 param set /control_master held_correct true
+    declare_parameter<bool>("held_correct", false);
+    held_max_mm_ = declare_parameter<double>("held_max_mm", 8.0);   // 기준과 이보다 다르면 잘못 잰 것으로 보고 안 옮김
+    load_held_reference();
+    sub_held_ = create_subscription<interfaces::msg::DetectionArray>(
+      declare_parameter<std::string>("held_tag_topic", "/held_puck/tag"), rclcpp::QoS(10),
+      [this](interfaces::msg::DetectionArray::ConstSharedPtr m) {on_held_tag(*m);});
+    srv_held_ref_ = create_service<std_srvs::srv::Trigger>("~/save_held_reference",
+      [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>, std::shared_ptr<std_srvs::srv::Trigger::Response> res) {
+        res->success = save_held_reference(res->message);
       });
     slow_dps_ = declare_parameter<double>("near_puck_speed_dps", 15.0);
     model_ok_ = load_model();
@@ -697,6 +717,95 @@ private:
   }
 
   // 마지막 스캔을 기준으로 저장 (적재함이 제자리 = 지금 경로로 넣기 · 빼기가 되는 때)
+  void on_held_tag(const interfaces::msg::DetectionArray & m)
+  {
+    const double t = rclcpp::Time(m.header.stamp, get_clock()->get_clock_type()).seconds();
+    if (!carrying_ || t < held_since_) {return;}
+    for (const auto & d : m.detections) {
+      const auto & p = d.pose.position;
+      const auto & o = d.pose.orientation;
+      const Eigen::Vector3d n = Eigen::Quaterniond(o.w, o.x, o.y, o.z).normalized() * Eigen::Vector3d::UnitZ();
+      held_buf_.push_back({d.id, Eigen::Vector3d(p.x, p.y, p.z), n});
+    }
+    while (held_buf_.size() > 100) {held_buf_.pop_front();}
+  }
+
+  // 이번에 쥔 퍽의 손 안 태그 (가장 많이 본 ID 의 중앙값, 손목 좌표 m). 3 장 안 되면 false
+  bool held_now(std::string & id, Eigen::Vector3d & p, Eigen::Vector3d & n, int & count) const
+  {
+    std::map<std::string, int> cnt;
+    for (const auto & h : held_buf_) {++cnt[h.id];}
+    count = 0;
+    for (const auto & [k, c] : cnt) {if (c > count) {count = c; id = k;}}
+    if (count < 3) {return false;}
+    std::array<std::vector<double>, 6> v;
+    for (const auto & h : held_buf_) {
+      if (h.id != id) {continue;}
+      for (int i = 0; i < 3; ++i) {v[i].push_back(h.p[i]); v[3 + i].push_back(h.n[i]);}
+    }
+    auto med = [](std::vector<double> x) {std::nth_element(x.begin(), x.begin() + x.size() / 2, x.end()); return x[x.size() / 2];};
+    p = Eigen::Vector3d(med(v[0]), med(v[1]), med(v[2]));
+    n = Eigen::Vector3d(med(v[3]), med(v[4]), med(v[5])).normalized();
+    return true;
+  }
+
+  std::string held_ref_file() const   // 실행 중 바꿔도 다음 저장부터
+  {
+    std::string f = get_parameter("held_reference_file").as_string();
+    if (f.rfind("~/", 0) == 0 && std::getenv("HOME")) {f = std::getenv("HOME") + f.substr(1);}
+    return f;
+  }
+
+  bool save_held_reference(std::string & msg)
+  {
+    const std::string held_ref_file_ = held_ref_file();
+    std::string id;
+    Eigen::Vector3d p, n;
+    int count = 0;
+    if (!held_now(id, p, n, count)) {
+      msg = "쥔 퍽 태그를 3 장 넘게 못 봄 (PICK 뒤 기준점에서, rack_tag_node 켜짐?) — 지금 " + std::to_string(count) + " 장";
+      return false;
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path(held_ref_file_).parent_path(), ec);
+    std::ofstream f(held_ref_file_);
+    f << "# 쥔 퍽 기준 (control_master ~/save_held_reference): 태그 중심 x y z · 면 방향 x y z [m, wrist_link]\n";
+    f.precision(6);
+    f << std::fixed << p.x() << " " << p.y() << " " << p.z() << " " << n.x() << " " << n.y() << " " << n.z() << "\n";
+    f.close();
+    if (!f) {msg = "기준 파일을 못 씀: " + held_ref_file_; return false;}
+    held_ref_p_ = p;
+    held_ref_n_ = n;
+    char buf[200];
+    std::snprintf(buf, sizeof(buf), "쥔 퍽 기준 저장 (태그 %s, %d 장): 손목 (%.1f, %.1f, %.1f) mm → %s", id.c_str(), count, p.x() * 1000.0,
+      p.y() * 1000.0, p.z() * 1000.0, held_ref_file_.c_str());
+    msg = buf;
+    RCLCPP_INFO(get_logger(), "%s", msg.c_str());
+    return true;
+  }
+
+  void load_held_reference()
+  {
+    const std::string held_ref_file_ = held_ref_file();
+    std::ifstream f(held_ref_file_);
+    std::string line;
+    while (f && std::getline(f, line)) {
+      if (line.empty() || line[0] == '#') {continue;}
+      std::istringstream in(line);
+      double v[6];
+      if (in >> v[0] >> v[1] >> v[2] >> v[3] >> v[4] >> v[5]) {
+        held_ref_p_ = Eigen::Vector3d(v[0], v[1], v[2]);
+        held_ref_n_ = Eigen::Vector3d(v[3], v[4], v[5]).normalized();
+      }
+    }
+    if (held_ref_p_) {
+      RCLCPP_INFO(get_logger(), "쥔 퍽 기준: 손목 (%.1f, %.1f, %.1f) mm (%s)", held_ref_p_->x() * 1000.0, held_ref_p_->y() * 1000.0,
+        held_ref_p_->z() * 1000.0, held_ref_file_.c_str());
+    } else {
+      RCLCPP_INFO(get_logger(), "쥔 퍽 기준 없음 (%s) → STORE 때 손 안 위치는 로그만 (save_held_reference 로 저장)", held_ref_file_.c_str());
+    }
+  }
+
   bool save_rack_reference(std::string & msg)
   {
     if (last_scan_.size() < 6) {
@@ -761,6 +870,21 @@ private:
     return true;
   }
 
+  // 경로의 첫 놓는 점 (grip release) 의 손목 (wrist_link) 회전 [모델 base = base_link 와 방향 같음]
+  bool release_rot(const std::string & path_name, Eigen::Matrix3d & R) const
+  {
+    const auto it = paths_.find(path_name);
+    if (it == paths_.end() || !model_ok_) {return false;}
+    for (const auto & n : it->second.nodes) {
+      if (n.grip != "release" || n.q.size() != 5) {continue;}
+      Ticks t;
+      for (int j = 0; j < 5; ++j) {t[j] = static_cast<int>(std::lround(model_.zero_tick[j] + n.q[j] * 4096.0 / (2.0 * M_PI)));}
+      R = arm_frames(model_, ticks_to_q(model_, t))[4].block<3, 3>(0, 0);
+      return true;
+    }
+    return false;
+  }
+
   // 경로의 첫 놓는 점 (grip release) 손끝 [m, 모델 base = base_link 와 x · y 같음]
   bool release_tip(const std::string & path_name, Eigen::Vector2d & tip) const
   {
@@ -815,6 +939,31 @@ private:
           a.x(), a.y());
         ox += a.x();
         oy += a.y();
+      }
+      {
+        std::string hid;
+        Eigen::Vector3d hp, hn;
+        int hc = 0;
+        if (!held_now(hid, hp, hn, hc)) {
+          RCLCPP_INFO(get_logger(), "%s: 쥔 퍽 태그 못 봄 (%d 장) → 손 안 위치 보정 없음", name.c_str(), hc);
+        } else if (!held_ref_p_) {
+          RCLCPP_INFO(get_logger(), "%s: 쥔 퍽 태그 %s 손목 (%.1f, %.1f, %.1f) mm (%d 장) · 기준 없음", name.c_str(), hid.c_str(),
+            hp.x() * 1000.0, hp.y() * 1000.0, hp.z() * 1000.0, hc);
+        } else {
+          const Eigen::Vector3d dw = hp - *held_ref_p_;   // 손 안에서 퍽이 기준보다 움직인 양 (손목 좌표)
+          const double face = std::acos(std::clamp(hn.dot(*held_ref_n_), -1.0, 1.0)) * 180.0 / M_PI;
+          Eigen::Matrix3d Rr;
+          const bool rot_ok = release_rot(name, Rr);
+          const Eigen::Vector3d dworld = rot_ok ? Eigen::Vector3d(Rr * dw) : Eigen::Vector3d::Zero();   // 놓는 자세에서 퍽이 비키는 양
+          const bool use = get_parameter("held_correct").as_bool() && rot_ok && face < 20.0 && dw.norm() * 1000.0 <= held_max_mm_;
+          RCLCPP_INFO(get_logger(), "%s: 쥔 퍽 태그 %s 기준과 차 손목 (%+.1f, %+.1f, %+.1f) mm · 면 %.0f° (%d 장) → 놓는 자리에서 (%+.1f, %+.1f) mm %s",
+            name.c_str(), hid.c_str(), dw.x() * 1000.0, dw.y() * 1000.0, dw.z() * 1000.0, face, hc, dworld.x() * 1000.0,
+            dworld.y() * 1000.0, use ? "→ 반대로 옮김" : (get_parameter("held_correct").as_bool() ? "(면이 다르거나 너무 커서 안 옮김)" : "(held_correct 꺼짐, 로그만)"));
+          if (use) {
+            ox -= dworld.x() * 1000.0;
+            oy -= dworld.y() * 1000.0;
+          }
+        }
       }
       if (!std::isfinite(ox) || !std::isfinite(oy) || std::hypot(ox, oy) > 20.0) {
         why = "store_offset (넣는 점 맞추기 + 전체 + 칸 " + cell + ") 가 숫자가 아니거나 20 mm 넘음";
@@ -1424,7 +1573,11 @@ private:
           arm_off_path_ = c.end != ArmEnd::SUCCEEDED && path_task
             ? true : (c.end == ArmEnd::SUCCEEDED ? false : arm_off_path_);
           if (c.end == ArmEnd::SUCCEEDED) {   // 퍽을 쥐고 끝나는 작업 / 놓고 끝나는 작업
-            if (task == ArmTask::Goal::PICK || task == ArmTask::Goal::RETRIEVE) {carrying_ = true;}
+            if (task == ArmTask::Goal::PICK || task == ArmTask::Goal::RETRIEVE) {
+              carrying_ = true;
+              held_since_ = now().seconds() + 0.3;   // 기준점에 멈춘 뒤 장만
+              held_buf_.clear();
+            }
             if (task == ArmTask::Goal::STORE || task == ArmTask::Goal::PLACE || task == ArmTask::Goal::HOME) {carrying_ = false;}
             held_tilt_ = task == ArmTask::Goal::PICK ? pending_tilt_ : 0.0;
             if (task == ArmTask::Goal::PICK) {held_lying_ = pending_lying_;}
@@ -1612,6 +1765,13 @@ private:
   std::vector<std::string> rack_names_;
   std::vector<Eigen::Vector2d> rack_xy_;     // 칸 중심 표 (config/rack_cells.yaml)
   std::vector<Eigen::Vector2d> rack_place_;  // 칸 넣는 점 보정 (같은 표 place_offset) [m]
+  struct HeldTag {std::string id; Eigen::Vector3d p, n;};   // 쥔 퍽 태그 (손목 좌표)
+  std::deque<HeldTag> held_buf_;
+  double held_since_{1e18};
+  double held_max_mm_{8.0};
+  std::optional<Eigen::Vector3d> held_ref_p_, held_ref_n_;
+  rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr sub_held_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr srv_held_ref_;
   Eigen::Vector2d rack_pivot_{Eigen::Vector2d::Zero()};
   std::string rack_ref_file_;
   double rack_min_shift_m_{0.0015}, rack_max_shift_m_{0.008}, rack_max_rms_m_{0.003};

@@ -23,6 +23,7 @@ planning · perception 이 붙을 때 보는 표. 이름은 팀 시뮬 브리지
 | `/arm_task` | `interfaces/action/ArmTask` | control_master (서버) | target `PoseStamped` (보통 base_link) | 7 가지 작업 모두 동작 (아래 '팔 작업') |
 | `/control/motion_mode` | `interfaces/msg/MotionMode` | control_master → swerve_controller | 10 Hz | 바퀴 · 팔 차례 (팔 움직이는 동안 바퀴 잠금) |
 | `/rack_tags/detections` | `interfaces/msg/DetectionArray` | `manipulation/rack_tag_node` (`bringup/rack_tags.launch.py`, 따로 띄움) | `base_link`, 손목 영상마다 최대 5 Hz | 적재함 칸 바닥 AprilTag (`config/rack_cells.yaml` `rack_tags`) 를 칸 바닥 평면에 내려 잰 칸 위치. kind `rack_tag` · label 칸 이름 · id 태그 ID. `/rack_tag_node/report` (Trigger) = 칸별 차 · 적재함 전체 이동 · 칸별 옮길 양 |
+| `/held_puck/tag` | `interfaces/msg/DetectionArray` | `manipulation/rack_tag_node` (같은 노드) | `wrist_link`, 손목 영상마다 최대 5 Hz | 손목 카메라에서 `held_max_dist_m` (0.15 m) 안에 보이는 퍽 태그 = 쥔 퍽. kind `held_tag` · id 태그 ID · pose = 태그 중심 · 면 방향 (z). control_master 가 PICK 뒤 기준점에서 모아 STORE 때 손 안 위치를 로그로 남기고, `held_correct` 면 칸 근처 경로를 옮김. 기준 = `/control_master/save_held_reference` (Trigger) |
 
 손목 RealSense 는 기본 이름으로 띄운다: `ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true publish_tf:=false` → `/camera/camera/*`.
 인지 노드(`config/perception.yaml`)와 팔 적재 코드가 이 토픽을 받는다. 광학 TF 는 URDF 가 보내므로 드라이버 TF 는 끈다(`publish_tf:=false`).
