@@ -1189,10 +1189,14 @@
   <!-- 표시 몸체: 손눈 보정에 사용한 기존 CAD front→color 고정 변환으로 역산. -->
   <joint name="camera_body_joint" type="fixed"><parent link="wrist_link" /><child link="camera_link" /><origin xyz="0.07285831910124538 -0.03358933820604513 -0.01335717514995661" rpy="-0.01555906262262852 1.249203250793414 -0.4626942145495506" /></joint>
   <link name="wrist_cam_color_optical_frame"/>
-  <!-- 실측 손눈 보정 T_5c/T_5d (바닥 깊이) 에 적재함 칸 태그 스캔으로 맞춘 경첩 각도를 더함 (컬러 광학 x 축 −5.63°, 칸 12 개 남는 오차 2 mm). 브래킷 배치를 맞추려고 바꾸지 않는다. -->
-  <joint name="camera_joint" type="fixed"><parent link="wrist_link"/><child link="wrist_cam_color_optical_frame"/><origin xyz="0.086934 -0.004296 -0.013517" rpy="-2.918301384027565 -0.00491770751513343 -2.01872902587038"/></joint>
+  <!-- 실측 손눈 보정 T_5c/T_5d (바닥 깊이) 에 적재함 칸 태그 스캔으로 맞춘 회전을 더함.
+       11-04: 옛 적재함 · 옛 칸 표로 경첩 (컬러 광학 x) −5.63°.
+       11-06: 카메라를 손목에 다시 붙인 뒤, 새 적재함 (CAD 칸 간격 · 가운데 140 mm 를 자로 확인) 12 칸 태그 110 장으로
+       컬러 광학 축 회전 (x −3.14°, y −1.11°, z −0.87°) 을 더 곱함 (칸 남는 오차 평균 1.1 · 최대 2.0 mm, 적재함 이동 (+0.5, +2.9) mm 같이 맞춤).
+       광축 ↔ 손가락 (J5 축) 33.5°. 브래킷 배치를 맞추려고 바꾸지 않는다. -->
+  <joint name="camera_joint" type="fixed"><parent link="wrist_link"/><child link="wrist_cam_color_optical_frame"/><origin xyz="0.086934 -0.004296 -0.013517" rpy="-2.973050 0.011127 -2.000066"/></joint>
   <link name="wrist_cam_depth_optical_frame"/>
-  <joint name="wrist_cam_depth_optical_joint" type="fixed"><parent link="wrist_link"/><child link="wrist_cam_depth_optical_frame"/><origin xyz="0.080572 -0.017984 -0.013716" rpy="-2.9117597857548048 -0.015876381393371775 -2.0109056306333914"/></joint>
+  <joint name="wrist_cam_depth_optical_joint" type="fixed"><parent link="wrist_link"/><child link="wrist_cam_depth_optical_frame"/><origin xyz="0.080572 -0.017984 -0.013716" rpy="-2.966714 0.000048 -1.992139"/></joint>
   <link name="camera_optical_frame"/>
   <joint name="camera_optical_joint" type="fixed"><parent link="wrist_cam_color_optical_frame"/><child link="camera_optical_frame"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>
   <link name="d435_color_optical_frame"/> <!-- 인지 노드(config/perception.yaml) 와 시뮬 URDF 가 쓰는 이름 — wrist_cam_color_optical_frame 과 같은 자리 -->
