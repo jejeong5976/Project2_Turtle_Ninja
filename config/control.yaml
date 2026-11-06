@@ -18,6 +18,8 @@ control_master:
     #   ⚠ 가속을 올리면 모터 전류가 큼 (J4 과부하 주의) — 실물 첫 시험은 지켜보며. 되돌리기: 25 · 25 · 25 · 60 · 150
     near_puck_speed_dps: 62.5      # PICK · PLACE 의 퍽 위 내림 · 쥐기 · 다시 쥐기
     path_slow_min_dps: 62.5        # 실물 경로 (arm_paths.yaml) 칸 근처 느린 구간 (기록 15) 의 최소 속도. 0 = 기록 그대로
+    # 경로별 속도 비율 "경로 이름=비율". 11-07 사용자: 적재함 뒤쪽 칸 (S1 · S2 · S3 · S8) 으로 갈 때 차체가 흔들림 → 10 % 느리게 (넣기 · 빼기)
+    path_speed_scale: ["store_S1=0.9", "store_S2=0.9", "store_S3=0.9", "store_S8=0.9", "retrieve_S1=0.9", "retrieve_S2=0.9", "retrieve_S3=0.9", "retrieve_S8=0.9"]
     path_stand_speed_dps: 62.5     # 받침 근처 (접기 · 펴기) 구간
     path_speed_dps: 150.0          # 빈 공간 최고 속도
     path_accel_dps2: 375.0         # 가속 · 감속 (짧은 구간도 실제로 빨라지게 속도와 같이 올림)

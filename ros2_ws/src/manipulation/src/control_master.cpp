@@ -343,6 +343,8 @@ public:
       });
     slow_dps_ = declare_parameter<double>("near_puck_speed_dps", 15.0);
     path_slow_min_dps_ = declare_parameter<double>("path_slow_min_dps", 0.0);   // 실물 경로 느린 구간의 최소 속도 (0 = 기록 그대로 15)
+    // 경로별 속도 비율 "경로 이름=비율" (11-07 사용자: S2 로 갈 때 10 % 느리게 → "store_S2=0.9"). 실행 중 바꾸면 다음 작업부터
+    declare_parameter<std::vector<std::string>>("path_speed_scale", std::vector<std::string>{});
     model_ok_ = load_model();
     for (const char * p : {"home", "pick_above", "pick_down", "place_above", "place_down"}) {
       poses_[p] = declare_parameter<std::vector<double>>(
@@ -647,6 +649,17 @@ private:
     // 실물 기록의 느린 구간 (칸 근처 15 °/s) 을 path_slow_min_dps 까지 올림 (11-05 사용자: 적재가 너무 느림, 적당히 빠르게)
     for (auto & n : path.nodes) {
       if (n.speed_dps > 0.0 && n.speed_dps < path_slow_min_dps_) {n.speed_dps = path_slow_min_dps_;}
+    }
+    for (const auto & e : get_parameter("path_speed_scale").as_string_array()) {
+      const auto eq = e.find('=');
+      if (eq == std::string::npos || e.compare(0, eq, name) != 0 || eq != name.size()) {continue;}
+      const double sc = std::atof(e.c_str() + eq + 1);
+      if (!(sc > 0.0)) {continue;}
+      for (auto & n : path.nodes) {
+        const double v0 = n.stand ? timing_.stand_speed_dps : timing_.speed_dps;
+        n.speed_dps = sc * (n.speed_dps > 0.0 ? std::min(v0, n.speed_dps) : v0);
+      }
+      RCLCPP_INFO(get_logger(), "%s: 속도 %.0f %% (path_speed_scale)", name.c_str(), sc * 100.0);
     }
     // PICK 이 집은 자리에서 끝났으면 (박스 위 기준점 안 감) 칸 경로 첫 점 (공통 기준점) 대신 지금 자세에서 실제 기록 시작점 (lift_real) 으로
     if (name.rfind("store_", 0) == 0 || name.rfind("look_rack_", 0) == 0) {join_from_pick_end(path, name.c_str());}
