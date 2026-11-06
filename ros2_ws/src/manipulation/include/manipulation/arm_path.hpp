@@ -56,6 +56,7 @@ struct GripperValues
   double open{0.0164};
   double release{0.0093};
   double close{-0.0016};
+  double loose{0.0060};   // 퍽이 손가락 사이에서 돌 수 있게 살짝 풂 (경로 grip "loose", 받침에 넣을 때). 퍽에 닿은 자리 약 0.0046
 };
 
 // start 에서 nodes 를 차례로 멈추지 않고 지나가는 시간표 (start 는 넣지 않음). 길이가 0 이면 마지막 점 하나를 0.3 s 에

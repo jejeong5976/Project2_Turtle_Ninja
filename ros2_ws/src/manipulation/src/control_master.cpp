@@ -131,6 +131,8 @@ public:
     grip_.open = gripper_open_;
     grip_.close = gripper_close_;
     grip_.release = declare_parameter<double>("gripper_release", 0.0093);
+    // 받침에 넣을 때 손가락을 살짝 풀어 퍽이 돌며 들어가게 (11-07 사용자: 박스 세우기 때처럼 돌 수 있는 폭으로). 퍽에 닿은 자리 약 0.0046
+    grip_.loose = declare_parameter<double>("park_loose_grip_m", 0.0060);
     gripper_time_s_ = declare_parameter<double>("gripper_time_s", 1.2);
     // ---- 실물 경로 (config/arm_paths.yaml) ----
     timing_.speed_dps = declare_parameter<double>("path_speed_dps", 40.0);
@@ -312,6 +314,7 @@ public:
     declare_parameter<double>("park_regrasp_depth_mm", 30.0);   // 받침에 선 퍽 다시 쥐기: 윗면에서 손끝까지 (손끝이 받침 벽 위)
     declare_parameter<double>("park_regrasp_r_mm", -6.0);       // 선 퍽 다시 쥐는 자리 = 받침 중심에서 반지름 방향 (− = J1 쪽)
     declare_parameter<double>("park_insert_j3_deg", 0.0);      // 넣는 자세 J3 를 이만큼 더 [°, + = 손끝 위] (넣는 점에서 5° ≈ 위 22 · 바깥 9 mm)
+    declare_parameter<int>("park_loose_step", -1);              // 넣으며 기울이는 점 (1–8) 중 이 번째부터 손가락을 park_loose_grip_m 으로 풂. −1 = 안 풂
     declare_parameter<double>("park_speed_dps", 20.0);          // 받침에서 넣기 · 다시 쥐기 속도
     declare_parameter<double>("park_push_speed_dps", 20.0);     // 받침에서 밀어 세우는 속도 (빠르면 손끝이 퍽 면을 타고 올라 넘어짐)
     declare_parameter<std::vector<double>>("look_rack_bias_mm", {0.0, 0.0});   // LOOK_RACK 칸 측정의 카메라 치우침 [x, y] mm (제자리 적재함에서 잰 값 − 칸 표)
@@ -1925,6 +1928,8 @@ private:
     pk.regrasp_depth = get_parameter("park_regrasp_depth_mm").as_double() / 1000.0;
     pk.regrasp_r = get_parameter("park_regrasp_r_mm").as_double() / 1000.0;
     pk.insert_dj3 = get_parameter("park_insert_j3_deg").as_double() * M_PI / 180.0;
+    pk.loose_step = static_cast<int>(get_parameter("park_loose_step").as_int());
+    grip_.loose = get_parameter("park_loose_grip_m").as_double();
     pk.side = lying_h_;
     pk.length = puck_h_;
     std::vector<ParkNode> pn;
@@ -1961,6 +1966,7 @@ private:
       // 미는 구간 (park_push_down · 1–4 · back) 만 park_push_speed_dps (11-06 시뮬: 50 °/s 면 기대는 각 49° 아래에서 넘어짐, 20 °/s 면 ±2–4 mm 오차에도 섬)
       const double sp = !n.slow ? 0.0 : (n.name.rfind("park_push", 0) == 0 ? v_push : v);
       nodes.push_back(model_node(n.name, q_to_ticks(model_, encoder_goal_q(model_, n.q, n.held_kg)), sp, n.grip));
+      if (n.grip == "loose") {nodes.back().grip_on_way = true;}   // 팔을 안 멈추고 손가락만 풂
     }
     pending_tilt_ = 0.0;
     pending_depth_ = pk.regrasp_depth * 1000.0;

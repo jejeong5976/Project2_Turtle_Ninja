@@ -194,14 +194,14 @@ std::vector<ArmAction> path_actions(
         side_t = timed ? seg_t : -1.0;   // 속도 시간표면 flush 에서 찾음
         side_idx = static_cast<int>(seg.size()) - 1;
       }
-      side_g = n.grip == "open" ? grip.open : (n.grip == "release" ? grip.release : grip.close);
+      side_g = n.grip == "open" ? grip.open : (n.grip == "release" ? grip.release : (n.grip == "loose" ? grip.loose : grip.close));
       seg.back().grip.clear();
       continue;
     }
     if (n.stop || !n.grip.empty() || is_last) {
       flush(n, is_last);
       if (!n.grip.empty()) {
-        const double g = n.grip == "open" ? grip.open : (n.grip == "release" ? grip.release : grip.close);
+        const double g = n.grip == "open" ? grip.open : (n.grip == "release" ? grip.release : (n.grip == "loose" ? grip.loose : grip.close));
         out.push_back({n.grip == "close" ? "grasp" : "release", true, "", g});
       }
     }
