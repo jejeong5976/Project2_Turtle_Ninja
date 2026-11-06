@@ -110,7 +110,9 @@ bool shift_cell_path(
     }
     ++rep.moved;
   }
-  if (rep.worst_pos_mm > 0.2 || rep.worst_app_deg > 1.0) {
+  // 접근축: 관절 5 개라 손끝을 옮기면 손이 조금 기움. 11-06 실물: 오른쪽 칸 2 cm 보정에 1.0–1.7° → 1° 한도로 50–75 % 만 옮겨
+  //   칸마다 들어가는 자리가 매번 달라짐. 5° 기울어도 퍽 바닥 (손끝 아래 60 mm) 은 5 mm 안
+  if (rep.worst_pos_mm > 0.2 || rep.worst_app_deg > 5.0) {
     char buf[200];
     std::snprintf(buf, sizeof(buf), "%s: 손끝을 원하는 만큼 못 옮김 (어긋남 %.2f mm · 접근축 %.2f°)", path.name.c_str(),
       rep.worst_pos_mm, rep.worst_app_deg);
