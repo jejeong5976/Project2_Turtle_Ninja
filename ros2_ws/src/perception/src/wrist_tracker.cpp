@@ -210,11 +210,16 @@ PuckDetection PuckTracker::summarize(const std::vector<const RawPuck *> & recent
     group = recent;
   }
   const RawPuck & last = *group.back();
-  // 중심 = 좌표별 중앙값
+  // 중심 = 좌표별 중앙값. 태그로 중심을 잡은 장이 있으면 그 장들만 (깊이 점 중심은 비스듬히 보면 수 mm 치우쳐 섞으면 흔들림)
+  std::vector<const RawPuck *> tagged;
+  for (const auto * r : group) {
+    if (r->pose.tag_centre) {tagged.push_back(r);}
+  }
+  const auto & cgroup = tagged.empty() ? group : tagged;
   Vec3 center;
   for (int k = 0; k < 3; ++k) {
     std::vector<double> c;
-    for (const auto * r : group) {c.push_back(r->pose.center[k]);}
+    for (const auto * r : cgroup) {c.push_back(r->pose.center[k]);}
     center[k] = median(std::move(c));
   }
   // 긴축 = 마지막 장 부호에 맞춰 평균
@@ -260,6 +265,7 @@ PuckDetection PuckTracker::summarize(const std::vector<const RawPuck *> & recent
   d.hits = static_cast<int>(recent.size());
   d.axis_source = last.pose.axis_source;
   if (!known.empty()) {d.upright = upright;}
+  d.center_from_tag = !tagged.empty();
   return d;
 }
 

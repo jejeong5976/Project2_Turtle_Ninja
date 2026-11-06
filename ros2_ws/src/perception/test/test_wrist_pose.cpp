@@ -439,3 +439,66 @@ TEST(Geometry, TagTopRefineUsesTagCentreAndEdges)
   none.tag.reset();
   EXPECT_FALSE(tag_top_refine(none, K, up));
 }
+
+// 누운 네모 퍽 윗면 태그: 깊이로 6 mm 치우친 윗면 중심 · 7° 틀린 긴축을 태그로 바로잡음. 옆면 태그 (윗면 평면이 아님) · 선 퍽은 그대로
+TEST(Geometry, TagLyingRefineUsesTagCentreAndLongAxis)
+{
+  const Intrinsics K{606.4, 606.2, 325.2, 256.8};
+  const Vec3 up(0.0, 0.0, -1.0), centre(0.02, 0.01, 0.30);
+  const double yaw = 20.0 * M_PI / 180.0, h = 0.0153 / 2.0;
+  const Vec3 ex(std::cos(yaw), std::sin(yaw), 0.0), ey(-std::sin(yaw), std::cos(yaw), 0.0);   // ex = 긴축
+  auto project = [&](const std::array<Vec3, 4> & q) {
+      TagPose t;
+      t.id = 7;
+      for (int k = 0; k < 4; ++k) {
+        t.corners[k] = cv::Point2f(static_cast<float>(K.fx * q[k].x() / q[k].z() + K.cx), static_cast<float>(K.fy * q[k].y() / q[k].z() + K.cy));
+      }
+      return t;
+    };
+  PuckPose p;
+  p.upright = false;
+  p.tag = project({centre - ex * h - ey * h, centre + ex * h - ey * h, centre + ex * h + ey * h, centre - ex * h + ey * h});
+  p.top_center = centre + ex * 0.006;
+  const double bad = yaw + 7.0 * M_PI / 180.0;
+  p.axis = Vec3(std::cos(bad), std::sin(bad), 0.0);
+  ASSERT_TRUE(tag_lying_refine(p, K, up));
+  EXPECT_LT((*p.top_center - centre).norm(), 0.0003);
+  EXPECT_LT((p.center - (centre - up * (PUCK_D / 2.0))).norm(), 0.0003);
+  EXPECT_NEAR(std::abs(p.axis.dot(ex)), 1.0, 1e-4);
+  EXPECT_TRUE(p.tag_centre);
+  // 옆면 (수직) 에 붙은 태그: 윗면 평면으로 옮기면 한 변 길이가 안 맞음 → 그대로
+  PuckPose side = p;
+  side.tag_centre = false;
+  side.top_center = centre + ex * 0.006;
+  const Vec3 sc = centre + ey * 0.0174 + up * -0.0174;   // 옆면 중심 (위쪽 = −z 이므로 아래 = +z)
+  side.tag = project({sc - ex * h + up * h, sc + ex * h + up * h, sc + ex * h - up * h, sc - ex * h - up * h});
+  EXPECT_FALSE(tag_lying_refine(side, K, up));
+  EXPECT_FALSE(side.tag_centre);
+  // 선 퍽 · 태그 없음 → 그대로
+  PuckPose stand = p;
+  stand.upright = true;
+  EXPECT_FALSE(tag_lying_refine(stand, K, up));
+  PuckPose none = p;
+  none.tag.reset();
+  EXPECT_FALSE(tag_lying_refine(none, K, up));
+}
+
+// 태그로 중심을 잡은 장이 있으면 그 장들의 중앙값만 (깊이 점 중심 장은 안 섞음) + center_from_tag
+TEST(Tracker, TagCentredFramesWin)
+{
+  PuckTracker tr(5, 3, 0.02);
+  const Vec3 c(0.0, 0.05, 0.3);
+  auto tagged = raw_at(c, false);
+  tagged.pose.tag_centre = true;
+  tr.update({raw_at(c + Vec3(0.006, 0, 0), false)});
+  tr.update({tagged});
+  auto d = tr.update({raw_at(c + Vec3(0.006, 0, 0), false)});
+  ASSERT_EQ(d.size(), 1u);
+  EXPECT_TRUE(d[0].center_from_tag);
+  EXPECT_NEAR(d[0].position.x(), 0.0, 1e-12);
+  // 태그 장이 창에서 빠지면 깊이 점 중심
+  for (int i = 0; i < 5; ++i) {d = tr.update({raw_at(c + Vec3(0.006, 0, 0), false)});}
+  ASSERT_EQ(d.size(), 1u);
+  EXPECT_FALSE(d[0].center_from_tag);
+  EXPECT_NEAR(d[0].position.x(), 0.006, 1e-12);
+}

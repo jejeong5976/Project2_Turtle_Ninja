@@ -323,6 +323,45 @@ bool tag_top_refine(PuckPose & p, const Intrinsics & K, const Vec3 & up_in)
   return true;
 }
 
+bool tag_lying_refine(PuckPose & p, const Intrinsics & K, const Vec3 & up_in)
+{
+  if (!p.tag || !p.upright || *p.upright || !p.top_center || !(K.fx > 0.0) || !(K.fy > 0.0)) {return false;}
+  const Vec3 up = up_in.normalized();
+  const double top_h = p.top_center->dot(up);
+  std::array<Vec3, 4> c;
+  for (int k = 0; k < 4; ++k) {
+    const Vec3 r((p.tag->corners[k].x - K.cx) / K.fx, (p.tag->corners[k].y - K.cy) / K.fy, 1.0);
+    const double den = r.dot(up);
+    if (std::abs(den) < 1e-6) {return false;}
+    const double s = top_h / den;
+    if (!(s > 0.0) || !std::isfinite(s)) {return false;}
+    c[k] = r * s;
+  }
+  for (int k = 0; k < 4; ++k) {
+    if (std::abs((c[(k + 1) % 4] - c[k]).norm() - kPuckTagSideM) > 0.004) {return false;}
+  }
+  const Vec3 tc = (c[0] + c[1] + c[2] + c[3]) / 4.0;
+  if ((tc - *p.top_center).norm() > 0.025) {return false;}
+  // 태그 두 변 방향 (수평) — 긴축은 그중 지금 긴축 (발자국 PCA) 에 가까운 쪽, 부호도 지금 긴축 쪽으로
+  Vec3 a = p.axis - up * p.axis.dot(up);
+  if (a.norm() < 1e-9) {return false;}
+  a.normalize();
+  Vec3 best = Vec3::Zero();
+  for (const Vec3 & e0 : {Vec3((c[1] - c[0]) + (c[2] - c[3])), Vec3((c[3] - c[0]) + (c[2] - c[1]))}) {
+    Vec3 e = e0 - up * e0.dot(up);
+    if (e.norm() < 1e-9) {continue;}
+    e.normalize();
+    if (e.dot(a) < 0.0) {e = -e;}
+    if (e.dot(a) > best.dot(a)) {best = e;}
+  }
+  if (best.norm() < 0.5) {return false;}
+  p.top_center = tc;
+  p.center = tc - up * (PUCK_D / 2.0);
+  p.axis = orient_axis(best, &up);
+  p.tag_centre = true;
+  return true;
+}
+
 std::optional<PuckPose> puck_pose(
   const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K,
   const std::vector<TagPose> & tags, const Vec3 * up_cam)
@@ -390,7 +429,7 @@ std::optional<PuckPose> puck_pose(
     const Vec3 upn = up_cam->normalized();
     const auto hs = dots(pts, upn);
     gravity_refine(p, pts, *up_cam, support_height(mask, depth_m, K, upn, top_height(hs)));
-    tag_top_refine(p, K, *up_cam);
+    if (!tag_top_refine(p, K, *up_cam)) {tag_lying_refine(p, K, *up_cam);}
   }
   return p;
 }

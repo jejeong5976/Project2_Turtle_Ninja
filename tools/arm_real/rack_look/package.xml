@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>rack_look_check</name>
+  <version>0.0.0</version>
+  <description>scratch: collision check of arm segments with MoveIt (held puck + rack pucks)</description>
+  <maintainer email="kwonhyeokmu@gmail.com">khm</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>moveit_core</depend>
+  <depend>rclcpp</depend>
+  <depend>urdf</depend>
+  <depend>srdfdom</depend>
+  <depend>geometric_shapes</depend>
+  <depend>eigen3_cmake_module</depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

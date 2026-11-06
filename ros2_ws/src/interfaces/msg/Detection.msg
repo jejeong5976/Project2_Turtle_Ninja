@@ -24,3 +24,4 @@ bool yaw_known                # x 축을 믿어도 되는지
                               #   true  = x 축이 사각기둥 면 법선, 90° 주기. 선 퍽 = 윗면 윤곽으로, 누운 퍽 = 위쪽
                               #   false = z 축만 믿음. 원기둥 · 면 방향 못 구한 사각기둥 · 모서리로 기댄 사각기둥
 float32[4] bbox               # x_min, y_min, x_max, y_max, 원본 영상 픽셀
+bool center_from_tag          # true = pose.position 을 퍽 윗면 태그로 잼 (선 퍽 윗면 · 누운 퍽의 위를 향한 옆면), false = 깊이 점 (비스듬히 보면 수 mm 치우침)
