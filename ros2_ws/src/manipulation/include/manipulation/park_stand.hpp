@@ -68,6 +68,7 @@ struct ParkCfg
   double push_r0{0.06};          // 밀기 시작 = 받침 중심에서 바깥으로 (높이 밀면 기댄 퍽 윗끝 밖에서 내려와야 함)
   double regrasp_depth{0.030};   // 선 퍽 다시 쥐는 깊이 (윗면 아래)
   double regrasp_r{-0.006};      // 선 퍽 다시 쥐는 자리 = 받침 중심에서 반지름 방향 (− = J1 쪽, 시뮬 −6 mm)
+  double insert_dj3{0.0};        // 넣는 자세 (기울이는 점들) 의 J3 를 이만큼 더 [rad, + = 손끝 위, 넣는 점에서 5° ≈ 위 22 · 바깥 9 mm · 손 5° 덜 기욺]
   double side{0.0348}, length{0.060};
   double held_kg{0.017};
   double inner_half{0.0235};     // 받침 안쪽 반 (반지름 방향)
