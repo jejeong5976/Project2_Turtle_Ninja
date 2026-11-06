@@ -242,7 +242,8 @@ double lying_close_rad(const ArmModel & m, double x, double y, double axis_deg)
 
 std::vector<PickPose> pick_poses(
   const ArmModel & m, double x, double y, double top_z, double yaw_deg, const std::vector<double> & heights_mm,
-  std::string & why, double close_deg, double max_tilt_deg, double prefer_tilt_deg, double max_dev_deg)
+  std::string & why, double close_deg, double max_tilt_deg, double prefer_tilt_deg, double max_dev_deg,
+  const std::vector<Q5> & first_seeds, bool allow_vertical)
 {
   const double ca = std::isfinite(close_deg) ? close_deg / kDeg : default_close_rad(m, x, y, yaw_deg);
   // 5 축 팔은 손을 J1 → 퍽 수직면 안으로만 기울일 수 있음 → 기울인 손은 닫힘축 = 접선, 기울임 = 바깥 반지름 방향
@@ -255,7 +256,7 @@ std::vector<PickPose> pick_poses(
   const Q5 & q0 = m.template_q;
   std::vector<double> tilts;   // 선호 기울임에 가까운 순 (같으면 작은 것 먼저)
   for (double t = 0.0; t <= max_tilt_deg + 1e-9; t += 10.0) {
-    if (std::fabs(t - prefer_tilt_deg) <= max_dev_deg + 1e-9 && (t == 0.0 || tilt_ok)) {tilts.push_back(t);}
+    if (std::fabs(t - prefer_tilt_deg) <= max_dev_deg + 1e-9 && (t == 0.0 ? allow_vertical : tilt_ok)) {tilts.push_back(t);}
   }
   std::stable_sort(tilts.begin(), tilts.end(), [&](double a, double b) {
       return std::fabs(a - prefer_tilt_deg) < std::fabs(b - prefer_tilt_deg) - 1e-9;
@@ -268,7 +269,7 @@ std::vector<PickPose> pick_poses(
     const Eigen::Vector3d close(std::cos(cc), std::sin(cc), 0.0);
     const Eigen::Vector3d app = std::sin(t) * radial - std::cos(t) * Eigen::Vector3d::UnitZ();
     std::vector<PickPose> out;
-    std::vector<Q5> seeds;
+    std::vector<Q5> seeds = first_seeds;
     bool ok = true;
     for (double h : heights_mm) {
       const Eigen::Vector3d p(x, y, top_z + h / 1000.0);   // 손끝 = 퍽 중심축 위 (기울여도 수직으로 들고 내림)

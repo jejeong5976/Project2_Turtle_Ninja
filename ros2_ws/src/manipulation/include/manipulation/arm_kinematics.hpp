@@ -96,10 +96,12 @@ struct PickPose
 //     기울여도 손끝은 모든 높이에서 퍽 중심축 위 (쥔 퍽을 수직으로 들고 내림 — 옆 퍽 쪽으로 쓸지 않게)
 //   prefer_tilt_deg · max_dev_deg: 이 기울임에 가까운 것부터, 차이가 max_dev 안인 것만 (PLACE: 쥘 때 기울임과 맞춤)
 //   해는 실제 틱 · 처짐 앞먹임 명령 틱 둘 다 관절 범위 안이어야 함
+//   first_seeds: 첫 높이 IK 씨앗 (비면 기본 씨앗 수십 개 — 느림). 가까운 자세를 알면 주면 빠름 (못 찾을 수도 있음)
+//   allow_vertical: false 면 수직 손 (기울임 0) 은 안 풀어 봄 (수직 손이 안 닿는 걸 이미 앎)
 std::vector<PickPose> pick_poses(
   const ArmModel & m, double x, double y, double top_z, double yaw_deg, const std::vector<double> & heights_mm,
   std::string & why, double close_deg = std::nan(""), double max_tilt_deg = 0.0, double prefer_tilt_deg = 0.0,
-  double max_dev_deg = 1e9);
+  double max_dev_deg = 1e9, const std::vector<Q5> & first_seeds = {}, bool allow_vertical = true);
 
 // 기본 닫힘축 방향 [rad] (pick_poses 가 close_deg 없이 쓰는 방향): 원기둥 = J1 → 퍽 방향의 수직, 네모 = 그에 가장 가까운 면 법선
 double default_close_rad(const ArmModel & m, double x, double y, double yaw_deg);

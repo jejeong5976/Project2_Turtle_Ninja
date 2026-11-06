@@ -106,6 +106,28 @@ TEST(PathActions, GripOnWayKeepsArmMoving)
   EXPECT_LT(acts[1].side_grip_t, 0.0);
 }
 
+// PICK: 퍽 위로 출발할 때 미리 열기 (grip_early) — 속도 시간표 구간에서도 안 끊고 시각 0, 쥐기 (close) 는 그대로 끊음
+TEST(PathActions, GripEarlyOpensWhileMoving)
+{
+  ArmPath p;
+  p.nodes = {node("s", {0, 0, 0, 0, 0}), node("above", {20, 0, 0, 0, 0}, false, "open"), node("down", {25, 0, 0, 0, 0}),
+    node("grasp", {30, 0, 0, 0, 0}, false, "close"), node("lift", {20, 0, 0, 0, 0})};
+  p.nodes[1].grip_early = true;
+  const auto acts = manipulation::path_actions(p, PathTiming{}, manipulation::GripperValues{});
+  ASSERT_EQ(acts.size(), 3u);   // s → above → down → grasp (열기는 처음에) · [닫기] · lift
+  EXPECT_FALSE(acts[0].is_gripper);
+  EXPECT_NEAR(acts[0].side_grip_t, 0.0, 1e-12);
+  EXPECT_NEAR(acts[0].side_grip, manipulation::GripperValues{}.open, 1e-12);
+  EXPECT_TRUE(acts[1].is_gripper);
+  // 도착 시각 (grip_on_way) 은 그 점의 시각을 시간표에서 찾음
+  p.nodes[1].grip_early = false;
+  p.nodes[1].grip_on_way = true;
+  const auto b2 = manipulation::path_actions(p, PathTiming{}, manipulation::GripperValues{});
+  ASSERT_EQ(b2.size(), 3u);
+  EXPECT_GT(b2[0].side_grip_t, 0.0);
+  EXPECT_LT(b2[0].side_grip_t, b2[0].duration_s);
+}
+
 TEST(TimePath, ZeroLength)
 {
   const std::vector<double> s(5, 0.1);

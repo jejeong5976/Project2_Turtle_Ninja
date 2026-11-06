@@ -152,11 +152,21 @@ std::vector<ArmAction> path_actions(
   std::vector<double> from = measured ? q_now : path.nodes.front().q;
   std::vector<PathNode> seg;
   double side_t = -1.0, side_g = 0.0, seg_t = 0.0;   // 팔을 안 멈추고 여는 그리퍼 (grip_on_way)
+  int side_idx = -1;                                  // 그 경유점 (seg 안 번호) — 시간 안 맞춘 구간은 시간표에서 도착 시각을 찾음
   auto flush = [&](const PathNode & last, bool is_last) {
       ArmAction a{"", false, "", 0.0};
       a.phase = last.grip == "release" ? "release" : (last.grip == "close" ? "grasp" : (is_last && path.ends_home ? "retreat" : "approach"));
       a.pose = is_last && path.ends_home ? "home" : last.name;
       a.points = time_path(from, seg, timing);
+      if (side_idx == -2) {side_t = 0.0;}   // 구간 처음 (출발할 때)
+      if (side_idx >= 0 && side_t < 0.0 && !a.points.empty()) {   // 속도 시간표: 그 경유점에 가장 가까운 점의 시각 (경유점 도착 점이 들어 있음)
+        double best = 1e18;
+        for (const auto & p : a.points) {
+          double d = 0.0;
+          for (std::size_t j = 0; j < p.q.size(); ++j) {d += (p.q[j] - seg[side_idx].q[j]) * (p.q[j] - seg[side_idx].q[j]);}
+          if (d < best) {best = d; side_t = p.t;}
+        }
+      }
       if (last.hold_s > 0.0 && !a.points.empty()) {a.points.push_back({last.q, a.points.back().t + last.hold_s});}   // 같은 자세로 기다림
       a.duration_s = a.points.empty() ? 0.0 : a.points.back().t;
       a.side_grip_t = side_t;
@@ -165,6 +175,7 @@ std::vector<ArmAction> path_actions(
       from = last.q;
       seg.clear();
       side_t = -1.0;
+      side_idx = -1;
       seg_t = 0.0;
     };
   for (std::size_t i = 1; i < path.nodes.size(); ++i) {
@@ -172,8 +183,16 @@ std::vector<ArmAction> path_actions(
     seg.push_back(n);
     seg_t += n.dt_s;
     const bool is_last = i + 1 == path.nodes.size();
-    if (!n.grip.empty() && n.grip_on_way && n.dt_s > 0.0 && !n.stop && !is_last) {   // 끊지 않고 이 도착 시각에 그리퍼만
-      side_t = seg_t;
+    if (!n.grip.empty() && (n.grip_on_way || n.grip_early) && !n.stop && !is_last && side_idx == -1) {   // 끊지 않고 그리퍼만
+      bool timed = true;
+      for (const auto & sn : seg) {timed = timed && sn.dt_s > 0.0;}
+      if (n.grip_early) {   // 이 점으로 출발할 때 = 앞 점 도착 (구간 첫 점이면 구간 처음)
+        side_idx = seg.size() >= 2 ? static_cast<int>(seg.size()) - 2 : -2;
+        side_t = side_idx == -2 ? 0.0 : (timed ? seg_t - n.dt_s : -1.0);
+      } else {
+        side_t = timed ? seg_t : -1.0;   // 속도 시간표면 flush 에서 찾음
+        side_idx = static_cast<int>(seg.size()) - 1;
+      }
       side_g = n.grip == "open" ? grip.open : (n.grip == "release" ? grip.release : grip.close);
       seg.back().grip.clear();
       continue;

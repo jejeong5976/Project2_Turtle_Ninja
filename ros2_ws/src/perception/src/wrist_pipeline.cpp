@@ -216,6 +216,7 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
     m.pose.orientation.z = d.orientation[2];
     m.pose.orientation.w = d.orientation[3];
     m.yaw_known = d.yaw_known;
+    m.center_from_tag = d.center_from_tag;
     for (int k = 0; k < 4; ++k) {m.bbox[k] = static_cast<float>(d.bbox[k]);}
     out.detections.push_back(std::move(m));
   }

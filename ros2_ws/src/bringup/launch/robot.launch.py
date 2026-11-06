@@ -257,7 +257,7 @@ def generate_launch_description():
              parameters=[ctrl_yaml, {"enforce_command_limits": ParameterValue(arg("enforce_command_limits"), value_type=bool)}], remappings=[("~/robot_description", "/robot_description")], output="both"),
 
         Node(package="manipulation", executable="control_master",
-             parameters=[cfg("control.yaml"), cfg("arm_paths.yaml"), cfg("arm_kinematics.yaml"), rack_cell_params()],
+             parameters=[cfg("control.yaml"), cfg("arm_paths.yaml"), cfg("rack_look_paths.yaml"), cfg("arm_kinematics.yaml"), rack_cell_params()],
              condition=IfCondition(with_arm), output="both"),
         # 홈 자세마다 손목 사진으로 카메라가 돈 만큼 → /wrist_cam/drift (control_master 가 손목 검출을 되돌림, 11-05)
         Node(package="manipulation", executable="camera_drift_node",

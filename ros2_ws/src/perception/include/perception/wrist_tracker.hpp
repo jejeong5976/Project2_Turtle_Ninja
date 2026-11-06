@@ -76,6 +76,7 @@ struct PuckDetection
   int hits{0};
   std::string axis_source;
   std::optional<bool> upright;
+  bool center_from_tag{false};              // 중심 = 태그로 잰 장들의 중앙값 (tag_top_refine · tag_lying_refine)
 };
 
 // 긴축 = z 인 회전행렬 (열 x, y, z). face_dir 있으면 x 축 = 면 방향, 없으면 카메라 x 를 긴축에 수직으로 누름
