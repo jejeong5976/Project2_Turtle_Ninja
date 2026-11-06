@@ -273,7 +273,9 @@ public:
     // 세우기 경로 전체를 위아래로 옮김 [mm, − = 아래]: 실물이 명령보다 얕게 쥐어 시뮬 (−20 mm 쥐기) 과 같게 하려면 −10
     declare_parameter<double>("standup_dz_mm", 0.0);
     declare_parameter<double>("standup_tip_clear_mm", 2.0);
-    declare_parameter<double>("standup_reach_scale", 1.0);   // 쥔 뒤 경로의 수평 이동 배율 (1 = 표 그대로, 0.5 = 절반만 뻗음)   // 세우기 경로 손끝 최저 = 박스 윗면 위 이만큼 (모델)
+    declare_parameter<double>("standup_reach_scale", 1.0);
+    declare_parameter<double>("standup_time_scale", 1.0);
+    declare_parameter<double>("standup_open_time_s", 0.5);   // 세우기 여는 점에서 그리퍼 다 열기까지 [s] (시뮬 정책: 스텝마다 2 mm → 약 0.5 s)   // 세우기 경로 점 사이 시간 = 녹화 0.1 s × 이 배 (1 = 시뮬과 같은 속도)   // 쥔 뒤 경로의 수평 이동 배율 (1 = 표 그대로, 0.5 = 절반만 뻗음)   // 세우기 경로 손끝 최저 = 박스 윗면 위 이만큼 (모델)
     // 누운 네모 퍽을 PICK 하면서 세움 (false = 누운 채 쥐고 기준점으로, 예전대로). 실행 중: ros2 param set /control_master stand_lying true
     declare_parameter<bool>("stand_lying", false);
     standup_speed_dps_ = declare_parameter<double>("standup_speed_dps", 32.0);   // 시뮬 정책은 40 °/s (스텝 0.05 s 마다 2°). 1.25 배 느리게 재생해도 시뮬 91.8 % (40 은 89.9 %)
@@ -1552,24 +1554,33 @@ private:
     // 확인은 보낸 명령 (처짐 앞먹임 포함) 의 손끝과 실측 (엔코더) 손끝을 비교 — 앞먹임이 손끝을 약 18 mm 올려 보이게 함
     standup_check_ = StandupCheck{"", arm_grip(model_, ticks_to_q(model_, enc)).tip};   // 구간 이름은 경로 점을 다 만든 뒤
     // 경로 점이 IK 로 안 풀리면 그 점만 건너뜀 (11-05 사용자: 막지 말 것). 여는 점이 빠지면 다음 점에서 엶
-    int skipped = 0;
+    //   점 사이 시간 = 표 녹화 간격 (0.1 s) × standup_time_scale — 속도 상한으로 다시 짜면 시뮬 재생 84 → 47 % (11-06, 15 °/s · 여는 점 멈춤)
+    const double dt = kStandupDt * get_parameter("standup_time_scale").as_double();
+    int skipped = 0, gap = 1;   // gap: 건너뛴 점만큼 다음 점까지 시간을 늘림
     bool opened = false, any = false;
     for (size_t i = 0; i < e.q.size(); ++i) {
       const bool held = static_cast<int>(i) < e.release;
       if (!enc_of(e.q[i], held ? kg : 0.0, true)) {
         ++skipped;
+        ++gap;
         RCLCPP_WARN(get_logger(), "PICK 세우기: 경로 점 %zu/%zu 건너뜀 (%s)", i, e.q.size(), fail.c_str());
         continue;
       }
       const bool open_here = !opened && static_cast<int>(i) >= e.release;
       opened = opened || open_here;
       any = true;
-      path.nodes.push_back(model_node("stand" + std::to_string(i), enc, standup_speed_dps_, open_here ? "open" : ""));
+      PathNode n = model_node("stand" + std::to_string(i), enc, standup_speed_dps_, open_here ? "open" : "");
+      n.dt_s = dt * gap;
+      n.grip_on_way = open_here;   // 팔을 멈추지 않고 열기 (여는 점에서 0.2 s 만 멈춰도 시뮬 재생 84 → 36 %, 11-06)
+      gap = 1;
+      path.nodes.push_back(n);
     }
     if (!any) {return refuse("세우기 경로 점 전부");}
     if (!opened) {path.nodes.back().grip = "open";}
-    for (const auto & n : path.nodes) {   // 확인은 쥔 뒤 첫 구간 (끝 = 여는 점) 을 보내기 전 — 구간 이름 = 끝 점 이름
-      if (n.name.rfind("stand", 0) == 0 && n.grip == "open") {standup_check_->pose = n.name; break;}
+    path.nodes.back().stop = true;   // 시간 맞춘 구간은 여기서 끝 (다음 '손 위로' 는 속도 시간표)
+    // 확인은 쥔 뒤 첫 세우기 동작을 보내기 전 — 동작 이름 = 그 동작의 끝 점 (멈추는 점 · 끝 점)
+    for (const auto & n : path.nodes) {
+      if (n.name.rfind("stand", 0) == 0 && (n.stop || (!n.grip.empty() && !n.grip_on_way))) {standup_check_->pose = n.name; break;}
     }
     RCLCPP_INFO(get_logger(), "PICK 세우기: 경로 손끝 최저 = 박스 윗면 위 %.0f mm @ (%.3f, %.3f) (모델, 실물은 약 10 mm 높음 · standup_dz_mm %.0f) · "
       "윗면 아래를 가리켜 올린 점 %d 개 (최대 %.0f mm) · 덜 뻗기 %.2f 배 · 건너뛴 점 %d 개", (tip_low.z() - floor_z) * 1000.0, tip_low.x(),
@@ -1900,12 +1911,20 @@ private:
             send_trajectory(grip_client_, {gripper_joint_}, {{{c.action.gripper}, gripper_time_s_}}, c.gen);
           } else if (!c.action.points.empty()) {
             send_trajectory(arm_client_, arm_joints_, c.action.points, c.gen);
+            if (c.action.side_grip_t >= 0.0) {   // 팔을 멈추지 않고 그 시각에 그리퍼만 (세우기 여는 점)
+              const double g = c.action.side_grip;
+              side_grip_timer_ = create_wall_timer(std::chrono::duration<double>(c.action.side_grip_t), [this, g]() {
+                  side_grip_timer_->cancel();
+                  send_side_gripper(g);
+                });
+            }
           } else {
             send_trajectory(arm_client_, arm_joints_, {{poses_.at(c.action.pose), move_time_s_}}, c.gen);
           }
           break;
         }
         case ArmCommand::Kind::CANCEL_ACTIVE:
+          if (side_grip_timer_) {side_grip_timer_->cancel();}
           cancel_trajectory(c.gen);
           break;
         case ArmCommand::Kind::VERIFY_START:
@@ -1961,6 +1980,24 @@ private:
   }
 
   // 시간표(점들, 시작부터 초)를 재생기에 보냄. 답은 콜백 → runner_ 로 전달
+  // 차례 (ArmRunner) 와 상관없는 그리퍼 명령 — 팔 궤적이 도는 동안 (세우기 여는 점). 결과는 로그만
+  void send_side_gripper(double g)
+  {
+    if (!grip_client_->action_server_is_ready()) {RCLCPP_ERROR(get_logger(), "세우기: 그리퍼 재생기가 없음 → 못 엶"); return;}
+    FJT::Goal goal;
+    goal.trajectory.joint_names = {gripper_joint_};
+    trajectory_msgs::msg::JointTrajectoryPoint p;
+    p.positions = {g};
+    p.time_from_start = rclcpp::Duration::from_seconds(get_parameter("standup_open_time_s").as_double());
+    goal.trajectory.points.push_back(p);
+    FJTClient::SendGoalOptions opt;
+    opt.result_callback = [this](const rclcpp_action::ClientGoalHandle<FJT>::WrappedResult & r) {
+        if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {RCLCPP_WARN(get_logger(), "세우기: 팔 안 멈추고 연 그리퍼가 끝까지 못 감");}
+      };
+    grip_client_->async_send_goal(goal, opt);
+    RCLCPP_INFO(get_logger(), "세우기: 팔을 멈추지 않고 그리퍼 엶 (%.4f m)", g);
+  }
+
   void send_trajectory(
     const FJTClient::SharedPtr & client, const std::vector<std::string> & joints,
     const std::vector<TrajPoint> & points, unsigned gen)
@@ -2108,11 +2145,13 @@ private:
   bool pending_lying_{false};      // 받은 PICK 계획이 누운 퍽 (성공하면 held_lying_)
   double place_clear_mm_{2.0}, retrieve_depth_mm_{25.0}, tilted_depth_mm_{30.0};
   static constexpr double kStoreMaxTilt = 10.0;   // 이보다 기울여 쥔 퍽은 STORE 거절 (적재함 경로는 수직 퍽으로 검증)
+  static constexpr double kStandupDt = 0.1;       // 세우기 표 점 간격 [s] (export_standup_table.py --every 2 × 0.05 s)
   std::vector<NeighborPuck> last_nb_;   // grasp_for 가 본 이웃 (poses_for 의 기울인 손 다시 검사용)
   std::unique_ptr<tf2_ros::Buffer> tf_buf_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listen_;
   rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr sub_dets_;
   rclcpp::Subscription<geometry_msgs::msg::QuaternionStamped>::SharedPtr sub_drift_;
+  rclcpp::TimerBase::SharedPtr side_grip_timer_;   // 세우기: 팔 동작 도중 그리퍼 여는 시각
   bool drift_correct_{true};
   std::string drift_frame_;
   Eigen::Quaterniond drift_q_{Eigen::Quaterniond::Identity()};

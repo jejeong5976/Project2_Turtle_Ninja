@@ -47,6 +47,8 @@ struct ArmAction
   double gripper;        // 그리퍼: 손가락 위치 [m]
   std::vector<TrajPoint> points{};   // 비어 있지 않으면 이 시간표 그대로 (실물 경로, arm_path.hpp). 비면 pose 하나를 move_time 에
   double duration_s{0.0};            // points 의 마지막 시각 (시간 제한 계산)
+  double side_grip_t{-1.0};          // >= 0: 팔 동작을 멈추지 않고 시작 뒤 이 시각 [s] 에 그리퍼만 side_grip 으로 (세우기 — 멈추면 시뮬 84 → 36 %)
+  double side_grip{0.0};
 };
 
 // 모르는 작업 번호면 빈 목록. 마지막 동작은 항상 접기(home) → 끝나면 바로 주행해도 안전

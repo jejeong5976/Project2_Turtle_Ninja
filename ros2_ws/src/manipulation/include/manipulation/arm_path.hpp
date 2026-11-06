@@ -8,6 +8,7 @@
 //   - 꺾이는 곳 속도 × cos²(꺾인 각 / 2), 가속 · 감속 accel, 처음 · 끝 0
 //   - dt 마다 점 하나 (JTC 가 점 사이를 선형 보간)
 // 동작 나누기: 그리퍼 동작이나 멈춤이 있는 경유점에서 끊음 → 팔 동작(여러 점) · 그리퍼 동작 차례로
+//   grip_on_way 인 시간 맞춘 점은 안 끊고 그 팔 동작의 side_grip_t (도착 시각) 로
 
 #pragma once
 
@@ -29,6 +30,8 @@ struct PathNode
   std::string grip;          // 도착 뒤 그리퍼: "" · open · release · close
   bool stop{false};          // 도착해서 멈춤 (동작을 여기서 끊음)
   double hold_s{0.0};        // 도착해서 이만큼 그 자세로 기다림 [s] (stop 과 같이 씀, 손목 카메라가 멈춘 장을 모으게)
+  double dt_s{0.0};          // > 0: 앞 점에서 이 점까지 정확히 이 시간 [s] (속도 · 가속 한계 없이 — 세우기 표를 녹화 간격 그대로 재생)
+  bool grip_on_way{false};   // grip 을 팔을 멈추지 않고 (도착 시각에 그리퍼만) — 시간 맞춘 (dt_s) 점에서만
 };
 
 struct ArmPath
@@ -54,6 +57,7 @@ struct GripperValues
 };
 
 // start 에서 nodes 를 차례로 멈추지 않고 지나가는 시간표 (start 는 넣지 않음). 길이가 0 이면 마지막 점 하나를 0.3 s 에
+//   nodes 가 모두 dt_s > 0 이면 경유점마다 그 시간 간격 그대로 (녹화 재생 — 11-06 시뮬: 속도 상한으로 다시 짜면 세우기 84 → 47 %)
 //   출력 = dt 간격 점 + 경유점마다 그 도착 시각의 점 (JTC 가 점 사이를 직선으로 이어도 검사한 꺾은선 그대로)
 std::vector<TrajPoint> time_path(
   const std::vector<double> & start, const std::vector<PathNode> & nodes, const PathTiming & timing);
