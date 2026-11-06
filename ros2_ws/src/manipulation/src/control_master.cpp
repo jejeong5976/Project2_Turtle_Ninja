@@ -1130,13 +1130,15 @@ private:
       if (d_rack.norm() < rack_min_shift_m_) {d_rack.setZero();}
     }
     Eigen::Vector2d d_set = Eigen::Vector2d::Zero();
+    double dz = 0.0;   // 칸 근처 높이 [m] (store_offset.<칸> 세 번째 값, − = 더 내려 놓기)
     if (store) {
       double ox = get_parameter("store_offset_x_mm").as_double(), oy = get_parameter("store_offset_y_mm").as_double();
       if (known) {
         const auto c = get_parameter("store_offset." + cell).as_double_array();
-        if (c.size() != 2) {why = "store_offset." + cell + " 는 [x, y] mm 두 개"; return false;}
+        if (c.size() != 2 && c.size() != 3) {why = "store_offset." + cell + " 는 [x, y] 또는 [x, y, 높이] mm"; return false;}
         ox += c[0];
         oy += c[1];
+        if (c.size() == 3 && std::isfinite(c[2])) {dz = c[2] / 1000.0;}
       }
       if (known && get_parameter("store_to_cell").as_bool()) {
         Eigen::Vector2d tip;
@@ -1180,7 +1182,7 @@ private:
       d_set = Eigen::Vector2d(ox, oy) / 1000.0;
     }
     const Eigen::Vector2d d = d_rack + d_set;
-    if (d.norm() < 1e-6) {return true;}
+    if (d.norm() < 1e-6 && std::fabs(dz) < 1e-6) {return true;}
     if (!known) {why = "칸 " + cell + " 이 칸 표 (rack_cell_names) 에 없어 칸 경로를 못 옮김"; return false;}
     if (!model_ok_) {why = "팔 모델 없음 → 칸 경로를 못 옮김"; return false;}
     CellShiftReport rep;
@@ -1191,7 +1193,7 @@ private:
     for (double sc : {1.0, 0.75, 0.5, 0.25}) {
       ArmPath p2 = path;
       std::string e2;
-      if (shift_cell_path(model_, p2, store, rack_xy_[i], d * sc, rep, e2)) {path = p2; used = sc; break;}
+      if (shift_cell_path(model_, p2, store, rack_xy_[i], d * sc, rep, e2, dz * sc)) {path = p2; used = sc; break;}
       if (err.empty()) {err = e2;}
     }
     if (used == 0.0) {
@@ -1200,8 +1202,8 @@ private:
       return true;
     }
     const Eigen::Vector2d du = d * used;
-    RCLCPP_INFO(get_logger(), "%s: 칸 근처를 (%+.1f, %+.1f) mm 옮김%s = 적재함 움직임 (%+.1f, %+.1f) + store_offset (%+.1f, %+.1f) "
-      "(점 %d 개 · 관절 최대 %.2f° · 손끝 어긋남 %.2f mm)", name.c_str(), du.x() * 1000.0, du.y() * 1000.0,
+    RCLCPP_INFO(get_logger(), "%s: 칸 근처를 (%+.1f, %+.1f) mm · 높이 %+.1f mm 옮김%s = 적재함 움직임 (%+.1f, %+.1f) + store_offset (%+.1f, %+.1f) "
+      "(점 %d 개 · 관절 최대 %.2f° · 손끝 어긋남 %.2f mm)", name.c_str(), du.x() * 1000.0, du.y() * 1000.0, dz * used * 1000.0,
       used < 1.0 ? (" (다 옮기면 관절 범위 밖 → " + std::to_string(static_cast<int>(used * 100)) + " %)").c_str() : "",
       d_rack.x() * 1000.0, d_rack.y() * 1000.0, d_set.x() * 1000.0, d_set.y() * 1000.0, rep.moved, rep.max_joint_deg, rep.worst_pos_mm);
     return true;

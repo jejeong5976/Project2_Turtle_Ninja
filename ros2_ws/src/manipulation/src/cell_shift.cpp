@@ -76,10 +76,10 @@ int find_node(const ArmPath & p, const char * name)
 
 bool shift_cell_path(
   const ArmModel & m, ArmPath & path, bool store, const Eigen::Vector2d & cell_xy, const Eigen::Vector2d & d,
-  CellShiftReport & rep, std::string & why)
+  CellShiftReport & rep, std::string & why, double dz)
 {
   rep = CellShiftReport{};
-  if (!d.allFinite() || !cell_xy.allFinite()) {why = "옮길 양 · 칸 위치가 숫자가 아님"; return false;}
+  if (!d.allFinite() || !cell_xy.allFinite() || !std::isfinite(dz)) {why = "옮길 양 · 칸 위치가 숫자가 아님"; return false;}
   const int n = static_cast<int>(path.nodes.size());
   const int k = find_node(path, store ? "P0_복귀" : "P0");
   if (k < 0) {why = path.name + ": 경유점 " + (store ? "P0_복귀" : "P0") + " 없음"; return false;}
@@ -94,7 +94,7 @@ bool shift_cell_path(
     const double dist_mm = (g0.tip.head<2>() - cell_xy).norm() * 1000.0;
     const double w = std::clamp((kFarMm - dist_mm) / (kFarMm - kNearMm), 0.0, 1.0) * ramp;
     if (w <= 0.0) {continue;}
-    const Eigen::Vector3d dp(d.x() * 1000.0 * w, d.y() * 1000.0 * w, 0.0);
+    const Eigen::Vector3d dp(d.x() * 1000.0 * w, d.y() * 1000.0 * w, dz * 1000.0 * w);
     const V5 c = solve(m, c0, dp);
     const Grip g = grip_of_cmd(m, c);
     rep.worst_pos_mm = std::max(rep.worst_pos_mm, ((g.tip - g0.tip) * 1000.0 - dp).norm());

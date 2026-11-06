@@ -19,7 +19,8 @@ control_master:
     near_puck_speed_dps: 62.5      # PICK · PLACE 의 퍽 위 내림 · 쥐기 · 다시 쥐기
     path_slow_min_dps: 62.5        # 실물 경로 (arm_paths.yaml) 칸 근처 느린 구간 (기록 15) 의 최소 속도. 0 = 기록 그대로
     # 경로별 속도 비율 "경로 이름=비율". 11-07 사용자: 적재함 뒤쪽 칸 (S1 · S2 · S3 · S8) 으로 갈 때 차체가 흔들림 → 10 % 느리게 (넣기 · 빼기)
-    path_speed_scale: ["store_S1=0.9", "store_S2=0.9", "store_S3=0.9", "store_S8=0.9", "retrieve_S1=0.9", "retrieve_S2=0.9", "retrieve_S3=0.9", "retrieve_S8=0.9"]
+    #   S1 · S2 는 11-07 사용자: 70 %
+    path_speed_scale: ["store_S1=0.7", "store_S2=0.7", "store_S3=0.9", "store_S8=0.9", "retrieve_S1=0.7", "retrieve_S2=0.7", "retrieve_S3=0.9", "retrieve_S8=0.9"]
     path_stand_speed_dps: 62.5     # 받침 근처 (접기 · 펴기) 구간
     path_speed_dps: 150.0          # 빈 공간 최고 속도
     path_accel_dps2: 375.0         # 가속 · 감속 (짧은 구간도 실제로 빨라지게 속도와 같이 올림)
@@ -82,7 +83,7 @@ control_master:
     pick_max_tilt_deg: 40.0
     store_offset_x_mm: 0.0
     store_offset_y_mm: 0.0
-    # 칸마다 더하는 STORE 보정 [x, y] mm (없는 칸 = 0). 실행 중: ros2 param set /control_master store_offset.S7 "[0.0, 5.0]"
+    # 칸마다 더하는 STORE 보정 [x, y] 또는 [x, y, 높이] mm (없는 칸 = 0, 높이 − = 더 내려 놓기). 실행 중: ros2 param set /control_master store_offset.S7 "[0.0, 5.0]"
     store_offset:
       # 11-06 새 적재함 · 카메라 회전을 고친 뒤 실물: 오른쪽 4 칸 (S4 · S7 · S9 · S12) 은 로봇 앞으로 놓임 (스캔으로 잰 칸은 칸 표와 x 3.4 mm 안 → 팔 쪽 차이)
       #   S12 는 칸 근처 합계 (-10, +2.5) mm 에서 들어감 (그때 접근축 1° 한도로 -20 의 50 % 만 옮겨짐). 나머지는 x 를 -10 mm 로 시작해 실물로 맞출 것
@@ -93,8 +94,8 @@ control_master:
       # 왼쪽 8 칸: 11-07 실물 선 퍽으로 S1 · S2 가 왼쪽 4 · 앞 3 mm → 왼쪽 조각 모두 (-3, -4) 더함
       S10: [1.0, 0.0]     # 옛: [4.0, 4.0] (11-04 실물, S9 · S4 대칭)
       S5: [1.0, 0.0]      # 옛: [4.0, 4.0]
-      S1: [-3.0, -4.0]
-      S2: [-3.0, -4.0]
+      S1: [-3.0, -1.0, -2.0]   # 11-07 실물: 왼쪽으로 3 mm 더 · 위에서 떨어뜨려 2 mm 더 내려 놓기 (세 번째 = 높이 mm, − = 아래)
+      S2: [-3.0, -1.0, -2.0]   # S1 과 같이
       S3: [-3.0, -4.0]
       S6: [-3.0, -4.0]
       S8: [-3.0, -4.0]
