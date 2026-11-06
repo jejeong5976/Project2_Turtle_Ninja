@@ -1,24 +1,27 @@
 # 적재함 12 칸 — 칸 ID S1~S12 (팔 J1 축에서 먼 칸부터). 채우는 순서는 config/planning.yaml cargo_slots (실물 시험 순서)
 #   같은 ID: URDF rack_cell_<ID>_link · config/planning.yaml cargo_slots · config/arm_paths.yaml store_<ID> · retrieve_<ID> · ArmTask.slot
-# 값은 실물 측정 · 보정 그대로 (11-01 넣기 · 빼기 12 칸 성공 때). base_link 기준 [m], 칸 방향 yaw [°]
+# xy (11-06 새 적재함): URDF rack_cell_<ID>_link (CAD 칸 바닥 중심) + 가운데 통로 2 mm (자로 잼: S5↔S6 60 · S6↔S11 45 · S11↔S12 · S10↔S9 140 mm,
+#   URDF 는 138 → 왼쪽 8 칸 y +1 · 오른쪽 4 칸 y −1 mm). 손목 카메라 스캔은 칸 간격을 66–72 · 47 mm 로 재서 (자와 6–12 mm 차) 안 씀
+#   옛 적재함 값 (11-01 넣기 · 빼기 12 칸 성공 때): backups/rack_cells_1106/rack_cells.yaml. yaw · place_offset 은 옛 값 그대로
+# base_link 기준 [m], 칸 방향 yaw [°]
 #   measured_name: 실물 시험 때 이름 (기록 · runs 를 찾을 때)
 #   place_offset: 칸에 넣을 때 팔을 옮긴 보정 [m] (실물에서 맞춘 값)
 rack_cells:
   floor_z: 0.1325   # 칸 바닥
   rim_z: 0.1605     # 컵 테두리
   cells:
-    S1: {measured_name: L8, xy: [-0.110130, 0.106931], yaw_deg: -2.443, place_offset: [0.0050, 0.0080]}
-    S2: {measured_name: L7, xy: [-0.109317, 0.064428], yaw_deg: -1.503, place_offset: [0.0010, 0.0040]}
-    S3: {measured_name: L6, xy: [-0.043400, 0.111000], yaw_deg: 0.548, place_offset: [0.0045, -0.0055]}
-    S4: {measured_name: B, xy: [0.079500, -0.114000], yaw_deg: -3.280, place_offset: [0.0000, 0.0050]}
-    S5: {measured_name: L2, xy: [0.084300, 0.107300], yaw_deg: -0.771, place_offset: [-0.0060, -0.0020]}
-    S6: {measured_name: L4, xy: [0.021900, 0.109700], yaw_deg: -0.721, place_offset: [-0.0030, -0.0040]}
-    S7: {measured_name: D, xy: [0.011600, -0.108400], yaw_deg: -5.710, place_offset: [0.0060, -0.0062]}
-    S8: {measured_name: L5, xy: [-0.043572, 0.070504], yaw_deg: 2.243, place_offset: [0.0056, -0.0085]}
-    S9: {measured_name: A, xy: [0.081200, -0.072100], yaw_deg: 1.000, place_offset: [0.0010, 0.0010]}
-    S10: {measured_name: L1, xy: [0.084142, 0.066838], yaw_deg: -0.817, place_offset: [-0.0020, -0.0020]}
-    S11: {measured_name: L3, xy: [0.023953, 0.069231], yaw_deg: 0.545, place_offset: [-0.0060, -0.0030]}
-    S12: {measured_name: C, xy: [0.015800, -0.068100], yaw_deg: -5.080, place_offset: [0.0030, -0.0017]}
+    S1: {measured_name: L8, xy: [-0.102000, 0.113100], yaw_deg: -2.443, place_offset: [0.0050, 0.0080]}
+    S2: {measured_name: L7, xy: [-0.102000, 0.068100], yaw_deg: -1.503, place_offset: [0.0010, 0.0040]}
+    S3: {measured_name: L6, xy: [-0.042000, 0.113100], yaw_deg: 0.548, place_offset: [0.0045, -0.0055]}
+    S4: {measured_name: B, xy: [0.078000, -0.116900], yaw_deg: -3.280, place_offset: [0.0000, 0.0050]}
+    S5: {measured_name: L2, xy: [0.078000, 0.113100], yaw_deg: -0.771, place_offset: [-0.0060, -0.0020]}
+    S6: {measured_name: L4, xy: [0.018000, 0.113100], yaw_deg: -0.721, place_offset: [-0.0030, -0.0040]}
+    S7: {measured_name: D, xy: [0.018000, -0.116900], yaw_deg: -5.710, place_offset: [0.0060, -0.0062]}
+    S8: {measured_name: L5, xy: [-0.042000, 0.068100], yaw_deg: 2.243, place_offset: [0.0056, -0.0085]}
+    S9: {measured_name: A, xy: [0.078000, -0.071900], yaw_deg: 1.000, place_offset: [0.0010, 0.0010]}
+    S10: {measured_name: L1, xy: [0.078000, 0.068100], yaw_deg: -0.817, place_offset: [-0.0020, -0.0020]}
+    S11: {measured_name: L3, xy: [0.018000, 0.068100], yaw_deg: 0.545, place_offset: [-0.0060, -0.0030]}
+    S12: {measured_name: C, xy: [0.018000, -0.071900], yaw_deg: -5.080, place_offset: [0.0030, -0.0017]}
 
 # 칸 바닥 AprilTag (tag36h11, 검은 사각 한 변 size_m) — 손목 카메라로 칸 위치 재기 (manipulation rack_tag_node)
 #   ids: 칸 → 그 칸 바닥에 붙인 태그 ID (실물 11-03 붙인 그대로, 위치 순서라 S 번호와 다름 — perception wrist_rack 과 같은 표)
