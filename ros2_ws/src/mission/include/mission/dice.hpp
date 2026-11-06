@@ -1,12 +1,13 @@
 // dice.hpp — 주사위 기억 미션 계산
 //
 // 역할
-//   1. 바코드 해석: Code128 원문 → 정렬 방향, P2-01 · P2-03 오름차순, P2-02 · P2-04 내림차순
+//   1. 바코드 해석: Code128 원문 → 정렬 방향, 표 = 레포 maps/dice_barcodes.json (2026-11-04)
+//        발제 v5: P2-01 · P2-03 오름차순, P2-02 · P2-04 내림차순
 //   2. 그룹 정렬: 신호등 R · Y · G 횟수 → L1 · L2 · L3 에 놓을 그룹, 동률이면 R → Y → G 순서 유지
 //   3. 주사위 눈: 눈 수 → 장소 중심 기준 놓을 점, 3×3 격자 간격 60 mm
 //        그림 좌표 → apply_view_directions 로 관찰 원에서 본 방향에 맞춤
 // 입력
-//   - 신호 횟수 SignalRecorder::count, 바코드 원문
+//   - 신호 횟수 SignalRecorder::count, 바코드 원문, 바코드 표 (load_barcode_table)
 // 출력
 //   - DicePlan: 장소별 그룹 · 눈 수 · 놓을 점
 // 실행
@@ -23,6 +24,7 @@
 #include "mission/common.hpp"
 
 #include <array>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -66,8 +68,17 @@ struct DiceConfig
   double pip_pitch_m = 0.060;               // 격자 간격 (발제 60 mm)
 };
 
-// 1. 바코드 원문 → 정렬 방향. 등록 안 된 코드면 nullopt + error (발제: 미등록 바코드 = 오류 정지)
-std::optional<DiceOrder> parse_dice_barcode(const std::string & raw_text, std::string * error = nullptr);
+// 바코드 원문 → 정렬 방향 표
+using BarcodeTable = std::map<std::string, DiceOrder>;
+
+// 바코드 표 파일 읽기 (JSON, yaml-cpp 로 읽음)
+//   {"barcodes": [{"barcode": "P2-01", "sortOrder": "ASC" | "DESC", "sortLabel": "오름차순"}, …]}
+//   sortLabel 은 사람용이라 안 씀. 빈 목록 · 빈 바코드 · ASC/DESC 아닌 값 · 같은 바코드 두 번이면 실패
+bool load_barcode_table(const std::string & path, BarcodeTable & out, std::string * error = nullptr);
+
+// 1. 바코드 원문 → 정렬 방향. 표에 없는 코드면 nullopt + error (발제: 미등록 바코드 = 오류 정지)
+std::optional<DiceOrder> parse_dice_barcode(
+  const std::string & raw_text, const BarcodeTable & table, std::string * error = nullptr);
 
 // 신호 횟수가 규칙에 맞는가 (각 min–max, 합 total_pucks)
 bool valid_signal_counts(const SignalCounts & c, const DiceConfig & cfg = {}, std::string * error = nullptr);

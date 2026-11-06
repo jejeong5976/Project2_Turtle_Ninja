@@ -1,8 +1,8 @@
 """nav2.launch.py — Nav2 실행 (planner · controller(MPPI) · behavior · bt_navigator · collision_monitor
                                  + localization:=amcl 이면 map_server · AMCL)
 
-  # 실물 (기본 localization:=slam): slam.launch.py slam_mode:=localization 을 먼저 띄움 -> map -> odom · /map 은 slam_toolbox
-  ros2 launch navigation slam.launch.py hardware:=opencr slam_mode:=localization map:=$HOME/maps/arena
+  # 실물 (기본 localization:=slam): slam.launch.py 를 먼저 띄움 -> map -> odom · /map 은 slam_toolbox
+  ros2 launch navigation slam.launch.py hardware:=opencr slam_mode:=mapping map:=$HOME/maps/arena   # 시연: 저장 지도 이어 그리기
   ros2 launch navigation nav2.launch.py
   ros2 launch navigation nav2.launch.py mission_hold:=false                                  # planning 없이 Nav2 만 시험
   # AMCL (시뮬 · slam_toolbox 없이): map_server + AMCL 이 map -> odom · /map
@@ -10,8 +10,9 @@
   ros2 launch navigation nav2.launch.py localization:=amcl map:=<지도.yaml> initial_pose:=-1.468,-2.202,180  # 출발 자세로 AMCL 시작
 
   - 설정 yaml: params 인자 -> 레포 config/nav2.yaml (bringup 이 share/bringup/config 로 설치)
-  - localization (2026-11-02 결정 = slam): map -> odom 주인은 하나만
-      slam = 이 launch 는 위치 찾기를 안 띄움. slam_toolbox localization (저장한 posegraph, 매핑 시작 자세 = 출발 자세) 이 냄
+  - localization (기본 slam): map -> odom 주인은 하나만
+      slam = 이 launch 는 위치 찾기를 안 띄움. slam_toolbox 가 냄 (2026-11-05 시연 = mapping 으로 저장 posegraph 이어 그리기,
+             지도 고정이 필요하면 slam_mode:=localization. 둘 다 시작 자세 = 매핑 시작 자세 = 출발 자세)
              map · initial_pose 인자는 안 씀
       amcl = map_server (map:=<지도.yaml>) + AMCL (initial_pose). slam_toolbox 를 같이 띄우면 안 됨
   - 지도 (amcl): slam_toolbox 로 만든 map.yaml (save_map.sh) 또는 시뮬 시험용 sim/robot_sim/maps/maze_dice_map.yaml
@@ -23,7 +24,7 @@
   - 운영 규칙: Nav2 를 띄운 동안 teleop 금지 (/cmd_vel 직접 발행은 hold · collision_monitor 를 우회하고 0 과 섞임).
     매핑 · 수동 시험은 Nav2 없이
        (가속 한계는 swerve_controller 가 지킴)
-  - 받는 것: /odom, TF odom -> base_link (swerve_controller · 시뮬 브리지), /lidar_front/scan, /lidar_rear/scan
+  - 받는 것: /odom, TF odom -> base_link (swerve_controller · 시뮬 브리지), /lidar_front/scan, /lidar_rear/scan (costmap · AMCL), /scan (collision_monitor, scan_merger 는 이 launch 가 안 띄움 → slam.launch.py · 시뮬 launch)
   - 받는 것 (slam): TF map -> odom · /map (slam_toolbox)
   - 보내는 것: /cmd_vel, TF map -> odom (amcl 일 때만), navigate_to_pose 액션 (mission_manager 가 부름)
 """

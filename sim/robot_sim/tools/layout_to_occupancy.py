@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""미로 배치 파일(*_layout.json) -> Nav2 지도 (PGM + YAML). 시뮬 Nav2 시험용 (실물은 Cartographer 지도를 씀).
+"""미로 배치 파일(*_layout.json) -> Nav2 지도 (PGM + YAML). 시뮬 Nav2 시험용 (실물은 slam_toolbox 지도를 씀).
 
 라이다 스캔 높이(배포판 URDF base_scan_front, 바닥 위 60 mm)에서 자른 단면을 그림:
   collision_boxes(벽판 · 기둥)는 z 범위가 스캔 높이를 지나면 점유, mounts(벽 연결 부품 원통)는 윗면이 스캔 높이보다 높으면 점유.
@@ -56,7 +56,7 @@ for m in L.get('mounts', []):
     n_mount += 1
 
 # 주사위 경기장(dice_layout.json, tools/make_dice_map.py): 바닥에 놓인 소품도 스캔 높이를 지나면 점유
-#   시작 박스 · L1/L3 배치대 205 mm, 중앙 받침대 820 mm (높이 70 mm), 신호등 받침 Ø60 (높이 30 mm, 위 기둥 Ø40 까지 149 mm), 바코드 기둥 20×20
+#   시작 박스 · L1–L3 배치대 205 mm (높이 70 mm), 신호등 받침 Ø60 (높이 30 mm, 위 기둥 Ø40 까지 149 mm), 바코드 기둥 20×20
 n_prop = 0
 M = L.get('mission')
 if M:
@@ -66,9 +66,8 @@ if M:
         n_prop += 1
     for b in M['start_boxes'].values():
         add_square(*b['sim_m'], 0.205)
-    for k in ('L1', 'L3'):
-        add_square(*M['places'][k]['center_sim_m'], 0.205)
-    add_square(*M['platform']['sim_m'][:2], M['platform']['size_m'][0])
+    for p in M['places'].values():
+        add_square(*p['center_sim_m'], 0.205)
     if M['traffic_light']['top_z_m'] >= a.scan_z:
         occ |= np.hypot(X - M['traffic_light']['sim_m'][0], Y - M['traffic_light']['sim_m'][1]) <= 0.030 + half_cell
         n_prop += 1

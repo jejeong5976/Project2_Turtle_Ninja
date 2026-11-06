@@ -51,9 +51,9 @@ SPLIT = {
     'wide_puck_new_01': 'train', 'wide_puck_new_02': 'train', 'wide_puck_new_05': 'train',
     'wide_puck_new_03': 'val', 'wide_puck_new_04': 'test',
 }
-MASK = {'wide_traffic_light_': 0.82}
+MASK = {'wide_traffic_light_': 0.82}   # 영상이름 앞부분: 가리기 시작할 높이 비율 (아래 18% 가림)
 BLOCK = 'wide_puck_new_01,wide_puck_new_02,wide_puck_new_03,wide_puck_new_04,wide_puck_new_05,wide_traffic_light_2'   # 시간 구간으로 나눌 영상
-DARK = 60   # 이 밝기(0~255) 보다 어두우면 '어두운 사진'으로 셈   # 영상이름 앞부분: 가릴 높이 비율
+DARK = 60   # 이 밝기(0~255) 보다 어두우면 '어두운 사진'으로 셈
 
 
 def video_of(stem: str) -> str:

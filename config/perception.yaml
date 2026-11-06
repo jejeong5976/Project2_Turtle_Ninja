@@ -87,6 +87,20 @@ perception:
       compare_nominal: true              # URDF rack_cell_<칸>_link 와 차이를 로그 · 그림에 냄 (확인용)
       publish_debug: false               # true 면 /perception/rack_debug_image
 
+    box:                                 # 장소 · 시작 박스 윗면 (손목 깊이) → /perception/wrist/box, 중심 · yaw
+      enabled: true                      # ~/box/enable 로 켜고 끔. 엔진 없이도 돎 (깊이 · TF 만 씀)
+      frame: base_footprint              # 바닥 = 0, z = 위인 프레임. 출력 frame_id
+      size: 0.205                        # 윗면 한 변 [m]
+      top_z: 0.07                        # 윗면 높이 [m]
+      band: 0.012                        # 윗면으로 볼 높이 폭 ± (처짐 · 깊이 잡음)
+      drop: 0.03                         # 윗면보다 이만큼 낮으면 바닥 쪽 (테두리 판정)
+      min_x: 0.15                        # 이보다 가까운 점 = 차체 (앞 끝 0.145 m, 바퀴 포함), 안 씀
+      front_min_x: 0.175                 # 뒤 변을 못 봤을 때만: 맞춘 앞 변이 이보다 가까우면 실패 (차체에 가려 앞뒤가 틀어짐)
+      min_side_pts: 40                   # 앞뒤 · 좌우 축마다 한 변은 이 점 수 이상 보여야 성공
+      stride: 2                          # 화소 건너뛰기
+      guess: [0.2575, 0.0, 0.0]          # 처음 추정 (frame 기준 x, y, yaw) = 정차 자리에서 본 박스 중심 (dice_map 정차 거리)
+      max_hz: 5.0
+
     barcode:                             # 벽 1D 바코드, zxing-cpp 로 Code128 판독
       camera: wrist                      # wide | wrist. 이 카메라 컬러 영상에서 읽음
       enabled: false                     # 기본 꺼짐. planning 이 READ_BARCODE 단계에서 ~/barcode/enable 로 켜고 끝나면 끔

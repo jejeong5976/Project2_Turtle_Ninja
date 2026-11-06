@@ -30,6 +30,7 @@ add_library(planning_core STATIC
   src/puck_registry.cpp
   src/grasp.cpp
   src/cargo.cpp
+  src/inventory_policy.cpp
   src/health.cpp
 )
 set_target_properties(planning_core PROPERTIES POSITION_INDEPENDENT_CODE ON)

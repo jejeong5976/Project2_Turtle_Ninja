@@ -40,10 +40,13 @@ namespace mission
 std::vector<Step> collect_steps(const DiceMap & arena, const std::vector<int> & order, std::string * error = nullptr);
 
 // 팔 동작 목록 → Arm 단계 (Look · Pick · Store · Retrieve · Place). rack_look 이면 STORE 앞에 LOOK_RACK (같은 칸)
-std::vector<Step> arm_steps(const std::vector<ArmAction> & actions, const DiceMap & arena, bool rack_look = false);
+//   box_wait: 장소 LOOK 뒤 Custom kPlaceBox (박스 측정으로 칸 기준 확정)
+std::vector<Step> arm_steps(
+  const std::vector<ArmAction> & actions, bool rack_look = false, bool box_wait = false);
 
 // 운반 계획 → DELIVER 단계 (move 인 정차는 이동 먼저)
-std::vector<Step> transfer_steps(const TransferPlan & plan, const DiceMap & arena, bool rack_look = false);
+std::vector<Step> transfer_steps(
+  const TransferPlan & plan, const DiceMap & arena, bool rack_look = false, bool box_wait = false);
 
 // 재검증 단계 (verify_order 순서로 장소마다 이동 → LOOK → Plan(Verify))
 std::vector<Step> verify_steps(const std::array<int, kNumPlaces> & verify_order, const DiceMap & arena);

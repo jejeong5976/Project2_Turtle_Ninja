@@ -21,7 +21,7 @@ uint8 STORE    = 3            # 그리퍼에 쥔 퍽 → 적재함 slot 칸에 �
 uint8 RETRIEVE = 4            # 적재함 slot 칸의 퍽 → 그리퍼로 꺼내기
 uint8 LOOK     = 5            # 손목 카메라 관찰 자세: 앞 박스 · 장소 위를 내려다봄, 끝나면 그 자세 유지
 uint8 LOOK_BARCODE = 6        # 손목 카메라로 출발 구역 벽 바코드를 정면으로 봄, 끝나면 그 자세 유지
-uint8 LOOK_FAR = 7            # LOOK 보다 먼 곳 (L2 중앙 받침대, 격자 중심이 정차점 앞 0.40 m) 을 내려다봄, 끝나면 그 자세 유지
+# 7 = 비움 (옛 LOOK_FAR, L2 받침대가 205 박스로 바뀌어 2026-11-04 삭제, 번호 재사용 안 함)
 uint8 LOOK_RACK = 8           # 퍽 쥔 채 적재함 slot 칸을 손목 카메라로 내려다봄 (칸마다 관찰 자세 다름, control 표), 끝나면 그 자세 유지 → 다음은 STORE
 uint8 task
 geometry_msgs/PoseStamped target   # PICK · PLACE: 놓을 · 집을 점, 보통 frame_id = base_link

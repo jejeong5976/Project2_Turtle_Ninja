@@ -55,11 +55,11 @@ swerve_controller:
     turn_timeout_s: 0.5            # 차례가 이만큼 안 오면 잠금 (control_master 가 10 Hz 로 보냄 — 죽거나 끊기면 바퀴 정지)
     motion_mode_ack_topic: /control/motion_mode_ack   # "이 요청 번호로 잠갔음" 답 → control_master 가 받아야 팔 시작
 
-    # ---- 느리게 (D16) ----
-    max_linear: 0.10               # [m/s]
+    # ---- 속도 ----
+    max_linear: 0.20               # [m/s] 주행 0.2 (하드웨어 끝 0.26)
     max_angular: 0.5               # [rad/s]
     max_wheel_speed: 7.9           # [rad/s] 바퀴 모터 한계 (XM430-W210 Velocity Limit 330 × 0.229 rpm = 7.91). 넘으면 네 바퀴를 같은 비율로 줄임
-                                   #   (다이나믹셀은 한계를 넘는 속도 명령을 무시하고 이전 속도로 계속 돎). 지금 최고 속도에선 약 5 rad/s 라 닿지 않음
+                                   #   (다이나믹셀은 한계를 넘는 속도 명령을 무시하고 이전 속도로 계속 돎). 0.2 m/s 에선 약 6.1 rad/s 라 닿지 않음
     # 실물 바닥 비교로 정함 (예전 0.2 / 0.8):
     #   0.2 / 0.8 은 방향 전환이 늦고(ㄹ자 0.40) 바퀴끼리 끌림(구동 729 mA) → 0.5 / 2.0 (제한 없음은 덜컹거림)
     max_linear_accel: 0.5          # [m/s²]

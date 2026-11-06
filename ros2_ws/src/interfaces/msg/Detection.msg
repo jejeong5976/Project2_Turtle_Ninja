@@ -5,6 +5,7 @@
 # 토픽
 #   - DetectionArray 안에 담겨 /perception/wrist/detections · /perception/wide/detections 로 나감
 #   - 적재함 칸은 /perception/rack/cells: kind "rack_cell", label "S1"…, id = 태그 ID, frame_id = base_link, pose = 칸 바닥 중심 + yaw
+#   - 박스 윗면은 /perception/wrist/box: kind "place_box", frame_id = base_footprint, pose = 윗면 중심 + yaw (90° 주기)
 # 보내는 쪽 → 받는 쪽
 #   - perception_node → mission_manager
 # note
@@ -14,7 +15,7 @@
 
 std_msgs/Header header        # stamp = 촬영 시각, frame_id = pose 기준 카메라 광학 프레임
 
-string kind                   # "puck" | "rack_cell"
+string kind                   # "puck" | "rack_cell" | "place_box"
 string label                  # "red" | "green"
 string shape                  # "cylinder" | "box", 모르면 ""
 string id                     # AprilTag ID 문자열 "0"–"11", 못 읽으면 ""

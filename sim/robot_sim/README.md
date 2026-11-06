@@ -176,7 +176,7 @@ ROS_DOMAIN_ID=17 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST ros2 launch scripts/sim
 - 비상 정지 (Nav2 `collision_monitor`): 진행 방향 1 s 앞 충돌 예상이면 감속 · 정지 (`FootprintApproach`), 차체 + 4 cm 안에 점이 들어오면 즉시 정지 (`PolygonStop`). 시험용 사람 = `/sim/person` (geometry_msgs/PointStamped, map xy, z < 0 이면 치움). 확인 (2026-10-28): 0.21 m/s 주행 중 앞면 11 cm 앞에 세우면 0.38 s 에 정지 (앞면 사이 8.4 cm), 치우면 다시 가서 도착
 - 실물 주의: 실물 라이다는 자기 바퀴 · 기둥을 실제로 맞힘 (외곽에서 0.08–0.15 m) -> 그대로 두면 비상 정지 구역에 걸려 계속 멈춤. 실물 스캔은 몸에 맞은 점을 걸러야 함 (`laser_filters` 상자 필터 등, Lyrical 에 미설치)
 - Isaac 파이썬에서 시스템 Lyrical `rclpy` 를 씀 (`.sh` 가 ROS 경로와 순수 파이썬 모듈 `em` · `lark` 만 덧붙임, 시스템 패키지 `python3-empy` · `python3-lark` 필요)
-- 지도 = `maps/maze_dice_map.yaml`: 경기장 배치에서 라이다 높이(60 mm) 단면을 그린 것 (`python3 tools/layout_to_occupancy.py --maze dice`). 실제 경기는 Cartographer 지도로 바꿈 (`map:=`)
+- 지도 = `maps/maze_dice_map.yaml`: 경기장 배치에서 라이다 높이(60 mm) 단면을 그린 것 (`python3 tools/layout_to_occupancy.py --maze dice`). 실제 경기는 slam_toolbox 지도로 바꿈 (`map:=`)
 - Nav2 설정 = 레포 `config/nav2.yaml` (스워브: AMCL `OmniMotionModel`, MPPI `omni`), 실행 = `ros2_ws/src/navigation`
 - `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` 필수: 같은 망에서 같은 도메인의 실물 로봇이 켜져 있으면 시뮬 `/cmd_vel` 이 실물로 갈 수 있음
 - 확인 (2026-10-28): 출발점 -> L1 접근 지점 (3230, 950) mm, 시작 박스 1 을 돌아 21 s, 위치 오차 12 mm. 홀로노믹이라 진행 방향과 관계없이 몸 방향을 둔 채 이동하고 도착 때 돌아섬

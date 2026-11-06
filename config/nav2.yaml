@@ -1,11 +1,12 @@
 # Nav2 설정 (ros2_ws/src/navigation/launch/nav2.launch.py 가 읽음, bringup 이 share/bringup/config 로 설치)
 # 바탕: /opt/ros/lyrical/share/nav2_bringup/params/nav2_params.yaml. 바꾼 것만 주석
 #   - 4륜 스워브 = 홀로노믹: AMCL OmniMotionModel, MPPI omni 모델 (vy 사용), 앞으로만 가기 비용 뺌
-#   - 속도 · 가속 = 배포판 swerve.yaml limits_for_training (0.26 m/s · 1.675 rad/s, 1.0 m/s² · 6.0 rad/s²)
+#   - 속도 · 가속 = 실물 config/controllers.yaml swerve_controller (0.2 m/s · 0.5 rad/s, 0.5 m/s² · 2.0 rad/s², 2026-11-04). 시뮬은 브리지 --real_speed 로 같게
 #   - 차체 외곽 = ±0.16 m 사각형 (차체 0.266 m + 바퀴 · 라이다, 받침 자세 팔은 차체 안)
 #   - 라이다 = /lidar_front/scan, /lidar_rear/scan (시뮬 브리지와 실물 드라이버 같은 이름으로 앎, 사용자 2026-11-01. 실물 ros2 topic list 로 최종 확인)
 #   - 프레임: map / odom / base_link (AMCL 은 base_footprint). 지도 해상도 0.025 m 에 맞춤
 #   - 비상 정지 collision_monitor: controller · behavior 의 cmd_vel_nav -> collision_monitor -> /cmd_vel (사람이 갑자기 앞에 서면 멈춤)
+#     입력 = scan_merger /scan (실물 slam.launch.py 가 띄움, 시뮬은 sim_nav2.launch.py · run_isaac_mppi.sh 가 띄움)
 #   - 쓰지 않는 노드(route · docking · following · velocity_smoother · smoother) 설정은 뺌
 # use_sim_time 은 launch 인자로 줌 (시뮬 true, 실물 false). 시뮬 시험 기준 값이라 실물 주행 후 다시 맞출 것
 
@@ -102,7 +103,7 @@ controller_server:
     speed_limit_topic: "speed_limit"
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.2   # 최고 0.26 m/s 라 기본 0.5 m / 10 s 는 너무 큼
+      required_movement_radius: 0.2   # 최고 0.2 m/s 라 기본 0.5 m / 10 s 는 너무 큼
       movement_time_allowance: 10.0
     general_goal_checker:
       stateful: true
@@ -128,19 +129,20 @@ controller_server:
       model_delay_wz: 0.0
       batch_size: 2000
       open_loop: false
-      # 가속 · 속도 = swerve.yaml limits_for_training (스워브 컨트롤러가 같은 한계를 다시 지킴)
-      ax_max: 1.0
-      ax_min: -1.0
-      ay_max: 1.0
-      ay_min: -1.0
-      az_max: 6.0
+      # 가속 · 속도 = 실물 config/controllers.yaml swerve_controller 한계 (2026-11-04, 옛 값 = 시뮬 학습용 0.26 m/s · 1.6 rad/s · 1.0 · 6.0).
+      # 컨트롤러가 어차피 이 값으로 자르므로 MPPI 도 같은 한계로 계획해야 궤적과 실제 움직임이 맞음
+      ax_max: 0.5
+      ax_min: -0.5
+      ay_max: 0.5
+      ay_min: -0.5
+      az_max: 2.0
       vx_std: 0.15
       vy_std: 0.15
       wz_std: 0.4
-      vx_max: 0.26
-      vx_min: -0.26
-      vy_max: 0.26
-      wz_max: 1.6
+      vx_max: 0.2
+      vx_min: -0.2
+      vy_max: 0.2
+      wz_max: 0.5
       iteration_count: 1
       temperature: 0.3
       gamma: 0.015
@@ -166,13 +168,13 @@ controller_server:
       GoalCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 5.0
+        cost_weight: 10.0             # 5 -> 10 (2026-11-04): 5 면 목표 5 cm 앞에서 명령이 1 cm/s 로 흔들려 스워브가 방향만 쫓다 멈춤 (출발점 -> B1 5 번 중 4 번 30-60 s)
         threshold_to_consider: 1.0
       GoalAngleCritic:
         enabled: true
         cost_power: 1
         cost_weight: 3.0
-        threshold_to_consider: 0.4
+        threshold_to_consider: 1.5    # 0.4 -> 1.5 m (2026-11-04): 남은 1.5 m 부터 목표 yaw 로 돌면서 감 → 도착 때 이미 선반을 봄
       CostCritic:
         enabled: true
         cost_power: 1
@@ -198,8 +200,8 @@ controller_server:
         cost_weight: 5.0
         offset_from_furthest: 5
         threshold_to_consider: 1.0
-      PathAngleCritic:
-        enabled: true
+      PathAngleCritic:                # 끔 (2026-11-04): 몸 방향을 경로 방향에 묶어 목표 yaw 를 늦게 맞춤. 스워브라 필요 없음
+        enabled: false
         cost_power: 1
         cost_weight: 2.0
         offset_from_furthest: 4
@@ -327,13 +329,13 @@ behavior_server:
       plugin: "nav2_behaviors::Spin"
     backup:
       plugin: "nav2_behaviors::BackUp"
-      acceleration_limit: 1.0
-      deceleration_limit: -1.0
+      acceleration_limit: 0.5         # 실물 swerve_controller max_linear_accel
+      deceleration_limit: -0.5
       minimum_speed: 0.05
     drive_on_heading:
       plugin: "nav2_behaviors::DriveOnHeading"
-      acceleration_limit: 1.0
-      deceleration_limit: -1.0
+      acceleration_limit: 0.5         # 실물 swerve_controller max_linear_accel
+      deceleration_limit: -0.5
       minimum_speed: 0.05
     wait:
       plugin: "nav2_behaviors::Wait"
@@ -342,13 +344,13 @@ behavior_server:
     robot_base_frame: base_link
     transform_tolerance: 0.1
     simulate_ahead_time: 2.0
-    max_rotational_vel: 1.0
+    max_rotational_vel: 0.5         # 실물 swerve_controller max_angular
     min_rotational_vel: 0.4
-    rotational_acc_lim: 3.2
+    rotational_acc_lim: 2.0         # 실물 swerve_controller max_angular_accel
 
 # 비상 정지 (Nav2 명령과 스워브 사이). 앞뒤 라이다 둘 다 봄 (라이다 높이 60 mm = 사람 발 · 신발 높이)
 #   FootprintApproach: 지금 명령 속도(vx, vy, wz)로 차체 외곽을 1.0 s 앞까지 굴려 보고, 그 안에 장애물이 있으면 부딪히기 전에 서도록 속도를 줄임
-#                      (홀로노믹이라 옆 · 뒤 · 사선 이동도 그 방향으로 검사. 0.26 m/s 면 약 26 cm 앞)
+#                      (홀로노믹이라 옆 · 뒤 · 사선 이동도 그 방향으로 검사. 0.2 m/s 면 약 20 cm 앞)
 #   PolygonStop: 차체 외곽 + 2 cm 안에 점이 들어오면 즉시 0 (2026-11-02 +4 → +2 cm: 박스 · 장소 정차점에서 박스 가장자리 0.191 m 라 +4 cm 면 정차 때 걸림.
 #                통로 폭 약 0.7 m 에서 벽까지 여유 약 0.19 m 라 벽에는 안 걸림)
 #   실물: 라이다가 자기 바퀴 · 기둥을 보면 (외곽에서 0.08–0.15 m) 정지 구역에 걸려 계속 멈춤 -> 실물 스캔은 몸에 맞은 점을 걸러야 함 (laser_filters 등)
@@ -377,21 +379,19 @@ collision_monitor:
     PolygonStop:
       type: "polygon"
       action_type: "stop"
-      points: "[[0.18, 0.18], [0.18, -0.18], [-0.18, -0.18], [-0.18, 0.18]]"   # 외곽 0.16 + 2 cm (2026-11-02, 옛 ±0.21). 박스 · 장소 정차점 (중심에서 0.2935 m) 에서 박스 가장자리 0.191 m 보다 작아야 정차 때 안 걸림 (Isaac 시험에서 ±0.21 이면 B5 · L1 앞 비상 정지)
+      points: "[[0.18, 0.18], [0.18, -0.18], [-0.18, -0.18], [-0.18, 0.18]]"   # 외곽 0.16 + 2 cm (2026-11-02, 옛 ±0.21). Nav2 중간 정차 (박스 중심에서 0.5575 m) 에서는 안 걸림. 마지막 정밀 접근 (0.2575 m, 면 1 cm) 동안은 접근 노드가 이 영역 · FootprintApproach 를 끔 (2026-11-06)
       min_points: 2
       visualize: true
       polygon_pub_topic: "polygon_stop"
       enabled: true
-    observation_sources: ["front", "rear"]
-    front:
+    # 입력 = scan_merger /scan (앞 · 뒤 합침 + 몸 상자 ±0.17 × ±0.19 안 점 버림, 2026-11-06).
+    #   실물 LDS-03 은 자기 바퀴 (y ≤ 0.153) · 반대쪽 라이다 머리 (x ≤ 0.132) 에 맞은 점을 돌려줌 → 원 스캔이면 PolygonStop ±0.18 안이라 늘 정지
+    #   (시뮬은 가린 빔을 inf 로 내서 안 보였음). /scan 이 끊기면 (scan_merger 는 한쪽 라이다라도 끊기면 안 냄) source_timeout 1 s 뒤 정지
+    #   주의: 몸 상자가 PolygonStop 과 거의 겹침 → 지금 PolygonStop 은 앞뒤 x 0.17–0.18 띠만 남음. 크기는 실험 뒤 정함
+    observation_sources: ["scan"]
+    scan:
       type: "scan"
-      topic: "/lidar_front/scan"
-      min_height: 0.0
-      max_height: 2.0
-      enabled: true
-    rear:
-      type: "scan"
-      topic: "/lidar_rear/scan"
+      topic: "/scan"
       min_height: 0.0
       max_height: 2.0
       enabled: true

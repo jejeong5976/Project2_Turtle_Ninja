@@ -11,7 +11,8 @@ mission_manager:
     # ---- dice (발제 v5 '주사위 기억 로봇', 설계 docs/planning/transfer_planner_design.md)
     dice_map: ""                      # 비우면 레포 maps/dice_map.yaml (경기장 좌표 · 정차 자세 · map_from_arena)
     travel_table: ""                  # 비우면 레포 maps/dice_travel_times.yaml (노드 사이 이동 · 팔 동작 시간)
-    collect_order: [1, 2, 6, 3, 4, 5] # 시작 박스 방문 순서 (마지막 박스 LOOK 뒤 할당 · 운반 계획)
+    barcode_table: ""                 # 비우면 레포 maps/dice_barcodes.json (바코드 → 오름 · 내림차순, 발제 v5 기준)
+    collect_order: [1, 2, 6, 4, 5, 3] # 시작 박스 방문 순서 (마지막 박스 LOOK 뒤 할당 · 운반 계획), 2026-11-04 L2 박스 시간표로 720 가지 중 1 등
     look_dwell_s: 1.0                 # LOOK 뒤 검출 모으는 시간
     dice_pick_fresh_s: 90.0           # 정차 중 PICK 은 LOOK 때 본 odom 기준 위치를 이 시간까지 씀 (차체가 서 있으므로)
     transfer_max_remaining: 4         # 박스에 남은 퍽이 이보다 많으면 정확해 대신 대체 해 (Jetson 계산 시간 보호)
@@ -96,11 +97,24 @@ mission_manager:
     rack_topic: /perception/rack/cells
     rack_wait_s: 2.0                  # LOOK_RACK 성공 뒤 그 칸 측정 기다리는 시간
     rack_fresh_s: 30.0                # 이보다 오래된 측정은 STORE 에 안 씀
+    # 장소 박스 측정 (손목 깊이 /perception/wrist/box): 장소 LOOK 뒤 측정 중앙값 = 칸 기준 (중심 + 박스 회전만큼 돈 눈)
+    #   못 받거나 지도 중심에서 box_max_shift_m 넘게 멀면 지도 값 (dice_map center)
+    box_measure: true
+    box_topic: /perception/wrist/box
+    box_min_samples: 3                # LOOK 뒤 이 개수 모이면 확정
+    box_wait_s: 2.0                   # LOOK 뒤 측정 기다리는 최대 시간
+    box_max_shift_m: 0.06             # 지도 중심에서 이보다 먼 측정은 버림
     cargo_file: ""                    # 재고 기록 파일 (빈 문자열 = 저장 안 함)
     cargo_restore: false              # 시작할 때 파일에서 복원 (노드 재시작 때만 true)
 
     # ---- 퍽
     puck_standoff_m: 0.30             # 퍽 앞에 설 거리 (approach 생기면 줄임)
+
+    # ---- 정밀 접근 (박스 · 장소 정차 0.2575 m = 면 1 cm, 2026-11-06)
+    dock_action: dock_to_pose         # RL 정밀 접근 노드 액션 (NavigateToPose 형). "" = 정차점으로 Nav2 바로 (가짜 세계)
+    dock_nav_back_m: 0.025            # Nav2 목표 = 정차점 뒤 이 거리 (박스 중심 0.2825 = 면 2 cm, nf 학습 구간 끝 · planner 가 경로 냄)
+    dock_timeout_s: 40.0
+    dock_handoff_m: 0.40              # 정차점까지 이 거리 안에 들어오면 Nav2 취소 → 정밀 접근으로 넘김 (Nav2 목표가 더 멀어 감속 없이). 0 = Nav2 도착 뒤 넘김
     pick_fresh_s: 2.0                 # 이보다 오래 전에 본 위치로는 집지 않음
     puck_half_height_m: 0.03          # 퍽 높이 6 cm 의 절반 (PLACE 때 놓은 퍽 중심 = place_height + 이 값)
     grasp_offset_m: 0.015             # 그리퍼 중심 = 퍽 중심 + 쥘 끝 방향으로 이 값 (긴축 한쪽 끝 3 cm 구간을 쥠, 적재함 설계 기준)
@@ -108,4 +122,6 @@ mission_manager:
     # ---- 재시도
     nav_retries: 1
     pick_retries: 2
+    pick_relook: true                 # PICK 이 팔을 움직이고 실패하면 재시도 전 HOME → 같은 정차 LOOK 다시 → 그 뒤 검출로 집음
+    relook_wait_s: 1.5                # 다시 보기 LOOK 뒤 새 검출 기다리는 최대 시간, 안 오면 그 재시도 실패
     place_retries: 1

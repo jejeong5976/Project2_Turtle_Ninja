@@ -106,6 +106,25 @@ WristPipeline::WristPipeline(
     rack_debug_pub_ = node.create_publisher<Image>("/perception/rack_debug_image", rclcpp::SensorDataQoS());
   }
 
+  // 박스 윗면 (장소 · 시작 박스 앞 LOOK)
+  box_enabled_ = n.declare_parameter<bool>("box.enabled", true);
+  box_frame_ = n.declare_parameter<std::string>("box.frame", "base_footprint");
+  box_p_.size = n.declare_parameter<double>("box.size", box_p_.size);
+  box_p_.top_z = n.declare_parameter<double>("box.top_z", box_p_.top_z);
+  box_p_.band = n.declare_parameter<double>("box.band", box_p_.band);
+  box_p_.drop = n.declare_parameter<double>("box.drop", box_p_.drop);
+  box_p_.min_x = n.declare_parameter<double>("box.min_x", box_p_.min_x);
+  box_p_.front_min_x = n.declare_parameter<double>("box.front_min_x", box_p_.front_min_x);
+  box_p_.min_side_pts = static_cast<int>(n.declare_parameter<int>("box.min_side_pts", box_p_.min_side_pts));
+  box_p_.stride = static_cast<int>(n.declare_parameter<int>("box.stride", box_p_.stride));
+  {
+    const auto g = n.declare_parameter<std::vector<double>>("box.guess", {0.2935, 0.0, 0.0});
+    if (g.size() == 3) {box_guess_ = pw::Vec3(g[0], g[1], g[2]);}
+  }
+  const auto box_hz = n.declare_parameter<double>("box.max_hz", 5.0);
+  box_min_period_s_ = box_hz > 0.0 ? 1.0 / box_hz : 0.0;
+  box_pub_ = node.create_publisher<interfaces::msg::DetectionArray>("/perception/wrist/box", 10);
+
   tf_buffer_ = std::make_shared<tf2_ros::Buffer>(node.get_clock());
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
@@ -135,7 +154,10 @@ WristPipeline::WristPipeline(
   sync_ = std::make_shared<Sync>(Policy(10), color_sub_, depth_sub_);
   sync_->registerCallback(
     std::function<void(const Image::ConstSharedPtr &, const Image::ConstSharedPtr &)>(
-      [this](const Image::ConstSharedPtr & c, const Image::ConstSharedPtr & d) {on_frame(c, d);}));
+      [this](const Image::ConstSharedPtr & c, const Image::ConstSharedPtr & d) {
+        on_box(c, d);
+        on_frame(c, d);
+      }));
   RCLCPP_INFO(node.get_logger(), "[wrist] 컬러 %s · 깊이 %s · 위쪽 TF %s ← %s", color_topic.c_str(), depth_topic.c_str(),
     world_frame_.c_str(), frame_id_.c_str());
 }
@@ -158,20 +180,11 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
   cv::Mat1f depth;
   try {
     bgr = cv_bridge::toCvShare(color, "bgr8")->image;
-    const auto d = cv_bridge::toCvShare(depth_msg);
-    if (depth_msg->encoding == sensor_msgs::image_encodings::TYPE_16UC1 || depth_msg->encoding == "mono16") {
-      d->image.convertTo(depth, CV_32F, depth_scale_);
-    } else if (depth_msg->encoding == sensor_msgs::image_encodings::TYPE_32FC1) {
-      depth = d->image;
-    } else {
-      RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] 깊이 형식 %s 모름 (16UC1 · 32FC1)",
-        depth_msg->encoding.c_str());
-      return;
-    }
   } catch (const cv_bridge::Exception & e) {
     RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] cv_bridge: %s", e.what());
     return;
   }
+  if (!to_depth_m(depth_msg, depth)) {return;}
   if (depth.size() != bgr.size()) {
     RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] 깊이 %dx%d ≠ 컬러 %dx%d (align_depth 켜야 함)",
       depth.cols, depth.rows, bgr.cols, bgr.rows);
@@ -267,6 +280,76 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
     sum_seg_ms_ = sum_all_ms_ = 0.0;
     last_report_ = t1;
   }
+}
+
+bool WristPipeline::to_depth_m(const Image::ConstSharedPtr & depth_msg, cv::Mat1f & depth)
+{
+  try {
+    const auto d = cv_bridge::toCvShare(depth_msg);
+    if (depth_msg->encoding == sensor_msgs::image_encodings::TYPE_16UC1 || depth_msg->encoding == "mono16") {
+      d->image.convertTo(depth, CV_32F, depth_scale_);
+    } else if (depth_msg->encoding == sensor_msgs::image_encodings::TYPE_32FC1) {
+      depth = d->image;
+    } else {
+      RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] 깊이 형식 %s 모름 (16UC1 · 32FC1)",
+        depth_msg->encoding.c_str());
+      return false;
+    }
+  } catch (const cv_bridge::Exception & e) {
+    RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] 깊이 cv_bridge: %s", e.what());
+    return false;
+  }
+  return true;
+}
+
+// 박스 윗면: 깊이 → box.frame 점군 → 정사각형 맞춤 → /perception/wrist/box (못 찾으면 빈 배열)
+void WristPipeline::on_box(const Image::ConstSharedPtr & color, const Image::ConstSharedPtr & depth_msg)
+{
+  if (!box_enabled_ || !info_) {return;}
+  const rclcpp::Time stamp(color->header.stamp);
+  if (box_last_stamp_ && (stamp - *box_last_stamp_).seconds() < box_min_period_s_ &&
+    (stamp - *box_last_stamp_).seconds() >= 0.0)
+  {
+    return;
+  }
+  box_last_stamp_ = stamp;
+  cv::Mat1f depth;
+  if (!to_depth_m(depth_msg, depth)) {return;}
+  pw::Mat3 R;
+  pw::Vec3 t;
+  try {
+    const auto tf = tf_buffer_->lookupTransform(box_frame_, frame_id_, color->header.stamp,
+        rclcpp::Duration::from_seconds(tf_timeout_s_));
+    const auto & q = tf.transform.rotation;
+    R = pw::quat_to_mat({q.x, q.y, q.z, q.w});
+    t = pw::Vec3(tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z);
+  } catch (const tf2::TransformException & e) {
+    RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[box] TF %s ← %s 없음: %s (발행 안 함)",
+      box_frame_.c_str(), frame_id_.c_str(), e.what());
+    return;
+  }
+  const pw::Intrinsics K{info_->k[0], info_->k[4], info_->k[2], info_->k[5]};
+  const auto r = pw::fit_place_box(depth, K, R, t, box_p_, box_guess_);
+
+  interfaces::msg::DetectionArray out;
+  out.header = color->header;
+  out.header.frame_id = box_frame_;
+  if (r.ok) {
+    interfaces::msg::Detection m;
+    m.header = out.header;
+    m.kind = "place_box";
+    m.confidence = static_cast<float>(std::clamp(1.0 - r.rms / box_p_.huber, 0.0, 1.0));
+    m.pose.position.x = r.x;
+    m.pose.position.y = r.y;
+    m.pose.position.z = box_p_.top_z;
+    m.pose.orientation.z = std::sin(r.yaw / 2);
+    m.pose.orientation.w = std::cos(r.yaw / 2);
+    m.yaw_known = true;
+    out.detections.push_back(std::move(m));
+  } else {
+    RCLCPP_DEBUG(node_.get_logger(), "[box] 못 찾음: %s", r.why.c_str());
+  }
+  box_pub_->publish(out);
 }
 
 // 적재함: 컵 바닥 태그 → 칸 바닥 중심 · yaw (rack.frame 기준), 카메라가 멈춘 장만 다수결에 넣음

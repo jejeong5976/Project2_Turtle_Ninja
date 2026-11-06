@@ -10,3 +10,4 @@ pack_large_files.sh
 results/
 __pycache__/
 rl/logs/
+rl/data/

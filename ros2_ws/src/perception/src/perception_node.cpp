@@ -10,12 +10,13 @@
 //   - 광각 영상 /wide_cam/image_raw
 //   - 손목 /camera/camera/color/image_raw · aligned_depth_to_color/image_raw · color/camera_info, TF
 //   - 서비스, ~ = /perception
-//       ~/wide/enable · ~/wrist/enable · ~/rack/enable · ~/barcode/enable  std_srvs/SetBool
+//       ~/wide/enable · ~/wrist/enable · ~/rack/enable · ~/box/enable · ~/barcode/enable  std_srvs/SetBool
 //       ~/barcode/reset  std_srvs/Trigger, 바코드 다수결 비우기
 // 출력
 //   - /perception/wide/detections    interfaces/DetectionArray
 //   - /perception/wrist/detections   interfaces/DetectionArray
 //   - /perception/rack/cells         interfaces/DetectionArray, 적재함 칸 (손목 컵 바닥 태그)
+//   - /perception/wrist/box          interfaces/DetectionArray, 박스 윗면 중심 · yaw (손목 깊이)
 //   - /perception/traffic_light      interfaces/TrafficLight
 //   - /perception/task_text          interfaces/TaskText
 //   - /perception/wrist_debug_image  sensor_msgs/Image, wrist.publish_debug 일 때만
@@ -60,7 +61,7 @@ private:
   std::unique_ptr<BarcodeStage> barcode_;
   std::unique_ptr<WidePipeline> wide_;
   std::unique_ptr<WristPipeline> wrist_;
-  rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr wide_srv_, wrist_srv_, rack_srv_, barcode_srv_;
+  rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr wide_srv_, wrist_srv_, rack_srv_, box_srv_, barcode_srv_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr barcode_reset_srv_;
 };
 
@@ -100,6 +101,7 @@ PerceptionNode::PerceptionNode(const rclcpp::NodeOptions & options)
   wide_srv_ = enable_srv("wide", [this](bool on) {wide_->set_enabled(on);});
   wrist_srv_ = enable_srv("wrist", [this](bool on) {wrist_->set_enabled(on);});
   rack_srv_ = enable_srv("rack", [this](bool on) {wrist_->set_rack_enabled(on);});
+  box_srv_ = enable_srv("box", [this](bool on) {wrist_->set_box_enabled(on);});
   barcode_srv_ = enable_srv("barcode", [this](bool on) {barcode_->set_enabled(on);});
   barcode_reset_srv_ = create_service<Trigger>(
     "~/barcode/reset", [this](const Trigger::Request::SharedPtr, Trigger::Response::SharedPtr res) {

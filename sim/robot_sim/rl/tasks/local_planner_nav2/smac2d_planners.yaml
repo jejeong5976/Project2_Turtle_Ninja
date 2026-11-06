@@ -1,0 +1,44 @@
+# planner_server 에 Smac2D 두 가지 추가 (레포 config/nav2.yaml 다음에 읽음 → planner_plugins 목록만 바뀌고 GridBased (NavFn) 값은 그대로)
+#   GridBased = NavFn (배포 기본), Smac2D = cost_travel_multiplier 2.0, Smac2DFar = 5.0 (벽 피하기 세게)
+#   요청 planner_id 로 고름. 경로 만들기 (paths.launch.py) · Isaac 검증 (local_planner/deploy/run_isaac.sh EXTRA_PARAMS) 둘 다 이 파일
+planner_server:
+  ros__parameters:
+    planner_plugins: ["GridBased", "Smac2D", "Smac2DFar"]
+    Smac2D:
+      plugin: "nav2_smac_planner::SmacPlanner2D"
+      tolerance: 0.1                  # NavFn 과 같음
+      downsample_costmap: false       # 2.5 cm 그대로
+      downsampling_factor: 1
+      allow_unknown: false            # NavFn 과 같음 (기본 true)
+      cost_travel_multiplier: 2.0     # 기본 1.0. 클수록 팽창 비용 큰 칸 (벽 근처) 피함 → 복도 가운데
+      max_iterations: 1000000
+      max_on_approach_iterations: 1000
+      terminal_checking_interval: 5000
+      use_final_approach_orientation: false
+      max_planning_time: 2.0
+      smoother:
+        max_iterations: 1000
+        w_smooth: 0.3
+        w_data: 0.2
+        tolerance: 1.0e-10
+        do_refinement: true
+        refinement_num: 2
+    Smac2DFar:                      # Smac2D 와 같고 벽 피하기만 세게
+      plugin: "nav2_smac_planner::SmacPlanner2D"
+      tolerance: 0.1                  # NavFn 과 같음
+      downsample_costmap: false       # 2.5 cm 그대로
+      downsampling_factor: 1
+      allow_unknown: false            # NavFn 과 같음 (기본 true)
+      cost_travel_multiplier: 5.0
+      max_iterations: 1000000
+      max_on_approach_iterations: 1000
+      terminal_checking_interval: 5000
+      use_final_approach_orientation: false
+      max_planning_time: 2.0
+      smoother:
+        max_iterations: 1000
+        w_smooth: 0.3
+        w_data: 0.2
+        tolerance: 1.0e-10
+        do_refinement: true
+        refinement_num: 2

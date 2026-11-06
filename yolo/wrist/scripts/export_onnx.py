@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""손목 YOLO26-seg → C++ 노드(ros2_ws/src/perception wrist_puck_node) 용 ONNX.
+"""손목 YOLO26-seg → C++ perception 노드(ros2_ws/src/perception, 손목 파이프라인) 용 ONNX.
 
 head (--head)
   auto (기본) : 체크포인트 설정을 따름 = Python predict (wrist_pose.Segmenter) 와 같은 head

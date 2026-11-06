@@ -47,10 +47,12 @@ bash tools/jetson/run_robot.sh slam  opencr   # 바퀴 + 앞 · 뒤 라이다 + 
 #   라이다를 다른 USB 자리에 꽂았으면: NT_LIDAR_FRONT=/dev/serial/by-path/… NT_LIDAR_REAR=/dev/serial/by-path/… bash tools/jetson/run_robot.sh slam opencr
 #   뒤 라이다 없이: NT_LIDAR_REAR=none (뒤 반원이 비어 후진 · 옆 주행에서 앞 물체 정지가 뒤를 못 봄)
 bash tools/jetson/save_map.sh arena           # 지도 저장 (slam 이 떠 있는 동안, 로봇을 세우고) → ~/maps/arena.*
-bash tools/jetson/run_robot.sh locate opencr ~/maps/arena   # 저장한 지도에서 위치 찾기 + 위치 감시
+bash tools/jetson/run_robot.sh remap  opencr ~/maps/arena   # 시연 기본: 저장한 지도 불러와 이어 그리기 + 위치 감시 (지도 딸 때 출발 자세에 놓고 시작)
+bash tools/jetson/run_robot.sh locate opencr ~/maps/arena   # 저장한 지도에서 위치 찾기만 (지도 고정) + 위치 감시
 ```
-- `slam` · `locate` 는 `navigation/slam.launch.py` 를 부르고, 위치 감시(`pose_guard`)도 같이 뜬다.
+- `slam` · `remap` · `locate` 는 `navigation/slam.launch.py` 를 부르고, 위치 감시(`pose_guard`)도 같이 뜬다.
   `/localization_health` (정상 · 경고 · 정지)와 `/imu_motion_bias` (움직일 때 자이로 보정)를 낸다.
+- 시연은 `remap` (2026-11-05 결정): 시연 중 벽판이 밀릴 수 있어 지도를 고정하지 않고 이어 그린다. 시작 자세 = 저장 지도의 첫 노드 (`map_start_at_dock`) → 지도 딸 때와 같은 출발 자세에 놓는다 (바닥 표시).
 - locate 뒤 rviz 의 2D Pose Estimate 로 시작 위치를 찍는다 (`slam_rviz:=true` 또는 노트북 rviz `navigation/rviz/slam_view.rviz`).
 - 실행 중 화면에는 경고 · 오류와 위치 감시 상태(2 s 마다 정상 · 경고 · 정지)만 보이고, 전체 기록은 `runs/robot_<모드>_…/launch.log`.
 - 거부되는 경우: 다른 ros2_control_node 가 떠 있음 · 권한 없음 · 포트 없음 · 주행/팔 포트 또는 앞/뒤 라이다가 같은 장치 · 검사하는 인자를 덧붙임.

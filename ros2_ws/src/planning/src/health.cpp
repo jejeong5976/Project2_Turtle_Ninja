@@ -77,4 +77,20 @@ bool loc_health_ready(const LocHealth & h, double now, double timeout_s)
   return loc_health_fresh(h, now, timeout_s) && h.level == 0;
 }
 
+bool arm_goal_uses_map(uint8_t task, Target target)
+{
+  if (task == kArmHome || is_look_task(task) || task == kArmLookBarcode || task == kArmLookRack || task == kArmStore ||
+    task == kArmRetrieve)
+  {
+    return false;
+  }
+  return target == Target::Puck || target == Target::Custom;
+}
+
+bool arm_start_blocked(uint8_t task, Target target, bool detection_lost, bool localization_lost)
+{
+  if (task == kArmPick && (detection_lost || localization_lost)) {return true;}
+  return localization_lost && arm_goal_uses_map(task, target);
+}
+
 }  // namespace planning

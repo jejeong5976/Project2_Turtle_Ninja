@@ -80,12 +80,18 @@ Executor::Executor(rclcpp::Node & node)
   drive_wait_s_ = node_.declare_parameter<double>("drive_wait_s", 10.0);
 
   puck_standoff_m_ = node_.declare_parameter<double>("puck_standoff_m", 0.30);
+  dock_action_ = node_.declare_parameter<std::string>("dock_action", "dock_to_pose");
+  dock_nav_back_m_ = node_.declare_parameter<double>("dock_nav_back_m", 0.025);
+  dock_timeout_s_ = node_.declare_parameter<double>("dock_timeout_s", 40.0);
+  dock_handoff_m_ = node_.declare_parameter<double>("dock_handoff_m", 0.40);
   pick_fresh_s_ = node_.declare_parameter<double>("pick_fresh_s", 2.0);
   puck_half_height_m_ = node_.declare_parameter<double>("puck_half_height_m", 0.03);
   grasp_offset_m_ = node_.declare_parameter<double>("grasp_offset_m", 0.015);
 
   nav_retries_ = node_.declare_parameter<int>("nav_retries", 1);
   pick_retries_ = node_.declare_parameter<int>("pick_retries", 2);
+  pick_relook_ = node_.declare_parameter<bool>("pick_relook", true);
+  relook_wait_s_ = node_.declare_parameter<double>("relook_wait_s", 1.5);
   place_retries_ = node_.declare_parameter<int>("place_retries", 1);
   require_motion_mode_ = node_.declare_parameter<bool>("require_motion_mode", true);
   // ---- 적재함 칸 측정 (LOOK_RACK 뒤 기다리는 시간, STORE 에 쓸 수 있는 측정 나이)
@@ -160,6 +166,8 @@ Executor::Executor(rclcpp::Node & node)
   pub_cargo_ = node_.create_publisher<CargoState>("/mission/cargo", 10);
   pub_markers_ = node_.create_publisher<visualization_msgs::msg::MarkerArray>("/planning/markers", 10);
   nav_client_ = rclcpp_action::create_client<Nav>(&node_, "navigate_to_pose");
+  if (!dock_action_.empty()) {dock_client_ = rclcpp_action::create_client<Nav>(&node_, dock_action_);}
+  nav_cur_client_ = nav_client_;
   arm_client_ = rclcpp_action::create_client<ArmTask>(&node_, "/arm_task");
 
   // Nav2 lifecycle_manager is_active (std_srvs/Trigger) 를 1 Hz 로 물어봄
@@ -255,11 +263,14 @@ void Executor::update(double now)
 {
   registry_.prune_candidates(now, candidate_max_age_s_);
   // 취소한 팔 작업이 결국 성공 → 재고 · 기록부에 반영 (상태 무관: FAULT 뒤 그리퍼 기록이 비는 것 방지)
+  //   그 작업이 재고 불확실 원인이면 control 의 최종 성공 = 실물 확인으로 보고 표시도 지움 (전환과 함께 한 번에, 반영은 여기 한 번만)
+  //   기록과 안 맞으면 반영 · 해소 안 함 → 불확실 표시 (이미 있으면 그대로)
   if (late_arm_ok_ && !arm_timeout_wait_) {   // 시간 초과 대기 중이면 run_arm 이 처리
     const Step late = *late_arm_ok_;
     late_arm_ok_.reset();
     RCLCPP_WARN(logger(), "취소한 팔 작업이 성공으로 끝남 → 재고 반영: %s", late.name.c_str());
-    update_cargo(late);
+    std::string why;
+    if (!update_cargo(late, why)) {mark_doubt(late, "늦은 최종 성공인데 재고 기록 불일치: " + why);}
   }
 }
 
@@ -289,6 +300,10 @@ std::optional<ExecEvent> Executor::supervise(double now)
   if (loc_mon_.update(require_localization_ && localization_lost(now), now) == Health::Fault) {
     return fault("LOCALIZATION_LOST", "위치 추정 상실");
   }
+  // 실행 중 재고 불확실 표시가 생김 (늦은 최종 성공이 기록과 안 맞음 등) → 더 조작하지 않음
+  if (cargo_.doubt()) {
+    return fault("INVENTORY_UNCERTAIN", "재고 불확실: " + doubt_text() + " → 실물 확인 뒤 /mission/inventory_* 로 정합");
+  }
   return std::nullopt;
 }
 
@@ -312,7 +327,14 @@ ExecEvent Executor::step(double now)
   // 대기 원인으로 막힌 단계는 시작 · 진행 안 함
   const Step & cur = steps_[step_i_];
   const bool drive_step = cur.type == StepType::Navigate;
-  // LOOK · LOOK_FAR · LOOK_BARCODE 뒤 팔이 펴진 채 이동하려 함 → 기다리지 않고 바로 HOME (control 은 접힘 실측 뒤에만 DRIVE)
+  // 퍽 쥔 채 이동 단계 = 계획 오류 (2026-11-04: 쥔 채 주행 안 함, control 도 쥔 채 HOME 거절) → 이동 안 하고 FAULT
+  if (drive_step && !step_running_ && cargo_.holding()) {
+    ev.kind = ExecEvent::Kind::Fault;
+    ev.code = "CARRY_DRIVE";
+    ev.detail = "퍽 " + cargo_.gripper()->puck_id + " 쥔 채 이동 단계: " + cur.name + " (STORE · PLACE 로 그리퍼를 비운 뒤 이동해야 함)";
+    return ev;
+  }
+  // LOOK · LOOK_BARCODE 뒤 팔이 펴진 채 이동하려 함 → 기다리지 않고 바로 HOME (control 은 접힘 실측 뒤에만 DRIVE)
   if (drive_step && arm_unfolded_ && !step_running_ && require_motion_mode_) {
     arm_unfolded_ = false;
     insert_home_at_current("LOOK 뒤 이동 전 접기");
@@ -323,11 +345,18 @@ ExecEvent Executor::step(double now)
     stop_blocked_nav();
     return ev;
   }
-  if (cur.type == StepType::Arm && cur.arm_task == kArmPick && !step_running_ && pick_blocked()) {return ev;}
+  // 새 팔 목표 보내기 전만 막음 (거절 뒤 다시 보내기 포함). 보낸 작업은 그대로 두고 supervise 가 회복 · FAULT 판단
+  if (cur.type == StepType::Arm && !step_running_ &&
+    arm_start_blocked(cur.arm_task, cur.target, det_mon_.active(), loc_mon_.active()))
+  {
+    return ev;
+  }
 
   // 현재 단계 실행
   pending_after_.clear();
   last_placed_.reset();
+  arm_end_ = ArmEnd::NotSent;
+  preflight_refused_ = false;
   const StepResult r = run_step(cur, now);
   if (r != StepResult::Running) {
     arm_try_start_ = -1.0;
@@ -387,7 +416,7 @@ void Executor::on_rack(const DetectionArray & msg)
   }
 }
 
-// 단계 실패 → 재시도 또는 StepFailed 사건 (순번은 그 단계에 그대로)
+// 단계 실패 → 재시도 또는 StepFailed 사건 (순번은 그 단계에 그대로). HOME 실패 · 재고 불확실은 Fault 사건
 void Executor::on_fail(ExecEvent & ev)
 {
   const Step & s = steps_[step_i_];
@@ -396,6 +425,22 @@ void Executor::on_fail(ExecEvent & ev)
     ev.kind = ExecEvent::Kind::Fault;
     ev.code = "HOME_FAILED";
     ev.detail = "HOME 실패: " + detail_;
+    return;
+  }
+  // 보내기 전 재고 확인 실패 → 팔 명령 안 보냄. 계획 · 기록 중 무엇이 맞는지 모름 → 재시도 · 재계획 없이 FAULT
+  if (preflight_refused_) {
+    ev.kind = ExecEvent::Kind::Fault;
+    ev.code = "INVENTORY_MISMATCH";
+    ev.detail = detail_;
+    return;
+  }
+  // 재고를 바꾸는 팔 작업이 수락된 뒤 성공으로 안 끝남 → 퍽 위치 모름 → 재시도 · 재계획 없이 FAULT
+  //   (재시도하면 쥔 퍽을 떨구거나 같은 퍽을 두 번 집을 수 있음, 미션이 lost 로 단정하면 기록이 실물과 어긋남)
+  if (s.type == StepType::Arm && inventory_doubt_after(s.arm_task, arm_end_)) {
+    mark_doubt(s, detail_);
+    ev.kind = ExecEvent::Kind::Fault;
+    ev.code = "INVENTORY_UNCERTAIN";
+    ev.detail = "재고 불확실: " + s.name + " (" + detail_ + ") → 실물 확인 뒤 /mission/inventory_* 로 정합";
     return;
   }
   // 팔이 움직이다 성공으로 안 끝남 → 접혔는지 모름, 바퀴 잠김 → 다음 단계 전에 HOME
@@ -407,6 +452,8 @@ void Executor::on_fail(ExecEvent & ev)
     // PICK 실패: 퍽 앞 이동부터 다시 (위치가 바뀌었을 수 있음). s 는 이 뒤로 쓰지 않음
     if (s.type == StepType::Arm && s.arm_task == kArmPick && step_i_ > 0 &&
       steps_[step_i_ - 1].type == StepType::Navigate) {--step_i_;}
+    // PICK 이 팔을 움직이고 실패 → 퍽이 밀렸을 수 있음 → 같은 정차의 LOOK 을 다시 하고 그 뒤 검출로 집음 (HOME → LOOK → PICK)
+    else if (pick_relook_ && need_home && s.type == StepType::Arm && s.arm_task == kArmPick) {insert_relook(s.puck_id);}
     if (need_home) {insert_home_at_current("팔 작업 실패 뒤");}
     return;
   }
@@ -483,6 +530,23 @@ void Executor::insert_home(const std::string & why)
   insert_home_at_current(why);
 }
 
+// 지금 단계 (PICK) 앞에 같은 정차의 마지막 LOOK 을 한 번 더 끼움. puck_id 를 달아 성공 시각을 relook_after_ 에 남김
+//   같은 정차 = 지금 단계에서 앞으로 첫 이동 단계까지. LOOK 이 없으면 안 끼움
+void Executor::insert_relook(const std::string & puck_id)
+{
+  for (std::size_t j = step_i_; j-- > 0;) {
+    if (steps_[j].type == StepType::Navigate) {break;}
+    if (steps_[j].type != StepType::Arm || !is_look_task(steps_[j].arm_task)) {continue;}
+    Step look = steps_[j];
+    look.puck_id = puck_id;
+    look.name += "(다시 보기:" + puck_id + ")";
+    RCLCPP_WARN(logger(), "PICK %s 재시도 전 다시 보기: %s", puck_id.c_str(), look.name.c_str());
+    relook_after_.erase(puck_id);
+    insert_steps(step_i_, {look});
+    return;
+  }
+}
+
 void Executor::insert_home_at_current(const std::string & why)
 {
   RCLCPP_WARN(logger(), "HOME 먼저: %s", why.c_str());
@@ -550,16 +614,13 @@ void Executor::stop_blocked_nav()
 // ---------------------------------------------------------------- 대기 원인별 차단 범위 (한 곳에서만 정함)
 //   DRIVE_LOST    : 모든 이동 차단 (control 이 바퀴를 잠근 상태)
 //   SCAN_LOST     : 모든 이동 차단
-//   LOCALIZATION  : 모든 이동 차단 + PICK 차단 (map 기준 목표를 못 믿음)
+//   LOCALIZATION  : 모든 이동 차단 + PICK · map 의존 팔 목표 (Target::Puck · Custom 의 PICK · PLACE) 시작 차단
+//                   (map 기준 목표를 못 믿음). HOME · LOOK 류 · STORE · RETRIEVE 는 허용 (arm_start_blocked, health.hpp)
 //   DETECTION_LOST: PICK 시작만 차단 (주행 허용)
+//   require_localization false 면 loc_mon_ 이 안 켜짐 → 위치 차단 없음
 bool Executor::nav_blocked() const
 {
   return w_drive_ || scan_mon_.active() || loc_mon_.active();
-}
-
-bool Executor::pick_blocked() const
-{
-  return det_mon_.active() || loc_mon_.active();
 }
 
 std::vector<std::string> Executor::wait_reasons() const
@@ -593,6 +654,7 @@ std::vector<std::string> Executor::ready_reasons(double now)
   }
   if (!arm_client_->action_server_is_ready()) {r.push_back("ARM_SERVER");}
   if (!nav_client_->action_server_is_ready()) {r.push_back("NAV2_SERVER");}
+  if (dock_client_ && !dock_client_->action_server_is_ready()) {r.push_back("DOCK_SERVER:" + dock_action_);}
   for (const auto & lc : lifecycle_) {
     if (!lc.ok || now - lc.checked_s > 3.0) {r.push_back("NAV2_LIFECYCLE:" + lc.name);}
   }
@@ -616,12 +678,32 @@ std::vector<std::string> Executor::ready_reasons(double now)
   if (require_detections_) {
     for (const auto & f : stale_detection_frames(now)) {r.push_back("DETECTIONS:" + f);}
   }
+  if (cargo_.doubt()) {r.push_back("INVENTORY_UNCERTAIN");}   // 사람 확인 뒤 /mission/inventory_*
   if (cargo_.holding()) {r.push_back("GRIPPER_RECORD");}   // 사람 확인 뒤 /mission/clear_gripper
   return r;
 }
 
 void Executor::stop()
 {
+  // 팔 결과는 왔는데 step() 이 아직 처리 안 함 (supervise FAULT 가 먼저) → 그 결과대로 반영. 버리면 재고가 실물과 어긋남
+  const bool arm_step_running = step_running_ && step_i_ < steps_.size() && steps_[step_i_].type == StepType::Arm && arm_step_;
+  if (arm_step_running && arm_.done && !arm_.rejected && !arm_timeout_wait_) {
+    if (arm_.success) {
+      RCLCPP_WARN(logger(), "FAULT 직전 끝난 팔 작업 성공 → 재고 반영: %s", arm_step_->name.c_str());
+      std::string why;
+      if (!update_cargo(*arm_step_, why)) {mark_doubt(*arm_step_, "FAULT 직전 끝난 팔 작업 성공인데 재고 기록 불일치: " + why);}
+    } else if (inventory_doubt_after(arm_step_->arm_task, ArmEnd::Failed)) {
+      mark_doubt(*arm_step_, "FAULT 직전 팔 작업 실패: " + arm_.message);
+    }
+  }
+  // 진행 중 · 시간 초과로 취소해 결과 기다리던 재고 작업 → 결과 모름 (늦게 성공이 오면 update() 가 반영하고 표시 지움)
+  if (arm_.active && arm_step_ && inventory_doubt_after(arm_step_->arm_task, ArmEnd::Unknown)) {
+    mark_doubt(*arm_step_, "FAULT 로 취소, 최종 결과 모름");
+  } else if (arm_step_running && arm_timeout_wait_ && !late_arm_ok_ &&
+    inventory_doubt_after(arm_step_->arm_task, ArmEnd::Unknown))
+  {
+    mark_doubt(*arm_step_, "시간 초과로 취소, 최종 결과 " + std::string(arm_cancel_pending_ ? "모름" : "성공 아님"));
+  }
   waiting_drive_ = false;
   rack_wait_start_ = -1.0;
   arm_timeout_wait_ = false;   // 늦은 성공은 update() 가 재고에 반영
@@ -634,7 +716,7 @@ void Executor::stop()
 std::string Executor::cancel_pending_reason() const
 {
   if (arm_cancel_pending_ && arm_client_->action_server_is_ready()) {return "팔 작업 취소 결과 기다리는 중";}
-  if (nav_cancel_pending_ && nav_client_->action_server_is_ready()) {return "Nav2 취소 결과 기다리는 중";}
+  if (nav_cancel_pending_ && nav_cur_client_->action_server_is_ready()) {return "이동 취소 결과 기다리는 중";}
   return "";
 }
 
@@ -677,9 +759,14 @@ StepResult Executor::run_step(const Step & s, double now)
 
 StepResult Executor::run_navigate(const Step & s, double now)
 {
+  const bool two_stage = s.dock && dock_client_;
   if (!step_running_) {
     Pose2D goal;
     if (!navigate_goal(s, goal)) {return StepResult::Fail;}
+    if (two_stage) {   // 1 단계 Nav2 목표 = 정차점 뒤 (보는 방향 반대로) dock_nav_back_m
+      goal.x -= dock_nav_back_m_ * std::cos(goal.yaw);
+      goal.y -= dock_nav_back_m_ * std::sin(goal.yaw);
+    }
     if (cancel_blocked()) {   // 취소한 목표 결과 대기 → server_wait_s 넘으면 실패
       return server_wait_expired(now, "취소 결과") ? StepResult::Fail : StepResult::Running;
     }
@@ -688,9 +775,41 @@ StepResult Executor::run_navigate(const Step & s, double now)
     }
     server_wait_start_ = -1.0;
     step_running_ = true;
+    nav_docking_ = false;
+    nav_handoff_ = false;
     return StepResult::Running;
   }
-  return poll_nav(now, s.timeout_s > 0.0 ? s.timeout_s : nav_timeout_s_);
+  if (!nav_docking_) {
+    if (!nav_handoff_) {
+      // 정차점까지 dock_handoff_m 안에 들어오면 서지 않고 넘김: Nav2 취소 → 취소 결과 뒤 바로 정밀 접근
+      Pose2D rp, fin;
+      if (two_stage && dock_handoff_m_ > 0.0 && nav_.active && navigate_goal(s, fin) && robot_pose(rp) &&
+        std::hypot(rp.x - fin.x, rp.y - fin.y) < dock_handoff_m_)
+      {
+        cancel_nav();
+      } else {
+        const StepResult r = poll_nav(now, s.timeout_s > 0.0 ? s.timeout_s : nav_timeout_s_);
+        if (r != StepResult::Success || !two_stage) {return r;}
+      }
+      nav_handoff_ = true;
+    }
+    // 2 단계: 정차점으로 정밀 접근. 취소한 Nav2 의 최종 결과 전에는 안 보냄 (cmd_vel_nav 겹침 방지)
+    if (cancel_blocked()) {
+      return server_wait_expired(now, "Nav2 취소 결과") ? StepResult::Fail : StepResult::Running;
+    }
+    Pose2D goal;
+    if (!navigate_goal(s, goal)) {return StepResult::Fail;}
+    if (!send_nav(goal, true)) {
+      return server_wait_expired(now, "정밀 접근 " + dock_action_) ? StepResult::Fail : StepResult::Running;
+    }
+    server_wait_start_ = -1.0;
+    nav_docking_ = true;
+    return StepResult::Running;
+  }
+  const StepResult r = poll_nav(now, dock_timeout_s_);
+  if (r == StepResult::Fail) {detail_ = "정밀 접근: " + detail_;}
+  if (r != StepResult::Running) {nav_docking_ = false;}
+  return r;
 }
 
 // 단계 목표 → 지도 위 자세
@@ -725,6 +844,25 @@ bool Executor::leaves_arm_unfolded(const Step & s)
 StepResult Executor::run_arm(const Step & s, double now)
 {
   if (!step_running_) {
+    // 재고 기록과 단계 퍽 · 칸이 안 맞으면 팔 명령 없이 실패 → on_fail 이 FAULT
+    std::string why;
+    if (!arm_preflight_ok(cargo_, s.arm_task, s.puck_id, s.slot, &why)) {
+      detail_ = "재고 기록과 단계 불일치 (" + s.name + "): " + why + " → 팔 명령 안 보냄";
+      preflight_refused_ = true;
+      return StepResult::Fail;
+    }
+    // 다시 보기 LOOK 뒤 PICK: 그 뒤에 받은 검출이 올 때까지 relook_wait_s 기다림, 안 오면 실패 (퍽이 사라졌거나 못 읽음)
+    if (s.arm_task == kArmPick) {
+      const auto ra = relook_after_.find(s.puck_id);
+      if (ra != relook_after_.end()) {
+        const auto ls = local_seen_.find(s.puck_id);
+        if (ls == local_seen_.end() || ls->second.seen < ra->second) {
+          if (now - ra->second < relook_wait_s_) {return StepResult::Running;}
+          detail_ = "다시 LOOK 뒤 퍽 " + s.puck_id + " 안 보임";
+          return StepResult::Fail;
+        }
+      }
+    }
     ArmTask::Goal goal;
     goal.task = s.arm_task;
     goal.slot = s.slot;   // STORE · RETRIEVE
@@ -757,6 +895,7 @@ StepResult Executor::run_arm(const Step & s, double now)
   if (arm_.done && arm_.rejected) {
     if (now - arm_try_start_ > action_retry_max_s_) {
       detail_ = "팔 작업 계속 거절됨";
+      arm_end_ = ArmEnd::Rejected;   // 팔 안 움직임 → 재고 확실
       return StepResult::Fail;
     }
     if (now - arm_.sent_s > action_retry_s_) {step_running_ = false;}
@@ -770,12 +909,18 @@ StepResult Executor::run_arm(const Step & s, double now)
       arm_needs_home_ = false;   // control 의 팔 작업은 성공하면 home 자세로 끝남 (LOOK 류만 그 자세 유지)
       arm_unfolded_ = leaves_arm_unfolded(s);
       RCLCPP_WARN(logger(), "시간 초과로 취소한 팔 작업이 성공으로 끝남 → 성공 처리: %s", s.name.c_str());
-      update_cargo(s);
+      std::string why;
+      if (!update_cargo(s, why)) {
+        detail_ = "시간 초과 뒤 최종 성공인데 재고 기록 불일치: " + why;
+        arm_end_ = ArmEnd::Mismatch;   // on_fail → 불확실 표시 + FAULT
+        return StepResult::Fail;
+      }
       return StepResult::Success;
     }
     if (!cancel_blocked() || now - arm_cancel_s_ > server_wait_s_) {
       arm_timeout_wait_ = false;
       detail_ = cancel_blocked() ? "팔 작업 시간 초과 (취소 결과 없음)" : "팔 작업 시간 초과";
+      arm_end_ = arm_cancel_pending_ ? ArmEnd::Unknown : ArmEnd::Failed;   // 보낸 뒤라 어디까지 했는지 모름
       return StepResult::Fail;
     }
     return StepResult::Running;
@@ -792,53 +937,95 @@ StepResult Executor::run_arm(const Step & s, double now)
   }
   if (!arm_.success) {
     detail_ = "팔 작업 실패: " + arm_.message;
+    arm_end_ = ArmEnd::Failed;   // 수락 뒤 실패 · 취소 · 중단
     return StepResult::Fail;
   }
   if (s.arm_task == kArmLookRack) {return wait_rack(s, now);}
   // 성공 → 퍽 기록부 · 재고 갱신 (팔 결과로만 바꿈)
   arm_unfolded_ = leaves_arm_unfolded(s);
-  update_cargo(s);
+  if (is_look_task(s.arm_task) && !s.puck_id.empty()) {relook_after_[s.puck_id] = now;}   // 다시 보기 LOOK
+  if (s.arm_task == kArmPick) {relook_after_.erase(s.puck_id);}
+  std::string why;
+  if (!update_cargo(s, why)) {
+    detail_ = "팔 작업 성공인데 재고 기록 불일치: " + why;
+    arm_end_ = ArmEnd::Mismatch;   // on_fail → 불확실 표시 + FAULT (StepOk 안 냄)
+    return StepResult::Fail;
+  }
   return StepResult::Success;
 }
 
-// 팔 작업 성공 → 재고 전환
-//   기록과 안 맞는 전환이면 경고만 남기고 미션은 계속함 (실물이 기준, 기록은 보조)
-void Executor::update_cargo(const Step & s)
+// 팔 작업 최종 성공 → 재고 전환 + 같은 단계 불확실 표시 해소 (apply_arm_success, 한 번에)
+//   기록과 안 맞는 전환이면 재고 · 기록부 · 표시 모두 그대로 false → 호출한 쪽이 불확실 표시 · FAULT
+bool Executor::update_cargo(const Step & s, std::string & why)
 {
-  std::string err;
-  bool ok = true;
-  switch (s.arm_task) {
-    case kArmPick: {
-        CargoItem it;
-        it.puck_id = s.puck_id;
-        if (const auto rec = registry_.find(s.puck_id)) {
-          it.color = rec->color;
-          it.shape = rec->shape;
-        }
-        it.task_id = task_id_;
-        ok = cargo_.on_pick(it, &err);
-        registry_.set_state(s.puck_id, "in_gripper");
-        break;
-      }
-    case kArmStore:
-      rack_meas_.erase(s.slot);   // 한 번 쓰면 버림 (다음엔 다시 잼)
-      ok = cargo_.on_store(s.slot, &err);
-      registry_.set_state(s.puck_id, "in_cargo:" + s.slot);
-      break;
-    case kArmRetrieve:
-      ok = cargo_.on_retrieve(s.slot, &err);
-      registry_.set_state(s.puck_id, "in_gripper");
-      break;
-    case kArmPlace:
-      last_placed_ = cargo_.on_place(&err);
-      ok = last_placed_.has_value();
-      registry_.set_state(s.puck_id, "delivered");
-      break;
-    default:
-      return;   // HOME 등은 재고와 무관
+  if (s.arm_task == kArmStore) {rack_meas_.erase(s.slot);}   // 한 번 쓰면 버림 (다음엔 다시 잼)
+  const CargoItem pick = s.arm_task == kArmPick ? pick_item(s) : CargoItem{};
+  ArmSuccessApplied r;
+  if (!apply_arm_success(cargo_, s.arm_task, s.puck_id, s.slot, pick, &r, &why)) {
+    RCLCPP_ERROR(logger(), "재고 기록 불일치 (%s): %s → 재고 · 기록부 안 바꿈", s.name.c_str(), why.c_str());
+    return false;
   }
-  if (!ok) {RCLCPP_WARN(logger(), "재고 기록 불일치 (%s): %s", s.name.c_str(), err.c_str());}
+  if (!r.puck_state.empty()) {registry_.set_state(s.puck_id, r.puck_state);}
+  if (s.arm_task == kArmPlace) {last_placed_ = r.placed;}
+  if (r.doubt_cleared) {RCLCPP_WARN(logger(), "재고 불확실 해소 (최종 성공): %s", s.name.c_str());}
+  if (r.changed) {cargo_changed();}
+  return true;
+}
+
+CargoItem Executor::pick_item(const Step & s) const
+{
+  CargoItem it;
+  it.puck_id = s.puck_id;
+  if (const auto rec = registry_.find(s.puck_id)) {
+    it.color = rec->color;
+    it.shape = rec->shape;
+  }
+  it.task_id = task_id_;
+  return it;
+}
+
+// 재고 불확실 표시: 기록은 마지막 확인 그대로 두고 원인 단계만 남김 (저장 + 발행)
+void Executor::mark_doubt(const Step & s, const std::string & why)
+{
+  const CargoItem pick = s.arm_task == kArmPick ? pick_item(s) : CargoItem{};
+  if (!cargo_.set_doubt(make_doubt(cargo_, s.arm_task, s.puck_id, s.slot, pick, s.name, why))) {
+    RCLCPP_WARN(logger(), "재고 불확실 이미 표시됨 (%s) → 첫 원인 유지, 이번: %s (%s)", cargo_.doubt()->step_name.c_str(),
+      s.name.c_str(), why.c_str());
+    return;
+  }
+  RCLCPP_ERROR(logger(), "재고 불확실: %s", doubt_text().c_str());
   cargo_changed();
+}
+
+std::string Executor::doubt_text() const
+{
+  if (!cargo_.doubt()) {return "";}
+  const auto & d = *cargo_.doubt();
+  return d.step_name + " 퍽 " + d.item.puck_id + (d.slot.empty() ? "" : " 칸 " + d.slot) + " (" + d.reason + ")";
+}
+
+// 사람 정합: 팔 작업이 끝났을 때만 (진행 중이면 실물이 아직 바뀔 수 있음)
+bool Executor::resolve_inventory(DoubtFix fix, std::string & msg)
+{
+  const std::string pending = cancel_pending_reason();
+  if (arm_.active || arm_timeout_wait_ || !pending.empty()) {
+    msg = (pending.empty() ? std::string("팔 작업 최종 결과 기다리는 중") : pending) + " → 결과 뒤 다시";
+    return false;
+  }
+  const std::string before = doubt_text();
+  std::string id, state, err;
+  if (!resolve_doubt(cargo_, fix, &id, &state, &err)) {
+    msg = "정합 못 함 (" + std::string(doubt_fix_name(fix)) + "): " + err;
+    return false;
+  }
+  if (!state.empty()) {registry_.set_state(id, state);}
+  // 사람 확인이 기준: 서버가 사라져 못 받은 옛 결과가 나중에 와도 다시 반영하지 않음
+  arm_cancel_step_.reset();
+  late_arm_ok_.reset();
+  cargo_changed();
+  msg = "재고 정합 " + std::string(doubt_fix_name(fix)) + ": " + before;
+  RCLCPP_WARN(logger(), "%s", msg.c_str());
+  return true;
 }
 
 // ArmTask target (base_link 기준) 만들기
@@ -969,6 +1156,21 @@ bool Executor::to_base(const geometry_msgs::msg::PoseStamped & in, bool with_ori
   return true;
 }
 
+bool Executor::transform_pose(const geometry_msgs::msg::PoseStamped & in, const std::string & target,
+  geometry_msgs::msg::PoseStamped & out, std::string * why) const
+{
+  try {
+    const auto t = tf_buffer_->lookupTransform(target, in.header.frame_id, tf2::TimePointZero);
+    tf2::doTransform(in.pose, out.pose, t);
+    out.header.frame_id = target;
+    out.header.stamp = in.header.stamp;
+  } catch (const tf2::TransformException & e) {
+    if (why) {*why = e.what();}
+    return false;
+  }
+  return true;
+}
+
 // ================================================================ 감시 입력
 
 std::vector<std::string> Executor::stale_scan_topics(double now) const
@@ -1041,12 +1243,14 @@ bool Executor::server_wait_expired(double now, const std::string & what)
 }
 
 // Nav2 목표 보내기. 서버가 없으면 false (호출한 쪽이 다음 주기에 다시 부름)
-bool Executor::send_nav(const Pose2D & p)
+bool Executor::send_nav(const Pose2D & p, bool dock)
 {
-  if (!nav_client_->action_server_is_ready()) {
-    RCLCPP_WARN_THROTTLE(logger(), *node_.get_clock(), 2000, "Nav2 서버 대기 중");
+  auto client = dock ? dock_client_ : nav_client_;
+  if (!client->action_server_is_ready()) {
+    RCLCPP_WARN_THROTTLE(logger(), *node_.get_clock(), 2000, "%s 서버 대기 중", dock ? dock_action_.c_str() : "Nav2");
     return false;
   }
+  nav_cur_client_ = client;
   Nav::Goal goal;
   goal.pose.header.frame_id = map_frame_;
   goal.pose.header.stamp = node_.get_clock()->now();
@@ -1064,9 +1268,9 @@ bool Executor::send_nav(const Pose2D & p)
   const uint64_t gen = nav_.gen;
 
   auto opts = rclcpp_action::Client<Nav>::SendGoalOptions();
-  opts.goal_response_callback = [this, gen](NavGoalHandle::SharedPtr gh) {
+  opts.goal_response_callback = [this, gen, client](NavGoalHandle::SharedPtr gh) {
       if (nav_cancel_pending_ && gen == nav_cancel_gen_) {   // 취소한 목표가 늦게 받아들여짐 → 그것도 취소
-        if (gh) {nav_client_->async_cancel_goal(gh);} else {nav_cancel_pending_ = false;}
+        if (gh) {client->async_cancel_goal(gh);} else {nav_cancel_pending_ = false;}
         return;
       }
       if (gen != nav_.gen) {return;}
@@ -1085,7 +1289,7 @@ bool Executor::send_nav(const Pose2D & p)
       nav_.active = false;
       nav_.success = (r.code == rclcpp_action::ResultCode::SUCCEEDED);
     };
-  nav_client_->async_send_goal(goal, opts);
+  client->async_send_goal(goal, opts);
   return true;
 }
 
@@ -1110,8 +1314,9 @@ void Executor::cancel_nav()
   if (nav_.active) {
     nav_cancel_gen_ = nav_.gen;
     nav_cancel_pending_ = true;
-    if (nav_handle_) {nav_client_->async_cancel_goal(nav_handle_);}   // 아직 응답 전이면 받아들여질 때 취소
+    if (nav_handle_) {nav_cur_client_->async_cancel_goal(nav_handle_);}   // 아직 응답 전이면 받아들여질 때 취소
   }
+  nav_docking_ = false;
   nav_ = GoalTrack{};
   nav_.gen = ++gen_;   // 늦게 오는 결과 무시
   nav_handle_.reset();
@@ -1224,10 +1429,17 @@ void Executor::cargo_changed()
   publish_cargo();
 }
 
-void Executor::clear_gripper()
+// 그리퍼 기록만 지움. 재고 불확실이면 거절 (불확실 정합은 /mission/inventory_* 로만, 여기서 같이 지우지 않음)
+bool Executor::clear_gripper(std::string & why)
 {
+  if (cargo_.doubt()) {
+    why = "재고 불확실 (" + doubt_text() + ") → /mission/inventory_* 로 먼저 정합";
+    return false;
+  }
   cargo_.clear_gripper();
   cargo_changed();
+  why = "그리퍼 기록 지움";
+  return true;
 }
 
 void Executor::save_cargo()

@@ -93,8 +93,9 @@ from isaaclab.utils import instantiate
 
 from sim_core import turtleninja_maze_env as tme
 
-# 관찰 자세 = robot_description/config/initial_pose.json poses 'LOOK_PUCK' (tme.LOOK_PUCK_POSE, 2026-10-29 tools/find_look_pose.py, URDF 경첩 −12° 반영 기준).
-# 로봇 앞 0.26 m 선반 면을 0.29 m 에서 광축 9° 로 봄. 옛 값 (2026-10-26, 아래 60°): J1 −1.738, J2 −0.706, J3 −0.624, J4 0.312, J5 −0.005. 관절 이름 = URDF
+# 관찰 자세 = robot_description/config/initial_pose.json poses 'LOOK_PUCK' (tme.LOOK_PUCK_POSE, 2026-11-02 tools/find_look_pose.py, URDF 경첩 −12° 반영 기준).
+# 발제 v5 박스 (정차점에서 중심 0.2935 m) 퍽 영역을 0.351 m 에서 광축 26.6° 로 봄. 옛 값 2026-10-29 (광축 9°): J1 −1.5628, J2 −0.2894, J3 −0.1595, J4 0.5144, J5 0.0689,
+# 2026-10-26 (아래 60°): J1 −1.738, J2 −0.706, J3 −0.624, J4 0.312, J5 −0.005. 관절 이름 = URDF
 LOOK = {k: tme.LOOK_PUCK_POSE[k] for k in ('arm_joint1', 'arm_joint2', 'arm_joint3', 'arm_joint4', 'arm_joint5')}
 ARM_JOINTS = list(LOOK)
 if args.look_q is not None:

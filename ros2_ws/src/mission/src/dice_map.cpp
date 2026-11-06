@@ -105,12 +105,6 @@ bool load_dice_map(const std::string & path, DiceMap & out, std::string * error)
       pl.stop = arena_to_map(T, st);
       pl.view_dir = {std::cos(pl.stop.yaw), std::sin(pl.stop.yaw)};
       pl.top_z = p["top_z"].as<double>(pl.top_z);
-      const auto look = p["look"].as<std::string>("near");
-      if (look != "near" && look != "far") {
-        set_error(error, "places." + key + ".look 는 near | far (지금 " + look + ")");
-        return false;
-      }
-      pl.look_far = look == "far";
     }
     out = a;
     return true;

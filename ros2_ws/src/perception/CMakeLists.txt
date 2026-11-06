@@ -32,6 +32,7 @@ add_library(perception_core STATIC
   src/wrist_tracker.cpp
   src/wrist_seg.cpp
   src/wrist_rack.cpp
+  src/wrist_box.cpp
 )
 target_include_directories(perception_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> ${OpenCV_INCLUDE_DIRS})
@@ -90,7 +91,7 @@ install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-  foreach(t test_wide test_wrist_pose test_wrist_seg test_wrist_rack)
+  foreach(t test_wide test_wrist_pose test_wrist_seg test_wrist_rack test_wrist_box)
     ament_add_gtest(${t} test/${t}.cpp)
     target_link_libraries(${t} perception_core)
   endforeach()
