@@ -50,6 +50,17 @@ std::vector<TrajPoint> time_path(
   const std::vector<double> & start, const std::vector<PathNode> & nodes, const PathTiming & timing)
 {
   if (nodes.empty()) {return {};}
+  bool timed = true;
+  for (const auto & n : nodes) {timed = timed && n.dt_s > 0.0;}
+  if (timed) {   // 녹화 간격 그대로
+    std::vector<TrajPoint> out;
+    double t = 0.0;
+    for (const auto & n : nodes) {
+      t += n.dt_s;
+      out.push_back({n.q, t});
+    }
+    return out;
+  }
   std::vector<const std::vector<double> *> q{&start};
   for (const auto & n : nodes) {q.push_back(&n.q);}
   const std::size_t segs = nodes.size();
@@ -140,6 +151,7 @@ std::vector<ArmAction> path_actions(
   for (double v : q_now) {measured = measured && std::isfinite(v);}
   std::vector<double> from = measured ? q_now : path.nodes.front().q;
   std::vector<PathNode> seg;
+  double side_t = -1.0, side_g = 0.0, seg_t = 0.0;   // 팔을 안 멈추고 여는 그리퍼 (grip_on_way)
   auto flush = [&](const PathNode & last, bool is_last) {
       ArmAction a{"", false, "", 0.0};
       a.phase = last.grip == "release" ? "release" : (last.grip == "close" ? "grasp" : (is_last && path.ends_home ? "retreat" : "approach"));
@@ -147,14 +159,25 @@ std::vector<ArmAction> path_actions(
       a.points = time_path(from, seg, timing);
       if (last.hold_s > 0.0 && !a.points.empty()) {a.points.push_back({last.q, a.points.back().t + last.hold_s});}   // 같은 자세로 기다림
       a.duration_s = a.points.empty() ? 0.0 : a.points.back().t;
+      a.side_grip_t = side_t;
+      a.side_grip = side_g;
       out.push_back(a);
       from = last.q;
       seg.clear();
+      side_t = -1.0;
+      seg_t = 0.0;
     };
   for (std::size_t i = 1; i < path.nodes.size(); ++i) {
     const PathNode & n = path.nodes[i];
     seg.push_back(n);
+    seg_t += n.dt_s;
     const bool is_last = i + 1 == path.nodes.size();
+    if (!n.grip.empty() && n.grip_on_way && n.dt_s > 0.0 && !n.stop && !is_last) {   // 끊지 않고 이 도착 시각에 그리퍼만
+      side_t = seg_t;
+      side_g = n.grip == "open" ? grip.open : (n.grip == "release" ? grip.release : grip.close);
+      seg.back().grip.clear();
+      continue;
+    }
     if (n.stop || !n.grip.empty() || is_last) {
       flush(n, is_last);
       if (!n.grip.empty()) {

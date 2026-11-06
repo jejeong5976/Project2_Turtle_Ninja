@@ -73,6 +73,39 @@ TEST(TimePath, ReversalStopsAtCorner)
 }
 
 // 4) 움직임이 없으면 마지막 점 하나 (0.3 s)
+// 세우기 표: 모든 경유점에 dt_s 가 있으면 속도 · 가속 한계 없이 그 간격 그대로 (녹화 재생)
+TEST(TimePath, TimedNodesKeepRecordedSpacing)
+{
+  const std::vector<double> s(5, 0.0);
+  std::vector<PathNode> ns{node("a", {2, 0, 0, 0, 0}), node("b", {4, 1, 0, 0, 0}), node("c", {90, 0, 0, 0, 0})};
+  for (auto & n : ns) {n.dt_s = 0.1;}
+  const auto pts = manipulation::time_path(s, ns, PathTiming{});
+  ASSERT_EQ(pts.size(), 3u);
+  EXPECT_NEAR(pts[0].t, 0.1, 1e-12);
+  EXPECT_NEAR(pts[2].t, 0.3, 1e-12);   // 86° 를 0.1 s — 속도 상한 (40 °/s) 무시
+  EXPECT_NEAR(pts[2].q[0], 90 * kDeg, 1e-12);
+  ns[1].dt_s = 0.0;   // 하나라도 없으면 예전 시간표
+  EXPECT_GT(manipulation::time_path(s, ns, PathTiming{}).back().t, 2.0);
+}
+
+// 세우기: 시간 맞춘 점의 grip_on_way 는 팔 동작을 끊지 않고 도착 시각에 그리퍼만
+TEST(PathActions, GripOnWayKeepsArmMoving)
+{
+  ArmPath p;
+  p.nodes = {node("s", {0, 0, 0, 0, 0}), node("a", {1, 0, 0, 0, 0}), node("b", {2, 0, 0, 0, 0}, false, "open"), node("c", {3, 0, 0, 0, 0}),
+    node("d", {4, 0, 0, 0, 0})};
+  for (std::size_t i = 1; i < p.nodes.size(); ++i) {p.nodes[i].dt_s = 0.1;}
+  p.nodes[2].grip_on_way = true;
+  p.nodes[3].stop = true;
+  const auto acts = manipulation::path_actions(p, PathTiming{}, manipulation::GripperValues{});
+  ASSERT_EQ(acts.size(), 2u);                  // a·b·c 한 동작 (c 에서 멈춤) + d
+  EXPECT_FALSE(acts[0].is_gripper);
+  EXPECT_EQ(acts[0].points.size(), 3u);
+  EXPECT_NEAR(acts[0].side_grip_t, 0.2, 1e-12);   // b 도착 시각
+  EXPECT_NEAR(acts[0].side_grip, manipulation::GripperValues{}.open, 1e-12);
+  EXPECT_LT(acts[1].side_grip_t, 0.0);
+}
+
 TEST(TimePath, ZeroLength)
 {
   const std::vector<double> s(5, 0.1);
