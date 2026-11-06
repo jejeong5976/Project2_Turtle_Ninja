@@ -284,11 +284,11 @@ bool park_nodes(
   if (!add("park_push_back", at(r0, pz), 0.0, 0.0, true, "") || !add("park_push_up", at(r0, std::max(c.floor_z + 0.0525, pz)), 0.0, 0.0, false, "")) {
     return false;
   }
-  // 선 퍽 다시 쥐기 (선 자리 = 받침 중심 − 6 mm 쯤, 시뮬). 손끝 = 윗면 − regrasp_depth (받침 벽 위)
+  // 선 퍽 다시 쥐기 (선 자리 = 받침 중심 + regrasp_r, 시뮬 −6 mm). 손끝 = 윗면 − regrasp_depth (받침 벽 위)
   const double ptop = c.floor_z + c.length;
-  if (!add("park_re_above", at(-0.006, ptop + 0.0075), 0.0, 0.0, false, "open") ||
-    !add("park_re_down", at(-0.006, ptop - c.regrasp_depth), 0.0, 0.0, true, "close") ||
-    !add("park_re_lift", at(-0.006, ptop + 0.0075), 0.0, c.held_kg, true, ""))
+  if (!add("park_re_above", at(c.regrasp_r, ptop + 0.0075), 0.0, 0.0, false, "open") ||
+    !add("park_re_down", at(c.regrasp_r, ptop - c.regrasp_depth), 0.0, 0.0, true, "close") ||
+    !add("park_re_lift", at(c.regrasp_r, ptop + 0.0075), 0.0, c.held_kg, true, ""))
   {
     return false;
   }

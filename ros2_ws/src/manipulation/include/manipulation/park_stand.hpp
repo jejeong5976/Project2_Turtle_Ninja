@@ -67,6 +67,7 @@ struct ParkCfg
   double push_dz{0.0};           // 밀기 시작 높이 = push_h + 이만큼 → 안쪽으로 가며 push_h 까지 내려감 (손끝이 퍽 면을 타고 오르지 않게)
   double push_r0{0.06};          // 밀기 시작 = 받침 중심에서 바깥으로 (높이 밀면 기댄 퍽 윗끝 밖에서 내려와야 함)
   double regrasp_depth{0.030};   // 선 퍽 다시 쥐는 깊이 (윗면 아래)
+  double regrasp_r{-0.006};      // 선 퍽 다시 쥐는 자리 = 받침 중심에서 반지름 방향 (− = J1 쪽, 시뮬 −6 mm)
   double side{0.0348}, length{0.060};
   double held_kg{0.017};
   double inner_half{0.0235};     // 받침 안쪽 반 (반지름 방향)

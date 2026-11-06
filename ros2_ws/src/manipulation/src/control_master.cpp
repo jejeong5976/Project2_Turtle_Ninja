@@ -212,6 +212,9 @@ public:
     // 누운 퍽을 위 옆면 태그로 잰 중심: 아직 실물로 못 잼 → 처음엔 선 퍽 태그 값과 같게 (config). 받침 세우기는 긴축 ±2 mm 안이 필요
     declare_parameter<double>("pick_offset_lying_tagged_x_mm", 0.0);
     declare_parameter<double>("pick_offset_lying_tagged_y_mm", 0.0);
+    // 태그가 안 보인 누운 퍽 (깊이 점 중심): 선 퍽 pick_offset_x/y 와 따로 (11-06 실물: 태그 보이면 맞는데 안 보이면 선 퍽 값이라 어긋남)
+    declare_parameter<double>("pick_offset_lying_x_mm", 0.0);
+    declare_parameter<double>("pick_offset_lying_y_mm", 0.0);
     // 손목을 돌려 쥘 때 보정 [mm]: 손가락 가운데가 J5 축에서 12 mm 떨어져 있어, 팔 모델의 그 거리가 조금 틀리면 쥐는 점 오차가 손목 방향에 따라 달라짐.
     //   값 = 손목을 기본 (닫힘축 ≈ 접선) 에서 90° 돌려 쥘 때 (실물 11-04: 닫힘축이 반지름 방향) 더할 보정 [앞 · 왼쪽], 팔 바로 앞 퍽 기준.
     //   다른 각도 · 자리는 같은 오차 (손 좌표의 손끝 어긋남) 로 계산: (R(돌린 각) − I) · h. 기본 방향 (돌림 0) 은 0 → 다른 보정 그대로
@@ -296,6 +299,7 @@ public:
     declare_parameter<double>("park_end_inset_mm", 4.0);        // 넣을 때 아래 끝면 중심 = 받침 중심에서 J1 쪽으로 (기대는 각을 정함, park_stand.hpp)
     declare_parameter<double>("park_push_h_mm", 25.0);          // 미는 손끝 높이 = 받침 바닥 위 (시뮬 25 · 35 다 됨, 30 은 두 번 실패)
     declare_parameter<double>("park_regrasp_depth_mm", 30.0);   // 받침에 선 퍽 다시 쥐기: 윗면에서 손끝까지 (손끝이 받침 벽 위)
+    declare_parameter<double>("park_regrasp_r_mm", -6.0);       // 선 퍽 다시 쥐는 자리 = 받침 중심에서 반지름 방향 (− = J1 쪽)
     declare_parameter<double>("park_speed_dps", 20.0);          // 받침에서 넣기 · 다시 쥐기 속도
     declare_parameter<double>("park_push_speed_dps", 20.0);     // 받침에서 밀어 세우는 속도 (빠르면 손끝이 퍽 면을 타고 올라 넘어짐)
     declare_parameter<std::vector<double>>("look_rack_bias_mm", {0.0, 0.0});   // LOOK_RACK 칸 측정의 카메라 치우침 [x, y] mm (제자리 적재함에서 잰 값 − 칸 표)
@@ -1522,8 +1526,10 @@ private:
     // 태그로 잰 중심 (perception center_from_tag): 선 퍽 = 윗면 태그, 누운 퍽 = 위를 향한 옆면 태그 (11-06) — 보정값이 따로
     const bool tag_centre = target_tagged_;
     {
-      const char * px = tag_centre ? (lying ? "pick_offset_lying_tagged_x_mm" : "pick_offset_tagged_x_mm") : "pick_offset_x_mm";
-      const char * py = tag_centre ? (lying ? "pick_offset_lying_tagged_y_mm" : "pick_offset_tagged_y_mm") : "pick_offset_y_mm";
+      const char * px = tag_centre ? (lying ? "pick_offset_lying_tagged_x_mm" : "pick_offset_tagged_x_mm") :
+        (lying ? "pick_offset_lying_x_mm" : "pick_offset_x_mm");
+      const char * py = tag_centre ? (lying ? "pick_offset_lying_tagged_y_mm" : "pick_offset_tagged_y_mm") :
+        (lying ? "pick_offset_lying_y_mm" : "pick_offset_y_mm");
       const double ox = get_parameter(px).as_double(), oy = get_parameter(py).as_double();
       if (!std::isfinite(ox) || !std::isfinite(oy)) {
         why = std::string(px) + " · " + py + " 가 숫자가 아님";
@@ -1537,8 +1543,8 @@ private:
       } else if (ox != 0.0 || oy != 0.0) {
         x += ox / 1000.0;
         y += oy / 1000.0;
-        RCLCPP_INFO(get_logger(), "PICK: 쥐는 점을 (%+.1f, %+.1f) mm 옮김 (pick_offset_x_mm · y_mm, %s)", ox, oy,
-          lying ? "누운 퍽, 태그 안 보임 = 깊이 점 중심" : "태그 없는 퍽");
+        RCLCPP_INFO(get_logger(), "PICK: 쥐는 점을 (%+.1f, %+.1f) mm 옮김 (%s, %s)", ox, oy,
+          lying ? "pick_offset_lying_x_mm · y_mm" : "pick_offset_x_mm · y_mm", lying ? "누운 퍽, 태그 안 보임 = 깊이 점 중심" : "태그 없는 퍽");
       }
     }
     // 손 기울임 10° 까지 = pick_heights_ (−40, 적재함 경로와 같은 깊이), 그보다 기울여야 하면 pick_tilted_depth_mm (퍽 무게중심)
@@ -1880,6 +1886,7 @@ private:
     pk.end_inset = get_parameter("park_end_inset_mm").as_double() / 1000.0;
     pk.push_h = get_parameter("park_push_h_mm").as_double() / 1000.0;
     pk.regrasp_depth = get_parameter("park_regrasp_depth_mm").as_double() / 1000.0;
+    pk.regrasp_r = get_parameter("park_regrasp_r_mm").as_double() / 1000.0;
     pk.side = lying_h_;
     pk.length = puck_h_;
     std::vector<ParkNode> pn;
