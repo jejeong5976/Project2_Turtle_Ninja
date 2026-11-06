@@ -650,7 +650,8 @@ private:
     for (auto & n : path.nodes) {
       if (n.speed_dps > 0.0 && n.speed_dps < path_slow_min_dps_) {n.speed_dps = path_slow_min_dps_;}
     }
-    for (const auto & e : get_parameter("path_speed_scale").as_string_array()) {
+    const auto speed_scale = get_parameter("path_speed_scale").as_string_array();   // 복사 (임시 Parameter 안을 가리키지 않게)
+    for (const auto & e : speed_scale) {
       const auto eq = e.find('=');
       if (eq == std::string::npos || e.compare(0, eq, name) != 0 || eq != name.size()) {continue;}
       const double sc = std::atof(e.c_str() + eq + 1);
