@@ -255,15 +255,22 @@ bool park_nodes(
       // 긴 쪽 끝면 중심 = 받침 중심 − end_inset (J1 쪽), 가장 낮은 모서리 = 바닥 + insert_clear
       Eigen::Vector3d f = at(-c.end_inset, 0.0);
       f.z() = c.floor_z + c.insert_clear + half * (std::fabs(k_s.z()) + std::fabs(n_s.z()));
-      const Eigen::Vector3d p_ins = f - (c.length / 2.0) * a_s - Hs * c_h;
+      const Eigen::Vector3d p_ins = f - (c.length / 2.0) * a_s - Hs * c_h - c.insert_extra * Z;
       // 받침 바깥 위 수직 (반지름 +0.04, 바닥 + 62.5 mm) 에서 기울이며 넣기 — 위치 · 기울임을 같이 나눠 감
+      //   insert_back > 0: 기울이기는 insert_back 위 점까지 (다 기울인 자세), 거기서 그 자세로 곧게 내려 넣기 (11-07 실물: 턱에 2–3 mm 걸침)
+      const bool straight = c.insert_back > 0.0;
+      const Eigen::Vector3d p_tilt_end = straight ? Eigen::Vector3d(p_ins + c.insert_back * Z) : p_ins;
       const Eigen::Vector3d p_over = at(0.04, c.floor_z + 0.0625);
       ok = add("park_over", p_over, 0.0, c.held_kg, false, "");
       for (int k = 1; k <= c.tilt_steps && ok; ++k) {
         const double fk = static_cast<double>(k) / c.tilt_steps;
-        ok = add("park_tilt" + std::to_string(k), p_over + (p_ins - p_over) * fk, cd.th * fk, c.held_kg, true,
-          k == c.tilt_steps ? "open" : (k == c.loose_step ? "loose" : ""));
+        const char * g = (!straight && k == c.tilt_steps) ? "open" : (k == c.loose_step ? "loose" : "");
+        ok = add("park_tilt" + std::to_string(k), p_over + (p_tilt_end - p_over) * fk, cd.th * fk, c.held_kg, true, g);
         if (ok && c.insert_dj3 != 0.0) {nodes.back().q[2] += c.insert_dj3 * fk;}   // 실물 맞춤 (11-07 사용자: 넣을 때 J3 를 조금 더 올려)
+      }
+      if (ok && straight) {
+        ok = add("park_insert", p_ins, cd.th, c.held_kg, true, "open");
+        if (ok && c.insert_dj3 != 0.0) {nodes.back().q[2] += c.insert_dj3;}
       }
       if (!ok) {continue;}
       // 손 빼기 (같은 기울임으로 위 · 바깥) → 바깥 위 수직 · 오므림
