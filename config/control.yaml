@@ -59,7 +59,7 @@ control_master:
     pick_tilted_depth_mm: 40.0
     # PICK 쥐는 점 보정 [mm, base_link] — 윗면 태그가 안 보인 퍽만 (태그 보인 퍽은 인지가 태그로 중심 · 면 방향을 잡음)
     #   손목 인지 깊이 평균이 퍽 중심을 앞으로 · 왼쪽으로 밀어 잡음 (태그와 비교 9.6 · 1.7 mm). 실물에서 집어 S12 에 넣기까지 된 값
-    #   실행 중 바꾸기: ros2 param set /control_master pick_offset_x_mm <값> (25 mm 까지)
+    #   실행 중 바꾸기: ros2 param set /control_master pick_offset_x_mm <값>
     pick_offset_x_mm: -12.0
     pick_offset_y_mm: -3.5
     # 윗면 태그로 잰 퍽 (인지 중심 2 mm 안) 은 팔 쪽 치우침만 — 실물에서 태그 퍽을 집어 맞춘 값 (몸쪽 17 mm)
