@@ -133,8 +133,12 @@ control_master:
     park_step: false                 # 구분 동작: true 면 세우기를 동작마다 멈춤 → 다음: ros2 service call /control_master/step std_srvs/srv/Trigger
     # 받침에 넣을 때 손가락을 살짝 풀어 퍽이 손가락 사이에서 돌며 들어가게 (11-07 사용자: 박스 세우기 때처럼). 기울이는 8 점 중 park_loose_step 번째부터
     #   손가락 위치 [m]: 퍽에 닿음 약 0.0046 (쥔 채 실측) · 놓기 0.0093 · 다 엶 0.0164. 0.0060 = 양쪽 합 약 3 mm 틈
-    park_loose_step: 6
+    park_loose_step: 8               # 다 기울인 점 (곧게 넣기 시작) 에서 풂 — 곧게 들어가며 퍽이 손가락 사이에서 돎
     park_loose_grip_m: 0.0060
+    # 대각선 자세로 위에서 곧게 넣기 (11-07 실물: 퍽이 받침 턱에 2–3 mm 걸침). 다 기울인 자세를 15 mm 위에서 만들고 그대로 곧게 내려 넣고,
+    #   끝점을 3 mm 더 아래로 밀어 넣음. 0 · 0 = 예전 (기울이며 내려가 끝에서 놓기)
+    park_insert_back_mm: 15.0
+    park_insert_extra_mm: 3.0
     park_speed_dps: 50.0             # 넣기 · 다시 쥐기 (2.5 배)
     park_push_speed_dps: 20.0        # 밀어 세우기만 천천히 (11-06 시뮬: 50 이면 ±2 mm 오차에 12 중 6–8, 20 이면 12 중 12)
     park_max_tilt_deg: 30.0          # 먼 누운 퍽: 쥘 때 손을 10° 씩 이만큼까지 기울임 (접선 방향 퍽은 그만큼 굴러 손가락에 맞음)
