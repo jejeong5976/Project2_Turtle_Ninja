@@ -167,7 +167,8 @@ std::vector<ArmAction> path_actions(
           if (d < best) {best = d; side_t = p.t;}
         }
       }
-      if (last.hold_s > 0.0 && !a.points.empty()) {a.points.push_back({last.q, a.points.back().t + last.hold_s});}   // 같은 자세로 기다림
+      const double hold = std::max(last.hold_s, last.grip.empty() ? 0.0 : timing.grip_settle_s);   // 그리퍼 앞이면 팔이 다 따라오게
+      if (hold > 0.0 && !a.points.empty()) {a.points.push_back({last.q, a.points.back().t + hold});}   // 같은 자세로 기다림
       a.duration_s = a.points.empty() ? 0.0 : a.points.back().t;
       a.side_grip_t = side_t;
       a.side_grip = side_g;

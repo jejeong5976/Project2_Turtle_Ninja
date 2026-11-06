@@ -137,6 +137,8 @@ public:
     timing_.stand_speed_dps = declare_parameter<double>("path_stand_speed_dps", 20.0);
     timing_.accel_dps2 = declare_parameter<double>("path_accel_dps2", 150.0);
     timing_.dt_s = declare_parameter<double>("path_dt_s", 0.05);
+    // 그리퍼를 여닫기 전 팔이 멈춰 따라오게 기다림 [s]. 11-07 실물: 그리퍼 동작 때 2 번 관절이 아직 2.3° 남아 (손끝 약 1 cm) 놓는 자리가 반반
+    timing_.grip_settle_s = declare_parameter<double>("grip_settle_s", 0.0);
     if (!(timing_.speed_dps > 0.0) || !(timing_.stand_speed_dps > 0.0) || !(timing_.accel_dps2 > 0.0) ||
       !(timing_.dt_s >= 0.005 && timing_.dt_s <= 0.5))
     {
@@ -559,6 +561,7 @@ private:
     path_slow_min_dps_ = get_parameter("path_slow_min_dps").as_double();
     side_grip_ = get_parameter("gripper_on_the_way").as_bool();
     gripper_time_s_ = get_parameter("gripper_time_s").as_double();
+    timing_.grip_settle_s = std::max(0.0, get_parameter("grip_settle_s").as_double());
     {
       const double v = get_parameter("path_speed_dps").as_double(), vs = get_parameter("path_stand_speed_dps").as_double();
       const double ac = get_parameter("path_accel_dps2").as_double();
