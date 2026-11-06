@@ -68,9 +68,9 @@ control_master:
     #   11-04 실물: −73° 돌려 쥐니 손가락이 2 mm 오른쪽 → [0.4, 2.4] (그 뒤 −38° 쥐기 "완벽"). 실행 중에만 넣어 11-05 재시작 때 0 으로 돌아감 → 설정에 넣음
     pick_offset_rot_mm: [0.4, 2.4]
     pick_offset_tagged_y_mm: 0.0
-    # 누운 퍽 위 옆면 태그로 잰 중심 (11-06 perception tag_lying_refine): 실물로 아직 못 잼 → 선 퍽 태그 값으로 시작, 실물 PICK 으로 맞출 것
+    # 누운 퍽 위 옆면 태그로 잰 중심 (11-06 perception tag_lying_refine): 11-06 실물 PICK 으로 x 를 맞춤 (y 는 아직 0)
     #   받침 세우기는 긴축 방향 ±2 mm 안이 필요 (시뮬). 태그 안 보인 누운 퍽은 pick_offset_x/y (깊이 점 중심)
-    pick_offset_lying_tagged_x_mm: -17.0
+    pick_offset_lying_tagged_x_mm: -25.0   # 11-06 실물: -17 이면 누운 퍽을 1 cm 앞 (로봇 반대쪽) 에서 쥠 → -25 로 시험
     pick_offset_lying_tagged_y_mm: 0.0
     # STORE 칸 근처 경로 보정 [mm, base_link, x+ = 앞 · y+ = 왼쪽, 15 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 실행 중 ros2 param set 으로 바꿈
     # 수직 손이 안 닿는 먼 퍽: 손을 10° 씩 이만큼까지 바깥으로 기울여 쥠 (박스 끝 모서리 0.32 m 는 40°). 기울여 쥔 퍽은 다시 잡기로 세움
@@ -102,10 +102,10 @@ control_master:
     stand_lying_mode: park
     park_center: [0.1008, 0.00115]   # 그리퍼 받침 중심 [m, base_link]
     park_floor_z: 0.1365             # 받침 바닥 윗면 [m, base_link]
-    park_tilt_deg: 45.0              # 넣을 때 손 기울임 (안 되면 40 까지)
+    park_tilt_deg: 45.0              # 넣을 때 손 기울임 (안 되면 5° 씩 40 까지). 받침 위에서 가까운 퍽은 50° 까지, 기울여 쥔 먼 퍽은 40° 까지 IK
     park_grasp_offset_mm: 25.0       # 누운 퍽을 끝 쪽으로 옮겨 쥠
-    park_insert_clear_mm: 4.0
-    park_end_inset_mm: 4.0           # 아래 끝을 받침 중심에서 J1 쪽 4 mm 에 (기대는 각 49–62°, 시뮬 5/5. 8 mm 면 47–50° 로 2/5)
+    park_insert_clear_mm: 4.0        # 놓을 때 퍽 가장 낮은 모서리 ↔ 받침 바닥 (11-06 실물: 2 면 넣다 걸려 밀려 나옴, 20 이면 떨어지며 뒤로 넘어감)
+    park_end_inset_mm: -3.0          # 아래 끝면 중심 = 받침 중심에서 J1 쪽으로 이만큼 (음수 = 바깥). 11-06 실물 (받침을 넓힌 뒤): 4 면 팔 쪽 벽에 걸려 -3 으로 맞춤
     park_push_h_mm: 25.0             # 미는 손끝 높이 (받침 바닥 위)
     park_regrasp_depth_mm: 30.0      # 선 퍽 다시 쥐기 깊이 (손끝이 받침 벽 위)
     park_speed_dps: 50.0             # 넣기 · 다시 쥐기 (2.5 배)
