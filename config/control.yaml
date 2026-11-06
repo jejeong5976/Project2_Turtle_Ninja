@@ -139,6 +139,7 @@ control_master:
     #   끝점을 3 mm 더 아래로 밀어 넣음. 0 · 0 = 예전 (기울이며 내려가 끝에서 놓기)
     park_insert_back_mm: 15.0
     park_insert_extra_mm: 3.0
+    park_insert_from_back_mm: 30.0   # 11-07 사용자: 출발을 3 cm 뒤 (S12 쪽) 에서 → 뒤 위에서 앞 아래로 대각선으로 들어감
     park_speed_dps: 50.0             # 넣기 · 다시 쥐기 (2.5 배)
     park_push_speed_dps: 20.0        # 밀어 세우기만 천천히 (11-06 시뮬: 50 이면 ±2 mm 오차에 12 중 6–8, 20 이면 12 중 12)
     park_max_tilt_deg: 30.0          # 먼 누운 퍽: 쥘 때 손을 10° 씩 이만큼까지 기울임 (접선 방향 퍽은 그만큼 굴러 손가락에 맞음)

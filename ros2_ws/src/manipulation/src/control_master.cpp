@@ -319,6 +319,7 @@ public:
     declare_parameter<int>("park_loose_step", -1);              // 넣으며 기울이는 점 (1–8) 중 이 번째부터 손가락을 park_loose_grip_m 으로 풂. −1 = 안 풂
     declare_parameter<double>("park_insert_back_mm", 0.0);     // > 0: 다 기울인 채 퍽 긴축을 따라 이만큼 뒤에서 긴축 방향으로 곧게 넣음 (대각선으로)
     declare_parameter<double>("park_insert_extra_mm", 0.0);    // 넣는 끝점을 긴축 방향 (아래 · J1 쪽) 으로 이만큼 더 (턱에 걸치면 밀어 넣기)
+    declare_parameter<double>("park_insert_from_back_mm", 0.0);  // 곧게 넣기 출발점을 J1 쪽 (로봇 뒤) 으로 이만큼 → 뒤 위에서 앞 아래로 대각선으로 넣음
     declare_parameter<double>("park_speed_dps", 20.0);          // 받침에서 넣기 · 다시 쥐기 속도
     declare_parameter<double>("park_push_speed_dps", 20.0);     // 받침에서 밀어 세우는 속도 (빠르면 손끝이 퍽 면을 타고 올라 넘어짐)
     declare_parameter<std::vector<double>>("look_rack_bias_mm", {0.0, 0.0});   // LOOK_RACK 칸 측정의 카메라 치우침 [x, y] mm (제자리 적재함에서 잰 값 − 칸 표)
@@ -1941,6 +1942,7 @@ private:
     pk.loose_step = static_cast<int>(get_parameter("park_loose_step").as_int());
     pk.insert_back = get_parameter("park_insert_back_mm").as_double() / 1000.0;
     pk.insert_extra = get_parameter("park_insert_extra_mm").as_double() / 1000.0;
+    pk.insert_from_back = get_parameter("park_insert_from_back_mm").as_double() / 1000.0;
     grip_.loose = get_parameter("park_loose_grip_m").as_double();
     pk.side = lying_h_;
     pk.length = puck_h_;
