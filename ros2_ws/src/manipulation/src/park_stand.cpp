@@ -262,7 +262,7 @@ bool park_nodes(
       for (int k = 1; k <= c.tilt_steps && ok; ++k) {
         const double fk = static_cast<double>(k) / c.tilt_steps;
         ok = add("park_tilt" + std::to_string(k), p_over + (p_ins - p_over) * fk, cd.th * fk, c.held_kg, true,
-          k == c.tilt_steps ? "open" : "");
+          k == c.tilt_steps ? "open" : (k == c.loose_step ? "loose" : ""));
         if (ok && c.insert_dj3 != 0.0) {nodes.back().q[2] += c.insert_dj3 * fk;}   // 실물 맞춤 (11-07 사용자: 넣을 때 J3 를 조금 더 올려)
       }
       if (!ok) {continue;}
