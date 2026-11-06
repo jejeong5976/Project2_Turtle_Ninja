@@ -103,7 +103,7 @@ control_master:
       S11: [7.0, 12.0]    # 11-07 실물에서 맞춤
     # 칸마다 RETRIEVE (빼기) 보정 [x, y] 또는 [x, y, 높이] mm — STORE 보정은 빼기에 안 들어감 (11-07). 실행 중: ros2 param set /control_master retrieve_offset.S12 "[-10.0, -5.0]"
     retrieve_offset:
-      S12: [-10.0, -5.0]  # 11-07 실물: 빼기가 1 cm 앞 · 5 mm 왼쪽
+      S12: [-8.0, -5.0]   # 11-07 실물 빼기 (처음 1 cm 앞 · 5 mm 왼쪽 → [-10, -5], 다시 2 mm 앞으로)
     # 넣는 점 맞추기: 경로의 놓는 점을 팔 모델로 칸 표 (config/rack_cells.yaml 칸 중심 + place_offset) 로 옮김 (칸마다 자동, 위 보정은 그 위에 더함)
     store_to_cell: true
     # 쥔 퍽 손 안 위치 (손목 카메라, rack_tag_node 를 띄워야 잼): false = STORE 때 로그만, true = 기준과 차이만큼 칸 근처 경로를 옮김
