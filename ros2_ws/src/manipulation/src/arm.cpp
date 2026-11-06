@@ -208,6 +208,12 @@ std::vector<ArmCommand> ArmRunner::tick(double now_s, bool arm_may_move, bool fo
     }
     return out;
   }
+  if (step_mode_ && idx_ > 0 && !step_ok_) {   // 구분 동작: 다음으로 가라는 말을 기다림 (취소 · 실패는 위에서 먼저 봄)
+    waiting_step_ = true;
+    return out;
+  }
+  step_ok_ = false;
+  waiting_step_ = false;
   ArmCommand c;
   c.kind = ArmCommand::Kind::SEND;
   c.action = plan_[idx_++];
@@ -236,6 +242,9 @@ ArmCommand ArmRunner::finish(ArmEnd end, const std::string & message)
   cancel_sent_ = false;
   verifying_ = false;
   forced_ = false;
+  step_mode_ = false;
+  step_ok_ = false;
+  waiting_step_ = false;
   return c;
 }
 

@@ -360,6 +360,38 @@ TEST(ArmRunner, SuccessEndingFoldedReturnsToDrive)
   EXPECT_EQ(m.arbiter.turn(), Turn::DRIVE);
 }
 
+// 구분 동작: 첫 동작 뒤로는 step_go() 마다 하나씩, 끝나면 꺼짐
+TEST(ArmRunner, StepModeWaitsBeforeEachNextAction)
+{
+  FakeMaster m;
+  double t = 0.0;
+  m.accept(manipulation::kArmPick);
+  m.runner.set_step(true);
+  for (int k = 0; k < 40 && m.sent.empty(); ++k) {m.step(t); t += 0.02;}
+  ASSERT_EQ(m.sent.size(), 1u);   // 첫 동작은 바로
+  m.complete_last(t);
+  for (int k = 0; k < 50; ++k) {m.step(t); t += 0.02;}
+  EXPECT_EQ(m.sent.size(), 1u);   // 다음은 기다림
+  EXPECT_TRUE(m.runner.waiting_step());
+  EXPECT_FALSE(m.runner.next_name().empty());
+  m.runner.step_go();
+  m.step(t);
+  EXPECT_EQ(m.sent.size(), 2u);
+  EXPECT_FALSE(m.runner.waiting_step());
+  m.complete_last(t);
+  for (int k = 0; k < 2000 && m.goal_active; ++k) {   // 나머지는 매번 step_go
+    const std::size_t n = m.sent.size();
+    if (m.runner.waiting_step()) {m.runner.step_go();}
+    m.step(t);
+    if (m.sent.size() > n) {m.complete_last(t);}
+    t += 0.02;
+  }
+  ASSERT_EQ(m.finished.size(), 1u);
+  EXPECT_EQ(m.finished[0].end, ArmEnd::SUCCEEDED);
+  EXPECT_EQ(m.sent.size(), 6u);
+  EXPECT_FALSE(m.runner.waiting_step());
+}
+
 // 팔이 움직이는 중 취소 → 재생기에 취소 → "멈췄음"(결과) 을 받아야 canceled → STOP
 TEST(ArmRunner, CancelDuringMotionWaitsForStop)
 {

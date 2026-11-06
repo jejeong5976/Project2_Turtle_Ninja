@@ -185,6 +185,13 @@ public:
   //   fold_confirmed = FoldCheck::confirmed(now) — VERIFY 단계에서만 봄 (VERIFY_START 이후의 측정만 인정)
   std::vector<ArmCommand> tick(double now_s, bool arm_may_move, bool fold_confirmed = false);
 
+  // 구분 동작: 켜면 첫 동작 뒤로는 동작마다 step_go() 를 기다림 (사람이 보고 다음으로). start() 뒤에 켬, 작업이 끝나면 꺼짐
+  void set_step(bool on) {step_mode_ = on; step_ok_ = false; waiting_step_ = false;}
+  void step_go() {step_ok_ = true;}
+  bool waiting_step() const {return waiting_step_;}
+  // 다음에 보낼 동작 이름 (구분 동작 로그용)
+  std::string next_name() const {return idx_ < plan_.size() ? (plan_[idx_].is_gripper ? "그리퍼" : plan_[idx_].pose) : "";}
+
   // 상태 (로그 · 테스트용)
   std::size_t next_index() const {return idx_;}
   bool busy() const {return busy_;}
@@ -197,6 +204,7 @@ private:
   std::string current_phase() const;
 
   double accept_timeout_s_, motion_timeout_s_, cancel_timeout_s_, verify_timeout_s_;
+  bool step_mode_{false}, step_ok_{false}, waiting_step_{false};
   std::vector<ArmAction> plan_;
   std::size_t idx_{0};
   bool active_{false};

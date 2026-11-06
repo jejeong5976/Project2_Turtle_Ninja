@@ -276,6 +276,15 @@ public:
     sub_rack_ = create_subscription<interfaces::msg::DetectionArray>(
       declare_parameter<std::string>("rack_tag_topic", "/rack_tags/detections"), rclcpp::QoS(10),
       [this](interfaces::msg::DetectionArray::ConstSharedPtr m) {on_rack_tags(*m);});
+    // 구분 동작 (park_step): 누운 퍽 세우기를 동작마다 멈춰 가며 — 다음으로: ros2 service call /control_master/step std_srvs/srv/Trigger
+    declare_parameter<bool>("park_step", false);
+    srv_step_ = create_service<std_srvs::srv::Trigger>("~/step",
+      [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>, std::shared_ptr<std_srvs::srv::Trigger::Response> res) {
+        if (!runner_.waiting_step()) {res->success = false; res->message = "구분 동작으로 기다리는 중이 아님"; return;}
+        res->message = "다음 동작: " + runner_.next_name();
+        runner_.step_go();
+        res->success = true;
+      });
     srv_rack_ref_ = create_service<std_srvs::srv::Trigger>("~/save_rack_reference",
       [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>, std::shared_ptr<std_srvs::srv::Trigger::Response> res) {
         res->success = save_rack_reference(res->message);
@@ -302,6 +311,7 @@ public:
     declare_parameter<double>("park_push_h_mm", 25.0);          // 미는 손끝 높이 = 받침 바닥 위 (시뮬 25 · 35 다 됨, 30 은 두 번 실패)
     declare_parameter<double>("park_regrasp_depth_mm", 30.0);   // 받침에 선 퍽 다시 쥐기: 윗면에서 손끝까지 (손끝이 받침 벽 위)
     declare_parameter<double>("park_regrasp_r_mm", -6.0);       // 선 퍽 다시 쥐는 자리 = 받침 중심에서 반지름 방향 (− = J1 쪽)
+    declare_parameter<double>("park_insert_j3_deg", 0.0);      // 넣는 자세 J3 를 이만큼 더 [°, + = 손끝 위] (넣는 점에서 5° ≈ 위 22 · 바깥 9 mm)
     declare_parameter<double>("park_speed_dps", 20.0);          // 받침에서 넣기 · 다시 쥐기 속도
     declare_parameter<double>("park_push_speed_dps", 20.0);     // 받침에서 밀어 세우는 속도 (빠르면 손끝이 퍽 면을 타고 올라 넘어짐)
     declare_parameter<std::vector<double>>("look_rack_bias_mm", {0.0, 0.0});   // LOOK_RACK 칸 측정의 카메라 치우침 [x, y] mm (제자리 적재함에서 잰 값 − 칸 표)
@@ -466,6 +476,7 @@ private:
     // 계획 (IK 여러 번, 다시 잡기면 젯슨에서 0.5 s 넘음) 동안 이 노드는 관절 측정을 못 받음 → 끝난 뒤 밀린 측정을 받을 때까지
     //   하드웨어 감시가 '측정 끊김' 으로 오판하지 않게 잠깐 이전 판정을 유지 (11-04 실물: 0.59 s 로 PICK 중단)
     const auto t_plan = std::chrono::steady_clock::now();
+    pending_step_ = false;
     pending_plan_ = build_plan(goal, why);
     const double plan_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t_plan).count();
     hw_grace_until_ = now().seconds() + 0.3;
@@ -508,6 +519,13 @@ private:
     task_ends_p0_ = plan_ends_p0_;
     p0_idle_since_ = -1.0;
     runner_.start(plan);
+    runner_.set_step(pending_step_);
+    if (pending_step_) {
+      RCLCPP_WARN(get_logger(), "구분 동작: 첫 동작 뒤로는 동작마다 멈춤 → 다음으로: ros2 service call /control_master/step std_srvs/srv/Trigger "
+        "(park_step 끄기: ros2 param set /control_master park_step false)");
+    }
+    pending_step_ = false;
+    step_logged_ = false;
     scanning_ = gh->get_goal()->task == ArmTask::Goal::LOOK && gh->get_goal()->slot == "rack";
     scan_seen_.clear();
     arbiter_.request_arm();   // 바퀴부터 세우기 → 잠금 답 + 몸통이 멈추면 ARM
@@ -1906,6 +1924,7 @@ private:
     pk.push_h = get_parameter("park_push_h_mm").as_double() / 1000.0;
     pk.regrasp_depth = get_parameter("park_regrasp_depth_mm").as_double() / 1000.0;
     pk.regrasp_r = get_parameter("park_regrasp_r_mm").as_double() / 1000.0;
+    pk.insert_dj3 = get_parameter("park_insert_j3_deg").as_double() * M_PI / 180.0;
     pk.side = lying_h_;
     pk.length = puck_h_;
     std::vector<ParkNode> pn;
@@ -1933,9 +1952,32 @@ private:
       };
     LyingGrasp lg;
     std::string w;
-    if (!lying_grasp(model_, x, y, top, axis, hl, gc, lg, w, get_parameter("park_max_tilt_deg").as_double(), accept)) {
+    const double max_tilt = get_parameter("park_max_tilt_deg").as_double();
+    if (!lying_grasp(model_, x, y, top, axis, hl, gc, lg, w, max_tilt, accept)) {
       why = "받침 세우기: 쥐기 후보가 다 안 됨 (마지막: " + w + ")";
       return {};
+    }
+    // 손목을 돌려 쥐면 선 퍽처럼 돌림 보정 (pick_offset_rot_mm, 11-07 사용자: 박스에서 돌려 쥘 때 맞춘 값을 세우기에도)
+    //   닫힘축이 접선이면 (긴축이 팔 방향인 누운 퍽) 0 — 그 자리에서 맞춘 pick_offset_lying_tagged_* 와 겹치지 않음
+    {
+      Eigen::Vector2d d;
+      double rot = 0.0;
+      std::string rw;
+      if (!rot_offset(x, y, lg.poses.back().ticks, d, rot, rw)) {why = "받침 세우기: " + rw; return {};}
+      if (d.norm() > 1e-4) {
+        LyingGrasp lg2;
+        std::string w2;
+        if (lying_grasp(model_, x + d.x(), y + d.y(), top, axis, hl, gc, lg2, w2, max_tilt, accept)) {
+          lg = lg2;
+          x += d.x();
+          y += d.y();
+          RCLCPP_INFO(get_logger(), "PICK 받침 세우기: 손목을 기본에서 %+.0f° 돌려 쥠 → 돌림 보정 (%+.1f, %+.1f) mm (pick_offset_rot_mm)", rot,
+            d.x() * 1000.0, d.y() * 1000.0);
+        } else {
+          RCLCPP_WARN(get_logger(), "PICK 받침 세우기: 돌림 보정 (%+.1f, %+.1f) mm 자리로는 쥐기 · 받침 자세가 안 됨 (%s) → 보정 없이", d.x() * 1000.0,
+            d.y() * 1000.0, w2.c_str());
+        }
+      }
     }
     std::vector<PathNode> nodes;
     for (const auto & n : pn) {
@@ -1950,6 +1992,7 @@ private:
     RCLCPP_INFO(get_logger(), "PICK 받침 세우기: 누운 퍽 (%.3f, %.3f) 긴축 %.0f° → 끝 쪽 %.0f mm 를 손 %.0f° (퍽 굴림 %.0f° · 손 안 기울기 %.0f° · 쥐는 깊이 %.0f mm · "
       "손가락 여유 %.1f mm) 로 쥐고 받침에 %.0f° 로 넣어 놓고, 받침 바닥 위 %.0f mm 로 밀어 세운 뒤 다시 쥠 (윗면 − %.0f mm) → 기준점", x, y, axis,
       gc.grip_offset * 1000.0, lg.tilt_deg, lg.roll_deg, lg.pitch_deg, lg.depth_mm, lg.margin_mm, elev, pk.push_h * 1000.0, pk.regrasp_depth * 1000.0);
+    pending_step_ = get_parameter("park_step").as_bool();
     return pick_path(unfold, lg.poses, open_kw, nodes, why, lg.tip.x(), lg.tip.y(), axis, true);
   }
 
@@ -2409,6 +2452,15 @@ private:
         }
       }
     }
+    if (runner_.waiting_step()) {
+      if (!step_logged_) {
+        RCLCPP_INFO(get_logger(), "구분 동작: 다음 '%s' 전에 멈춤 → ros2 service call /control_master/step std_srvs/srv/Trigger",
+          runner_.next_name().c_str());
+        step_logged_ = true;
+      }
+    } else {
+      step_logged_ = false;
+    }
   }
 
   // 시간표(점들, 시작부터 초)를 재생기에 보냄. 답은 콜백 → runner_ 로 전달
@@ -2628,6 +2680,9 @@ private:
   bool rack_fit_ok_{false};
   rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr sub_rack_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr srv_rack_ref_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr srv_step_;
+  bool pending_step_{false};   // 받은 계획을 구분 동작으로 (누운 퍽 세우기 · park_step)
+  bool step_logged_{false};
   double home_near_tol_{0.2};           // [rad] 받침에서 이만큼 안이면 HOME 한 점 직행 허용
   bool arm_off_path_{false};            // 경로 작업이 도중에 멈춤 (성공한 작업 · HOME 뒤 지움)
   bool home_was_path_{false};           // 지금 HOME 이 검사된 경로 (fold · home_from_*) 로 감
