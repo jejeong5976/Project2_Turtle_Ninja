@@ -1202,6 +1202,7 @@ private:
       const auto & q0 = d.pose.orientation;
       const bool q_known = q0.x * q0.x + q0.y * q0.y + q0.z * q0.z + q0.w * q0.w > 0.5;
       if (!q_known) {in.pose.orientation.w = 1.0;}
+      const geometry_msgs::msg::PoseStamped in_nom = in;   // 되돌리기 전 (pick det · planning 목표는 이 명목 TF 로 계산됨)
       if (drift_correct_ && !drift_frame_.empty() && in.header.frame_id == drift_frame_) {   // 카메라가 돈 만큼 되돌림 (실제 = 명목 · R → p 를 R · p 로)
         const Eigen::Vector3d p = drift_q_ * Eigen::Vector3d(in.pose.position.x, in.pose.position.y, in.pose.position.z);
         in.pose.position.x = p.x();
@@ -1216,16 +1217,27 @@ private:
           in.pose.orientation.w = r.w();
         }
       }
+      bool latest = false;
       try {
         o = tf_buf_->transform(in, odom_frame_, tf2::durationFromSec(0.0));
       } catch (const tf2::TransformException &) {
         in.header.stamp = rclcpp::Time(0, 0, get_clock()->get_clock_type());
+        latest = true;
         try {
           o = tf_buf_->transform(in, odom_frame_, tf2::durationFromSec(0.0));
         } catch (const tf2::TransformException & e) {
           RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "손목 인지 검출을 %s 로 못 바꿈 (%s) → 이웃으로 안 씀", odom_frame_.c_str(), e.what());
           continue;
         }
+      }
+      Eigen::Vector3d p_nom(o.pose.position.x, o.pose.position.y, o.pose.position.z);
+      if (in_nom.pose.position != in.pose.position) {
+        geometry_msgs::msg::PoseStamped a = in_nom, b;
+        if (latest) {a.header.stamp = in.header.stamp;}
+        try {
+          b = tf_buf_->transform(a, odom_frame_, tf2::durationFromSec(0.0));
+          p_nom = Eigen::Vector3d(b.pose.position.x, b.pose.position.y, b.pose.position.z);
+        } catch (const tf2::TransformException &) {}
       }
       const auto & q = o.pose.orientation;
       const double zz = 1.0 - 2.0 * (q.x * q.x + q.y * q.y);                 // 긴축(z)의 위쪽 성분
@@ -1234,7 +1246,7 @@ private:
       const double axis = std::atan2(2.0 * (q.y * q.z - q.w * q.x), 2.0 * (q.x * q.z + q.w * q.y));   // 긴축(z) 의 수평 방향
       out.push_back({Eigen::Vector3d(o.pose.position.x, o.pose.position.y, o.pose.position.z), square,
         square && d.yaw_known && q_known, yaw, !q_known || std::fabs(zz) < 0.7, t, d.center_from_tag,
-        q_known && std::fabs(zz) < std::sqrt(0.5), axis});
+        q_known && std::fabs(zz) < std::sqrt(0.5), axis, p_nom});
     }
     seen_ = out;
     seen_t_ = t;   // 빈 배열도 "카메라는 살아 있고 아무것도 없음"
@@ -1262,11 +1274,12 @@ private:
     const Eigen::Vector3d T(tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z);
     const double dyaw = std::atan2(2.0 * (r.w * r.z + r.x * r.y), 1.0 - 2.0 * (r.y * r.y + r.z * r.z));
     for (const auto & p : seen_) {
-      const Eigen::Vector3d b = Q * p.p + T;
+      const Eigen::Vector3d b = Q * p.p + T, bn = Q * p.p_nom + T;
       if (exclude_ && std::hypot(b.x() - exclude_->x(), b.y() - exclude_->y()) < 0.025) {continue;}   // 다시 잡기: 집어 든 퍽
-      if (std::fabs(b.z() - zc) > 0.04) {continue;}                            // 다른 높이 (쥔 퍽 · 박스 밖 바닥 등)
+      if (std::fabs(b.z() - zc) > 0.04 && std::fabs(bn.z() - zc) > 0.04) {continue;}   // 다른 높이 (쥔 퍽 · 박스 밖 바닥 등)
       const double d = std::hypot(b.x() - x, b.y() - y);
-      if (d < 0.025) {
+      // 목표 = 되돌린 위치 또는 되돌리기 전 위치가 25 mm 안 (pick det · planning 은 명목 TF 로 목표를 냄 — 카메라가 3° 돌면 둘이 ~18 mm 차이)
+      if (d < 0.025 || std::hypot(bn.x() - x, bn.y() - y) < 0.025) {
         found = true;
         tgt = {p.square, p.yaw_known, p.yaw + dyaw, d, true};
         tc = b.head<2>();
@@ -2524,7 +2537,8 @@ private:
   double grip_now_{std::nan("")};       // 그리퍼 실측 [m]
   // 손목 인지 퍽 (base_link): 집기 · 놓기 때 이웃
   // p · yaw · axis = odom 기준, tagged = 윗면 태그로 잰 중심, lying = 긴축이 수평에서 45° 안 (planning 과 같은 기준), axis = 긴축 수평 방향
-  struct SeenPuck {Eigen::Vector3d p; bool square; bool yaw_known; double yaw; bool round_r30; double t; bool tagged; bool lying; double axis;};
+  struct SeenPuck {Eigen::Vector3d p; bool square; bool yaw_known; double yaw; bool round_r30; double t; bool tagged; bool lying; double axis;
+    Eigen::Vector3d p_nom;};   // p = 카메라 돌아감 되돌린 위치, p_nom = 되돌리기 전 (목표 맞추기용)
   std::vector<SeenPuck> seen_;
   bool target_tagged_{false};     // 마지막 grasp_for 가 맞춘 목표 검출이 윗면 태그로 잰 퍽
   bool regrasp_{true};            // 기울여 쥔 퍽을 세워 내려놓고 수직으로 다시 쥠
