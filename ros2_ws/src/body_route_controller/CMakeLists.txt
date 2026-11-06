@@ -5,6 +5,7 @@ find_package(ament_index_cpp REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED)
+find_package(nlohmann_json REQUIRED)
 find_package(nav2_core REQUIRED)
 find_package(nav2_controller REQUIRED)
 find_package(nav2_costmap_2d REQUIRED)
@@ -74,7 +75,7 @@ pluginlib_export_plugin_description_file(nav2_costmap_2d observation_layers.xml)
 install(TARGETS body_route_core body_route_plugin ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch behavior_trees DESTINATION share/${PROJECT_NAME})
-install(FILES README.md WALL_LAYOUT.md UNKNOWN_SPACE.md START_LOCALIZATION.md DESTINATION share/${PROJECT_NAME})
+install(FILES README.md WALL_LAYOUT.md UNKNOWN_SPACE.md START_LOCALIZATION.md FULL_MAP_LOCALIZATION.md DESTINATION share/${PROJECT_NAME})
 
 # Stationary rear-lidar localization: opt-in and separate from driving profiles.
 add_library(start_localization STATIC src/start_localization.cpp)
@@ -91,12 +92,45 @@ target_link_libraries(start_scan_filter start_localization rclcpp::rclcpp tf2::t
 target_compile_options(start_scan_filter PRIVATE -Wall -Wextra -Wpedantic -Werror)
 install(TARGETS fit_start_pose start_scan_filter DESTINATION lib/${PROJECT_NAME})
 
+# Reviewed full-map startup: capture and initialize are explicit stationary steps.
+add_executable(register_stationary src/register_stationary.cpp)
+target_compile_features(register_stationary PRIVATE cxx_std_17)
+target_include_directories(register_stationary PRIVATE ${Boost_INCLUDE_DIRS})
+target_link_libraries(register_stationary nlohmann_json::nlohmann_json)
+add_executable(full_map_startup src/full_map_startup.cpp)
+target_compile_features(full_map_startup PRIVATE cxx_std_17)
+target_include_directories(full_map_startup PRIVATE include)
+target_link_libraries(full_map_startup rclcpp::rclcpp tf2_ros::tf2_ros nlohmann_json::nlohmann_json
+  ${sensor_msgs_TARGETS} ${nav_msgs_TARGETS} ${geometry_msgs_TARGETS} ${std_msgs_TARGETS})
+add_executable(front_localization_params src/front_localization_params.cpp)
+target_compile_features(front_localization_params PRIVATE cxx_std_17)
+target_link_libraries(front_localization_params yaml-cpp)
+foreach(target register_stationary full_map_startup front_localization_params)
+  target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endforeach()
+install(TARGETS register_stationary full_map_startup front_localization_params DESTINATION lib/${PROJECT_NAME})
+
 if(BUILD_TESTING)
   add_executable(replay_map test/replay_map.cpp)
   target_link_libraries(replay_map body_route_plugin)
   target_compile_options(replay_map PRIVATE -Wall -Wextra -Wpedantic -Werror)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_cmake_pytest REQUIRED)
+
+  ament_add_gtest(test_full_map_files test/test_full_map_files.cpp)
+  target_compile_features(test_full_map_files PRIVATE cxx_std_17)
+  target_link_libraries(test_full_map_files yaml-cpp nlohmann_json::nlohmann_json)
+  target_compile_definitions(test_full_map_files PRIVATE BODY_ROUTE_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}"
+    REGISTER_EXECUTABLE="$<TARGET_FILE:register_stationary>" PARAMS_EXECUTABLE="$<TARGET_FILE:front_localization_params>")
+  target_compile_options(test_full_map_files PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  ament_add_gtest(test_full_map_startup test/test_full_map_startup.cpp)
+  target_compile_features(test_full_map_startup PRIVATE cxx_std_17)
+  target_link_libraries(test_full_map_startup rclcpp::rclcpp tf2_ros::tf2_ros nlohmann_json::nlohmann_json
+    ${nav_msgs_TARGETS} ${sensor_msgs_TARGETS} ${std_msgs_TARGETS} ${geometry_msgs_TARGETS})
+  target_compile_definitions(test_full_map_startup PRIVATE STARTUP_EXECUTABLE="$<TARGET_FILE:full_map_startup>")
+  target_compile_options(test_full_map_startup PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  set_tests_properties(test_full_map_startup PROPERTIES TIMEOUT 90 RUN_SERIAL TRUE ENVIRONMENT
+    "ROS_DOMAIN_ID=214;ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST;RMW_IMPLEMENTATION=rmw_fastrtps_cpp;FASTDDS_DEFAULT_PROFILES_FILE=${CMAKE_CURRENT_SOURCE_DIR}/test/start_loopback.xml;ROS_LOG_DIR=/tmp/body-route-full-map-test-log")
 
   ament_add_gtest(test_start_localization test/test_start_localization.cpp)
   target_link_libraries(test_start_localization start_localization)

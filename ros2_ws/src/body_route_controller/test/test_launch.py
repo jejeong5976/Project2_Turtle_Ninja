@@ -129,3 +129,39 @@ def test_observation_profiles_require_matching_execution_guard(tmp_path):
     for option, value in (("--unknown-policy", "free"), ("--unknown-penalty", "0"),
                           ("--unknown-penalty", "nan"), ("--observation-ttl", "0")):
         assert subprocess.run([str(binary), option, value, "--output", str(tmp_path / "invalid")], capture_output=True).returncode != 0
+
+
+def test_physical_front_policy_rejects_mask_rear_and_automatic_pose(tmp_path):
+    import pytest
+    share = Path(get_package_share_directory("body_route_controller"))
+    entry = load_module(share / "launch/body_route.launch.py", "front_policy_launch")
+    config = yaml.safe_load((share / "config/nav2.yaml").read_text())
+    amcl = config["amcl"]["ros__parameters"]
+    assert amcl["scan_topic"] == "/lidar_front/scan"
+    assert amcl["set_initial_pose"] is False
+    assert amcl["always_reset_initial_pose"] is True
+    for name in ("local_costmap", "global_costmap"):
+        obstacle = config[name][name]["ros__parameters"]["obstacle_layer"]
+        topics = {obstacle[source]["topic"] for source in obstacle["observation_sources"].split()}
+        assert topics == {"/lidar_front/scan", "/lidar_rear/scan"}
+    monitor = config["collision_monitor"]["ros__parameters"]
+    assert {monitor[source]["topic"] for source in monitor["observation_sources"]} == {"/lidar_front/scan", "/lidar_rear/scan"}
+    path = tmp_path / "nav2.yaml"
+    map_file = tmp_path / "map.yaml"
+    map_file.write_text("image: synthetic.pgm\nresolution: 0.01\n")
+    context = LaunchContext()
+    context.launch_configurations.update(map=str(map_file), params=str(path), use_sim_time="false", initial_pose="", rviz="false")
+    for topic in ("/localization/start_scan", "/lidar_rear/scan"):
+        amcl["scan_topic"] = topic
+        path.write_text(yaml.safe_dump(config))
+        with pytest.raises(RuntimeError, match="front/scan"):
+            entry.start(context)
+    amcl["scan_topic"] = "/lidar_front/scan"
+    path.write_text(yaml.safe_dump(config))
+    included = entry.start(context)[0]
+    assert dict(included.launch_arguments)["mission_hold"] == "true"
+    context.launch_configurations["initial_pose"] = "1,2,90"
+    with pytest.raises(RuntimeError, match="fresh reviewed"):
+        entry.start(context)
+    context.launch_configurations["use_sim_time"] = "true"
+    assert len(entry.start(context)) == 1

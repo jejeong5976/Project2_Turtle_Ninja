@@ -1,3 +1,8 @@
+> Historical opt-in comparison implementation. The current physical trial path uses
+> [full-map dual-lidar registration and front-lidar AMCL](FULL_MAP_LOCALIZATION.md).
+> This fixed-wall fit and mask are retained for comparison, but are not started by
+> the current trial launcher. The observations below describe the earlier candidate.
+
 # Stationary start localization from rear lidar
 
 This opt-in candidate implements the November 6 operator preference: at the agreed

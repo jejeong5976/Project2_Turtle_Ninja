@@ -376,3 +376,10 @@ See [UNKNOWN_SPACE.md](UNKNOWN_SPACE.md) for `--unknown-policy blocked` (default
 `--unknown-policy observe-before-enter`, positive planning penalties, shared lidar
 execution safeguards for custom/MPPI, complete-truth partial-map simulations, and
 exact offline build/run commands. Unknown goals are provisional until observed.
+
+## Physical startup localization
+
+Use [FULL_MAP_LOCALIZATION.md](FULL_MAP_LOCALIZATION.md) for fresh stationary dual-lidar
+full-map registration and front-lidar AMCL throughout stationary verification and driving.
+The rear fixed-wall fit/mask remains available only for historical comparison. This
+restoration has not been physically qualified and does not establish that drift is fixed.

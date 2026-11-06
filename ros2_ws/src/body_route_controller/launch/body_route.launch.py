@@ -17,11 +17,19 @@ def start(context):
     map_file = Path(LaunchConfiguration("map").perform(context)).expanduser()
     if not map_file.is_file():
         raise RuntimeError("Supply the existing scanned occupancy map YAML with map:=...")
+    # Physical trials initialize only from a newly captured, reviewed full-map fit.
+    physical = LaunchConfiguration("use_sim_time").perform(context).lower() == "false"
+    if physical and LaunchConfiguration("initial_pose").perform(context).strip():
+        raise RuntimeError("Physical trials require a fresh reviewed full-map fit; initial_pose must be blank")
     # The main launch supports YAML substitutions through ParameterFile.
     nav = Path(get_package_share_directory("navigation")) / "launch" / "nav2.launch.py"
     params = LaunchConfiguration("params", default="").perform(context)
     params = Path(params).expanduser() if params else share / "config" / "nav2.yaml"
     config = yaml.safe_load(params.read_text())
+    amcl = config["amcl"]["ros__parameters"]
+    if physical and (amcl.get("scan_topic") != "/lidar_front/scan" or
+                     amcl.get("set_initial_pose", False) or not amcl.get("always_reset_initial_pose", False)):
+        raise RuntimeError("Physical trial AMCL requires /lidar_front/scan and fresh explicit initialization; use front_localization_params")
     if config["controller_server"]["ros__parameters"]["FollowPath"]["plugin"] not in (
             "body_route_controller::BodyRouteController", "nav2_mppi_controller::MPPIController",
             "body_route_controller::ObservationController"):

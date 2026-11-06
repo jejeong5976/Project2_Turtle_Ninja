@@ -41,6 +41,8 @@ amcl:
     z_rand: 0.5
     z_short: 0.05
     scan_topic: /lidar_front/scan
+    set_initial_pose: false
+    always_reset_initial_pose: true
 bt_navigator:
   ros__parameters:
     global_frame: map
