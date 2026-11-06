@@ -48,6 +48,7 @@ struct PathTiming
   double stand_speed_dps{20.0};
   double accel_dps2{150.0};
   double dt_s{0.05};
+  double grip_settle_s{0.0};   // 그리퍼를 여닫기 전 같은 자세로 기다림 (JTC 목표 허용 0.05–0.12 rad 라 도착 판정 뒤에도 수 ° 남음)
 };
 
 struct GripperValues
