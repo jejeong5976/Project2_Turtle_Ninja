@@ -9,6 +9,7 @@
   <depend>ament_index_cpp</depend>
   <depend>yaml-cpp</depend>
   <depend>eigen</depend>
+  <depend>boost</depend>
   <exec_depend>nav2_mppi_controller</exec_depend>
   <depend>nav2_core</depend>
   <depend>nav2_controller</depend>

@@ -1,0 +1,20 @@
+# Candidate regions from the unchanged November 6 map, not surveyed wall positions.
+# Confirm actual start placement and review the selected rays before hardware use.
+reference_pose: [-1.6665036, 0.327922771, 1.57084401]
+# Existing URDF transform, unchanged; runtime requires matching TF.
+rear_mount_xy_yaw: [-0.1145, 0.0, 0.0]
+walls:
+  - name: left
+    map_roi: [-2.26, -0.45, -2.15, 1.5]
+    body_sector_deg: [95.0, 140.0]
+  - name: rear
+    map_roi: [-2.10, -0.67, 0.2, -0.53]
+    body_sector_deg: [160.0, 240.0]
+range_min: 0.3
+range_max: 2.0
+association_margin: 0.30
+min_points_per_wall_subset: 8
+min_span_per_wall_m: 0.25
+max_heldout_p90_m: 0.04
+max_snapshot_difference_m: 0.02
+max_snapshot_difference_deg: 1.0
