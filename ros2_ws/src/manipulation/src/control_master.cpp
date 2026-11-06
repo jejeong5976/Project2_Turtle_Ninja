@@ -278,6 +278,16 @@ public:
     declare_parameter<double>("standup_open_time_s", 0.5);   // 세우기 여는 점에서 그리퍼 다 열기까지 [s] (시뮬 정책: 스텝마다 2 mm → 약 0.5 s)   // 세우기 경로 점 사이 시간 = 녹화 0.1 s × 이 배 (1 = 시뮬과 같은 속도)   // 쥔 뒤 경로의 수평 이동 배율 (1 = 표 그대로, 0.5 = 절반만 뻗음)   // 세우기 경로 손끝 최저 = 박스 윗면 위 이만큼 (모델)
     // 누운 네모 퍽을 PICK 하면서 세움 (false = 누운 채 쥐고 기준점으로, 예전대로). 실행 중: ros2 param set /control_master stand_lying true
     declare_parameter<bool>("stand_lying", false);
+    // 세우는 방법: park = 그리퍼 받침에 기울여 넣고 손가락으로 밀어 세운 뒤 다시 쥠 (11-06 시뮬 12 중 10), table = 강화학습 표 재생 (박스 위)
+    declare_parameter<std::string>("stand_lying_mode", "park");
+    declare_parameter<std::vector<double>>("park_center", {0.1008, 0.00115});   // 그리퍼 받침 중심 [m, base_link] (URDF gripper_park_stand_mount)
+    declare_parameter<double>("park_floor_z", 0.1365);          // 받침 바닥 윗면 [m, base_link] (받침 판 0.1305 + 바닥 6 mm)
+    declare_parameter<double>("park_tilt_deg", 45.0);           // 넣을 때 손 기울임 (바깥 +). 안 되면 5° 씩 줄여 40 까지
+    declare_parameter<double>("park_grasp_offset_mm", 25.0);    // 누운 퍽을 중심에서 한쪽 끝으로 옮겨 쥠 (긴 쪽이 받침 안으로 내려감)
+    declare_parameter<double>("park_insert_clear_mm", 4.0);     // 넣을 때 아래 끝 가장 낮은 모서리 ↔ 받침 바닥
+    declare_parameter<double>("park_push_h_mm", 25.0);          // 미는 손끝 높이 = 받침 바닥 위 (시뮬 25 · 35 다 됨, 30 은 두 번 실패)
+    declare_parameter<double>("park_regrasp_depth_mm", 30.0);   // 받침에 선 퍽 다시 쥐기: 윗면에서 손끝까지 (손끝이 받침 벽 위)
+    declare_parameter<double>("park_speed_dps", 20.0);          // 받침에서 넣기 · 밀기 속도
     standup_speed_dps_ = declare_parameter<double>("standup_speed_dps", 32.0);   // 시뮬 정책은 40 °/s (스텝 0.05 s 마다 2°). 1.25 배 느리게 재생해도 시뮬 91.8 % (40 은 89.9 %)
     // 세운 뒤 바로 다시 쥠 (true) · 손을 들고 LOOK 자세에서 끝냄 (false, 기본: 퍽은 선 채 박스에, 다음 pick det 로 카메라로 다시 재서 집음).
     //   시뮬 재생에서 선 자리가 표와 90 % 가 12 mm 안 (손가락이 받는 폭 약 ±8 mm) → 바로 다시 쥐면 가끔 놓침
@@ -508,12 +518,14 @@ private:
     path_slow_min_dps_ = get_parameter("path_slow_min_dps").as_double();
     {
       const double v = get_parameter("path_speed_dps").as_double(), vs = get_parameter("path_stand_speed_dps").as_double();
-      if (v > 0.0 && v <= 90.0 && vs > 0.0 && vs <= 90.0) {
+      const double ac = get_parameter("path_accel_dps2").as_double();
+      if (v > 0.0 && v <= 250.0 && vs > 0.0 && vs <= 250.0 && ac > 0.0 && ac <= 1000.0) {   // 관절 속도 한계 4.8 rad/s = 275 °/s (URDF)
         timing_.speed_dps = v;
         timing_.stand_speed_dps = vs;
+        timing_.accel_dps2 = ac;
       } else {
-        RCLCPP_WARN(get_logger(), "path_speed_dps · path_stand_speed_dps 가 이상함 (%.3g, %.3g) → 그대로 (%.0f, %.0f)", v, vs, timing_.speed_dps,
-          timing_.stand_speed_dps);
+        RCLCPP_WARN(get_logger(), "path_speed_dps · path_stand_speed_dps · path_accel_dps2 가 이상함 (%.3g, %.3g, %.3g) → 그대로 (%.0f, %.0f, %.0f)", v, vs,
+          ac, timing_.speed_dps, timing_.stand_speed_dps, timing_.accel_dps2);
       }
     }
     switch (goal.task) {
@@ -1387,6 +1399,9 @@ private:
     if (lying && get_parameter("stand_lying").as_bool() && lying_cylinder_) {
       RCLCPP_INFO(get_logger(), "PICK: 누운 원기둥 — 세우기 표는 네모 퍽 전용이라 누운 채 쥠");
     }
+    if (lying && get_parameter("stand_lying").as_bool() && !lying_cylinder_ && get_parameter("stand_lying_mode").as_string() == "park") {
+      return park_plan(unfold->second, x, y, top, cands, open_kw, why);
+    }
     if (lying && get_parameter("stand_lying").as_bool() && !lying_cylinder_) {
       if (standup_.empty()) {why = "stand_lying 인데 세우기 경로 표가 없음 (standup_paths_file)"; return {};}
       return standup_plan(unfold->second, x, y, top, why);
@@ -1677,6 +1692,129 @@ private:
       "시뮬 성공률 %.2f · 경로 %zu 점 (%zu 째에서 엶) → 선 퍽 (%.3f, %.3f) 면 %.0f° 다시 쥠", x, y, axis, k, e.x, e.y, e.axis_deg,
       e.side * 1000.0, dx * 1000.0, dy * 1000.0, da, e.rate, e.q.size(), static_cast<size_t>(e.release), sx, sy, end_face);
     return path_actions(path, timing_, grip_, joint_buf_);
+  }
+
+  // 누운 네모 퍽 세우기 — 그리퍼 받침 (stand_lying_mode park, lying_sim/stand_fixture/run_fixture.py 로 시뮬 12 중 10)
+  //   1) 누운 퍽을 중심에서 한쪽 끝으로 park_grasp_offset_mm 옮겨 수직 손으로 쥠 (긴 쪽 = 받침 안으로 내려갈 끝)
+  //   2) 받침 바깥 위 수직 → 손을 바깥으로 park_tilt_deg 까지 기울이며 (팔 평면 안, 닫힘축 = 접선) 긴 쪽 끝을 받침 바닥 위로 → 놓기
+  //      → 퍽은 받침 벽에 약 48° 로 기댐 (받침 밖으로 안 빠짐)
+  //   3) 손 빼고 오므려 받침 바깥에서 받침 바닥 위 park_push_h_mm 높이로 손끝을 안쪽으로 밀어 퍽이 서는 자리 앞에서 멈춤 → 섬
+  //   4) 수직 손으로 선 퍽 쥐기 (윗면 − park_regrasp_depth_mm, 손끝이 받침 벽 위) → 박스 위 기준점 (선 퍽을 쥔 채, 바로 STORE)
+  //   자세는 모두 실제 자세 IK → 처짐 앞먹임 (쥔 동안 퍽 무게). 안 풀리면 거절 (팔이 못 가는 자세)
+  std::vector<ArmAction> park_plan(const ArmPath & unfold, double x, double y, double top,
+    const std::vector<std::pair<double, std::string>> & cands, std::string & open_kw, std::string & why)
+  {
+    const double axis = lying_axis_deg_;
+    if (!std::isfinite(axis)) {why = "받침 세우기: 누운 퍽 긴축 방향을 모름"; return {};}
+    const auto hl = get_parameter("pick_lying_heights_mm").as_double_array();
+    if (hl.size() != 3) {why = "pick_lying_heights_mm 는 3 개"; return {};}
+    const auto pc = get_parameter("park_center").as_double_array();
+    if (pc.size() != 2) {why = "park_center 는 [x, y]"; return {};}
+    const double g = get_parameter("park_grasp_offset_mm").as_double() / 1000.0;
+    const double floor_z = get_parameter("park_floor_z").as_double() + model_.team_base_z_floor - model_.base_z_floor;   // 모델 높이 (target_in_model 과 같은 변환)
+    const double clear = get_parameter("park_insert_clear_mm").as_double() / 1000.0;
+    const double push_h = get_parameter("park_push_h_mm").as_double() / 1000.0;
+    const double re_depth = get_parameter("park_regrasp_depth_mm").as_double() / 1000.0;
+    const double v = get_parameter("park_speed_dps").as_double();
+    const double kg = 0.017;
+    // 1) 쥐는 자리: 긴축을 따라 J1 에 가까운 쪽 끝으로 g (먼 쪽을 쥐면 손이 더 뻗어야 함)
+    const Eigen::Vector2d j1 = model_.j1_xy, a_ax(std::cos(axis * M_PI / 180.0), std::sin(axis * M_PI / 180.0));
+    Eigen::Vector2d e1 = a_ax;   // 쥐는 쪽 끝 방향 (짧은 쪽)
+    if ((Eigen::Vector2d(x, y) + g * a_ax - j1).norm() > (Eigen::Vector2d(x, y) - g * a_ax - j1).norm()) {e1 = -a_ax;}
+    const double gx = x + g * e1.x(), gy = y + g * e1.y();
+    std::string pw;
+    const auto P = poses_for(gx, gy, top, axis, hl, cands, open_kw, pw, 0.0, 0.0);   // 수직 손만
+    if (P.size() != 3) {why = "받침 세우기: 누운 퍽을 끝 쪽으로 쥘 수직 손이 안 닿음 (" + pw + ")"; return {};}
+    const double d = -hl.back() / 1000.0;   // 쥐는 깊이 (모델)
+    // 손 좌표의 퍽: 쥘 때 손 b = app × close 가 e1 쪽인지 (받침에서 e1 = 바깥 위 끝이 되게 닫힘축 부호를 고름)
+    const Grip g0 = arm_grip(model_, ticks_to_q(model_, P.back().ticks));
+    const Eigen::Vector3d b0 = g0.app.cross(g0.close);
+    const double s = b0.head<2>().dot(e1) >= 0.0 ? 1.0 : -1.0;
+    // 받침 반지름 · 접선
+    const Eigen::Vector2d sc(pc[0], pc[1]);
+    const Eigen::Vector2d rdir = (sc - j1).normalized();
+    const Eigen::Vector3d R(rdir.x(), rdir.y(), 0.0), T(-rdir.y(), rdir.x(), 0.0), Z = Eigen::Vector3d::UnitZ();
+    // b = app × close. 수직 손 (app = −Z) 에서 close = ±T 이면 b = ∓(−Z × T)... e1 이 바깥 (R) 이 되려면 s·b = R
+    auto solve = [&](const Eigen::Vector2d & xy, double z, double tilt_deg, const Q5 & seed, Q5 & out) {
+        const double t = tilt_deg * M_PI / 180.0;
+        const Eigen::Vector3d app = std::sin(t) * R - std::cos(t) * Z;
+        Eigen::Vector3d close = T;
+        if (s * app.cross(close).dot(std::cos(t) * R + std::sin(t) * Z) < 0.0) {close = -T;}   // e1 = 바깥 위 (기울인 긴축 방향)
+        const auto sols = arm_ik(model_, Eigen::Vector3d(xy.x(), xy.y(), z), app, close, {seed}, 180.0);
+        double best = 1e9;
+        for (const auto & sl : sols) {
+          if (sl.pos_mm < 1.0 && sl.app_deg < 1.0 && sl.roll_deg < 2.0 && ticks_in_range(model_, q_to_ticks(model_, sl.q))) {
+            double dd = 0.0;
+            for (int j = 0; j < 5; ++j) {dd += std::abs(sl.q[j] - seed[j]);}
+            if (dd < best) {best = dd; out = sl.q;}
+          }
+        }
+        return best < 1e8;
+      };
+    std::vector<PathNode> nodes;
+    Q5 q = ticks_to_q(model_, P[0].ticks);
+    auto add = [&](const char * nm, const Eigen::Vector2d & xy, double z, double tilt, double held_kg, double speed, const char * grip) {
+        Q5 qn;
+        if (!solve(xy, z, tilt, q, qn)) {
+          char buf[160];
+          std::snprintf(buf, sizeof(buf), "받침 세우기: %s 자세 (IK) 가 없음 (%.3f, %.3f, z %.3f, 기울임 %.0f°)", nm, xy.x(), xy.y(), z, tilt);
+          why = buf;
+          return false;
+        }
+        q = qn;
+        nodes.push_back(model_node(nm, q_to_ticks(model_, encoder_goal_q(model_, q, held_kg)), speed, grip));
+        return true;
+      };
+    // 2) 받침 바깥 위 수직 → 기울이며 넣기. 아래 끝 (긴 쪽) 끝면 중심 = 받침 중심 − 8 mm (반지름), 가장 낮은 모서리 = 바닥 + clear
+    const double hc = d - lying_h_ / 2.0;   // 손끝 → 퍽 중심 (손 위쪽으로)
+    const double reach = g + puck_h_ / 2.0;  // 쥐는 점 → 아래 끝면 중심 (긴축)
+    const Eigen::Vector2d over = sc + 0.04 * rdir;
+    if (!add("park_over", over, floor_z + 0.0625, 0.0, kg, 0.0, "")) {return {};}
+    double th = get_parameter("park_tilt_deg").as_double();
+    std::vector<PathNode> keep = nodes;
+    Q5 q_keep = q;
+    bool ok = false;
+    for (; th >= 40.0 - 1e-6 && !ok; th -= 5.0) {   // 안 되면 5° 씩 줄여 봄
+      nodes = keep;
+      q = q_keep;
+      const double t = th * M_PI / 180.0;
+      const double tr = -0.008 + hc * std::sin(t) + reach * std::cos(t);
+      const double tz = floor_z + clear - hc * std::cos(t) + reach * std::sin(t) + (lying_h_ / 2.0) * std::cos(t);
+      ok = true;
+      for (int k = 1; k <= 8 && ok; ++k) {
+        const double f = k / 8.0;
+        const Eigen::Vector2d xy = sc + (0.04 + (tr - 0.04) * f) * rdir;
+        ok = add(("park_tilt" + std::to_string(k)).c_str(), xy, floor_z + 0.0625 + (tz - floor_z - 0.0625) * f, th * f, kg, v,
+          k == 8 ? "open" : "");
+      }
+      if (ok) {
+        // 3) 손 빼기 (같은 기울임으로 위로) → 바깥 위 수직 · 오므림 → 밀기
+        const Eigen::Vector2d tip_xy = sc + tr * rdir;
+        ok = add("park_back", tip_xy + 0.01 * rdir, tz + 0.03, th, 0.0, v, "") &&
+          add("park_push_over", sc + 0.06 * rdir, floor_z + 0.0525, 0.0, 0.0, 0.0, "close");
+      }
+    }
+    th += 5.0;
+    if (!ok) {return {};}
+    const double x_stop = -0.0235 + lying_h_ + 0.004 + 0.006;   // 선 퍽 바깥 면 + 4 mm + 손가락 반두께
+    if (!add("park_push_down", sc + 0.06 * rdir, floor_z + push_h, 0.0, 0.0, v, "")) {return {};}
+    for (int k = 1; k <= 4; ++k) {
+      if (!add(("park_push" + std::to_string(k)).c_str(), sc + (0.06 + (x_stop - 0.06) * k / 4.0) * rdir, floor_z + push_h, 0.0, 0.0, v, "")) {return {};}
+    }
+    if (!add("park_push_back", sc + 0.06 * rdir, floor_z + push_h, 0.0, 0.0, v, "") ||
+      !add("park_push_up", sc + 0.06 * rdir, floor_z + 0.0525, 0.0, 0.0, 0.0, "")) {return {};}
+    // 4) 선 퍽 다시 쥐기 (선 자리 = 받침 중심 − 6 mm 쯤, 시뮬)
+    const Eigen::Vector2d cxy = sc - 0.006 * rdir;
+    const double ptop = floor_z + puck_h_;
+    if (!add("park_re_above", cxy, ptop + 0.0075, 0.0, 0.0, 0.0, "open") || !add("park_re_down", cxy, ptop - re_depth, 0.0, 0.0, v, "close") ||
+      !add("park_re_lift", cxy, ptop + 0.0075, 0.0, kg, v, "")) {return {};}
+    pending_tilt_ = 0.0;
+    pending_depth_ = re_depth * 1000.0;
+    pending_lying_ = false;   // 세운 퍽을 쥐고 끝남
+    pending_empty_ = false;
+    RCLCPP_INFO(get_logger(), "PICK 받침 세우기: 누운 퍽 (%.3f, %.3f) 긴축 %.0f° → 끝 쪽 %.0f mm 를 쥐고 받침에 %.0f° 로 넣어 놓고, 받침 바닥 위 %.0f mm 로 밀어 세운 뒤 "
+      "다시 쥠 (윗면 − %.0f mm) → 기준점", x, y, axis, g * 1000.0, th, push_h * 1000.0, re_depth * 1000.0);
+    return pick_path(unfold, P, open_kw, nodes, why, gx, gy, axis, true);
   }
 
   // PICK 경로: 펼치기 → 퍽 위 (열기) → 내림 → 쥐기 (닫기) → 올림 → 들기 (P 세 자세) → 다시 잡기 (again) → 박스 위 기준점.
