@@ -70,6 +70,7 @@ struct ParkCfg
   double regrasp_r{-0.006};      // 선 퍽 다시 쥐는 자리 = 받침 중심에서 반지름 방향 (− = J1 쪽, 시뮬 −6 mm)
   double insert_back{0.0};       // > 0: 다 기울인 자세를 이만큼 위에서 만들고 그 자세 그대로 곧게 내려 넣음 [m] (기울이며 내려가다 턱을 쓸지 않게)
   double insert_extra{0.0};      // 넣는 끝점을 이만큼 더 아래로 [m] (턱에 2–3 mm 걸치면 밀어 넣기)
+  double insert_from_back{0.0};  // 곧게 넣기 출발점을 J1 쪽 (로봇 뒤) 으로 이만큼 [m] → 뒤 위에서 앞 아래로 대각선으로 들어감 (insert_back > 0 일 때)
   int loose_step{-1};           // 넣으며 기울이는 점 중 이 번째부터 손가락을 살짝 풂 (grip "loose", 팔은 안 멈춤). −1 = 안 풂
   double insert_dj3{0.0};        // 넣는 자세 (기울이는 점들) 의 J3 를 이만큼 더 [rad, + = 손끝 위, 넣는 점에서 5° ≈ 위 22 · 바깥 9 mm · 손 5° 덜 기욺]
   double side{0.0348}, length{0.060};

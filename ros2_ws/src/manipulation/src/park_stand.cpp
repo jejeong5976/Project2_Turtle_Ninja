@@ -259,7 +259,7 @@ bool park_nodes(
       // 받침 바깥 위 수직 (반지름 +0.04, 바닥 + 62.5 mm) 에서 기울이며 넣기 — 위치 · 기울임을 같이 나눠 감
       //   insert_back > 0: 기울이기는 insert_back 위 점까지 (다 기울인 자세), 거기서 그 자세로 곧게 내려 넣기 (11-07 실물: 턱에 2–3 mm 걸침)
       const bool straight = c.insert_back > 0.0;
-      const Eigen::Vector3d p_tilt_end = straight ? Eigen::Vector3d(p_ins + c.insert_back * Z) : p_ins;
+      const Eigen::Vector3d p_tilt_end = straight ? Eigen::Vector3d(p_ins + c.insert_back * Z - c.insert_from_back * R) : p_ins;
       const Eigen::Vector3d p_over = at(0.04, c.floor_z + 0.0625);
       ok = add("park_over", p_over, 0.0, c.held_kg, false, "");
       for (int k = 1; k <= c.tilt_steps && ok; ++k) {
