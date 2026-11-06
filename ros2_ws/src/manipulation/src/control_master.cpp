@@ -1952,32 +1952,9 @@ private:
       };
     LyingGrasp lg;
     std::string w;
-    const double max_tilt = get_parameter("park_max_tilt_deg").as_double();
-    if (!lying_grasp(model_, x, y, top, axis, hl, gc, lg, w, max_tilt, accept)) {
+    if (!lying_grasp(model_, x, y, top, axis, hl, gc, lg, w, get_parameter("park_max_tilt_deg").as_double(), accept)) {
       why = "받침 세우기: 쥐기 후보가 다 안 됨 (마지막: " + w + ")";
       return {};
-    }
-    // 손목을 돌려 쥐면 선 퍽처럼 돌림 보정 (pick_offset_rot_mm, 11-07 사용자: 박스에서 돌려 쥘 때 맞춘 값을 세우기에도)
-    //   닫힘축이 접선이면 (긴축이 팔 방향인 누운 퍽) 0 — 그 자리에서 맞춘 pick_offset_lying_tagged_* 와 겹치지 않음
-    {
-      Eigen::Vector2d d;
-      double rot = 0.0;
-      std::string rw;
-      if (!rot_offset(x, y, lg.poses.back().ticks, d, rot, rw)) {why = "받침 세우기: " + rw; return {};}
-      if (d.norm() > 1e-4) {
-        LyingGrasp lg2;
-        std::string w2;
-        if (lying_grasp(model_, x + d.x(), y + d.y(), top, axis, hl, gc, lg2, w2, max_tilt, accept)) {
-          lg = lg2;
-          x += d.x();
-          y += d.y();
-          RCLCPP_INFO(get_logger(), "PICK 받침 세우기: 손목을 기본에서 %+.0f° 돌려 쥠 → 돌림 보정 (%+.1f, %+.1f) mm (pick_offset_rot_mm)", rot,
-            d.x() * 1000.0, d.y() * 1000.0);
-        } else {
-          RCLCPP_WARN(get_logger(), "PICK 받침 세우기: 돌림 보정 (%+.1f, %+.1f) mm 자리로는 쥐기 · 받침 자세가 안 됨 (%s) → 보정 없이", d.x() * 1000.0,
-            d.y() * 1000.0, w2.c_str());
-        }
-      }
     }
     std::vector<PathNode> nodes;
     for (const auto & n : pn) {
