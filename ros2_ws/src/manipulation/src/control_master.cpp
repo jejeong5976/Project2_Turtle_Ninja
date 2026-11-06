@@ -266,6 +266,8 @@ public:
         for (const auto & c : rack_xy_) {rack_pivot_ += c / static_cast<double>(rack_xy_.size());}
         // 칸마다 STORE 보정 [x, y] mm (store_offset_x · y_mm 와 더함): ros2 param set /control_master store_offset.S7 "[0.0, 5.0]"
         for (const auto & n : rack_names_) {declare_parameter<std::vector<double>>("store_offset." + n, std::vector<double>{0.0, 0.0});}
+        // 칸마다 RETRIEVE 보정 [x, y] 또는 [x, y, 높이] mm (11-07: STORE 보정은 빼기에 안 들어감 → 따로): ros2 param set /control_master retrieve_offset.S12 "[-10.0, -5.0]"
+        for (const auto & n : rack_names_) {declare_parameter<std::vector<double>>("retrieve_offset." + n, std::vector<double>{0.0, 0.0});}
       }
     }
     rack_ref_file_ = declare_parameter<std::string>("rack_reference_file", "~/.ros/rack_reference.txt");
@@ -1204,6 +1206,12 @@ private:
         return false;
       }
       d_set = Eigen::Vector2d(ox, oy) / 1000.0;
+    } else if (known) {
+      const auto c = get_parameter("retrieve_offset." + cell).as_double_array();
+      if (c.size() != 2 && c.size() != 3) {why = "retrieve_offset." + cell + " 는 [x, y] 또는 [x, y, 높이] mm"; return false;}
+      if (!std::isfinite(c[0]) || !std::isfinite(c[1])) {why = "retrieve_offset." + cell + " 가 숫자가 아님"; return false;}
+      d_set = Eigen::Vector2d(c[0], c[1]) / 1000.0;
+      if (c.size() == 3 && std::isfinite(c[2])) {dz = c[2] / 1000.0;}
     }
     const Eigen::Vector2d d = d_rack + d_set;
     if (d.norm() < 1e-6 && std::fabs(dz) < 1e-6) {return true;}
@@ -1226,7 +1234,7 @@ private:
       return true;
     }
     const Eigen::Vector2d du = d * used;
-    RCLCPP_INFO(get_logger(), "%s: 칸 근처를 (%+.1f, %+.1f) mm · 높이 %+.1f mm 옮김%s = 적재함 움직임 (%+.1f, %+.1f) + store_offset (%+.1f, %+.1f) "
+    RCLCPP_INFO(get_logger(), "%s: 칸 근처를 (%+.1f, %+.1f) mm · 높이 %+.1f mm 옮김%s = 적재함 움직임 (%+.1f, %+.1f) + 칸 보정 (%+.1f, %+.1f) "
       "(점 %d 개 · 관절 최대 %.2f° · 손끝 어긋남 %.2f mm)", name.c_str(), du.x() * 1000.0, du.y() * 1000.0, dz * used * 1000.0,
       used < 1.0 ? (" (다 옮기면 관절 범위 밖 → " + std::to_string(static_cast<int>(used * 100)) + " %)").c_str() : "",
       d_rack.x() * 1000.0, d_rack.y() * 1000.0, d_set.x() * 1000.0, d_set.y() * 1000.0, rep.moved, rep.max_joint_deg, rep.worst_pos_mm);
