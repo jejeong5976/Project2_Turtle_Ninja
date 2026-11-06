@@ -1031,8 +1031,8 @@ private:
     d.setZero();
     rot_deg = 0.0;
     const auto r = get_parameter("pick_offset_rot_mm").as_double_array();
-    if (r.size() != 2 || !std::isfinite(r[0]) || !std::isfinite(r[1]) || std::hypot(r[0], r[1]) > 15.0) {
-      why = "pick_offset_rot_mm 는 [앞, 왼쪽] mm 두 개 (15 mm 까지)";
+    if (r.size() != 2 || !std::isfinite(r[0]) || !std::isfinite(r[1])) {
+      why = "pick_offset_rot_mm 는 [앞, 왼쪽] mm 두 개";
       return false;
     }
     const Eigen::Vector3d c = arm_grip(model_, ticks_to_q(model_, t)).close;
@@ -1525,8 +1525,8 @@ private:
       const char * px = tag_centre ? (lying ? "pick_offset_lying_tagged_x_mm" : "pick_offset_tagged_x_mm") : "pick_offset_x_mm";
       const char * py = tag_centre ? (lying ? "pick_offset_lying_tagged_y_mm" : "pick_offset_tagged_y_mm") : "pick_offset_y_mm";
       const double ox = get_parameter(px).as_double(), oy = get_parameter(py).as_double();
-      if (!std::isfinite(ox) || !std::isfinite(oy) || std::hypot(ox, oy) > 25.0) {
-        why = std::string(px) + " · " + py + " 가 숫자가 아니거나 25 mm 넘음";
+      if (!std::isfinite(ox) || !std::isfinite(oy)) {
+        why = std::string(px) + " · " + py + " 가 숫자가 아님";
         return {};
       }
       if (tag_centre) {
@@ -1871,8 +1871,22 @@ private:
     gc.min_margin = get_parameter("park_roll_margin_mm").as_double() / 1000.0;
     gc.max_roll_deg = get_parameter("park_max_roll_deg").as_double();
     open_kw = cands.empty() ? "open" : cands.front().second;
-    // 이웃 퍽 ↔ 손가락 (위에서 본 발자국, 기울인 손은 손가락이 기운 만큼 넓게)
-    auto accept = [&](const LyingGrasp & g, std::string & w) {
+    ParkCfg pk;
+    pk.center = Eigen::Vector2d(pc[0], pc[1]);
+    pk.floor_z = get_parameter("park_floor_z").as_double() + model_.team_base_z_floor - model_.base_z_floor;   // 모델 높이 (target_in_model 과 같은 변환)
+    pk.elev_deg = get_parameter("park_tilt_deg").as_double();
+    pk.min_elev_deg = std::min(40.0, pk.elev_deg);
+    pk.insert_clear = get_parameter("park_insert_clear_mm").as_double() / 1000.0;
+    pk.end_inset = get_parameter("park_end_inset_mm").as_double() / 1000.0;
+    pk.push_h = get_parameter("park_push_h_mm").as_double() / 1000.0;
+    pk.regrasp_depth = get_parameter("park_regrasp_depth_mm").as_double() / 1000.0;
+    pk.side = lying_h_;
+    pk.length = puck_h_;
+    std::vector<ParkNode> pn;
+    double elev = 0.0;
+    // 쥐기 후보마다: 이웃 퍽 ↔ 손가락 (위에서 본 발자국, 기울인 손은 손가락이 기운 만큼 넓게) · 그 쥐기로 받침 자세까지 되는지
+    //   (11-06 실물: 첫 후보만 받침 자세를 풀어 park_over IK 안 됨 → 거절. 다른 끝 · 닫힘 부호 후보는 됨)
+    auto fingers_clear = [&](const LyingGrasp & g, std::string & w) {
         if (last_nb_.empty() || g.tilt_deg <= 0.0) {return true;}
         FingerTip f;
         const double dz = std::max(0.0, -hl.back() / 1000.0);
@@ -1888,26 +1902,15 @@ private:
         w = buf;
         return false;
       };
+    auto accept = [&](const LyingGrasp & g, std::string & w) {
+        return fingers_clear(g, w) && park_nodes(model_, pk, g, ticks_to_q(model_, g.poses[0].ticks), pn, elev, w);
+      };
     LyingGrasp lg;
     std::string w;
     if (!lying_grasp(model_, x, y, top, axis, hl, gc, lg, w, get_parameter("park_max_tilt_deg").as_double(), accept)) {
-      why = "받침 세우기: 누운 퍽을 쥘 손이 안 닿음 (" + w + ")";
+      why = "받침 세우기: 쥐기 후보가 다 안 됨 (마지막: " + w + ")";
       return {};
     }
-    ParkCfg pk;
-    pk.center = Eigen::Vector2d(pc[0], pc[1]);
-    pk.floor_z = get_parameter("park_floor_z").as_double() + model_.team_base_z_floor - model_.base_z_floor;   // 모델 높이 (target_in_model 과 같은 변환)
-    pk.elev_deg = get_parameter("park_tilt_deg").as_double();
-    pk.min_elev_deg = std::min(40.0, pk.elev_deg);
-    pk.insert_clear = get_parameter("park_insert_clear_mm").as_double() / 1000.0;
-    pk.end_inset = get_parameter("park_end_inset_mm").as_double() / 1000.0;
-    pk.push_h = get_parameter("park_push_h_mm").as_double() / 1000.0;
-    pk.regrasp_depth = get_parameter("park_regrasp_depth_mm").as_double() / 1000.0;
-    pk.side = lying_h_;
-    pk.length = puck_h_;
-    std::vector<ParkNode> pn;
-    double elev = 0.0;
-    if (!park_nodes(model_, pk, lg, ticks_to_q(model_, lg.poses[0].ticks), pn, elev, w)) {why = "받침 세우기: " + w; return {};}
     std::vector<PathNode> nodes;
     for (const auto & n : pn) {
       // 미는 구간 (park_push_down · 1–4 · back) 만 park_push_speed_dps (11-06 시뮬: 50 °/s 면 기대는 각 49° 아래에서 넘어짐, 20 °/s 면 ±2–4 mm 오차에도 섬)
