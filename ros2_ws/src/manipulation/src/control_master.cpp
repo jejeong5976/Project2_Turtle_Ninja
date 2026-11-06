@@ -1155,8 +1155,8 @@ private:
           }
         }
       }
-      if (!std::isfinite(ox) || !std::isfinite(oy) || std::hypot(ox, oy) > 20.0) {
-        why = "store_offset (넣는 점 맞추기 + 전체 + 칸 " + cell + ") 가 숫자가 아니거나 20 mm 넘음";
+      if (!std::isfinite(ox) || !std::isfinite(oy)) {
+        why = "store_offset (넣는 점 맞추기 + 전체 + 칸 " + cell + ") 가 숫자가 아님";
         return false;
       }
       d_set = Eigen::Vector2d(ox, oy) / 1000.0;
