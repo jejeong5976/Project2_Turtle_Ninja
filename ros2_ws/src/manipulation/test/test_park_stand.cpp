@@ -73,7 +73,7 @@ TEST(ParkStand, VerticalGraspMatchesOldFormula)
   EXPECT_NEAR(s.tip.z(), tz, 1e-3);
 }
 
-// 당기며 놓기: 넣는 점은 loose, 아래 끝면 중심 둘레로 J1 쪽 수평 release_pull 만큼 · 위로, 끝점에서 open. 손 기울임 그대로
+// 당기며 놓기: 넣는 점은 loose, 같은 높이로 J1 쪽 release_pull 만큼 곧게, 끝점에서 open. 손 기울임 그대로
 TEST(ParkStand, ReleasePullMovesTowardJ1)
 {
   const auto m = kin_data::model();
@@ -98,7 +98,7 @@ TEST(ParkStand, ReleasePullMovesTowardJ1)
     const Eigen::Vector2d rdir = (pk.center - m.j1_xy).normalized();
     const Grip a = arm_grip(m, ins->q), b = arm_grip(m, p3->q);
     EXPECT_NEAR((a.tip - b.tip).head<2>().dot(rdir), 0.010, 1e-3);
-    EXPECT_GT(b.tip.z(), a.tip.z());
+    EXPECT_NEAR(b.tip.z(), a.tip.z(), 1e-3);
     EXPECT_NEAR(a.app.normalized().dot(b.app.normalized()), 1.0, 1e-4);
     EXPECT_EQ(pn[static_cast<size_t>(p3 - pn.data()) + 1].name, "park_back");
   }
