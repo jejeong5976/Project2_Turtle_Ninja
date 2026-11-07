@@ -104,6 +104,41 @@ TEST(ParkStand, ReleasePullMovesTowardJ1)
   }
 }
 
+// 넣는 끝점을 손등 (손목 카메라) 쪽으로: release_up 없을 때보다 손 축에 수직 app × close 로 5 mm, 따로 멈추는 점 없음, 기울임 그대로
+TEST(ParkStand, ReleaseUpShiftsInsertTowardCameraSide)
+{
+  const auto m = kin_data::model();
+  LyingGraspCfg gc;
+  auto plan = [&](bool straight, double up, std::vector<ParkNode> & pn) {
+      ParkCfg pk;
+      if (straight) {pk.insert_back = 0.015; pk.insert_extra = 0.003;}
+      pk.release_up = up;
+      double elev = 0.0;
+      auto accept = [&](const LyingGrasp & c, std::string & w) {return park_nodes(m, pk, c, ticks_to_q(m, c.poses[0].ticks), pn, elev, w);};
+      LyingGrasp g;
+      std::string why;
+      return lying_grasp(m, 0.205, 0.0, kTop, 0.0, kHeights, gc, g, why, 0.0, accept);
+    };
+  for (bool straight : {false, true}) {
+    std::vector<ParkNode> p0, p5;
+    ASSERT_TRUE(plan(straight, 0.0, p0));
+    ASSERT_TRUE(plan(straight, 0.005, p5));
+    EXPECT_EQ(p0.size(), p5.size());
+    const std::string nm = straight ? "park_insert" : "park_tilt8";
+    const ParkNode * a0 = find(p0, nm);
+    const ParkNode * a5 = find(p5, nm);
+    ASSERT_NE(a0, nullptr);
+    ASSERT_NE(a5, nullptr);
+    EXPECT_EQ(a5->grip, "open");
+    const Grip g0 = arm_grip(m, a0->q), g5 = arm_grip(m, a5->q);
+    const Eigen::Vector3d u = g0.app.cross(g0.close).normalized();
+    EXPECT_NEAR((g5.tip - g0.tip).dot(u), 0.005, 3e-4);
+    EXPECT_NEAR((g5.tip - g0.tip).norm(), 0.005, 3e-4);
+    EXPECT_GT(u.z(), 0.3);   // 넣는 자세에서 손등 (카메라) 쪽 = 위 바깥
+    EXPECT_NEAR(g0.app.normalized().dot(g5.app.normalized()), 1.0, 1e-4);
+  }
+}
+
 // 먼 접선 방향 누운 퍽: 손을 기울이면 닫힘축이 팔 평면 안에서 기울어 퍽이 굴러 손가락에 맞음
 TEST(ParkStand, FarTangentialPuckRollsIntoTiltedHand)
 {
