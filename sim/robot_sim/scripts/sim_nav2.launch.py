@@ -1,4 +1,4 @@
-"""sim_nav2.launch.py — 시뮬 Nav2 시험: robot_state_publisher(배포판 URDF) + navigation/nav2.launch.py (use_sim_time) + RViz
+"""sim_nav2.launch.py — 시뮬 Nav2 시험: robot_state_publisher(배포판 URDF) + scan_merger (/scan) + navigation/nav2.launch.py (use_sim_time) + RViz
 
   먼저 시뮬:  sim/robot_sim/scripts/sim_nav_bridge.sh [--viz kit --camera --real]
   그다음:    ros2 launch sim/robot_sim/scripts/sim_nav2.launch.py [map:=<지도.yaml>] [rviz:=false]
@@ -35,15 +35,22 @@ def rsp(context):
 def generate_launch_description():
     nav = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(get_package_share_directory("navigation"), "launch", "nav2.launch.py")),
-        launch_arguments={"map": LaunchConfiguration("map"), "use_sim_time": "true",
+        # 시뮬은 slam_toolbox 없이 미리 만든 지도 -> AMCL
+        launch_arguments={"localization": "amcl", "map": LaunchConfiguration("map"), "use_sim_time": "true",
                           "rviz": LaunchConfiguration("rviz"), "params": LaunchConfiguration("params"),
-                          "initial_pose": LaunchConfiguration("initial_pose")}.items())
+                          "initial_pose": LaunchConfiguration("initial_pose"),
+                          "mission_hold": LaunchConfiguration("mission_hold")}.items())
     return LaunchDescription([
         DeclareLaunchArgument("map", default_value=os.path.join(SIM, "maps", "maze_dice_map.yaml")),
         DeclareLaunchArgument("params", default_value=os.path.normpath(REPO_NAV2)),
         DeclareLaunchArgument("rviz", default_value="true"),
         # 기본 = 주사위 경기장 출발 자세 (dice_layout.json mission.start_pose: 발제 (734, 950) mm, −X 방향)
         DeclareLaunchArgument("initial_pose", default_value=dice_start()),
+        # 시뮬 Nav2 시험은 보통 planning 없이 → 기본 false (mission_manager 와 같이 띄우면 true)
+        DeclareLaunchArgument("mission_hold", default_value="false"),
         OpaqueFunction(function=rsp),
+        # collision_monitor 입력 /scan (실물은 slam.launch.py 가 띄움). 레포 navigation 설정 = 실물과 같은 몸 상자
+        Node(package="navigation", executable="scan_merger", name="scan_merger", output="log",
+             parameters=[os.path.join(get_package_share_directory("navigation"), "config", "navigation.yaml"), {"use_sim_time": True}]),
         nav,
     ])

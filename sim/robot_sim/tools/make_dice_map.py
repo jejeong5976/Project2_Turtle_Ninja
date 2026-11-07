@@ -9,14 +9,14 @@
   -> 발제 부품표 '긴 벽판 30 · 짧은 벽판 32 · 기둥 30 + 40 = 70' 과 개수 일치.
   그림에서 x 1101 세로벽 아래 끝은 주석 상자에 가려짐 -> y 583 기둥까지로 둠 (그래야 긴 벽판 30장이 맞음)
 소품 (발제 p.2·p.7 값):
-  시작 박스 6 (205×205×70) · L1/L3 배치대 (205 박스) · 중앙 받침대 820×820×70 (410 박스 4개, 중심 (2202, 3495) 은 그림 실측,
-  L2 = 북쪽 두 박스 중심선 y 3700 과 맞음) · 장소 태그 ID 12–14 (접근 방향 면, 중심 높이 35 mm) ·
+  시작 박스 6 (205×205×70) · L1/L2/L3 배치대 (205 박스, L2 = 옛 중앙 받침대 820×820 자리 중심 (2202, 3495), 2026-11-04 튜터 확인) ·
+  장소 태그 ID 12–14 (접근 방향 면, 중심 높이 35 mm) ·
   신호등 (하단 (80, 950, 0), +X 방향) · 바코드 판 (중심 (80, 650, 450), +X 방향)
 가정 (발제에 없음, 바꾸려면 아래 상수):
   - 3030 / R3 기둥 구분: 바깥 734·788 격자점 = 3030 (28개), 나머지 = R3 (실물 30 / 40 과 2개 차이, 겉모습만 다름)
   - 신호등 = 팀 STL040 (Ø40 3단) 을 바닥에 세움, 받침 Ø60×30 mm. 실물 높이 · 발광면 높이 확인 필요
   - 바코드 받침 = 20×20 프로파일 기둥, 판 70 × 24 mm (실측)
-  - L1 태그 = 박스 서쪽 면, L2 = 받침대 북쪽 면, L3 = 박스 남쪽 면 (그림의 관찰 원 위치 = 접근 방향)
+  - L1 태그 = 박스 서쪽 면, L2 = 박스 북쪽 면, L3 = 박스 남쪽 면 (그림의 관찰 원 위치 = 접근 방향)
   - 출발 구역 = 그림 실측 약 600 × 600 mm, 중심 (734, 950)
   - 퍽 ID · 색 · 모양 = 문제 파일 (mazes/dice_problem_*.json). placement.csv 받으면 그 값으로
 출력: mazes/dice_layout.json, usd/mazes/dice.usd (벽 + 박스 + 태그 + 바코드 + 신호등, 정적), usd/props/dice/puck_<ID>.usda (동적 퍽 12개)
@@ -49,13 +49,12 @@ INNER = [((1, 6), (1, 7)),                                        # 시작 박�
          ((1, 2), (1, 3)), ((1, 2), (2, 2)), ((2, 1), (2, 2)), ((1, 1), (2, 1)), ((1, 0), (1, 1)),   # 왼쪽 아래
          ((3, 1), (4, 1)), ((4, 1), (5, 1))]                      # L1 위
 
-BOX_S, BOX_L, BOX_HT = 205, 410, 70
+BOX_S, BOX_HT = 205, 70
 START_BOXES = {1: (1468, 950), 2: (3670, 3152), 3: (2936, 5354), 4: (734, 5354), 5: (2202, 5354), 6: (3670, 3886)}
 PUCK_DX = 40                              # 시작 박스 중심 X ±40, Y 0
-PLATFORM_C = (2202, 3495)                 # 중앙 받침대 (410 × 4) 중심, 그림 실측
 LOCS = {   # 이름: 격자 중심, 태그 ID, 태그 면 중심 (z 35), 태그 바깥 법선, 접근 관찰점 (그림의 원, 대략)
     'L1': {'center': (3670, 950), 'tag_id': 12, 'tag_xy': (3670 - BOX_S / 2, 950), 'normal': (-1, 0), 'approach': (3230, 950)},
-    'L2': {'center': (2202, 3700), 'tag_id': 13, 'tag_xy': (2202, PLATFORM_C[1] + BOX_L), 'normal': (0, 1), 'approach': (2202, 4270)},
+    'L2': {'center': (2202, 3495), 'tag_id': 13, 'tag_xy': (2202, 3495 + BOX_S / 2), 'normal': (0, 1), 'approach': (2202, 3940)},
     'L3': {'center': (3670, 5354), 'tag_id': 14, 'tag_xy': (3670, 5354 - BOX_S / 2), 'normal': (0, -1), 'approach': (3670, 4900)},
 }
 TAG_Z = 35
@@ -117,9 +116,7 @@ def walls():
 def mission_boxes():
     """정적 박스 (이름, 시뮬 중심 xy, 한 변 m). 위 면 z = 0.070."""
     out = [(f'start_{k}', to_sim(*c), m(BOX_S)) for k, c in START_BOXES.items()]
-    out += [('place_L1', to_sim(*LOCS['L1']['center']), m(BOX_S)), ('place_L3', to_sim(*LOCS['L3']['center']), m(BOX_S))]
-    for k, (dx, dy) in enumerate(((-1, -1), (1, -1), (-1, 1), (1, 1))):
-        out.append((f'platform_{k}', to_sim(PLATFORM_C[0] + dx * BOX_L / 2, PLATFORM_C[1] + dy * BOX_L / 2), m(BOX_L)))
+    out += [(f'place_{n}', to_sim(*L['center']), m(BOX_S)) for n, L in LOCS.items()]
     return out
 
 
@@ -218,14 +215,13 @@ def main():
                                            'red': [TL_BASE[1] + 0.072, TL_BASE[1] + 0.107]}, 'top_z_m': round(tl_top, 4)},
             'barcode': {'arena_mm': list(BARCODE), 'sim_m': [*to_sim(*BARCODE[:2]), m(BARCODE[2])], 'facing': '+X', 'code': prob['barcode']},
             'start_boxes': {str(k): {'arena_mm': list(c), 'sim_m': list(to_sim(*c))} for k, c in START_BOXES.items()},
-            'platform': {'arena_mm': list(PLATFORM_C), 'sim_m': list(to_sim(*PLATFORM_C)), 'size_m': [0.82, 0.82, 0.07]},
             'places': {n: {'tag_id': L['tag_id'], 'center_arena_mm': list(L['center']), 'center_sim_m': list(to_sim(*L['center'])),
                            'tag_arena_mm': [*L['tag_xy'], TAG_Z], 'tag_sim_m': [*to_sim(*L['tag_xy']), m(TAG_Z)],
                            'tag_normal': list(L['normal']), 'approach_arena_mm': list(L['approach']),
                            'grid_step_m': m(GRID_STEP), 'top_z_m': m(BOX_HT)} for n, L in LOCS.items()},
             'pucks': pucks,
         },
-        'assumptions': '3030/R3 구분, 신호등 크기 · 받침, 바코드 기둥, 태그 면, 출발 구역 크기, 중앙 받침대 중심 = 그림 실측. 퍽 배정 = 문제 파일',
+        'assumptions': '3030/R3 구분, 신호등 크기 · 받침, 바코드 기둥, 태그 면, 출발 구역 크기, L2 박스 중심 (옛 중앙 받침대 중심) = 그림 실측. 퍽 배정 = 문제 파일',
     }
     (HERE / 'mazes' / 'dice_layout.json').write_text(json.dumps(layout, indent=1, ensure_ascii=False))
     print(f"dice.usd: 벽판 긴 {counts['panels_long_720']} · 짧은 {counts['panels_short_380']}, 기둥 {counts['nodes']} "

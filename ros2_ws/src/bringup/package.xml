@@ -3,7 +3,7 @@
 <package format="3">
   <name>bringup</name>
   <version>0.1.0</version>
-  <description>F팀 닌자터틀 — 로봇 전체 실행(robot.launch.py) + ros2_control 컨트롤러 설정</description>
+  <description>F팀 닌자터틀 — 로봇 실행(robot.launch.py) · 인지 쪽 전체 실행(bringup.launch.py) + 공용 설정 config/</description>
   <maintainer email="team@example.com">F팀 닌자터틀</maintainer>
   <license>Apache-2.0</license>
 
@@ -23,6 +23,14 @@
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>xacro</exec_depend>
   <exec_depend>rviz2</exec_depend>
+
+  <!-- bringup.launch.py (인지 쪽 전체). navigation 은 bringup 을 exec_depend 해서 여기 안 넣음 (순환) -->
+  <exec_depend>perception</exec_depend>
+  <exec_depend>mission</exec_depend>
+  <exec_depend>realsense2_camera</exec_depend>
+  <exec_depend>usb_cam</exec_depend>
+  <exec_depend>image_transport</exec_depend>
+  <exec_depend>compressed_image_transport</exec_depend>
 
 
   <export>

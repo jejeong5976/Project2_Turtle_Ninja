@@ -12,7 +12,11 @@
 그리퍼 가림: 카메라 · 그리퍼가 같은 손목 링크에 붙어 있어 화면 속 가림 영역은 팔 자세와 무관, 손가락 벌림(--finger)만으로 정해짐
       손가락 관절 = URDF gripper_finger_*_joint (아래 −0.021254 = 닫힘 16 mm, 0 = 58.5 mm, 위 0.010247 = 최대 79 mm)
 
+--region x0,x1,y_half 면 8×8 영역 대신 이 직사각형 (base_link x · y, 윗면 ~ +6 cm) 전체를 봐야 함, --shelf 로 앞 장애물 크기를 바꿈
+  (2026-11-02 발제 v5 박스: 정차점에서 박스 중심 0.2935 m, 205 mm 박스 앞면 0.191 m. 박스 퍽 ±61 mm + 정차 오차 → --region 0.22,0.385,0.08)
+
 예) cd sim/robot_sim && python3 tools/find_look_pose.py --out /tmp/look
+    python3 tools/find_look_pose.py --shelf 0.191,0.205,0.205 --region 0.22,0.385,0.08 --out /tmp/look_dice
 """
 import argparse
 import json
@@ -157,6 +161,8 @@ def main():
     ap_.add_argument('--tilt_deg', type=float, default=0.0, help='경첩 각도 URDF 대비 추가분 (− = 그리퍼 쪽). URDF = 실물 추정 −12° 반영 (2026-10-29, 광축 ↔ 손가락 31°). 배포판 camera40 = +12')
     ap_.add_argument('--pivot', default='0,0.028,-0.017', help='경첩 핀 위치 (URDF 광학 좌표 m, 브래킷 STL 어림값)')
     ap_.add_argument('--targets', default='0.26,0.30,0.34', help='8×8 영역 중심의 base_link x (m). 선반 앞면 0.163, 뒷면 0.433 (0.22 는 차체가 화면에 크게 들어와 뺌)')
+    ap_.add_argument('--region', default='', help='x0,x1,y_half: 봐야 할 직사각형 (base_link m, 선반 윗면 ~ +6 cm). 주면 --targets 무시')
+    ap_.add_argument('--shelf', default='', help='앞면x,깊이,폭 (m): 팔이 들어가면 안 되는 앞 장애물. 기본 = 예전 선반 0.163,0.27,0.27')
     ap_.add_argument('--fingers', default='-0.021254,0.010247', help='가림 검사에 합칠 손가락 관절값들 (기본 = 닫힘 16 mm + 최대 79 mm)')
     ap_.add_argument('--w_body', type=float, default=4.0, help='차체 · 팔이 화면을 차지한 비율 벌점 (비율 0.25 -> +1)')
     ap_.add_argument('--w_center', type=float, default=1.0, help='영역 중심이 화면 가운데에서 반폭만큼 떨어지면 +이 값')
@@ -197,6 +203,12 @@ def main():
     seed = dict(json.loads((ROOT / 'robot_description' / 'config' / 'initial_pose.json').read_text())['poses']['LOOK_PUCK']['q_rad'])   # 현재 LOOK_PUCK
     targets = [float(x) for x in a.targets.split(',')]
     box = np.array([[sx * 0.04, sy * 0.04, sz] for sx in (-1, 0, 1) for sy in (-1, 0, 1) for sz in (0.0, 0.03, 0.06)])  # 8×8×6 cm 상자 점
+    if a.region:                                            # 직사각형 영역: 목표 x 0 + 절대 좌표 점 (가운데 = 13 번째 점)
+        rx0, rx1, ryh = (float(x) for x in a.region.split(','))
+        xs, ys = (rx0, (rx0 + rx1) / 2, rx1), (-ryh, 0.0, ryh)
+        box = np.array([[x, y, z] for x in xs for y in ys for z in (0.0, 0.03, 0.06)])
+        targets = [0.0]
+    shelf_front, shelf_d, shelf_w = (float(x) for x in a.shelf.split(',')) if a.shelf else (SHELF_FRONT, SHELF[0], SHELF[1])
 
     def evaluate(q, tx):
         tl, Rl = ap.link_pose(fk, q, CAM)
@@ -255,8 +267,8 @@ def main():
         pts = fk.points(q)
         if not fk.ok(pts, body_min_z, pole_xy):
             continue
-        x0, x1 = SHELF_FRONT, SHELF_FRONT + SHELF[0]
-        if ((pts[:, 0] > x0) & (pts[:, 0] < x1) & (np.abs(pts[:, 1]) < SHELF[1] / 2) & (pts[:, 2] < ZTOP + 0.02)).any():
+        x0, x1 = shelf_front, shelf_front + shelf_d
+        if ((pts[:, 0] > x0) & (pts[:, 0] < x1) & (np.abs(pts[:, 1]) < shelf_w / 2) & (pts[:, 2] < ZTOP + 0.02)).any():
             continue
         if (pts[:, 0] > x1 - 0.02).any():
             continue

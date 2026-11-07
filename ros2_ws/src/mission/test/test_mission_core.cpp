@@ -5,6 +5,8 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <set>
 
 #include "mission/dice.hpp"
@@ -15,18 +17,44 @@
 using namespace mission;
 
 // ============================================================================ task_parser
+namespace
+{
+// 레포 maps/dice_barcodes.json
+const BarcodeTable & barcodes()
+{
+  static const BarcodeTable t = [] {
+      BarcodeTable b;
+      std::string err;
+      EXPECT_TRUE(load_barcode_table(TEST_BARCODE_TABLE, b, &err)) << err;
+      return b;
+    }();
+  return t;
+}
+
+// 임시 바코드 표 파일을 쓰고 읽어 봄
+bool load_text(const std::string & text, BarcodeTable & out, std::string * err)
+{
+  const auto path = std::filesystem::temp_directory_path() / "dice_barcodes_test.json";
+  std::ofstream(path) << text;
+  const bool ok = load_barcode_table(path.string(), out, err);
+  std::filesystem::remove(path);
+  return ok;
+}
+}  // namespace
+
 TEST(TaskParser, DiceBarcodes)
 {
   // 발제 v5: P2-01 · P2-03 오름차순, P2-02 · P2-04 내림차순
+  EXPECT_EQ(barcodes().size(), 4u);
   for (const std::string code : {"P2-01", "P2-03"}) {
-    const auto t = parse_task(code);
+    const auto t = parse_task(code, barcodes());
     ASSERT_TRUE(t.has_value()) << code;
     EXPECT_EQ(t->dice_order, DiceOrder::Ascending);
     EXPECT_EQ(t->task_id, code);
     EXPECT_EQ(t->raw_text, code);
   }
   for (const std::string code : {"P2-02", "P2-04"}) {
-    const auto t = parse_task(code);
+    const auto t = parse_task(code, barcodes());
     ASSERT_TRUE(t.has_value()) << code;
     EXPECT_EQ(t->dice_order, DiceOrder::Descending);
   }
@@ -34,7 +62,7 @@ TEST(TaskParser, DiceBarcodes)
 
 TEST(TaskParser, TrimsWhitespace)
 {
-  const auto t = parse_task("  P2-02 \r\n");
+  const auto t = parse_task("  P2-02 \r\n", barcodes());
   ASSERT_TRUE(t.has_value());
   EXPECT_EQ(t->task_id, "P2-02");
   EXPECT_EQ(t->dice_order, DiceOrder::Descending);
@@ -43,11 +71,28 @@ TEST(TaskParser, TrimsWhitespace)
 TEST(TaskParser, RejectsUnregistered)
 {
   std::string err;
-  EXPECT_FALSE(parse_task("", &err).has_value());
-  EXPECT_FALSE(parse_task("P2-05", &err).has_value());          // 미등록
+  EXPECT_FALSE(parse_task("", barcodes(), &err).has_value());
+  EXPECT_FALSE(parse_task("P2-05", barcodes(), &err).has_value());          // 미등록
   EXPECT_NE(err.find("미등록"), std::string::npos);
-  EXPECT_FALSE(parse_task("p2-01", &err).has_value());          // 대소문자 다름 = 미등록
-  EXPECT_FALSE(parse_task("move;7;shelf_C", &err).has_value()); // 옛 시험 형식 안 받음
+  EXPECT_FALSE(parse_task("p2-01", barcodes(), &err).has_value());          // 대소문자 다름 = 미등록
+  EXPECT_FALSE(parse_task("move;7;shelf_C", barcodes(), &err).has_value()); // 옛 시험 형식 안 받음
+  EXPECT_FALSE(parse_task("P2-01", BarcodeTable{}, &err).has_value());     // 빈 표 = 전부 미등록
+}
+
+TEST(TaskParser, BarcodeTableRejectsBadFiles)
+{
+  BarcodeTable t;
+  std::string err;
+  EXPECT_FALSE(load_text("{\"barcodes\": []}", t, &err));                                              // 빈 목록
+  EXPECT_FALSE(load_text("{\"barcodes\": [{\"barcode\": \"P2-01\", \"sortOrder\": \"UP\"}]}", t, &err));   // ASC · DESC 아님
+  EXPECT_NE(err.find("sortOrder"), std::string::npos);
+  EXPECT_FALSE(load_text("{\"barcodes\": [{\"barcode\": \"P2-01\", \"sortOrder\": \"ASC\"}, "
+    "{\"barcode\": \"P2-01\", \"sortOrder\": \"DESC\"}]}", t, &err));                                // 같은 바코드 두 번
+  EXPECT_FALSE(load_text("{\"barcodes\": [{\"sortOrder\": \"ASC\"}]}", t, &err));                      // 바코드 없음
+  EXPECT_FALSE(load_barcode_table("/없는/파일.json", t, &err));
+  EXPECT_TRUE(t.empty());                                                                                 // 실패하면 안 바꿈
+  ASSERT_TRUE(load_text("{\"barcodes\": [{\"barcode\": \"X1\", \"sortOrder\": \"DESC\", \"sortLabel\": \"내림차순\"}]}", t, &err)) << err;
+  EXPECT_EQ(t.at("X1"), DiceOrder::Descending);
 }
 
 // ============================================================================ signal_recorder (발제 v5 신호등 12 번 점멸)
@@ -210,14 +255,14 @@ std::string groups_str(const std::array<char, 3> & g) {return std::string(g.begi
 
 TEST(Dice, ParsesBarcodeOrder)
 {
-  EXPECT_EQ(parse_dice_barcode("P2-01"), DiceOrder::Ascending);
-  EXPECT_EQ(parse_dice_barcode(" P2-03\n"), DiceOrder::Ascending);
-  EXPECT_EQ(parse_dice_barcode("P2-02"), DiceOrder::Descending);
-  EXPECT_EQ(parse_dice_barcode("P2-04"), DiceOrder::Descending);
+  EXPECT_EQ(parse_dice_barcode("P2-01", barcodes()), DiceOrder::Ascending);
+  EXPECT_EQ(parse_dice_barcode(" P2-03\n", barcodes()), DiceOrder::Ascending);
+  EXPECT_EQ(parse_dice_barcode("P2-02", barcodes()), DiceOrder::Descending);
+  EXPECT_EQ(parse_dice_barcode("P2-04", barcodes()), DiceOrder::Descending);
   std::string err;
-  EXPECT_FALSE(parse_dice_barcode("P2-05", &err).has_value());   // 미등록 = 오류 정지
+  EXPECT_FALSE(parse_dice_barcode("P2-05", barcodes(), &err).has_value());   // 미등록 = 오류 정지
   EXPECT_NE(err.find("미등록"), std::string::npos);
-  EXPECT_FALSE(parse_dice_barcode("", &err).has_value());
+  EXPECT_FALSE(parse_dice_barcode("", barcodes(), &err).has_value());
 }
 
 TEST(Dice, SortsGroupsWithRygTieOrder)

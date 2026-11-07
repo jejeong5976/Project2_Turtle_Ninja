@@ -30,6 +30,7 @@ add_library(planning_core STATIC
   src/puck_registry.cpp
   src/grasp.cpp
   src/cargo.cpp
+  src/inventory_policy.cpp
   src/health.cpp
   src/approach.cpp
 )

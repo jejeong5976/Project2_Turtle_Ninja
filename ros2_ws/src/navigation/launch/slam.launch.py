@@ -3,7 +3,8 @@
 
   # 지도 만들기 (실물): tools/jetson/run_robot.sh slam opencr  (이 launch 를 부름)
   ros2 launch navigation slam.launch.py hardware:=opencr opencr_ports:=bus_drive=<주행 보드> lidar_front_port:=<앞> lidar_rear_port:=<뒤>
-  # 위치 찾기 (저장한 지도): slam_mode:=localization map:=$HOME/maps/arena  (확장자 빼고 — arena.posegraph · arena.data)
+  # 저장한 지도 이어 그리기 (시연 기본): slam_mode:=mapping map:=$HOME/maps/arena  (확장자 빼고 — arena.posegraph · arena.data)
+  # 위치 찾기만 (지도 고정): slam_mode:=localization map:=$HOME/maps/arena
   # 라이다 없이 (bag 재생 · 시뮬): robot:=false lidar:=false use_sim_time:=true — 스캔은 밖에서 /lidar_front/scan · /lidar_rear/scan
   # 뒤 라이다 없이: lidar_rear_port:='' (앞만으로 합침)
 
@@ -11,7 +12,7 @@
   bringup/robot.launch.py: 모델 · ros2_control · swerve_controller (/odom · odom→base_footprint TF). 기본은 바퀴만 (arm:=false).
   coin_d4_driver/multi_coin_d4_node: 앞 → /lidar_front/scan (lidar_front_link), 뒤 → /lidar_rear/scan (lidar_rear_link)
   scan_merger: 둘을 몸 중심 360° /scan (base_footprint) 하나로. 한쪽이 끊기면 /scan 을 내지 않음
-  slam_toolbox: mapping (online_async) 또는 localization — config/slam_toolbox.yaml
+  slam_toolbox: mapping (online_async, map:= 주면 저장 지도 불러와 이어 그림) 또는 localization (map:= 필수) — config/slam_toolbox.yaml
   pose_guard: /localization_health (정상 · 경고 · 정지) · /imu_motion_bias (guard:=false 면 안 띄움)
 TF 주인은 하나씩: odom→base_footprint = swerve_controller, base_footprint→lidar_*_link = robot_state_publisher, map→odom = slam_toolbox.
 """
@@ -81,12 +82,15 @@ def _slam(context):
     p = d["slam_toolbox"]["ros__parameters"]
     p["mode"] = mode
     out = []
-    if mode == "localization":
-        m = os.path.expanduser(LaunchConfiguration("map").perform(context))
+    m = os.path.expanduser(LaunchConfiguration("map").perform(context))
+    if mode == "localization" and not m:
+        raise RuntimeError("localization 은 map:= 필수 (tools/jetson/save_map.sh 로 저장한 경로, 확장자 빼고)")
+    if m:
+        # 저장 지도 불러오기 = mapping · localization 공통. 시작 자세 = 지도 첫 노드 (지도 딸 때 출발 자세와 같게 놓아야 함)
         if not (os.path.exists(m + ".posegraph") and os.path.exists(m + ".data")):
             raise RuntimeError(f"지도 {m}.posegraph · .data 가 없음 — tools/jetson/save_map.sh 로 저장한 경로(확장자 빼고)를 map:= 로")
         p["map_file_name"], p["map_start_at_dock"] = m, True
-        out.append(LogInfo(msg=f"위치 찾기: 지도 {m}"))
+        out.append(LogInfo(msg=f"{'이어 그리기' if mode == 'mapping' else '위치 찾기'}: 지도 {m}"))
     f = tempfile.NamedTemporaryFile("w", prefix="slam_toolbox_", suffix=".yaml", delete=False)
     yaml.safe_dump(d, f)
     f.close()
@@ -132,7 +136,7 @@ def generate_launch_description():
         DeclareLaunchArgument("lidar_front_port", default_value="", description="앞 라이다 시리얼 (/dev/serial/by-path/…), 비우면 안 씀"),
         DeclareLaunchArgument("lidar_rear_port", default_value="", description="뒤 라이다 시리얼, 비우면 안 씀"),
         DeclareLaunchArgument("slam_mode", default_value="mapping", description="mapping | localization"),
-        DeclareLaunchArgument("map", default_value="", description="localization 때 저장한 지도 (확장자 빼고)"),
+        DeclareLaunchArgument("map", default_value="", description="저장한 지도 (확장자 빼고). mapping 이면 이어 그리기 (비우면 새로), localization 이면 필수"),
         DeclareLaunchArgument("guard", default_value="true", choices=["true", "false"], description="위치 감시 pose_guard 띄움"),
         DeclareLaunchArgument("use_sim_time", default_value="false", choices=["true", "false"], description="bag 재생 · 시뮬 때만 true (robot:=false 와 같이)"),
         OpaqueFunction(function=_check),

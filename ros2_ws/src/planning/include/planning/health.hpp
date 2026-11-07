@@ -7,10 +7,11 @@
 //       FAULT = 켜진 뒤 fault_after_s 가 지나도 안 꺼짐, 또는 자동 해제를 max_recoveries 번 쓴 뒤 다시 나빠짐
 //   - covariance_std: PoseWithCovariance 6×6 행 우선 36 칸 → x · y · yaw 표준편차, AMCL 쓸 때
 //   - loc_health_lost · loc_health_ready: pose_guard 의 /localization_health level 판정, slam_toolbox 쓸 때
+//   - arm_goal_uses_map · arm_start_blocked: 대기 원인이 켜졌을 때 새 팔 목표 시작을 막을지
 // 입력
-//   - 매 주기 나쁨 · 좋음과 시각, 공분산 배열, 위치 감시 level 과 받은 시각
+//   - 매 주기 나쁨 · 좋음과 시각, 공분산 배열, 위치 감시 level 과 받은 시각, 팔 작업 번호 · 목표 종류
 // 출력
-//   - 대기 원인 켜짐 여부, FAULT 여부, 표준편차, 위치 상실 · 준비 여부
+//   - 대기 원인 켜짐 여부, FAULT 여부, 표준편차, 위치 상실 · 준비 여부, 팔 시작 차단 여부
 // 실행
 //   - planning_core 라이브러리, Executor 가 씀. 시험 test_planning_core
 // note
@@ -19,7 +20,10 @@
 
 #pragma once
 
+#include <cstdint>
 #include <optional>
+
+#include "planning/types.hpp"
 
 namespace planning
 {
@@ -77,5 +81,18 @@ bool loc_health_lost(const LocHealth & h, double now, double timeout_s);
 
 // 출발 준비 = 신선하고 level 0
 bool loc_health_ready(const LocHealth & h, double now, double timeout_s);
+
+// 팔 작업 target 이 위치 추정에 기대는가 (Executor::arm_target 과 같은 구분)
+//   HOME · LOOK 류 · LOOK_BARCODE · LOOK_RACK · STORE · RETRIEVE = 로봇 자체 기준 (자세 · 칸 이름 · base_link 칸 측정) → false
+//   그 밖 (PICK · PLACE) 중 Target::Puck · Target::Custom → true
+//     Puck   = odom 최근 검출 또는 퍽 기록부 map 위치 → 최신 TF 로 base_link
+//     Custom = 미션 TargetResolver 의 점 → 최신 TF 로 base_link. 프레임은 resolver 가 정해 실행기가 미리 모름
+//              (미션 PLACE 는 map) → base_link 점이어도 보수적으로 위치 의존으로 봄
+bool arm_goal_uses_map(uint8_t task, Target target);
+
+// 새 팔 목표를 보내기 전에 막나 (보낸 뒤 진행 중인 작업은 안 건드림, 회복 · FAULT 판단은 감시가 함)
+//   DETECTION_LOST    : PICK 시작 차단
+//   LOCALIZATION_LOST : PICK 시작 + arm_goal_uses_map 인 팔 작업 시작 차단
+bool arm_start_blocked(uint8_t task, Target target, bool detection_lost, bool localization_lost);
 
 }  // namespace planning

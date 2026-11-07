@@ -81,7 +81,7 @@ SPAWN_Z = 0.075  # 바퀴 바닥 z=-0.072 + 3 mm (배포판 isaac_lab_init_state
 # 팔 자세 2개 (config/initial_pose.json)
 #   TUCK_POSE  = 주행 기본자세 = 실물 받침(parked, 'positions') + 그리퍼 16 mm (손가락 a·b 둘 다). 시작 · 주행 중 고정 자세
 #   READY_POSE = 퍽 집기 준비자세 = 실물 P0 (poses 'C1_P0', 받침에서 든 자세). 퍽 집기 직전에 들어감, 그리퍼 값 없음
-#   LOOK_PUCK_POSE = 손목 D435 로 선반 위 퍽을 내려다보는 관찰 자세 (poses 'LOOK_PUCK', 2026-10-29 tools/find_look_pose.py). 그리퍼 값 없음
+#   LOOK_PUCK_POSE = 손목 D435 로 선반 위 퍽을 내려다보는 관찰 자세 (poses 'LOOK_PUCK', 2026-11-02 tools/find_look_pose.py 발제 v5 박스 기준). 그리퍼 값 없음
 #   _layout 판에서 parked + 16 mm 정착 · 주행 안정 확인 (자기 충돌 끔이라 손가락-받침 겹침 영향 없음, 2026-10-28)
 _INIT_POSE = json.loads((ROBOT_DIR / 'config' / 'initial_pose.json').read_text())
 _PARKED = _INIT_POSE['positions']

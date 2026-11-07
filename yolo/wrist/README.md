@@ -13,7 +13,7 @@ yolo/wrist/
 │   ├── sim_to_seg.py          # 시뮬 생성 데이터 → YOLO-seg 다각형 라벨 + data.yaml
 │   ├── train.py               # 학습 (항상 yolo26n-seg.pt 에서 처음부터)
 │   ├── val.py                 # seg 평가 (상자 · 마스크 mAP)
-│   ├── export_onnx.py         # C++ 노드(wrist_puck_node)용 ONNX + .names.txt
+│   ├── export_onnx.py         # C++ perception 노드(손목 파이프라인)용 ONNX + .names.txt
 │   ├── wrist_pose.py          # (모듈) 마스크 + 깊이 → 퍽 중심 · 긴축 · 선/누움 · 면 방향
 │   ├── wrist_detector.py      # (모듈) seg → 자세 → 거르기 → 여러 프레임 확정 → Detection
 │   ├── eval_sim.py            # 시뮬 정답 대비 자세 오차
@@ -23,12 +23,12 @@ yolo/wrist/
 ├── datasets/                  # 커밋 안 함
 │   ├── sim_wrist/             #   시뮬 생성기 출력 (sim/robot_sim/scripts/make_wrist_dataset.py)
 │   ├── sim_seg/               #   seg 라벨 + data.yaml (sim_to_seg.py)
-│   └── real_d435/             #   tools/d435_viewer 저장 장면
+│   └── real_d435/             #   tools/wrist_d435/d435_puck_viewer.py 저장 장면
 └── runs/                      # 학습 결과 · 로그 · 가중치, 커밋 안 함
 ```
 
-- 실물 D435 실시간 보기 · 사진 저장은 `tools/d435_viewer/`, 손목 카메라 장착 자세(핸드-아이) 캘리브레이션은 `tools/wrist_calib/`
-- C++ ROS 노드는 `ros2_ws/src/perception` (`wrist_puck_node`, gtest `test/test_wrist_core.cpp`). Python `wrist_pose.py` · `wrist_detector.py` 는 평가(`eval_*`) · 실물 보기용이고 C++ 과는 따로 관리
+- 실물 D435 실시간 보기 · 사진 저장은 `tools/wrist_d435/` (같은 폴더에 손목 카메라 장착 자세(핸드-아이) 캘리브레이션)
+- C++ ROS 노드는 `ros2_ws/src/perception` (`perception` 노드의 손목 파이프라인, gtest `test/test_wrist_pose.cpp` · `test_wrist_seg.cpp`). Python `wrist_pose.py` · `wrist_detector.py` 는 평가(`eval_*`) · 실물 보기용이고 C++ 과는 따로 관리
 
 클래스 (`sim_to_seg.py --classes`)
 - 8 (기본): `0 red_cyl_up 1 green_cyl_up 2 red_box_up 3 green_box_up 4 red_cyl_lying 5 green_cyl_lying 6 red_box_lying 7 green_box_lying`
@@ -57,7 +57,7 @@ cd yolo/wrist/scripts
 ~/Desktop/physical_ai/.venvs/yolo/bin/python eval_sim.py --data ../datasets/sim_wrist --split test --gravity --mode seg --weights ../runs/wrist/seg8_sim/weights/best.pt
 ~/Desktop/physical_ai/.venvs/yolo/bin/python eval_detector.py --weights ../runs/wrist/seg8_sim/weights/best.pt --split test
 # 실물 D435 (레포 최상위에서)
-cd tools/d435_viewer && ~/Desktop/physical_ai/.venvs/yolo/bin/python d435_puck_viewer.py --seg ../../yolo/wrist/runs/wrist/seg8_sim/weights/best.pt
+cd tools/wrist_d435 && ~/Desktop/physical_ai/.venvs/yolo/bin/python d435_puck_viewer.py --seg ../../yolo/wrist/runs/wrist/seg8_sim/weights/best.pt
 ```
 
 ## 파이프라인 (`scripts/wrist_detector.py`)
@@ -79,5 +79,5 @@ det.reset()                                                             # 팔(�
 - 시뮬 확인 (`eval_detector.py`, `runs/wrist/seg8_sim`, `datasets/sim_wrist` test 771장 × 3회, 깊이 잡음 2 mm, 3장 확정, 잘림 없는 퍽 973개): 확정 99% (965), 오탐 3, 색 · 모양 965/965, 선/누움 953/965, xy 중앙 2.9 · 90% 5.2 mm, z 중앙 1.4 · 90% 2.8 mm, 누운 퍽 θ 중앙 0.8 · 90% 3.6 · 최대 27.9°, 선 사각기둥 면 θ 230개 중 218개 구함 · 중앙 0.2 · 최대 1.8°. 화면 끝에 잘린 퍽은 거름(`truncated`)
 - 평가는 `datasets/sim_wrist` 의 test split (학습에 안 쓴 장면). seg 학습용 `sim_seg` 도 같은 split 을 씀
 
-- 실물 데모 `tools/d435_viewer/d435_puck_viewer.py` 는 `--seg` 없으면 HSV 색 분할 (모니터 속 퍽 · 피부도 잡음)
+- 실물 데모 `tools/wrist_d435/d435_puck_viewer.py` 는 `--seg` 없으면 HSV 색 분할 (모니터 속 퍽 · 피부도 잡음)
 - 필요 패키지: `ultralytics albumentations tensorboard pyrealsense2==2.59.1.11053`

@@ -119,6 +119,7 @@ perception ──────/perception/traffic_light┤  (신호등 최종 상
 | 이름 | 타입 | 서버 | 상태 |
 |---|---|---|---|
 | `navigate_to_pose` | `nav2_msgs/action/NavigateToPose` | Nav2 | [구현] 목표 frame `map` |
+| `dock_to_pose` (`dock_action`) | `nav2_msgs/action/NavigateToPose` | RL 정밀 접근 노드 | [구현] 박스 · 장소 이동 2 단계: Nav2 목표 = 정차점 뒤 `dock_nav_back_m` 0.025 m, 정차점 `dock_handoff_m` 0.40 m 안에서 Nav2 취소 → 이 액션으로 정차점 (0.2575 m, 면 1 cm). 노드가 collision_monitor 영역을 끄고 켬 · 목표를 odom 에 고정 (2026-11-06) |
 | `/arm_task` | `interfaces/action/ArmTask` | control_master | [구현] HOME · PICK · PLACE · STORE · RETRIEVE · LOOK · LOOK_BARCODE (control 은 HOME · PICK · PLACE 만 구현) |
 | `/approach` | `Approach.action` | 미정 | [계획] 정밀 정렬 |
 | `/perception/check_slot` | `CheckSlot.srv` | perception | [계획, 선택] 적재함 칸 확인 |
@@ -327,8 +328,10 @@ ArmTask 확장 요청 [계획, control 합의 필요]
 | 추가 | 쓰는 곳 |
 |---|---|
 | `STORE=3`, `RETRIEVE=4` + `string slot` | 적재함 넣기 · 꺼내기 (planning 재고 전환은 구현됨) |
-| `PUSH=5` | 퍽 치기 (밀어 넘어뜨리기) |
-| `LOOK=6` | 바코드 · 퍽 관찰 자세 |
+| `LOOK=5` | 박스 · L1 · L2 · L3 관찰 자세 (격자 중심이 정차점 앞 0.2575 m, 2026-11-06 정차 변경 — 옛 0.29 m 기준 자세는 다시 확인). 시뮬 자세 `initial_pose.json` LOOK_PUCK (2026-11-02) |
+| `LOOK_BARCODE=6` | 출발 구역 벽 바코드 정면 보기 |
+| (7 비움) | 옛 `LOOK_FAR` (L2 중앙 받침대용). 2026-11-04 L2 가 205 박스로 바뀌어 삭제, 번호 재사용 안 함 |
+| `PUSH` (번호 미정) | 퍽 치기 (밀어 넘어뜨리기) |
 | 결과 `uint8 error` (UNREACHABLE · NO_OBJECT · HW_FAULT …) | 실패 이유별 처리 (다시 서기 / 포기 / FAULT) |
 | 결과 `bool holding` | PICK 성공 확인 |
 
@@ -476,7 +479,7 @@ dice 의 `Custom` 뜻 (`mission/common.hpp`)
 | 이름 | 기본값 | 내용 |
 |---|---|---|
 | `dice_map` / `travel_table` | "" / "" | 비우면 레포 `maps/dice_map.yaml` / `maps/dice_travel_times.yaml` |
-| `collect_order` | [1, 2, 6, 3, 4, 5] | 시작 박스 방문 순서 |
+| `collect_order` | [1, 2, 6, 4, 5, 3] | 시작 박스 방문 순서 |
 | `look_dwell_s` / `dice_pick_fresh_s` | 1.0 / 90.0 | LOOK 뒤 검출 모으기 / 정차 중 PICK 위치 유효 시간 |
 | `transfer_max_remaining` | 4 | 박스 남은 퍽이 이보다 많으면 대체 해 |
 | `verify_radius_m` / `verify_cell_tol_m` | 0.18 / 0.03 | 재검증 판정 |
@@ -534,8 +537,10 @@ ros2 launch mission mission.launch.py dice_map:=<다른 파일> params:=<다른 
 
 | 원문 | 뜻 |
 |---|---|
-| `P2-01` · `P2-03` | 오름차순: 신호 횟수 적은 그룹부터 L1 → L2 → L3 |
-| `P2-02` · `P2-04` | 내림차순: 많은 그룹부터 |
+| `P2-01` · `P2-03` | 오름차순 (`ASC`): 신호 횟수 적은 그룹부터 L1 → L2 → L3 |
+| `P2-02` · `P2-04` | 내림차순 (`DESC`): 많은 그룹부터 |
+
+표 = 레포 `maps/dice_barcodes.json` (발제 v5 기준, 2026-11-04), 파라미터 `barcode_table` (비우면 그 파일). 표에 없으면 미등록 → FAULT `BARCODE_UNREGISTERED`
 | 그 밖 | 미등록 바코드 → **바로 FAULT** (`BARCODE_UNREGISTERED`, 발제: 오류 정지) |
 
 | 규칙 | 내용 |
@@ -556,7 +561,7 @@ ros2 launch mission mission.launch.py dice_map:=<다른 파일> params:=<다른 
 | 팔 닿는 범위 | control | 몸 중심 기준 최소 · 최대 거리, 높이, 좌우 각도 → `puck_standoff_m` | 대기 |
 | 누운 퍽 세우기 | control | joint5 ±90° 제한으로 못 세우는 자세 | 대기 |
 | ArmTask 확장 | control | STORE · RETRIEVE · PUSH · LOOK, slot, error, holding | 대기 |
-| 퍽 쥔 채 주행 (CARRY) | control | dice 운반 계획이 그리퍼에 퍽 하나 든 채 주행할 수 있음 | 대기 |
+| 퍽 쥔 채 주행 (CARRY) | control | 안 함 (2026-11-04 결정): 박스마다 집은 퍽을 전부 STORE, 운반 계획은 그리퍼가 빌 때만 이동, 실행기는 쥔 채 이동 단계면 FAULT CARRY_DRIVE | 결정됨 |
 | 퍽 자세 약속 | perception | 자세 z 축 = 긴축, 모르면 w=0 직접 | 전달 필요 |
 | 검출 frame_id | perception | URDF 이름 `d435_color_optical_frame`(D435 컬러 렌즈, 케이스 가운데 `d435_cad_optical_proxy_frame` 에서 광학 −x 32.5 mm, 2026-10-29 추가), `birdeye_camera_optical_frame`과 맞추기 | 전달 필요 |
 | 인터페이스 전체 | perception | `Detection.id/shape`, `TaskText`, `TrafficLight` | 전달함, 답 대기 |

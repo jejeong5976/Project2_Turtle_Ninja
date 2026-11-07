@@ -7,6 +7,8 @@
 #include <map>
 #include <numeric>
 
+#include <yaml-cpp/yaml.h>
+
 #include "mission/common.hpp"
 
 namespace mission
@@ -36,12 +38,46 @@ int SignalCounts::of(char group) const
   }
 }
 
-std::optional<DiceOrder> parse_dice_barcode(const std::string & raw_text, std::string * error)
+bool load_barcode_table(const std::string & path, BarcodeTable & out, std::string * error)
+{
+  try {
+    const YAML::Node root = YAML::LoadFile(path);
+    const auto list = root["barcodes"];
+    if (!list || !list.IsSequence() || list.size() == 0) {
+      set_error(error, "바코드 표 " + path + ": barcodes 목록 없음");
+      return false;
+    }
+    BarcodeTable t;
+    for (const auto & b : list) {
+      const std::string code = trim(b["barcode"].as<std::string>(""));
+      const std::string order = b["sortOrder"].as<std::string>("");
+      if (code.empty()) {
+        set_error(error, "바코드 표 " + path + ": 빈 barcode");
+        return false;
+      }
+      if (order != "ASC" && order != "DESC") {
+        set_error(error, "바코드 표 " + path + ": " + code + " sortOrder 는 ASC | DESC (지금 " + order + ")");
+        return false;
+      }
+      if (!t.emplace(code, order == "ASC" ? DiceOrder::Ascending : DiceOrder::Descending).second) {
+        set_error(error, "바코드 표 " + path + ": " + code + " 두 번 있음");
+        return false;
+      }
+    }
+    out = t;
+    return true;
+  } catch (const std::exception & e) {
+    set_error(error, "바코드 표 읽기 실패 " + path + ": " + e.what());
+    return false;
+  }
+}
+
+std::optional<DiceOrder> parse_dice_barcode(
+  const std::string & raw_text, const BarcodeTable & table, std::string * error)
 {
   const std::string t = trim(raw_text);
-  // 발제 p.3: 기존 바코드 4종, 두 개씩 같은 의미
-  if (t == "P2-01" || t == "P2-03") {return DiceOrder::Ascending;}
-  if (t == "P2-02" || t == "P2-04") {return DiceOrder::Descending;}
+  const auto it = table.find(t);
+  if (it != table.end()) {return it->second;}
   set_error(error, t.empty() ? "빈 바코드" : "미등록 바코드: " + t);
   return std::nullopt;
 }

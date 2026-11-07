@@ -15,6 +15,7 @@
 #include "mission/dice_steps.hpp"
 #include "mission/dice_record.hpp"
 #include "mission/dice_verify.hpp"
+#include "mission/place_box.hpp"
 #include "mission/transfer_planner.hpp"
 #include "mission/transfer_solver.hpp"
 
@@ -75,8 +76,13 @@ void check_plan_rules(
   for (const auto & p : all) {kind[p.id] = p.kind;}
   std::array<int, kNumPlaces> placed{{0, 0, 0}};
   std::set<std::string> seen;
+  bool holding = in.gripper.has_value();
   for (const auto & s : plan.stops) {
+    // 퍽 쥔 채 주행 안 함: 이동하는 정차는 그리퍼가 빈 채 시작
+    if (s.move) {EXPECT_FALSE(holding) << "퍽 쥔 채 이동: " << s.name;}
     for (const auto & a : s.actions) {
+      if (a.op == ArmOp::Pick || a.op == ArmOp::Retrieve) {holding = true;}
+      if (a.op == ArmOp::Store || a.op == ArmOp::Place) {holding = false;}
       if (a.op != ArmOp::Place) {continue;}
       ASSERT_TRUE(seen.insert(a.puck_id).second) << "같은 퍽 두 번 놓음: " << a.puck_id;
       ASSERT_EQ(s.node, place_node(a.place)) << "다른 장소 정차에서 놓음";
@@ -106,14 +112,14 @@ TEST(Transfer, KindStrings)
   EXPECT_EQ(node_name(place_node(1)), "L2");
 }
 
-TEST(Transfer, CollectActionsKeepLastPuckInGripper)
+TEST(Transfer, CollectActionsStoreEveryPuck)
 {
   Cargo cargo(slot_names(12));
   const auto pucks = q1_pucks();
   std::string err;
-  // 첫 박스: 그리퍼 빔 → PICK, STORE, PICK
+  // 첫 박스: 그리퍼 빔 → PICK, STORE, PICK, STORE (퍽 쥔 채 주행 안 함 → 마지막 퍽도 넣음)
   auto a = collect_box_actions({pucks[0], pucks[1]}, cargo, &err);
-  ASSERT_EQ(a.size(), 3u) << err;
+  ASSERT_EQ(a.size(), 4u) << err;
   EXPECT_EQ(a[0].op, ArmOp::Pick);
   EXPECT_EQ(a[0].puck_id, "0");
   EXPECT_EQ(a[1].op, ArmOp::Store);
@@ -123,10 +129,13 @@ TEST(Transfer, CollectActionsKeepLastPuckInGripper)
   EXPECT_EQ(a[1].shape, "cylinder");
   EXPECT_EQ(a[2].op, ArmOp::Pick);
   EXPECT_EQ(a[2].puck_id, "1");
-  // 그리퍼에 퍽이 있으면 먼저 STORE
+  EXPECT_EQ(a[3].op, ArmOp::Store);
+  EXPECT_EQ(a[3].puck_id, "1");
+  EXPECT_EQ(a[3].slot, "S2");
+  // 그리퍼에 퍽이 있으면 (재계획 등) 먼저 STORE
   ASSERT_TRUE(cargo.on_pick(CargoItem{"9", "green", "box", "", false}));
   a = collect_box_actions({pucks[2], pucks[3]}, cargo, &err);
-  ASSERT_EQ(a.size(), 4u);
+  ASSERT_EQ(a.size(), 5u);
   EXPECT_EQ(a[0].op, ArmOp::Store);
   EXPECT_EQ(a[0].puck_id, "9");
   // 칸이 모자라면 실패
@@ -198,9 +207,9 @@ TEST(Transfer, AllLoadedMatchesBestPlaceOrder)
   EXPECT_NEAR(sol->cost_s, best, 1e-6);
 }
 
-TEST(Transfer, GripperPuckPlacedWithoutStore)
+TEST(Transfer, GripperPuckStoredBeforeDriving)
 {
-  // 그리퍼 퍽(초록) 이 G 장소로 가면 STORE 없이 바로 놓아야 함 (적재함 넣기 · 빼기 30 s 절약)
+  // 재계획 등으로 그리퍼에 퍽이 있는 채 계획하면 장소로 떠나기 전에 STORE (퍽 쥔 채 주행 안 함, 2026-11-04)
   const auto all = q1_pucks();
   Cargo cargo(slot_names(12));
   for (int i = 0; i < 11; ++i) {
@@ -214,22 +223,13 @@ TEST(Transfer, GripperPuckPlacedWithoutStore)
   ASSERT_TRUE(fill_carried(cargo, in));
   const auto plan = plan_transfer(in, test_costs(), cargo, {{0, 0, 0}});
   ASSERT_TRUE(plan.has_value());
-  int stores = 0;
-  for (const auto & s : plan->stops) {
-    for (const auto & a : s.actions) {stores += a.op == ArmOp::Store;}
-  }
-  EXPECT_EQ(stores, 0);
-  // 그리퍼 퍽 11 은 첫 장소 정차의 첫 Place
-  for (const auto & s : plan->stops) {
-    if (!s.move) {continue;}
-    for (const auto & a : s.actions) {
-      if (a.op == ArmOp::Look) {continue;}
-      EXPECT_EQ(a.op, ArmOp::Place);
-      EXPECT_EQ(a.puck_id, "11");
-      break;
-    }
-    break;
-  }
+  check_plan_rules(*plan, all, in);
+  // 첫 정차 (이동 없이 B5 에서 이어서) 의 첫 동작 = 그리퍼 퍽 11 STORE
+  ASSERT_FALSE(plan->stops.empty());
+  ASSERT_FALSE(plan->stops.front().move);
+  ASSERT_FALSE(plan->stops.front().actions.empty());
+  EXPECT_EQ(plan->stops.front().actions.front().op, ArmOp::Store);
+  EXPECT_EQ(plan->stops.front().actions.front().puck_id, "11");
 }
 
 TEST(Transfer, ReplanPicksPuckLeftOnBox)
@@ -531,6 +531,8 @@ TEST(DiceMap, LoadsRepoFileWithStartOrigin)
   EXPECT_NEAR(a.places[0].view_dir[0], -1.0, 1e-3);
   EXPECT_NEAR(a.places[0].top_z, 0.07, 1e-9);
   EXPECT_NEAR(a.box_radius, 0.15, 1e-9);
+  // L2 = 205 박스 (2026-11-04), 정차점이 격자 중심 북쪽 0.2575 m (2026-11-06) · 남쪽을 봄 (다른 박스와 같은 거리)
+  EXPECT_NEAR(std::hypot(a.places[1].stop.x - a.places[1].center[0], a.places[1].stop.y - a.places[1].center[1]), 0.2575, 1e-3);
 }
 
 TEST(DiceMap, ExplicitTransformAndInverse)
@@ -593,7 +595,7 @@ TEST(DiceSteps, BoxStopsUseFinalApproach)
     if (s.type != StepType::Navigate) {continue;}
     ++boxes;
     EXPECT_DOUBLE_EQ(s.approach_m, a.box_approach_m) << s.name;
-    EXPECT_NEAR(s.approach_face_m, 0.2935 - 0.1025, 1e-6) << s.name;
+    EXPECT_NEAR(s.approach_face_m, 0.2575 - 0.1025, 1e-6) << s.name;   // 정차 거리 0.2575 m (2026-11-06)
   }
   EXPECT_EQ(boxes, 6);
   a.box_approach_m = 0.0;   // 끄면 예전과 같음
@@ -627,8 +629,8 @@ TEST(DiceSteps, Q1CollectThenDeliverSteps)
       if (a2.op == ArmOp::Store) {ASSERT_TRUE(cargo.on_store(a2.slot));}
     }
   }
-  EXPECT_TRUE(cargo.holding());
-  EXPECT_EQ(cargo.stored_count(), 9u);
+  EXPECT_FALSE(cargo.holding());   // 박스마다 다 넣음
+  EXPECT_EQ(cargo.stored_count(), 10u);
 
   // 마지막 박스 (B5): 노드 plan_delivery 와 같은 계산
   SolverInput in;
@@ -671,6 +673,9 @@ TEST(DiceSteps, Q1CollectThenDeliverSteps)
   EXPECT_EQ(steps.front().type, StepType::Arm);   // 이동 없이 B5 퍽 집기부터
   const auto ver = verify_steps(tp->verify_order, a);
   EXPECT_EQ(ver.size(), 9u);   // 장소마다 이동 · LOOK · Verify
+  for (size_t i = 0; i < 3; ++i) {   // 세 장소 모두 LOOK
+    EXPECT_EQ(ver[3 * i + 1].arm_task, kArmLook) << "L" << place_of(ver[3 * i + 1]) + 1;
+  }
   EXPECT_FALSE(dice_cell_point(*dp, a, 0, 99).has_value());
 }
 
@@ -910,4 +915,105 @@ TEST(DiceRecord, AllocationAndSignalJson)
   EXPECT_NE(sj.find("\"sequence\": \"RGRRGRGGYGYG\""), std::string::npos) << sj;
   EXPECT_NE(sj.find("\"status\": \"DONE\""), std::string::npos) << sj;
   EXPECT_NE(sj.find("\"n\": 12"), std::string::npos);
+}
+
+TEST(DiceSteps, RackLookBeforeStore)
+{
+  // rack_look: STORE 마다 바로 앞에 같은 칸 LOOK_RACK, 꺼 두면 지금과 같음
+  DiceMap a;
+  ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
+  std::vector<TransferPuck> box1;
+  for (const auto & p : q1_pucks()) {if (p.box == 1) {box1.push_back(p);}}
+  Cargo cargo(slot_names(12));
+  std::string err;
+  const auto acts = collect_box_actions(box1, cargo, &err);
+  ASSERT_FALSE(acts.empty()) << err;
+  const int stores = static_cast<int>(std::count_if(acts.begin(), acts.end(), [](const ArmAction & x) {return x.op == ArmOp::Store;}));
+  ASSERT_GT(stores, 0);
+  EXPECT_EQ(arm_steps(acts).size(), acts.size());
+  const auto st = arm_steps(acts, true);
+  ASSERT_EQ(st.size(), acts.size() + static_cast<size_t>(stores));
+  int looks = 0;
+  for (size_t i = 0; i < st.size(); ++i) {
+    if (st[i].arm_task == kArmStore) {
+      ASSERT_GT(i, 0u);
+      EXPECT_EQ(st[i - 1].arm_task, kArmLookRack);
+      EXPECT_EQ(st[i - 1].slot, st[i].slot);
+      EXPECT_EQ(st[i - 1].puck_id, st[i].puck_id);
+    }
+    if (st[i].arm_task == kArmLookRack) {++looks;}
+  }
+  EXPECT_EQ(looks, stores);
+}
+
+// ---------------------------------------------------------------- 장소 박스 측정 (place_box)
+
+TEST(PlaceBox, FoldQuarterDiff)
+{
+  EXPECT_NEAR(fold_quarter_diff(0.1, 0.0), 0.1, 1e-12);
+  EXPECT_NEAR(fold_quarter_diff(M_PI / 2 - 0.1, 0.0), -0.1, 1e-12);   // 90° 돈 정사각형 = 같은 박스
+  EXPECT_NEAR(fold_quarter_diff(M_PI + 0.2, 0.0), 0.2, 1e-12);
+}
+
+// 중앙값 · 먼 측정 버림 · 옛 측정 안 씀 · 개수 부족
+TEST(PlaceBox, FrameFromSamples)
+{
+  const std::array<double, 2> c{3.0, 1.0};
+  std::vector<BoxSample> v;
+  v.push_back({0.5, 9.0, 9.0, 0.0});                       // since 전 → 안 씀
+  for (int i = 0; i < 5; ++i) {v.push_back({1.0 + i, 3.01 + 0.001 * i, 0.98, M_PI / 2 + 0.05});}   // 90° 주기 → dyaw 0.05
+  v.push_back({7.0, 3.3, 1.0, 0.0});                       // 30 cm 먼 측정 → 버림
+  std::string why;
+  const auto f = place_frame_from(v, 1.0, c, 0.0, 0.06, 3, &why);
+  ASSERT_TRUE(f) << why;
+  EXPECT_EQ(f->n, 5);
+  EXPECT_NEAR(f->x, 3.012, 1e-9);
+  EXPECT_NEAR(f->y, 0.98, 1e-9);
+  EXPECT_NEAR(f->dyaw, 0.05, 1e-9);
+  EXPECT_FALSE(place_frame_from(v, 4.5, c, 0.0, 0.06, 3, &why));   // since 뒤 2 개뿐
+  EXPECT_NE(why.find("필요 3"), std::string::npos);
+}
+
+// 박스가 돌면 눈 오프셋도 같이 돎, 재검증 사본은 중심 · 오프셋만 바뀜
+TEST(PlaceBox, RotatedCellsAndVerifyCopy)
+{
+  PlaceFrame f;
+  f.x = 1.0;
+  f.y = 2.0;
+  f.dyaw = M_PI / 18;   // 10°
+  const auto p = frame_point(f, {0.06, 0.0});
+  EXPECT_NEAR(p[0], 1.0 + 0.06 * std::cos(M_PI / 18), 1e-12);
+  EXPECT_NEAR(p[1], 2.0 + 0.06 * std::sin(M_PI / 18), 1e-12);
+  EXPECT_NEAR(std::hypot(p[0] - 1.0, p[1] - 2.0), 0.06, 1e-12);   // 눈 간격 유지
+
+  DiceMap a;
+  ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
+  DicePlan plan;
+  plan.places[1].pip_offsets = {{0.06, 0.0}, {-0.06, 0.06}};
+  plan.places[0].pip_offsets = {{0.06, 0.0}};
+  apply_place_frame(a, plan, 1, f);
+  EXPECT_DOUBLE_EQ(a.places[1].center[0], 1.0);
+  EXPECT_NEAR(plan.places[1].pip_offsets[0][1], 0.06 * std::sin(M_PI / 18), 1e-12);
+  EXPECT_DOUBLE_EQ(plan.places[0].pip_offsets[0][0], 0.06);   // 다른 장소는 그대로
+}
+
+// box_wait: 장소 LOOK 바로 뒤에만 kPlaceBox, 박스 LOOK 뒤에는 없음, 꺼 두면 지금과 같음
+TEST(PlaceBox, WaitStepAfterPlaceLook)
+{
+  DiceMap a;
+  ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
+  ArmAction lp;
+  lp.op = ArmOp::Look;
+  lp.place = 2;
+  ArmAction lb;
+  lb.op = ArmOp::Look;
+  lb.box = 3;
+  const std::vector<ArmAction> acts{lb, lp};
+  EXPECT_EQ(arm_steps(acts).size(), 2u);
+  const auto st = arm_steps(acts, false, true);
+  ASSERT_EQ(st.size(), 3u);
+  EXPECT_EQ(st[1].arm_task, kArmLook);
+  EXPECT_EQ(place_of(st[1]), 2);
+  EXPECT_TRUE(is_custom(st[2], kPlaceBox));
+  EXPECT_EQ(place_of(st[2]), 2);
 }

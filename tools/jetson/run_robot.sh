@@ -5,7 +5,8 @@
 #   bash tools/jetson/run_robot.sh full  mock      팔까지 · 로봇 없이
 #   bash tools/jetson/run_robot.sh full  opencr    팔까지 · 실물 (시연 모드: 켤 때 바퀴 잠금 → 팔 HOME 성공 뒤 주행)
 #   bash tools/jetson/run_robot.sh slam  opencr    바퀴 + 앞 · 뒤 라이다 + slam_toolbox 지도 만들기 + 위치 감시 — 지도 저장 tools/jetson/save_map.sh <이름>
-#   bash tools/jetson/run_robot.sh locate opencr ~/maps/<이름>   저장한 지도로 위치 찾기 (map→odom) + 위치 감시
+#   bash tools/jetson/run_robot.sh remap  opencr ~/maps/<이름>   저장한 지도 불러와 이어 그리기 (시연 기본, 지도 딸 때 출발 자세에 놓고 시작) + 위치 감시
+#   bash tools/jetson/run_robot.sh locate opencr ~/maps/<이름>   저장한 지도로 위치 찾기만 (지도 고정, map→odom) + 위치 감시
 #   라이다: ROBOTIS coin_d4_driver (sudo apt install ros-lyrical-coin-d4-driver). 앞 · 뒤 둘 다 기본 (아래 LF · LR 기본값 = 실물 USB 자리).
 #     다른 자리면 NT_LIDAR_FRONT=/dev/serial/by-path/… NT_LIDAR_REAR=… (ls -l /dev/serial/by-path/ 로 확인).
 #     뒤 라이다 없이 앞만 쓰려면 NT_LIDAR_REAR=none (그러면 뒤 반원이 비어 후진 · 옆 주행의 앞 물체 정지가 뒤를 못 봄)
@@ -19,9 +20,9 @@ set -uo pipefail
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-17}"   # 팀 로봇 도메인 (11-03 고정). 다르게 쓰려면 실행 전에 export
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 MODE=${1:-}; HW=${2:-}; shift 2 2>/dev/null || true
-case "$MODE/$HW" in drive/mock|drive/opencr|full/mock|full/opencr|slam/opencr|locate/opencr) ;; *) sed -n 2,15p "$0"; exit 2;; esac
+case "$MODE/$HW" in drive/mock|drive/opencr|full/mock|full/opencr|slam/opencr|remap/opencr|locate/opencr) ;; *) sed -n 2,16p "$0"; exit 2;; esac
 MAPARG=""
-if [ "$MODE" = locate ]; then MAPARG=${1:-}; shift || true; [ -f "${MAPARG}.posegraph" ] || { echo "✗ 지도 ${MAPARG}.posegraph 없음 (확장자 빼고)"; exit 2; }; fi
+if [ "$MODE" = locate ] || [ "$MODE" = remap ]; then MAPARG=${1:-}; shift || true; [ -f "${MAPARG}.posegraph" ] || { echo "✗ 지도 ${MAPARG}.posegraph 없음 (확장자 빼고)"; exit 2; }; fi
 DISTRO=${ROS_DISTRO_WANT:-lyrical}
 [ -f "$ROOT/ros2_ws/install/setup.bash" ] || { echo "✗ 빌드 먼저: bash tools/jetson/build_jetson.sh"; exit 2; }
 set +u; source /opt/ros/$DISTRO/setup.bash   # ROS setup 은 없는 변수를 씀
@@ -39,7 +40,7 @@ port_ok() {   # 실제 장치를 읽고 쓸 수 있나 (udev 규칙의 그룹 ·
   local p; p=$(readlink -f "$1"); [ -e "$p" ] && [ -r "$p" ] && [ -w "$p" ]
 }
 PKG=bringup; LAUNCH=robot.launch.py
-if [ "$MODE" = slam ] || [ "$MODE" = locate ]; then   # navigation/slam.launch.py 가 robot.launch.py (바퀴만) 를 포함
+if [ "$MODE" = slam ] || [ "$MODE" = remap ] || [ "$MODE" = locate ]; then   # navigation/slam.launch.py 가 robot.launch.py (바퀴만) 를 포함
   PKG=navigation; LAUNCH=slam.launch.py
   LF=${NT_LIDAR_FRONT:-/dev/serial/by-path/platform-3610000.usb-usb-0:2.4:1.0-port0}
   LR=${NT_LIDAR_REAR:-/dev/serial/by-path/platform-3610000.usb-usb-0:2.1:1.0-port0}
@@ -48,13 +49,17 @@ if [ "$MODE" = slam ] || [ "$MODE" = locate ]; then   # navigation/slam.launch.p
   [ -z "$LR" ] || [ "$(readlink -f "$LF")" != "$(readlink -f "$LR")" ] || { say "✗ 앞 · 뒤 라이다 포트가 같은 장치를 가리킴"; exit 4; }
   ros2 pkg prefix coin_d4_driver >/dev/null 2>&1 || { say "✗ coin_d4_driver 없음 — sudo apt install ros-lyrical-coin-d4-driver"; exit 4; }
   ARGS+=(arm:=false "hardware_map:=$SHARE/hardware_map_drive_only.yaml" "lidar_front_port:=$LF" "lidar_rear_port:=$LR")
-  if [ "$MODE" = locate ]; then ARGS+=(slam_mode:=localization "map:=$MAPARG"); else ARGS+=(slam_mode:=mapping); fi
+  case "$MODE" in
+    locate) ARGS+=(slam_mode:=localization "map:=$MAPARG");;
+    remap)  ARGS+=(slam_mode:=mapping "map:=$MAPARG");;
+    *)      ARGS+=(slam_mode:=mapping);;
+  esac
 fi
 if [ "$HW" = opencr ]; then
   DP=${NT_DRIVE_PORT:-/dev/opencr_drive}; AP=${NT_ARM_PORT:-/dev/opencr_arm}
   port_ok "$DP" || { say "✗ 주행 보드 포트 $DP 를 열 수 없음 (없거나 권한 — make_udev_rules.py 또는 NT_DRIVE_PORT)"; exit 4; }
   PORTS="bus_drive=$(readlink -f "$DP")"
-  if [ "$MODE" = full ]; then   # slam · locate 는 바퀴 보드만
+  if [ "$MODE" = full ]; then   # slam · remap · locate 는 바퀴 보드만
     port_ok "$AP" || { say "✗ 팔 보드 포트 $AP 를 열 수 없음 (없거나 권한 — make_udev_rules.py 또는 NT_ARM_PORT)"; exit 4; }
     [ "$(readlink -f "$DP")" != "$(readlink -f "$AP")" ] || { say "✗ 주행 · 팔 포트가 같은 장치를 가리킴"; exit 4; }
     PORTS="$PORTS,bus_arm=$(readlink -f "$AP")"

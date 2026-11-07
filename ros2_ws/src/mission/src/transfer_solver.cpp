@@ -238,14 +238,15 @@ std::optional<SolverResult> solve_transfer(
           }
         }
       }
-      // Store · Retrieve (어디서든, 정차 중일 때만 = 팔을 쓸 수 있을 때)
+      // Store: 어디서든 (계획 중 로봇은 서 있음. 출발 · 재계획 때 쥔 퍽이 있으면 먼저 넣어야 이동 가능)
+      if (st.grip && st.cargo_count() < in.cargo_capacity) {
+        State ns = st;
+        ++ns.cargo[st.grip - 1];
+        ns.grip = 0;
+        relax(ns, c.store_s, SolverStep{SolverAct::Store, st.pos, static_cast<PuckKind>(st.grip - 1), -1});
+      }
+      // Retrieve (정차 중일 때만)
       if (st.stopped) {
-        if (st.grip && st.cargo_count() < in.cargo_capacity) {
-          State ns = st;
-          ++ns.cargo[st.grip - 1];
-          ns.grip = 0;
-          relax(ns, c.store_s, SolverStep{SolverAct::Store, st.pos, static_cast<PuckKind>(st.grip - 1), -1});
-        }
         // 꺼내기 = 이 장소에 바로 놓을 퍽만 (다음 장소 퍽을 미리 꺼내 쥐고 주행하지 않게. 시간은 같고 떨어뜨릴 위험만 큼)
         if (st.grip == 0 && is_place_node(st.pos) && st.slots[node_place(st.pos)] > 0) {
           const char g = in.place_group[node_place(st.pos)];
@@ -259,9 +260,10 @@ std::optional<SolverResult> solve_transfer(
         }
       }
 
-      // Move
-      const int carried = (st.grip ? 1 : 0) + st.cargo_count();
-      const bool room = st.grip == 0 || st.cargo_count() < in.cargo_capacity;
+      // Move: 그리퍼가 빌 때만 (퍽 쥔 채 주행 안 함, 2026-11-04 사용자 결정 — control 도 쥔 채 DRIVE · HOME 을 안 함)
+      if (st.grip) {continue;}
+      const int carried = st.cargo_count();
+      const bool room = st.cargo_count() < in.cargo_capacity;   // 집은 퍽을 넣을 칸
       for (int v = 1; v < kNumNodes; ++v) {
         if (v == st.pos && st.stopped) {continue;}
         if (is_box_node(v)) {
@@ -273,7 +275,7 @@ std::optional<SolverResult> solve_transfer(
         } else {
           const int p = node_place(v);
           if (carried == 0 || st.slots[p] == 0) {continue;}
-          bool any = st.grip && fits(static_cast<PuckKind>(st.grip - 1), in.place_group[p], s_box);
+          bool any = false;
           for (int kk = 0; kk < kNumKinds && !any; ++kk) {
             any = st.cargo[kk] > 0 && fits(static_cast<PuckKind>(kk), in.place_group[p], s_box);
           }

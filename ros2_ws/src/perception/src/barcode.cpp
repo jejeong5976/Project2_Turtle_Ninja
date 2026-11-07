@@ -204,7 +204,8 @@ BarcodeStage::BarcodeStage(rclcpp::Node & node)
 
 bool BarcodeStage::due() const
 {
-  return enabled_ && std::chrono::duration<double>(Clock::now() - last_).count() >= period_s_;
+  // 10 ms 여유: 영상 도착 간격 흔들림으로 한 장 더 건너뛰지 않게 (30 Hz 카메라 + 10 Hz → 실제 7.5 Hz 방지)
+  return enabled_ && std::chrono::duration<double>(Clock::now() - last_).count() >= period_s_ - 0.010;
 }
 
 void BarcodeStage::process(const cv::Mat & bgr, const std_msgs::msg::Header & header, const std::vector<wide::Box> & boxes)

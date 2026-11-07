@@ -1,7 +1,7 @@
 // transfer_planner.hpp — 퍽 수집 · 배달 정차 목록, A안 = 돌면서 다 싣기
 //
 // 역할
-//   1. 수집 정차의 팔 동작: 박스 LOOK 결과 → [그리퍼 퍽 STORE] PICK …, 받은 순서 = 가까운 퍽부터, 마지막 퍽은 그리퍼에 남김
+//   1. 수집 정차의 팔 동작: 박스 LOOK 결과 → PICK → STORE …, 받은 순서 = 가까운 퍽부터, 마지막 퍽도 넣음 (퍽 쥔 채 주행 안 함)
 //   2. 계획: transfer_solver 해 = 종류 단위 → 실제 퍽 ID · 적재함 칸 이름 · 놓을 칸 번호를 붙인 정차 목록
 //   3. 비용표 yaml 읽기: 이동 시간 · 정차 · 팔 동작 시간
 // 입력
@@ -58,7 +58,7 @@ std::optional<TransferPlan> plan_transfer(
 
 // 수집 정차 1곳의 팔 동작 (LOOK 은 정차 시작 때 노드가 이미 함)
 //   at_box : 이 박스에서 본 퍽 (보통 2개, 집을 순서대로)
-//   그리퍼가 차 있으면 먼저 STORE → PICK, 다음 퍽도 같은 식. 마지막 퍽은 그리퍼에 남김
+//   퍽마다 PICK → STORE (그리퍼가 이미 차 있으면 그것부터 STORE). 끝나면 그리퍼 빔 = 바로 주행 가능
 //   빈 칸이 모자라면 빈 목록 + error
 std::vector<ArmAction> collect_box_actions(
   const std::vector<TransferPuck> & at_box, const Cargo & cargo, std::string * error = nullptr);

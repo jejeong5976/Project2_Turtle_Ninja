@@ -32,6 +32,7 @@ enum StepKind : int
   kPlanCollectBox = 2,    // 이 박스에서 본 퍽 → [STORE] PICK … 끼워 넣기
   kPlanDelivery = 3,      // 할당 · 운반 계획 → 배달 · 재검증 단계 (ref[0] < 1 이면 지금 자리에서 재계획)
   kPlanVerify = 4,        // 재검증: 장소 LOOK 뒤 새 관측으로 칸 · 그룹 판정
+  kPlaceBox = 5,          // 장소 LOOK 뒤 박스 측정 기다려 칸 기준 확정 (place_box.hpp), 못 받으면 지도 값
   kTargetDiceCell = 10,   // PLACE 목표 = 장소 중심 + 주사위 눈 오프셋 (Target::Custom)
 };
 

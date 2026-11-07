@@ -1,12 +1,12 @@
 // task_parser.hpp — 바코드 원문 → Task
 //
 // 역할
-//   - 발제 v5 바코드 해석, Code128 · 출발 구역 벽에 하나
-//       P2-01 · P2-03 = 오름차순, 적은 횟수부터 L1 → L2 → L3
-//       P2-02 · P2-04 = 내림차순, 많은 횟수부터
-//       그 밖 = 미등록 바코드 → std::nullopt + error
+//   - 발제 v5 바코드 해석, Code128 · 출발 구역 벽에 하나. 뜻은 바코드 표 (maps/dice_barcodes.json)
+//       ASC = 오름차순, 적은 횟수부터 L1 → L2 → L3 (P2-01 · P2-03)
+//       DESC = 내림차순, 많은 횟수부터 (P2-02 · P2-04)
+//       표에 없음 = 미등록 바코드 → std::nullopt + error
 // 입력
-//   - /perception/task_text 의 raw_text
+//   - /perception/task_text 의 raw_text, 바코드 표 (load_barcode_table)
 // 출력
 //   - Task, dice_order 에 정렬 방향
 // 실행
@@ -37,6 +37,6 @@ struct Task
 };
 
 // → Task (dice_order, task_id = raw_text = 바코드 원문)
-std::optional<Task> parse_task(const std::string & raw_text, std::string * error = nullptr);
+std::optional<Task> parse_task(const std::string & raw_text, const BarcodeTable & table, std::string * error = nullptr);
 
 }  // namespace mission
