@@ -164,7 +164,7 @@ class SimpleDock(Node):
                 return res
             g = apply(T, np.array([[ps.pose.position.x, ps.pose.position.y]]))[0]
             gyaw = yaw_of(ps.pose.orientation) + T[2]
-            core = DockCore(g, gyaw, box_track=self.a.box_track, box_dist=self.a.box_dist, v_max=self.a.v_max, margin=self.a.margin,
+            core = DockCore(g, gyaw, box_track=self.a.box_track, box_dist=self.a.box_dist, v_max=self.a.v_max, w_max=self.a.w_max, margin=self.a.margin,
                             tol_pos=self.a.tol_pos, tol_yaw_deg=self.a.tol_yaw_deg, tol_ok=self.a.tol_ok)
             self.get_logger().info(f'정밀 접근 목표 odom ({g[0]:+.3f}, {g[1]:+.3f}, {math.degrees(gyaw):+.1f}°)')
             if not self.set_polygons(False):
@@ -227,8 +227,9 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--node_name', default='simple_dock')
     p.add_argument('--action_name', default='dock_to_pose')
-    p.add_argument('--v_max', type=float, default=0.05, help='최고 속도 [m/s]')
-    p.add_argument('--margin', type=float, default=0.02, help='몸 둘레 이만큼 안에 박스가 아닌 물체면 멈춤 [m]')
+    p.add_argument('--v_max', type=float, default=0.15, help='최고 속도 [m/s] (11-07 실물: 0.05 는 너무 느림)')
+    p.add_argument('--w_max', type=float, default=0.3, help='제자리 회전 최고 [rad/s]')
+    p.add_argument('--margin', type=float, default=0.02, help='몸 둘레 이만큼 + 다가가는 속도 × 0.25 s 안에 박스가 아닌 물체면 그쪽으로 안 감 [m]')
     p.add_argument('--tol_pos', type=float, default=0.005, help='여기까지 오면 끝 [m]')
     p.add_argument('--tol_ok', type=float, default=0.015, help='이 안에서 1.5 s 동안 더 안 줄면 끝 [m] (launch dock_tol)')
     p.add_argument('--tol_yaw_deg', type=float, default=2.0)

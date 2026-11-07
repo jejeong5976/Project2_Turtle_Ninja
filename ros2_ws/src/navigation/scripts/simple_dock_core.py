@@ -9,8 +9,9 @@
   3. 끝: 위치 tol_pos · 방향 tol_yaw 안. 또는 tol_ok · tol_yaw_ok 안에서 stall_s 동안 1 mm 도 안 줄면 (바퀴가 아주 작은 명령을 못 따라갈 때)
 박스 맞춤: box_tracker.BoxTracker (지도 박스 자리 ±8 cm · ±15° 안의 앞면만, 목표 10 cm 안에서는 고정)
 안전 (매 주기, 라이다 원래 점 = scan_merger 몸 상자 (±0.17 × ±0.19) 에 안 지워진 점):
-  - 가까운 점 = 몸 사각형 (±half_x · ±half_y) 바깥 margin 띠 안, 박스 (+box_excl) 아닌 점. 몸 안쪽 (±self_in, 바퀴 · 기둥) 은 안 셈
-  - 명령대로 움직이면 가까운 점 쪽으로 다가가는 몸 부분 (가장 가까운 몸 점의 속도 · 회전 포함) 이 있으면 그 명령은 안 씀
+  - 가까운 점 = 몸 사각형 (±half_x · ±half_y) 바깥 띠 안, 박스 (+box_excl) 아닌 점. 몸 안쪽 (±self_in, 바퀴 · 기둥) 은 안 셈
+  - 명령대로 움직이면 가까운 점 쪽으로 다가가는 몸 부분 (가장 가까운 몸 점의 속도 · 회전 포함) 이 있고, 그 점까지 틈이
+    margin + 다가가는 속도 × t_react 보다 작으면 그 명령은 안 씀 (빠를수록 일찍 멈춤: 0.15 m/s 면 2 + 3.75 cm)
     돌기가 막힘 → 그 점에서 v_esc 로 떨어진 뒤 다시 돌기 · 다가가기가 막힘 → 회전 빼고, 그래도 막히면 그 점 쪽 성분 빼고 미끄러지듯
     다 막히면 멈추고 실패 (이유 = 막은 점 자리)
   - 실물 11-07 B1 앞 (팔 접힘): 몸 사각형 바깥 점은 앞 가운데 x 0.165–0.17 (박스 면 추정) 뿐, 0.17 넘는 자기 점 없음
@@ -27,11 +28,11 @@ def wrap(a):
 
 
 class DockCore:
-    def __init__(self, goal_xy, goal_yaw, box_track=True, box_dist=0.2575, box_half=0.1025, v_max=0.05, v_min=0.012,
+    def __init__(self, goal_xy, goal_yaw, box_track=True, box_dist=0.2575, box_half=0.1025, v_max=0.15, v_min=0.012,
                  k_v=1.0, w_max=0.3, w_min=0.06, w_fine=0.1, k_w=1.0, align_deg=6.0, tol_pos=0.005, tol_yaw_deg=2.0,
                  tol_ok=0.015, tol_yaw_ok_deg=3.0, stall_s=1.5,
                  half_x=0.16, half_y=0.16, margin=0.02, self_in=0.165, box_excl=0.03, min_hits=3, v_esc=0.02,
-                 toward_eps=0.002):
+                 toward_eps=0.002, t_react=0.25):
         self.g_xy, self.g_yaw = np.asarray(goal_xy, float), float(goal_yaw)
         self.box_dist = box_dist
         self.tr = BoxTracker(goal_xy, goal_yaw, box_dist=box_dist, half=box_half) if box_track else None
@@ -43,7 +44,9 @@ class DockCore:
         self.tol_ok, self.tol_yaw_ok, self.stall_s = tol_ok, math.radians(tol_yaw_ok_deg), stall_s
         self.best, self.t_best = float('inf'), 0.0
         self.hx, self.hy, self.m, self.self_in = half_x, half_y, margin, self_in
-        self.min_hits, self.v_esc, self.eps = min_hits, v_esc, toward_eps
+        self.min_hits, self.v_esc, self.eps, self.t_react = min_hits, v_esc, toward_eps, t_react
+        # 띠 너비: 가장 빠른 몸 점 (병진 + 회전 × 모서리 반지름) 이 t_react 동안 가는 거리까지
+        self.band = margin + t_react * (v_max + w_max * math.hypot(half_x, half_y))
         self.aligned = False
         self.mode = ''      # 지난 주기 명령 종류 (로그)
         self.why = ''
@@ -67,12 +70,12 @@ class DockCore:
 
     # ---------------------------------------------------------------- 안전
     def near_points(self, raw_body, pose):
-        """몸 둘레 margin 띠 안 · 박스 아닌 점 (몸 좌표)"""
+        """몸 둘레 band 띠 안 · 박스 아닌 점 (몸 좌표)"""
         P = np.asarray(raw_body, float).reshape(-1, 2)
         if len(P) == 0:
             return P
         P = P[~((np.abs(P[:, 0]) < self.self_in) & (np.abs(P[:, 1]) < self.self_in))]
-        P = P[(np.abs(P[:, 0]) < self.hx + self.m) & (np.abs(P[:, 1]) < self.hy + self.m)]
+        P = P[(np.abs(P[:, 0]) < self.hx + self.band) & (np.abs(P[:, 1]) < self.hy + self.band)]
         if len(P) == 0:
             return P
         c, byaw = self.box_pose()
@@ -85,7 +88,8 @@ class DockCore:
         return P[~((np.abs(q[:, 0]) < lim) & (np.abs(q[:, 1]) < lim))]
 
     def blockers(self, near, cmd):
-        """cmd 로 움직이면 다가가는 가까운 점들 (몸에서 가장 가까운 점의 속도 · 점 쪽 방향 내적 > eps)"""
+        """cmd 로 움직이면 다가가는 가까운 점들: 몸에서 가장 가까운 점의 속도 · 점 쪽 방향 내적 (다가가는 속도) > eps 이고
+        틈 < margin + 다가가는 속도 × t_react"""
         if len(near) == 0:
             return near
         vx, vy, w = cmd
@@ -94,7 +98,8 @@ class DockCore:
         n = np.hypot(d[:, 0], d[:, 1])
         d = d / np.maximum(n, 1e-6)[:, None]
         vb = np.c_[vx - w * b[:, 1], vy + w * b[:, 0]]
-        return near[(vb * d).sum(1) > self.eps]
+        closing = (vb * d).sum(1)
+        return near[(closing > self.eps) & (n < self.m + closing * self.t_react)]
 
     def describe(self, P):
         p = P[np.argmin(np.maximum(np.abs(P[:, 0]) - self.hx, np.abs(P[:, 1]) - self.hy))]
