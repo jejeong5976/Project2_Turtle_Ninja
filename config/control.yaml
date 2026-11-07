@@ -110,6 +110,7 @@ control_master:
       S4: [-7.0, -8.0]    # 11-07 실물: 오른쪽으로 8 mm · 뒤로 4 mm 더, 다시 뒤 (프로파일 쪽) 3 mm
     # 넣는 점 맞추기: 경로의 놓는 점을 팔 모델로 칸 표 (config/rack_cells.yaml 칸 중심 + place_offset) 로 옮김 (칸마다 자동, 위 보정은 그 위에 더함)
     store_to_cell: true
+    store_match_grip_depth: true   # 쥔 깊이가 박스 PICK (pick_heights_mm 마지막 50) 과 다르면 칸 근처 높이를 그 차만큼 (받침에서 30 mm 로 다시 쥔 퍽 → +20 mm). 11-07 실물: 세운 퍽이 S2 에 긁힘
     # 쥔 퍽 손 안 위치 (손목 카메라, rack_tag_node 를 띄워야 잼): false = STORE 때 로그만, true = 기준과 차이만큼 칸 근처 경로를 옮김
     #   기준: STORE 가 잘 들어간 PICK 뒤 (넣기 전, 기준점에서) ros2 service call /control_master/save_held_reference std_srvs/srv/Trigger
     held_correct: false
