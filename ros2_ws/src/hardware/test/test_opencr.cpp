@@ -240,6 +240,39 @@ TEST(Packet, TempRoundTrip)
   EXPECT_FALSE(ntp::decode_temp(too_many, 1, d));
 }
 
+// TORQUE_FAIL: 토크 켜기 실패 이유가 그대로 오가나. 길이 · 단계가 틀리면 거부
+TEST(Packet, TorqueFailRoundTrip)
+{
+  ntp::TorqueFail f{};
+  f.idx = 9;
+  f.id = 12;
+  f.step = ntp::TF_RANGE;
+  f.dxl_err = 0;
+  f.lib_err = 0;
+  f.pos = 3120;
+  f.min_lim = 1024;
+  f.max_lim = 3072;
+  uint8_t buf[ntp::MAX_FRAME];
+  const uint16_t len = ntp::encode_torque_fail(f, buf, sizeof(buf));
+  ASSERT_EQ(len, 5 + 17);
+  ntp::Parser p;
+  ASSERT_EQ(feed_all(p, buf, len), 1);
+  ASSERT_EQ(p.type(), ntp::TYPE_TORQUE_FAIL);
+  ntp::TorqueFail d{};
+  ASSERT_TRUE(ntp::decode_torque_fail(p.data(), p.len(), d));
+  EXPECT_EQ(d.idx, 9);
+  EXPECT_EQ(d.id, 12);
+  EXPECT_EQ(d.step, ntp::TF_RANGE);
+  EXPECT_EQ(d.pos, 3120);
+  EXPECT_EQ(d.min_lim, 1024);
+  EXPECT_EQ(d.max_lim, 3072);
+  EXPECT_FALSE(ntp::decode_torque_fail(p.data(), static_cast<uint8_t>(p.len() - 1), d));
+  f.step = 9;
+  ASSERT_EQ(ntp::encode_torque_fail(f, buf, sizeof(buf)), 5 + 17);
+  ASSERT_EQ(feed_all(p, buf, 5 + 17), 1);
+  EXPECT_FALSE(ntp::decode_torque_fail(p.data(), p.len(), d)) << "모르는 단계";
+}
+
 TEST(Packet, DecodeRejectsBadShape)
 {
   ntp::Cmd c{};
@@ -710,4 +743,109 @@ TEST(OpenCRPositionRate, BatchedFramesScalingAndFailedJoint)
   EXPECT_TRUE(std::isnan(link.state().joints[1].position_velocity));
   // Existing reported velocity remains available to the default controller.
   EXPECT_NEAR(link.state().joints[1].velocity, -0.16, 1e-6);
+}
+
+// 토크 켜기 실패 → 사람 말: 관절 이름 · 모터 ID · 관절 각 (영점 · 방향 반영) · 위치 한계 · 모터 오류 이름
+TEST(TorqueFail, TextNamesJointRangeAndError)
+{
+  const double k = 2.0 * M_PI / 4096.0;
+  std::vector<JointSpec> js = small_robot();
+  js[1].scale = -1.0;
+  js[1].zero_rad = (2054 - 2048) * k;    // 조향 영점 2054 (ID 11 임시값과 같은 모양)
+  ntp::TorqueFail f{};
+  f.idx = 1;
+  f.id = 5;
+  f.step = ntp::TF_RANGE;
+  f.pos = 2054 - 1100;                   // 관절 +96.7°
+  f.min_lim = 1024;
+  f.max_lim = 3072;
+  const std::string t = hardware::torque_fail_text(js, f);
+  EXPECT_NE(t.find("steer_fl_joint (모터 5)"), std::string::npos) << t;
+  EXPECT_NE(t.find("954 눈금 (관절 +97°)"), std::string::npos) << t;
+  EXPECT_NE(t.find("위치 한계 1024–3072"), std::string::npos) << t;
+  EXPECT_NE(t.find("손으로"), std::string::npos) << t;
+  f.step = ntp::TF_GOAL;
+  f.dxl_err = 0x06;
+  EXPECT_NE(hardware::torque_fail_text(js, f).find("0x06 (Data Limit)"), std::string::npos);
+  f.step = ntp::TF_READ;
+  f.dxl_err = 0;
+  f.lib_err = 3;
+  EXPECT_NE(hardware::torque_fail_text(js, f).find("읽기 실패 · 통신 오류 3"), std::string::npos);
+}
+
+// 링크가 TORQUE_FAIL 을 받아 두고 (STATE 처리는 그대로), 받은 뒤 지난 시간을 알려 줌
+TEST(OpenCRLink, TorqueFailIsReceived)
+{
+  Pty pty;
+  FakeOpenCR fake(pty.master);
+  OpenCRLink link(small_robot(), 15);
+  link.adopt_fd(pty.slave);
+  ASSERT_GE(link.configure(2.0), 0);
+  ntp::TorqueFail f{};
+  double age = 0.0;
+  EXPECT_FALSE(link.last_torque_fail(f, age));
+  ntp::TorqueFail sent{};
+  sent.idx = 1;
+  sent.id = 5;
+  sent.step = ntp::TF_TORQUE;
+  sent.lib_err = 3;
+  sent.min_lim = sent.max_lim = ntp::TF_NO_LIMIT;
+  uint8_t buf[ntp::MAX_FRAME];
+  const uint16_t len = ntp::encode_torque_fail(sent, buf, sizeof(buf));
+  ASSERT_EQ(write(pty.master, buf, len), static_cast<ssize_t>(len));
+  for (int k = 0; k < 20 && link.torque_fail_count() == 0; ++k) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    link.poll();
+  }
+  ASSERT_TRUE(link.last_torque_fail(f, age));
+  EXPECT_EQ(f.id, 5);
+  EXPECT_EQ(f.step, ntp::TF_TORQUE);
+  EXPECT_LT(age, 1.0);
+}
+
+// 위치 한계 한 줄 · 한계 밖 알림: 조향 영점 · 방향 반영, 위치 모드가 아닌 관절 (바퀴 · 그리퍼) 은 빼고
+TEST(PosLimits, TextAndOutOfRange)
+{
+  const double k = 2.0 * M_PI / 4096.0;
+  std::vector<JointSpec> js = small_robot();
+  js[1].scale = -1.0;
+  js[1].zero_rad = (2054 - 2048) * k;
+  const std::vector<std::pair<int32_t, int32_t>> lim = {{ntp::TF_NO_LIMIT, ntp::TF_NO_LIMIT}, {1024, 3072}, {ntp::TF_NO_LIMIT, ntp::TF_NO_LIMIT}};
+  std::string bad;
+  const std::string line = hardware::pos_limits_text(js, lim, {0.0, 3.0 * M_PI / 180.0, 0.01}, bad);
+  EXPECT_EQ(line, "steer_fl_joint -89°~+91° (지금 +3°)") << line;   // 영점 2054 → (1024 · 3072 − 2054) × −1 눈금
+  EXPECT_TRUE(bad.empty()) << bad;
+  hardware::pos_limits_text(js, lim, {0.0, 97.0 * M_PI / 180.0, 0.01}, bad);
+  EXPECT_NE(bad.find("steer_fl_joint 지금 +97°"), std::string::npos) << bad;
+  EXPECT_NE(bad.find("(1024–3072) 밖"), std::string::npos) << bad;
+}
+
+// POS_LIMITS 를 받아 두고, 다음 CONFIG 에서 지움 (새 설정의 한계를 다시 받을 때까지 옛 것을 안 씀)
+TEST(OpenCRLink, PosLimitsReceivedAndResetByConfig)
+{
+  Pty pty;
+  FakeOpenCR fake(pty.master);
+  OpenCRLink link(small_robot(), 15);
+  link.adopt_fd(pty.slave);
+  ASSERT_GE(link.configure(2.0), 0);
+  std::vector<std::pair<int32_t, int32_t>> got;
+  EXPECT_FALSE(link.pos_limits(got));
+  ntp::PosLimits l{};
+  l.n = 3;
+  for (int i = 0; i < 3; ++i) {l.lo[i] = l.hi[i] = ntp::TF_NO_LIMIT;}
+  l.lo[1] = 1024;
+  l.hi[1] = 3072;
+  uint8_t buf[ntp::MAX_FRAME];
+  const uint16_t len = ntp::encode_pos_limits(l, buf, sizeof(buf));
+  ASSERT_EQ(write(pty.master, buf, len), static_cast<ssize_t>(len));
+  for (int k = 0; k < 20 && !link.pos_limits(got); ++k) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    link.poll();
+  }
+  ASSERT_TRUE(link.pos_limits(got));
+  EXPECT_EQ(got[1].first, 1024);
+  EXPECT_EQ(got[1].second, 3072);
+  EXPECT_EQ(got[0].first, ntp::TF_NO_LIMIT);
+  ASSERT_GE(link.configure(2.0), 0);
+  EXPECT_FALSE(link.pos_limits(got));
 }

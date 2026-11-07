@@ -299,6 +299,21 @@ CallbackReturn OpenCRHardware::on_configure(const rclcpp_lifecycle::State &)
   publish_states();
   RCLCPP_INFO(get_logger(), "OpenCR 준비 끝 (IMU %s)",
     (link_->state().status & ntp::ST_IMU_OK) ? "정상" : "없음 — odom 회전은 바퀴 계산으로");
+  // 모터 EEPROM 위치 한계 (새 펌웨어가 CONFIG 바로 뒤 보냄) — 켤 때 찍고, 지금 위치가 밖이면 토크를 켜기 전에 알림
+  //   (11-07 팀장님: 꺼진 동안 손 · 충돌로 조향이 한계 밖으로 돌면 "토크를 못 켬" — 한계가 실제 돌 수 있는 범위와 맞는지 확인)
+  std::vector<std::pair<int32_t, int32_t>> lim;
+  if (link_->pos_limits(lim)) {
+    std::vector<double> q;
+    for (const auto & j : link_->state().joints) {q.push_back(j.position);}
+    std::string bad;
+    const std::string line = pos_limits_text(link_->joints(), lim, q, bad);
+    if (!line.empty()) {RCLCPP_INFO(get_logger(), "모터 위치 한계 (EEPROM): %s", line.c_str());}
+    if (!bad.empty()) {
+      RCLCPP_WARN(get_logger(), "%s → 이대로 켜면 토크를 못 켬. 끈 채로 손으로 한계 안 (조향이면 똑바로) 으로 돌려 놓을 것", bad.c_str());
+    }
+  } else {
+    RCLCPP_INFO(get_logger(), "모터 위치 한계: 펌웨어가 안 보냄 (11-07 전 펌웨어)");
+  }
   return CallbackReturn::SUCCESS;
 }
 
@@ -451,7 +466,12 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
       torque_wait_since_ = now;
     }
     if (std::chrono::duration<double>(now - torque_wait_since_).count() > 0.5) {
-      RCLCPP_ERROR(get_logger(), "토크를 못 켬 (펌웨어가 모터 쓰기 실패를 알려 옴) → 멈춤");
+      // 새 펌웨어는 실패 이유 (TORQUE_FAIL) 를 0.5 s 마다 보냄 → 기다린 동안 받은 것이면 같이 찍음
+      ntp::TorqueFail f;
+      double age = 1e9;
+      const bool why = link_->last_torque_fail(f, age) && age < 1.5;
+      RCLCPP_ERROR(get_logger(), "토크를 못 켬: %s → 멈춤",
+        why ? torque_fail_text(link_->joints(), f).c_str() : "펌웨어가 모터 쓰기 실패를 알려 옴 (이유 없음 = 옛 펌웨어)");
       return return_type::ERROR;
     }
   } else {

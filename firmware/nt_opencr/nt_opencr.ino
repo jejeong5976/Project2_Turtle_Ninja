@@ -126,6 +126,17 @@ static void send_temp()
   if (tlen) {usb_send(tx, tlen);}
 }
 
+// 토크 켜기 실패 이유 (TORQUE_FAIL) — 실패가 이어지는 동안 0.5 s 마다 하나 (매 바퀴 다시 시도하므로 그대로 보내면 100 Hz)
+static uint32_t tf_sent_ms = 0;
+static void send_torque_fail()
+{
+  ntp::TorqueFail f;
+  if (!bus_torque_fail_take(f) || millis() - tf_sent_ms < 500) {return;}
+  tf_sent_ms = millis();
+  const uint16_t len = ntp::encode_torque_fail(f, tx, sizeof(tx));
+  if (len) {usb_send(tx, len);}
+}
+
 // CONFIG 직후: 모은 숫자를 버리고 새 구간 시작 (CONFIG 전 구간은 바로 앞에서 send_diag 로 따로 보냄)
 static void diag_restart()
 {
@@ -154,6 +165,10 @@ static void handle_packet()
     have_cmd = false;
     const uint16_t len = ntp::encode_ack(ack, tx, sizeof(tx));
     Serial.write(tx, len);   // ACK 는 PC 가 방금 CONFIG 를 보낸 뒤라 읽는 중 — 꼭 가야 해서 코어 쓰기(최대 100 ms 대기) 그대로
+    ntp::PosLimits lim;   // 위치 한계 (켤 때 플러그인이 찍고 지금 위치가 밖이면 경고). 모르는 옛 플러그인은 버림
+    bus_pos_limits(lim);
+    const uint16_t llen = ntp::encode_pos_limits(lim, tx, sizeof(tx));
+    if (llen) {Serial.write(tx, llen);}
     // CONFIG 뒤 새 구간. bus_configure 시간은 어느 구간의 한 바퀴에도 안 넣고 config_ms 로 따로 알림
     const uint32_t cfg_ms = millis() - t_cfg;
     config_ms_pending = static_cast<uint16_t>(cfg_ms > 65535 ? 65535 : cfg_ms);
@@ -202,7 +217,10 @@ void loop()
   bool write_ok = true;
   if (configured) {
     // 토크는 Jetson 이 켜라고 할 때만. 끊겨도 끄지는 않음 (팔이 떨어지지 않게) — 바퀴만 0
-    if (have_cmd) {bus_set_torque((cmd.flags & ntp::FLAG_TORQUE) != 0);}
+    if (have_cmd) {
+      bus_set_torque((cmd.flags & ntp::FLAG_TORQUE) != 0);
+      send_torque_fail();
+    }
     write_ok = bus_write_targets(cmd, host_ok);
     state.comm_err = bus_read_states(state);
     bus_health_step();   // 1 모터씩 돌아가며 Hardware Error · Torque Enable 되읽기 (R5)
