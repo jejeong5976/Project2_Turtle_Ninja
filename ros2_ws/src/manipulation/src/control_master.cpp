@@ -317,8 +317,8 @@ public:
     declare_parameter<double>("park_regrasp_r_mm", -6.0);       // 선 퍽 다시 쥐는 자리 = 받침 중심에서 반지름 방향 (− = J1 쪽)
     declare_parameter<double>("park_insert_j3_deg", 0.0);      // 넣는 자세 J3 를 이만큼 더 [°, + = 손끝 위] (넣는 점에서 5° ≈ 위 22 · 바깥 9 mm)
     declare_parameter<int>("park_loose_step", -1);              // 넣으며 기울이는 점 (1–8) 중 이 번째부터 손가락을 park_loose_grip_m 으로 풂. −1 = 안 풂
-    declare_parameter<double>("park_insert_back_mm", 0.0);     // > 0: 다 기울인 채 퍽 긴축을 따라 이만큼 뒤에서 긴축 방향으로 곧게 넣음 (대각선으로)
-    declare_parameter<double>("park_insert_extra_mm", 0.0);    // 넣는 끝점을 긴축 방향 (아래 · J1 쪽) 으로 이만큼 더 (턱에 걸치면 밀어 넣기)
+    declare_parameter<double>("park_insert_back_mm", 0.0);     // > 0: 다 기울인 자세를 이만큼 위에서 만들고 그 자세로 곧게 넣음 (from_back 이 있으면 뒤 위에서 대각선)
+    declare_parameter<double>("park_insert_extra_mm", 0.0);    // 넣는 끝점을 이만큼 더 아래로 (턱에 걸치면 밀어 넣기)
     declare_parameter<double>("park_insert_from_back_mm", 0.0);  // 곧게 넣기 출발점을 J1 쪽 (로봇 뒤) 으로 이만큼 → 뒤 위에서 앞 아래로 대각선으로 넣음
     declare_parameter<double>("park_speed_dps", 20.0);          // 받침에서 넣기 · 다시 쥐기 속도
     declare_parameter<double>("park_push_speed_dps", 20.0);     // 받침에서 밀어 세우는 속도 (빠르면 손끝이 퍽 면을 타고 올라 넘어짐)
@@ -680,9 +680,15 @@ private:
       if (n.speed_dps > 0.0 && n.speed_dps < path_slow_min_dps_) {n.speed_dps = path_slow_min_dps_;}
     }
     const auto speed_scale = get_parameter("path_speed_scale").as_string_array();   // 복사 (임시 Parameter 안을 가리키지 않게)
+    // LOOK_RACK 의 store_look_<칸> · look_rack_<칸> 도 store_<칸> 값을 씀 (같은 칸, 같은 흔들림)
+    std::string scale_name = name;
+    for (const char * pre : {"store_look_", "look_rack_"}) {
+      const std::string ps(pre);
+      if (name.rfind(ps, 0) == 0) {scale_name = "store_" + name.substr(ps.size());}
+    }
     for (const auto & e : speed_scale) {
       const auto eq = e.find('=');
-      if (eq == std::string::npos || e.compare(0, eq, name) != 0 || eq != name.size()) {continue;}
+      if (eq == std::string::npos || e.compare(0, eq, scale_name) != 0 || eq != scale_name.size()) {continue;}
       const double sc = std::atof(e.c_str() + eq + 1);
       if (!(sc > 0.0)) {continue;}
       for (auto & n : path.nodes) {
@@ -1328,28 +1334,35 @@ private:
     const Eigen::Quaterniond Q(r.w, r.x, r.y, r.z);
     const Eigen::Vector3d T(tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z);
     const double dyaw = std::atan2(2.0 * (r.w * r.z + r.x * r.y), 1.0 - 2.0 * (r.y * r.y + r.z * r.z));
+    double best = 1e9;   // 목표로 맞춘 검출의 거리 — 둘 이상 25 mm 안이면 가장 가까운 것 (명목 위치 우선, 목표가 명목 TF 로 나옴)
+    std::optional<NeighborPuck> held_back;   // 지금까지 목표였다가 더 가까운 것에 밀린 검출 → 이웃으로 (nb_radius 안일 때)
     for (const auto & p : seen_) {
       const Eigen::Vector3d b = Q * p.p + T, bn = Q * p.p_nom + T;
       if (exclude_ && std::hypot(b.x() - exclude_->x(), b.y() - exclude_->y()) < 0.025) {continue;}   // 다시 잡기: 집어 든 퍽
       if (std::fabs(b.z() - zc) > 0.04 && std::fabs(bn.z() - zc) > 0.04) {continue;}   // 다른 높이 (쥔 퍽 · 박스 밖 바닥 등)
       const double d = std::hypot(b.x() - x, b.y() - y);
-      // 목표 = 되돌린 위치 또는 되돌리기 전 위치가 25 mm 안 (pick det · planning 은 명목 TF 로 목표를 냄 — 카메라가 3° 돌면 둘이 ~18 mm 차이)
-      if (d < 0.025 || std::hypot(bn.x() - x, bn.y() - y) < 0.025) {
-        found = true;
-        tgt = {p.square, p.yaw_known, p.yaw + dyaw, d, true};
-        tc = b.head<2>();
-        tagged = p.tagged;
-        lying = p.lying;
-        lying_axis = p.axis + dyaw;
-        continue;
-      }
-      if (d > nb_radius_) {continue;}
+      const double dn = std::hypot(bn.x() - x, bn.y() - y);
       NeighborPuck n;
       n.c = b.head<2>();
       n.square = p.square;
       n.yaw_known = p.yaw_known && !p.round_r30;
       n.yaw = p.yaw + dyaw;
       n.radius = p.round_r30 ? 0.03 : 0.0;   // 누운 · 방향 모름 = 긴축 반 (30 mm) 원
+      // 목표 = 되돌린 위치 또는 되돌리기 전 위치가 25 mm 안 (pick det · planning 은 명목 TF 로 목표를 냄 — 카메라가 3° 돌면 둘이 ~18 mm 차이)
+      const double score = std::min(dn, d + 0.001);
+      if (std::min(d, dn) < 0.025 && score < best) {
+        if (held_back) {nb.push_back(*held_back);}
+        best = score;
+        found = true;
+        tgt = {p.square, p.yaw_known, p.yaw + dyaw, d, true};
+        tc = b.head<2>();
+        tagged = p.tagged;
+        lying = p.lying;
+        lying_axis = p.axis + dyaw;
+        held_back = d <= nb_radius_ ? std::optional<NeighborPuck>(n) : std::nullopt;
+        continue;
+      }
+      if (d > nb_radius_) {continue;}
       nb.push_back(n);
     }
     return nb;
