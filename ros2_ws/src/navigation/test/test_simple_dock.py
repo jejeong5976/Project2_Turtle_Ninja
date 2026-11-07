@@ -181,3 +181,29 @@ def test_leg_beside_does_not_stop_forward():
     r = run((-0.15, 0.0, 0.0), (0.55, 0.0), 0.0, person=(1.0, leg))
     assert r['st'] == 'done', r['why']
     assert r['gap'] > 0.005, r
+
+
+@pytest.mark.parametrize('dx, dy, yaw_deg', [(0.10, 0.15, 5.0), (-0.12, -0.18, -8.0), (0.0, 0.22, 0.0)])
+def test_box_far_from_map_found_by_wide_search(dx, dy, yaw_deg):
+    """박스가 지도 자리에서 10–22 cm 옆 · 앞뒤로, 돌아가 있음 (11-07 실물 arena5: 8–25 cm) → 넓게 찾기로 실제 박스 앞에 섬"""
+    r = run((0.0, 0.0, 0.0), (0.58 + dx, dy), math.radians(yaw_deg), map_box_c=(0.58, 0.0), map_box_yaw=0.0)
+    assert r['st'] == 'done', r['why']
+    assert 0.004 < r['face_gap'] < 0.02 and abs(r['side']) < 0.015 and abs(r['dyaw']) < 3.0, r
+    assert r['gap'] > 0.0, r
+
+
+def test_wide_search_ignores_wall_beside_map_spot():
+    """지도 자리 옆 (20 cm) 에 지나가는 벽, 박스는 지도 자리에서 12 cm 옆 → 벽이 아니라 박스에 섬"""
+    wall = ((0.25, 0.37), (1.0, 0.37))
+    r = run((0.0, 0.0, 0.0), (0.58, -0.12), 0.0, map_box_c=(0.58, 0.0), map_box_yaw=0.0, walls=[wall])
+    assert r['st'] == 'done', r['why']
+    assert abs(r['side']) < 0.015 and 0.004 < r['face_gap'] < 0.02, r
+    assert r['gap'] > 0.0, r
+
+
+def test_box_against_wall_behind():
+    """박스 뒤가 바로 벽 (긴 직선) → 벽이 아니라 박스 앞면에 섬"""
+    wall = ((0.8, -0.6), (0.8, 0.6))
+    r = run((0.0, 0.0, 0.0), (0.6975, 0.1), 0.0, map_box_c=(0.58, 0.0), map_box_yaw=0.0, walls=[wall])
+    assert r['st'] == 'done', r['why']
+    assert abs(r['side']) < 0.015 and 0.004 < r['face_gap'] < 0.02, r

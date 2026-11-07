@@ -7,7 +7,13 @@
   1. 돌기: 목표 방향과 align_deg 넘게 다르면 제자리 회전 (처음 한 번)
   2. 다가가기: 목표까지 곧게 (몸 좌표 vx · vy, 최고 v_max, 남은 거리에 비례해 느려짐) · 방향은 조금씩만 (w_fine)
   3. 끝: 위치 tol_pos · 방향 tol_yaw 안. 또는 tol_ok · tol_yaw_ok 안에서 stall_s 동안 1 mm 도 안 줄면 (바퀴가 아주 작은 명령을 못 따라갈 때)
-박스 맞춤: box_tracker.BoxTracker (지도 박스 자리 ±8 cm · ±15° 안의 앞면만, 목표 10 cm 안에서는 고정)
+박스 맞춤 (FaceTrack, 스캔마다): 박스 앞면 = 직선 조각 (길이 0.12 m – 한 변 + 3 cm, 연속, 끝 밖으로 같은 직선이 안 이어짐 = 벽 아님)
+  - 처음: 지도 박스 자리 ±search (0.25 m) · 방향 ±15° 안에서 박스 중심이 지도 자리에 가장 가까운 조각 (11-07 실물 arena5: 사람이 놓은
+    박스 · 지도 각도 오차로 8–25 cm 어긋남, box_tracker 의 ±8 cm 로는 못 찾음)
+  - 그 뒤: 지금 추정 ±track (6 cm) · 방향 ±8° 안 조각만 → 최근 5 개 중앙값. 박스 옆면 (90° 다름) 은 방향으로 걸러짐
+    (box_tracker 의 한 직선 맞춤은 옆면 점이 섞이면 기울어 읽음, 시뮬: 22 cm 옆 박스에서 12° 틀어져 박스 모서리에 닿음)
+  - 양 모서리가 다 보이면 (조각 ≥ 한 변 − 3 cm) 옆 위치도 고치고, 아니면 옆은 이전 추정 유지
+  - 목표 freeze_dist (0.10 m) 안에서는 고정 (면이 몸 상자 안으로 들어가 안 보임)
 안전 (매 주기, 라이다 원래 점 = scan_merger 몸 상자 (±0.17 × ±0.19) 에 안 지워진 점):
   - 가까운 점 = 몸 사각형 (±half_x · ±half_y) 바깥 띠 안, 박스 (+box_excl) 아닌 점. 몸 안쪽 (±self_in, 바퀴 · 기둥) 은 안 셈
   - 명령대로 움직이면 가까운 점 쪽으로 다가가는 몸 부분 (가장 가까운 몸 점의 속도 · 회전 포함) 이 있고, 그 점까지 틈이
@@ -20,7 +26,6 @@ import math
 
 import numpy as np
 
-from box_tracker import BoxTracker
 
 
 def wrap(a):
@@ -32,10 +37,10 @@ class DockCore:
                  k_v=1.0, w_max=0.3, w_min=0.06, w_fine=0.1, k_w=1.0, align_deg=6.0, tol_pos=0.005, tol_yaw_deg=2.0,
                  tol_ok=0.015, tol_yaw_ok_deg=3.0, stall_s=1.5,
                  half_x=0.16, half_y=0.16, margin=0.02, self_in=0.165, box_excl=0.03, min_hits=3, v_esc=0.02,
-                 toward_eps=0.002, t_react=0.25):
+                 toward_eps=0.002, t_react=0.25, search=0.25):
         self.g_xy, self.g_yaw = np.asarray(goal_xy, float), float(goal_yaw)
         self.box_dist = box_dist
-        self.tr = BoxTracker(goal_xy, goal_yaw, box_dist=box_dist, half=box_half) if box_track else None
+        self.tr = FaceTrack(goal_xy, goal_yaw, box_dist, box_half, search) if box_track else None
         self.box_half, self.box_excl = box_half, box_excl
         self.v_max, self.v_min, self.k_v = v_max, v_min, k_v
         self.w_max, self.w_min, self.w_fine, self.k_w = w_max, w_min, w_fine, k_w
@@ -67,6 +72,7 @@ class DockCore:
     def update_box(self, pts_odom, robot_xy):
         if self.tr is not None and len(pts_odom):
             self.tr.update(np.asarray(pts_odom, float), np.asarray(robot_xy, float))
+
 
     # ---------------------------------------------------------------- 안전
     def near_points(self, raw_body, pose):
@@ -179,3 +185,109 @@ class DockCore:
                 return slide, 'run'
         self.why = '막힘: ' + self.describe(blk if len(blk) else near)
         return (0.0, 0.0, 0.0), 'fail'
+
+
+class FaceTrack:
+    """박스 앞면 추적 (위 설명). c = 박스 중심, th = 지도 대비 회전, goal() = 정차 목표"""
+
+    def __init__(self, goal_xy, goal_yaw, box_dist, half, search=0.25, track=0.06, track_deg=8.0, max_deg=15.0,
+                 freeze_dist=0.10, med_n=5, tol=0.012, iters=80):
+        self.yaw0, self.dist, self.h = float(goal_yaw), box_dist, half
+        self.c0 = np.asarray(goal_xy, float) + box_dist * np.array([math.cos(goal_yaw), math.sin(goal_yaw)])
+        self.c, self.th = self.c0.copy(), 0.0
+        self.search, self.track, self.track_th, self.max_th = search, track, math.radians(track_deg), math.radians(max_deg)
+        self.freeze, self.med_n, self.tol, self.iters = freeze_dist, med_n, tol, iters
+        self.hist, self.n_ok, self.last_why = [], 0, ''
+        self.rng = np.random.default_rng(0)
+
+    def goal(self):
+        y = self.yaw0 + self.th
+        return self.c - self.dist * np.array([math.cos(y), math.sin(y)]), wrap(y)
+
+    def update(self, P, robot_xy):
+        g, _ = self.goal()
+        if np.hypot(*(robot_xy - g)) < self.freeze:
+            self.last_why = 'freeze'
+            return False
+        first = self.n_ok == 0
+        m = self.find(P, robot_xy, self.c0 if first else self.c, self.search if first else self.track,
+                      0.0 if first else self.th, self.max_th if first else self.track_th, first)
+        if m is None:
+            return False
+        if first and self.search > 0.08:
+            self.last_why = f'찾음 (지도에서 {np.hypot(*(m[:2] - self.c0)) * 100:.0f} cm · {math.degrees(m[2]):+.0f}°)'
+        self.hist = (self.hist + [m])[-self.med_n:]
+        H = np.array(self.hist)
+        self.c, self.th = np.median(H[:, :2], axis=0), float(np.median(H[:, 2]))
+        self.n_ok += 1
+        if not first:
+            self.last_why = 'ok'
+        return True
+
+    def find(self, P, robot_xy, center, radius, th_ref, th_tol, first):
+        """center ±radius · 방향 th_ref ±th_tol 안 앞면 조각 → (중심 x, y, th) 또는 None (last_why = 이유)"""
+        h = self.h
+        Q = P[np.hypot(P[:, 0] - center[0], P[:, 1] - center[1]) < radius + 2 * h]
+        if len(Q) < 8:
+            self.last_why = f'점 {len(Q)}'
+            return None
+        best, why = None, '조각 없음'
+        for _ in range(self.iters):
+            i, j = self.rng.choice(len(Q), 2, replace=False)
+            d = Q[j] - Q[i]
+            L = float(np.hypot(*d))
+            if not 0.03 < L < 2 * h + 0.03:
+                continue
+            d /= L
+            nn = np.array([-d[1], d[0]])
+            on = Q[np.abs((Q - Q[i]) @ nn) < self.tol]
+            s = np.sort((on - Q[i]) @ d)
+            if len(s) < 8:
+                continue
+            gaps = np.nonzero(np.diff(s) > 0.03)[0]          # 표본 두 점을 품은 연속 조각 (3 cm 넘게 비면 끊김)
+            k = np.searchsorted(gaps, np.searchsorted(s, 0.0) - 1, side='left')
+            lo = s[gaps[k - 1] + 1] if k > 0 else s[0]
+            hi = s[gaps[k]] if k < len(gaps) else s[-1]
+            if not lo <= L <= hi:
+                continue
+            seg = on[(((on - Q[i]) @ d) >= lo) & (((on - Q[i]) @ d) <= hi)]
+            if len(seg) < 8:
+                continue
+            mu = seg.mean(0)                                  # 조각 점으로 직선 다시 맞춤 (표본 두 점 방향은 잡음이 큼)
+            d = np.linalg.svd(seg - mu)[2][0]
+            nn = np.array([-d[1], d[0]])
+            ss = (seg - mu) @ d
+            lo, hi = float(ss.min()), float(ss.max())
+            Q_i = mu
+            span = hi - lo
+            if not 0.12 <= span <= 2 * h + 0.03:
+                why = f'조각 길이 {span * 100:.0f} cm'
+                continue
+            sa = (P - Q_i) @ d                                # 끝 밖 2–14 cm 에 같은 직선 점 = 벽
+            onP = np.abs((P - Q_i) @ nn) < self.tol
+            if (onP & (((sa > hi + 0.02) & (sa < hi + 0.14)) | ((sa < lo - 0.02) & (sa > lo - 0.14)))).sum() >= 4:
+                why = '면 밖으로 이어짐 (벽)'
+                continue
+            mid = Q_i + 0.5 * (lo + hi) * d
+            if nn @ (robot_xy - mid) < 0:
+                nn = -nn
+            th = wrap(math.atan2(-nn[1], -nn[0]) - self.yaw0)
+            if abs(wrap(th - th_ref)) > th_tol:
+                why = f'기울기 {math.degrees(th):.0f}°'
+                continue
+            full = span >= 2 * h - 0.03
+            if full or first:                                 # 양 모서리 보임 (처음엔 조각 가운데로)
+                c = mid - h * nn
+            else:                                             # 한쪽만 → 옆은 이전 추정을 이 면에 투영
+                c = mid + ((self.c - mid) @ d) * d - h * nn
+            dist = float(np.hypot(*(c - center)))
+            if dist > radius:
+                why = f'지도 자리에서 {dist * 100:.0f} cm' if first else f'추정에서 {dist * 100:.0f} cm'
+                continue
+            score = dist - (0.05 if full else 0.0)            # 같으면 양 모서리 보인 조각
+            if best is None or score < best[0]:
+                best = (score, np.array([c[0], c[1], th]))
+        if best is None:
+            self.last_why = why
+            return None
+        return best[1]
