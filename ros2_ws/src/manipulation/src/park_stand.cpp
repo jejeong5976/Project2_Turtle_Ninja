@@ -295,7 +295,7 @@ bool park_nodes(
   }
   if (!ok) {return false;}
   // 밀기: 받침 바깥에서 바닥 위 push_h 로 안쪽으로, 선 퍽 바깥 면 + 4 mm + 손가락 반두께 앞에서 멈춤
-  const double x_stop = -c.inner_half + c.side + 0.004 + 0.006;
+  const double x_stop = -c.inner_half + c.side + 0.004 + 0.006 - c.push_extra;
   const double pz = c.floor_z + c.push_h;
   const double r0 = c.push_r0;
   if (!add("park_push_down", at(r0, pz + c.push_dz), 0.0, 0.0, true, "")) {return false;}
