@@ -4,12 +4,14 @@
                 주행 rl_nav = navigate_to_pose (nf5) · 정밀 접근 rl_dock = dock_to_pose (dock3, planning dock_action)
                 controller(MPPI) · behavior · bt_navigator 는 안 띄움 (navigate_to_pose 가 겹침)
     mppi = controller(MPPI) · behavior · bt_navigator (옛 방식) + 정밀 접근 rl_dock. 박스에 붙어 선 자리 출발 처리 (빠져나오기 · 영역 끄기) 없음
+  정밀 접근 dock (2026-11-07): rl (기본) = rl_dock (dock3) / simple = simple_dock_node.py (규칙: 돌고 → 곧게 붙음, 라이다 원래 점으로 옆 벽 · 사람 멈춤)
 
   # 실물 (기본 localization:=slam): slam.launch.py 를 먼저 띄움 -> map -> odom · /map 은 slam_toolbox
   ros2 launch navigation slam.launch.py hardware:=opencr slam_mode:=mapping map:=$HOME/maps/arena   # 시연: 저장 지도 이어 그리기
   ros2 launch navigation nav2.launch.py
   ros2 launch navigation nav2.launch.py mission_hold:=false                                  # planning 없이 Nav2 만 시험
   ros2 launch navigation nav2.launch.py local_planner:=mppi                                  # 주행을 MPPI 로 (옛 방식)
+  ros2 launch navigation nav2.launch.py dock:=simple                                         # 정밀 접근을 규칙 노드로 (실물 11-07: dock3 이 옆 벽에 부딪힘)
   # AMCL (시뮬 · slam_toolbox 없이): map_server + AMCL 이 map -> odom · /map
   ros2 launch navigation nav2.launch.py localization:=amcl map:=<지도.yaml> use_sim_time:=true rviz:=true
   ros2 launch navigation nav2.launch.py localization:=amcl map:=<지도.yaml> initial_pose:=-1.468,-2.202,180  # 출발 자세로 AMCL 시작
@@ -96,6 +98,9 @@ def make_nodes(context):
     if lp not in ("rl", "mppi"):
         raise RuntimeError(f"local_planner 는 rl | mppi (지금 {lp})")
     dock_tol = LaunchConfiguration("dock_tol").perform(context)
+    dock = LaunchConfiguration("dock").perform(context).strip().lower()
+    if dock not in ("rl", "simple"):
+        raise RuntimeError(f"dock 은 rl | simple (지금 {dock})")
     # allow_substs: yaml 안 $(find-pkg-share nav2_bt_navigator) 같은 치환을 풀어 줌 (bt_navigator 행동 트리 폴더)
     common = [ParameterFile(params, allow_substs=True), {"use_sim_time": sim}]
     # 출발 자세 (map 기준 "x,y,yaw_deg"): 주면 AMCL 이 그 자세로 시작 (출발 구역 고정, 발제). 비우면 /initialpose 를 기다림
@@ -139,9 +144,14 @@ def make_nodes(context):
                              ["--action_name", "navigate_to_pose", "--tol_pos", "0.05", "--tol_yaw_deg", "5",
                               "--near_disable_polygons", POLYGONS, "--near_ok_s", "0"]))
     # 정밀 접근 (박스 · 장소 정차 0.2575 = 면 1 cm, planning dock_action): 그동안 영역 끔 · 목표 odom 고정 · 라이다로 박스 맞춤
-    nodes.append(rl_node("rl_dock", "dock3.npz", "dock3.json", rld, sim,
-                         ["--action_name", "dock_to_pose", "--tol_pos", dock_tol, "--tol_yaw_deg", "2",
-                          "--disable_polygons", POLYGONS, "--goal_frame", "odom", "--box_track"]))
+    if dock == "simple":
+        # 규칙 정밀 접근: 같은 dock_to_pose · 영역 끔 · 목표 odom 고정 · 박스 맞춤 (box_tracker.py). dock_tol = 더 안 줄 때 받아 주는 거리
+        nodes.append(Node(package="navigation", executable="simple_dock_node.py", name="simple_dock", output="screen",
+                          arguments=["--tol_ok", dock_tol, "--disable_polygons", POLYGONS] + (["--sim_time"] if sim else [])))
+    else:
+        nodes.append(rl_node("rl_dock", "dock3.npz", "dock3.json", rld, sim,
+                             ["--action_name", "dock_to_pose", "--tol_pos", dock_tol, "--tol_yaw_deg", "2",
+                              "--disable_polygons", POLYGONS, "--goal_frame", "odom", "--box_track"]))
     nodes += [
         # planning /mission/hold → 막는 중엔 Nav2 명령 버리고 0
         Node(package="navigation", executable="cmd_vel_hold", name="cmd_vel_hold", output=out,
@@ -169,6 +179,8 @@ def generate_launch_description():
         DeclareLaunchArgument("initial_pose", default_value="", description="출발 자세 map 기준 'x,y,yaw_deg' (localization:=amcl 일 때만)"),
         DeclareLaunchArgument("local_planner", default_value="rl",
                               description="rl = RL 주행 (nf5) + 정밀 접근 (dock3) / mppi = MPPI · bt_navigator + 정밀 접근"),
+        DeclareLaunchArgument("dock", default_value="rl",
+                              description="정밀 접근 dock_to_pose: rl = rl_dock (dock3) / simple = simple_dock_node.py (규칙)"),
         DeclareLaunchArgument("dock_tol", default_value="0.015",
                               description="정밀 접근 성공 거리 [m] (Isaac 11-07: 0.01 이면 판정 안에 못 들어와 시간 초과 한 번)"),
         DeclareLaunchArgument("mission_hold", default_value="true",
