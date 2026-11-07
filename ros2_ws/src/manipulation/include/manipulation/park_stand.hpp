@@ -77,6 +77,9 @@ struct ParkCfg
   //   (11-07 사용자: 그 자리에서 놓지 말고 몸 쪽으로 슬슬 당기며 놓기, 손은 올리지 말고). 풀린 손가락 사이에서 퍽이 돌며 더 서서 기댐
   double release_pull{0.0};
   double release_pull_dz{0.0};   // 당기는 동안 위아래 [m] (− = 내려가며)
+  // 넣는 끝점을 손등 쪽 (손목 카메라 쪽, 손 축에 수직 = app × close) 으로 이만큼 [m] — 넣는 움직임에 같이 (따로 안 멈춤)
+  //   (11-07 사용자: 넣으며 놓기 전에 손목을 카메라 달린 위로 5 mm, 나눠서 말고 넣으면서). 손 기울임 그대로
+  double release_up{0.0};
   int release_pull_steps{3};
   double side{0.0348}, length{0.060};
   double held_kg{0.017};

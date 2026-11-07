@@ -259,7 +259,9 @@ bool park_nodes(
       // 받침 바깥 위 수직 (반지름 +0.04, 바닥 + 62.5 mm) 에서 기울이며 넣기 — 위치 · 기울임을 같이 나눠 감
       //   insert_back > 0: 기울이기는 insert_back 위 점까지 (다 기울인 자세), 거기서 그 자세로 곧게 내려 넣기 (11-07 실물: 턱에 2–3 mm 걸침)
       const bool straight = c.insert_back > 0.0;
-      const Eigen::Vector3d p_tilt_end = straight ? Eigen::Vector3d(p_ins + c.insert_back * Z - c.insert_from_back * R) : p_ins;
+      // 넣는 끝점을 손등 (손목 카메라) 쪽으로 release_up 만큼 — 넣으면서 같이 (11-07 사용자: 놓기 전에 손목을 카메라 달린 위로 5 mm, 따로 말고 넣으며)
+      const Eigen::Vector3d p_end = p_ins + c.release_up * Hs.col(1);
+      const Eigen::Vector3d p_tilt_end = straight ? Eigen::Vector3d(p_ins + c.insert_back * Z - c.insert_from_back * R) : p_end;
       const Eigen::Vector3d p_over = at(0.04, c.floor_z + 0.0625);
       const bool pull = c.release_pull > 0.0 && c.release_pull_steps > 0;
       const char * release = pull ? "loose" : "open";
@@ -271,15 +273,16 @@ bool park_nodes(
         if (ok && c.insert_dj3 != 0.0) {nodes.back().q[2] += c.insert_dj3 * fk;}   // 실물 맞춤 (11-07 사용자: 넣을 때 J3 를 조금 더 올려)
       }
       if (ok && straight) {
-        ok = add("park_insert", p_ins, cd.th, c.held_kg, true, release);
+        ok = add("park_insert", p_end, cd.th, c.held_kg, true, release);
         if (ok && c.insert_dj3 != 0.0) {nodes.back().q[2] += c.insert_dj3;}
       }
+      Eigen::Vector3d p_rel = p_end;
       // 당기며 놓기: 넣는 점에서 같은 높이 · 같은 기울임으로 J1 쪽 (뒤) 으로 곧게 release_pull 만큼 (+ release_pull_dz 위아래), 끝점에서 놓음
       //   (11-07 실물: 아래 끝 둘레로 돌려 당기면 손이 10 mm 올라감 → 사용자: 올리지 말고 뒤로 천천히 밀며 넣기)
-      Eigen::Vector3d p_rel = p_ins;
+      const Eigen::Vector3d p_pull0 = p_end;
       for (int k = 1; pull && ok && k <= c.release_pull_steps; ++k) {
         const double fk = static_cast<double>(k) / c.release_pull_steps;
-        p_rel = p_ins + fk * (c.release_pull_dz * Z - c.release_pull * R);
+        p_rel = p_pull0 + fk * (c.release_pull_dz * Z - c.release_pull * R);
         ok = add("park_pull" + std::to_string(k), p_rel, cd.th, c.held_kg, true, k == c.release_pull_steps ? "open" : "");
         if (ok && c.insert_dj3 != 0.0) {nodes.back().q[2] += c.insert_dj3;}
       }
