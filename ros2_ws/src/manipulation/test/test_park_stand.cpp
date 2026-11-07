@@ -244,9 +244,9 @@ TEST(ParkStand, PushJ2OffsetLiftsFingertipsMidPush)
   }
 }
 
-// 누르기 (밀기 대신): 넣고 놓기까지 같음 → 놓은 손끝에서 press_lift 위 (닫힘) → J1 쪽으로 press_back → 곧게 press_depth 아래 → 위로 빠짐.
-//   손 기울임은 놓을 때와 같음, 밀기 점은 없음, 선 퍽 다시 쥐기는 그대로
-TEST(ParkStand, PressModeLiftsBackAndPressesDown)
+// 꽂아 누르기 (밀기 대신): 넣고 놓기까지 같음 → 놓은 손 (같은 기울임) 을 press_top 까지 곧게 올림 → 수직 · 닫음 → 받침 뒤 press_r 위 →
+//   수직으로 곧게 바닥 + press_h 까지 → 위로. 밀기 점은 없음, 선 퍽 다시 쥐기는 그대로
+TEST(ParkStand, PressModePlungesVerticallyAtBack)
 {
   const auto m = kin_data::model();
   LyingGraspCfg gc;
@@ -266,30 +266,29 @@ TEST(ParkStand, PressModeLiftsBackAndPressesDown)
   ASSERT_TRUE(plan(true, press));
   const ParkCfg pk;
   const Eigen::Vector2d r2 = (pk.center - m.j1_xy).normalized();
-  const Eigen::Vector3d R(r2.x(), r2.y(), 0.0);
   for (const char * nm : {"park_over", "park_tilt8"}) {   // 넣기까지 같음
     ASSERT_NE(find(press, nm), nullptr) << nm;
     for (int j = 0; j < 5; ++j) {EXPECT_NEAR(find(press, nm)->q[j], find(push, nm)->q[j], 1e-9) << nm;}
   }
   EXPECT_EQ(find(press, "park_push1"), nullptr);
-  EXPECT_EQ(find(press, "park_push_over"), nullptr);
-  // 놓은 점 = 당기며 놓기 마지막 (없으면 마지막 기울임 점)
-  const ParkNode * rel = find(press, "park_pull" + std::to_string(pk.release_pull_steps));
-  if (rel == nullptr) {rel = find(press, "park_tilt" + std::to_string(pk.tilt_steps));}
-  ASSERT_NE(rel, nullptr);
-  const Grip g0 = arm_grip(m, rel->q);
-  const ParkNode * lift = find(press, "park_press_lift");
-  ASSERT_NE(lift, nullptr);
-  EXPECT_EQ(lift->grip, "close");
-  const Grip gl = arm_grip(m, lift->q);
-  EXPECT_NEAR((gl.tip - g0.tip - pk.press_lift * Eigen::Vector3d::UnitZ()).norm(), 0.0, 1e-3);
-  EXPECT_NEAR(gl.app.dot(g0.app), 1.0, 1e-4) << "손 기울임 그대로";
-  const Grip gb = arm_grip(m, find(press, "park_press_back")->q);
-  EXPECT_NEAR((gb.tip - gl.tip + pk.press_back * R).norm(), 0.0, 1e-3) << "J1 쪽으로";
-  const Grip ge = arm_grip(m, find(press, "park_press" + std::to_string(pk.press_steps))->q);
-  EXPECT_NEAR((ge.tip - gb.tip + pk.press_depth * Eigen::Vector3d::UnitZ()).norm(), 0.0, 1e-3) << "곧게 아래로";
+  const Grip gl = arm_grip(m, find(press, "park_press_lift")->q);
+  EXPECT_NEAR(gl.tip.z(), pk.floor_z + pk.press_top, 1e-3);
+  ASSERT_NE(find(press, "park_press_turn"), nullptr);
+  EXPECT_EQ(find(press, "park_press_turn")->grip, "close");
+  EXPECT_NEAR(arm_grip(m, find(press, "park_press_turn")->q).app.normalized().z(), -1.0, 1e-3) << "수직";
+  double z_prev = 1e9;
+  for (const std::string nm : {"park_press_over", "park_press1", "park_press2", "park_press3", "park_press4"}) {
+    const ParkNode * n = find(press, nm);
+    ASSERT_NE(n, nullptr) << nm;
+    const Grip gp = arm_grip(m, n->q);
+    EXPECT_NEAR((gp.tip.head<2>() - pk.center).dot(r2), pk.press_r, 1e-3) << nm << " 받침 뒤";
+    EXPECT_NEAR(gp.app.normalized().z(), -1.0, 1e-3) << nm << " 수직";
+    EXPECT_LT(gp.tip.z(), z_prev + 1e-6) << nm;
+    z_prev = gp.tip.z();
+  }
+  EXPECT_NEAR(z_prev, pk.floor_z + pk.press_h, 1e-3) << "바닥 위 press_h 까지 꽂음";
   EXPECT_NE(find(press, "park_press_up"), nullptr);
-  EXPECT_NE(find(press, "park_re_down"), nullptr) << "누른 뒤 다시 쥐기는 그대로";
+  EXPECT_NE(find(press, "park_re_down"), nullptr) << "꽂은 뒤 다시 쥐기는 그대로";
 }
 
 // 먼 접선 방향 누운 퍽: 손을 기울이면 닫힘축이 팔 평면 안에서 기울어 퍽이 굴러 손가락에 맞음

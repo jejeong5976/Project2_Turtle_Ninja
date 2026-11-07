@@ -288,16 +288,20 @@ bool park_nodes(
       }
       if (!ok) {continue;}
       if (c.press_mode) {
-        // 누르기 (밀기 대신, 11-07 사용자): 놓은 자리에서 같은 기울임으로 살짝 올리며 닫고 → J1 쪽 (뒤) 으로 → 곧게 눌러 내림 → 위로 빠짐
-        //   뒤 벽에 걸린 퍽을 닫은 손끝으로 눌러 받침 안으로 넣어 세움. 높이 올렸다 오지 않음 (손이 넣는 자세 옆이라 IK 도 됨)
-        const Eigen::Vector3d p_lift = p_rel + c.press_lift * Z;
-        const Eigen::Vector3d p_top = p_lift - c.press_back * R;
-        ok = add("park_press_lift", p_lift, cd.th, 0.0, true, "close") && add("park_press_back", p_top, cd.th, 0.0, true, "");
+        // 꽂아 누르기 (밀기 대신, 11-07 사용자 사진): 놓은 손 (같은 기울임) 을 press_top 높이까지 곧게 올려 퍽에서 뺌 → 그 자리에서 손을 수직으로 · 닫음
+        //   → 받침 뒤 (J1 쪽, 퍽이 걸리는 쪽) press_r 위로 → 수직으로 곧게 press_h 까지 내려 꽂음 (걸린 퍽 뒷부분을 눌러 넣어 세움) → 다시 위로
+        //   수직 손은 받침 위 손끝 바닥 + 66 mm 까지 닿음 (75 는 안 됨, IK 탐색) → 선 퍽 윗면 (60) 위로 넘어감
+        const double z_top = c.floor_z + c.press_top;
+        Eigen::Vector3d p_lift = p_rel;
+        p_lift.z() = std::max(p_rel.z(), z_top);
+        ok = add("park_press_lift", p_lift, cd.th, 0.0, true, "") &&
+          add("park_press_turn", p_lift, 0.0, 0.0, true, "close") &&
+          add("park_press_over", at(c.press_r, z_top), 0.0, 0.0, true, "");
         for (int k = 1; k <= c.press_steps && ok; ++k) {
           const double f = static_cast<double>(k) / c.press_steps;
-          ok = add("park_press" + std::to_string(k), p_top - c.press_depth * f * Z, cd.th, 0.0, true, "");
+          ok = add("park_press" + std::to_string(k), at(c.press_r, z_top + (c.floor_z + c.press_h - z_top) * f), 0.0, 0.0, true, "");
         }
-        ok = ok && add("park_press_up", p_top + 0.03 * Z, cd.th, 0.0, true, "");
+        ok = ok && add("park_press_up", at(c.press_r, z_top), 0.0, 0.0, true, "");
       } else {
         // 손 빼기 (같은 기울임으로 위 · 바깥) → 바깥 위 수직 · 오므림
         ok = add("park_back", p_rel + 0.01 * R + 0.03 * Z, cd.th, 0.0, true, "") &&
