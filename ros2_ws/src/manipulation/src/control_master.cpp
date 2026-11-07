@@ -224,6 +224,9 @@ public:
     //   다른 각도 · 자리는 같은 오차 (손 좌표의 손끝 어긋남) 로 계산: (R(돌린 각) − I) · h. 기본 방향 (돌림 0) 은 0 → 다른 보정 그대로
     //   실행 중: ros2 param set /control_master pick_offset_rot_mm "[3.0, 0.0]"
     declare_parameter<std::vector<double>>("pick_offset_rot_mm", std::vector<double>{0.0, 0.0});
+    // 손목을 돌려 쥘 때 (기본에서 45° 넘게, 어느 쪽이든) 그대로 더하는 보정 [앞 · 왼쪽 mm, base_link = 로봇 기준]. 위 모델 보정 위에 더함
+    //   (11-07 실물: 모델 값을 바꾸니 돌린 각 · 자리에 따라 엉뚱한 쪽으로 감 → 사용자 말 그대로 로봇 기준으로)
+    declare_parameter<std::vector<double>>("pick_offset_rot_robot_mm", std::vector<double>{0.0, 0.0});
     // STORE 때 칸 근처 경로를 더 옮김 [mm, base_link, 넣는 점 맞추기와 합해 20 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 적재함 태그 보정 · 칸별 store_offset.<칸> 과 더해짐
     //   실행 중 바로 바꿈: ros2 param set /control_master store_offset_y_mm 3.0 (다음 STORE 부터, x+ = 앞 · y+ = 왼쪽)
     declare_parameter<double>("store_offset_x_mm", 0.0);
@@ -1095,12 +1098,18 @@ private:
     const double az = std::atan2(y - model_.j1_xy.y(), x - model_.j1_xy.x());
     const double a = std::remainder(std::atan2(c.y(), c.x()) - az - M_PI / 2.0, 2.0 * M_PI);   // 기본 = 닫힘축 +접선
     rot_deg = a * 180.0 / M_PI;
+    const auto rr = get_parameter("pick_offset_rot_robot_mm").as_double_array();
+    if (rr.size() != 2 || !std::isfinite(rr[0]) || !std::isfinite(rr[1])) {
+      why = "pick_offset_rot_robot_mm 는 [앞, 왼쪽] mm 두 개 (로봇 기준)";
+      return false;
+    }
+    if (std::fabs(rot_deg) >= 45.0) {d = Eigen::Vector2d(rr[0], rr[1]) / 1000.0;}
     if (r[0] == 0.0 && r[1] == 0.0) {return true;}
     // 90° 돌렸을 때 보정 r (팔 방향 기준, 기준 돌림 = 실물에서 본 −90°) = (R(−90°) − I) h → h, 이 돌림의 보정 = (R(a) − I) h
     auto rot2 = [](double t) {Eigen::Matrix2d R; R << std::cos(t), -std::sin(t), std::sin(t), std::cos(t); return R;};
     const Eigen::Matrix2d I = Eigen::Matrix2d::Identity();
     const Eigen::Vector2d h = (rot2(-M_PI / 2.0) - I).inverse() * Eigen::Vector2d(r[0], r[1]);
-    d = rot2(az) * ((rot2(a) - I) * h) / 1000.0;
+    d += rot2(az) * ((rot2(a) - I) * h) / 1000.0;
     return true;
   }
 
