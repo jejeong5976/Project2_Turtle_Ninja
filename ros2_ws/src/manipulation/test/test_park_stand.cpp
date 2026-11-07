@@ -162,6 +162,31 @@ TEST(ParkStand, PushExtraGoesFurtherTowardJ1)
   EXPECT_NEAR(a.z(), b.z(), 3e-4);
 }
 
+// 굴삭기처럼 밀기: 밀기 시작은 손끝이 J1 쪽으로 기울고 (app 의 반지름 성분 < 0) 끝은 수직, 끝점은 곧은 밀기와 같음
+TEST(ParkStand, ScoopPushTiltsFingertipsTowardJ1ThenUpright)
+{
+  const auto m = kin_data::model();
+  LyingGraspCfg gc;
+  auto plan = [&](double scoop, std::vector<ParkNode> & pn) {
+      ParkCfg pk;
+      pk.push_scoop_deg = scoop;
+      double elev = 0.0;
+      auto accept = [&](const LyingGrasp & c, std::string & w) {return park_nodes(m, pk, c, ticks_to_q(m, c.poses[0].ticks), pn, elev, w);};
+      LyingGrasp g;
+      std::string why;
+      return lying_grasp(m, 0.205, 0.0, kTop, 0.0, kHeights, gc, g, why, 0.0, accept);
+    };
+  std::vector<ParkNode> p0, p20;
+  ASSERT_TRUE(plan(0.0, p0));
+  ASSERT_TRUE(plan(20.0, p20));
+  const Eigen::Vector2d rdir = (ParkCfg{}.center - m.j1_xy).normalized();
+  const Grip s0 = arm_grip(m, find(p20, "park_push_down")->q);
+  const Grip e0 = arm_grip(m, find(p0, "park_push4")->q), e20 = arm_grip(m, find(p20, "park_push4")->q);
+  EXPECT_LT(s0.app.head<2>().normalized().dot(rdir) * s0.app.head<2>().norm(), -0.1);   // 손끝이 J1 쪽
+  EXPECT_NEAR((e0.tip - e20.tip).norm(), 0.0, 1e-3);
+  EXPECT_NEAR(e20.app.normalized().z(), -1.0, 1e-3);
+}
+
 // 먼 접선 방향 누운 퍽: 손을 기울이면 닫힘축이 팔 평면 안에서 기울어 퍽이 굴러 손가락에 맞음
 TEST(ParkStand, FarTangentialPuckRollsIntoTiltedHand)
 {
