@@ -1,10 +1,15 @@
-"""nav2.launch.py — Nav2 실행 (planner · controller(MPPI) · behavior · bt_navigator · collision_monitor
-                                 + localization:=amcl 이면 map_server · AMCL)
+"""nav2.launch.py — Nav2 실행 (planner · collision_monitor + 지역 계획기 + localization:=amcl 이면 map_server · AMCL)
+  지역 계획기 local_planner (2026-11-07):
+    rl (기본) = RL 노드 둘 (navigation/scripts/local_planner_node.py, 정책 레포 config/rl/):
+                주행 rl_nav = navigate_to_pose (nf5) · 정밀 접근 rl_dock = dock_to_pose (dock3, planning dock_action)
+                controller(MPPI) · behavior · bt_navigator 는 안 띄움 (navigate_to_pose 가 겹침)
+    mppi = controller(MPPI) · behavior · bt_navigator (옛 방식) + 정밀 접근 rl_dock. 박스에 붙어 선 자리 출발 처리 (빠져나오기 · 영역 끄기) 없음
 
   # 실물 (기본 localization:=slam): slam.launch.py 를 먼저 띄움 -> map -> odom · /map 은 slam_toolbox
   ros2 launch navigation slam.launch.py hardware:=opencr slam_mode:=mapping map:=$HOME/maps/arena   # 시연: 저장 지도 이어 그리기
   ros2 launch navigation nav2.launch.py
   ros2 launch navigation nav2.launch.py mission_hold:=false                                  # planning 없이 Nav2 만 시험
+  ros2 launch navigation nav2.launch.py local_planner:=mppi                                  # 주행을 MPPI 로 (옛 방식)
   # AMCL (시뮬 · slam_toolbox 없이): map_server + AMCL 이 map -> odom · /map
   ros2 launch navigation nav2.launch.py localization:=amcl map:=<지도.yaml> use_sim_time:=true rviz:=true
   ros2 launch navigation nav2.launch.py localization:=amcl map:=<지도.yaml> initial_pose:=-1.468,-2.202,180  # 출발 자세로 AMCL 시작
@@ -26,7 +31,8 @@
        (가속 한계는 swerve_controller 가 지킴)
   - 받는 것: /odom, TF odom -> base_link (swerve_controller · 시뮬 브리지), /lidar_front/scan, /lidar_rear/scan (costmap · AMCL), /scan (collision_monitor, scan_merger 는 이 launch 가 안 띄움 → slam.launch.py · 시뮬 launch)
   - 받는 것 (slam): TF map -> odom · /map (slam_toolbox)
-  - 보내는 것: /cmd_vel, TF map -> odom (amcl 일 때만), navigate_to_pose 액션 (mission_manager 가 부름)
+  - 보내는 것: /cmd_vel, TF map -> odom (amcl 일 때만), navigate_to_pose · dock_to_pose 액션 (mission_manager 가 부름)
+  - RL 노드 cmd_vel_nav -> collision_monitor (MPPI 와 같은 길). rl 에서는 local costmap 이 없어 FootprintApproach 는 안 돎 (PolygonStop 만)
 """
 
 import os
@@ -39,7 +45,10 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterFile
 
 LOCALIZATION = ["map_server", "amcl"]
-NAVIGATION = ["planner_server", "controller_server", "behavior_server", "bt_navigator", "collision_monitor"]
+NAVIGATION_MPPI = ["planner_server", "controller_server", "behavior_server", "bt_navigator", "collision_monitor"]
+NAVIGATION_RL = ["planner_server", "collision_monitor"]
+# RL 노드 공통: 영역 끄기 대상 (collision_monitor 영역 이름 = config/nav2.yaml)
+POLYGONS = "PolygonStop,FootprintApproach"
 # controller · behavior 의 속도 명령은 collision_monitor (비상 정지) 를 거쳐 /cmd_vel 로 나감
 TO_MONITOR = [("cmd_vel", "cmd_vel_nav")]
 # /mission/hold 가 이만큼 안 오면 막음 (mission_manager 는 1 Hz + 바뀔 때 발행)
@@ -55,6 +64,22 @@ def bringup_params():
     return path if os.path.isfile(path) else ""
 
 
+def rl_files():
+    """bringup share 의 config/rl (원본 레포 config/rl). 없으면 오류"""
+    d = os.path.join(get_package_share_directory("bringup"), "config", "rl")
+    for f in ("nav_nf5.npz", "nav_nf5.json", "dock3.npz", "dock3.json", "team_swerve.yaml"):
+        if not os.path.isfile(os.path.join(d, f)):
+            raise RuntimeError(f"RL 정책 파일 없음: {d}/{f} (레포 config/rl, bringup 다시 빌드)")
+    return d
+
+
+def rl_node(name, policy, cfg, d, sim, extra):
+    """local_planner_node.py 하나. 정책 = numpy npz (torch 없음)"""
+    args = ["--node_name", name, "--policy", os.path.join(d, policy), "--cfg", os.path.join(d, cfg),
+            "--swerve_yaml", os.path.join(d, "team_swerve.yaml")] + (["--sim_time"] if sim else []) + extra
+    return Node(package="navigation", executable="local_planner_node.py", name=name, output="screen", arguments=args)
+
+
 def make_nodes(context):
     params = LaunchConfiguration("params").perform(context) or bringup_params()
     if not params:
@@ -67,6 +92,10 @@ def make_nodes(context):
         raise RuntimeError("localization:=amcl 이면 map:=<지도.yaml> 필요")
     sim = LaunchConfiguration("use_sim_time").perform(context).lower() == "true"
     mission_hold = LaunchConfiguration("mission_hold").perform(context).lower() == "true"
+    lp = LaunchConfiguration("local_planner").perform(context).strip().lower()
+    if lp not in ("rl", "mppi"):
+        raise RuntimeError(f"local_planner 는 rl | mppi (지금 {lp})")
+    dock_tol = LaunchConfiguration("dock_tol").perform(context)
     # allow_substs: yaml 안 $(find-pkg-share nav2_bt_navigator) 같은 치환을 풀어 줌 (bt_navigator 행동 트리 폴더)
     common = [ParameterFile(params, allow_substs=True), {"use_sim_time": sim}]
     # 출발 자세 (map 기준 "x,y,yaw_deg"): 주면 AMCL 이 그 자세로 시작 (출발 구역 고정, 발제). 비우면 /initialpose 를 기다림
@@ -91,20 +120,36 @@ def make_nodes(context):
         ]
     nodes += [
         Node(package="nav2_planner", executable="planner_server", name="planner_server", output=out, parameters=common),
-        Node(package="nav2_controller", executable="controller_server", name="controller_server", output=out,
-             parameters=common, remappings=TO_MONITOR),
-        Node(package="nav2_behaviors", executable="behavior_server", name="behavior_server", output=out,
-             parameters=common, remappings=TO_MONITOR),
         Node(package="nav2_collision_monitor", executable="collision_monitor", name="collision_monitor", output=out,
              parameters=common),
-        Node(package="nav2_bt_navigator", executable="bt_navigator", name="bt_navigator", output=out,
-             parameters=common),
+    ]
+    rld = rl_files()
+    if lp == "mppi":
+        nodes += [
+            Node(package="nav2_controller", executable="controller_server", name="controller_server", output=out,
+                 parameters=common, remappings=TO_MONITOR),
+            Node(package="nav2_behaviors", executable="behavior_server", name="behavior_server", output=out,
+                 parameters=common, remappings=TO_MONITOR),
+            Node(package="nav2_bt_navigator", executable="bt_navigator", name="bt_navigator", output=out,
+                 parameters=common),
+        ]
+    else:
+        # 주행: navigate_to_pose. 붙어 선 자리 출발 = 경로 실패면 뒤로 빠져나오기 · 25 cm 벗어날 때까지 영역 끔 (Isaac 11-06 · 07)
+        nodes.append(rl_node("rl_nav", "nav_nf5.npz", "nav_nf5.json", rld, sim,
+                             ["--action_name", "navigate_to_pose", "--tol_pos", "0.05", "--tol_yaw_deg", "5",
+                              "--near_disable_polygons", POLYGONS, "--near_ok_s", "0"]))
+    # 정밀 접근 (박스 · 장소 정차 0.2575 = 면 1 cm, planning dock_action): 그동안 영역 끔 · 목표 odom 고정 · 라이다로 박스 맞춤
+    nodes.append(rl_node("rl_dock", "dock3.npz", "dock3.json", rld, sim,
+                         ["--action_name", "dock_to_pose", "--tol_pos", dock_tol, "--tol_yaw_deg", "2",
+                          "--disable_polygons", POLYGONS, "--goal_frame", "odom", "--box_track"]))
+    nodes += [
         # planning /mission/hold → 막는 중엔 Nav2 명령 버리고 0
         Node(package="navigation", executable="cmd_vel_hold", name="cmd_vel_hold", output=out,
              parameters=[{"use_sim_time": sim, "cmd_vel_in": "cmd_vel_safe", "cmd_vel_out": "/cmd_vel",
                           "start_hold": mission_hold, "hold_timeout_s": HOLD_TIMEOUT_S if mission_hold else 0.0}]),
         Node(package="nav2_lifecycle_manager", executable="lifecycle_manager", name="lifecycle_manager_navigation",
-             output=out, parameters=[{"use_sim_time": sim, "autostart": True, "node_names": NAVIGATION}]),
+             output=out, parameters=[{"use_sim_time": sim, "autostart": True,
+                                      "node_names": NAVIGATION_MPPI if lp == "mppi" else NAVIGATION_RL}]),
     ]
     if LaunchConfiguration("rviz").perform(context).lower() == "true":
         rviz_cfg = os.path.join(get_package_share_directory("nav2_bringup"), "rviz", "nav2_default_view.rviz")
@@ -122,6 +167,10 @@ def generate_launch_description():
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument("rviz", default_value="false"),
         DeclareLaunchArgument("initial_pose", default_value="", description="출발 자세 map 기준 'x,y,yaw_deg' (localization:=amcl 일 때만)"),
+        DeclareLaunchArgument("local_planner", default_value="rl",
+                              description="rl = RL 주행 (nf5) + 정밀 접근 (dock3) / mppi = MPPI · bt_navigator + 정밀 접근"),
+        DeclareLaunchArgument("dock_tol", default_value="0.015",
+                              description="정밀 접근 성공 거리 [m] (Isaac 11-07: 0.01 이면 판정 안에 못 들어와 시간 초과 한 번)"),
         DeclareLaunchArgument("mission_hold", default_value="true",
                               description="true = /mission/hold 받기 전 · 끊기면 막음 (미션). false = 그냥 넘김 (Nav2 단독 시험)"),
         OpaqueFunction(function=make_nodes),

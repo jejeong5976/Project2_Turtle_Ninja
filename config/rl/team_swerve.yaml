@@ -1,0 +1,79 @@
+# tools/convert_team_robot.py 가 만듦 — 모듈 위치 = config/controllers.yaml, 조향 범위 = 팀 URDF
+joints:
+  module_names:
+  - fl
+  - fr
+  - rl
+  - rr
+  steer:
+  - steer_fl_joint
+  - steer_fr_joint
+  - steer_rl_joint
+  - steer_rr_joint
+  drive:
+  - drive_fl_joint
+  - drive_fr_joint
+  - drive_rl_joint
+  - drive_rr_joint
+geometry:
+  module_x:
+  - -0.07
+  - 0.06
+  - -0.07
+  - 0.06
+  module_y:
+  - 0.112
+  - 0.112
+  - -0.112
+  - -0.112
+  module_offset:
+  - 0.0269
+  - 0.0269
+  - -0.0269
+  - -0.0269
+  wheel_radius: 0.033
+steer_range_rad:
+  min:
+  - -3.1400586728019073
+  - -3.1400586728019073
+  - -3.1400586728019073
+  - -2.346990605465031
+  max:
+  - 3.141592653589793
+  - 3.141592653589793
+  - 3.141592653589793
+  - 3.9346607209266695
+hardware_max:
+  wheel_speed: 7.9137
+  steer_speed: 4.7962
+  wheel_torque: 3.0
+  steer_torque: 4.1
+  body_linear: 0.2612
+  body_angular: 1.675
+limits_for_training:
+  max_linear: 0.2612
+  max_angular: 1.675
+  max_wheel_speed: 7.9137
+  max_linear_accel: 1.0
+  max_angular_accel: 6.0
+controller:
+  steering_policy: coherent
+  steer_branch_margin: 0.0
+  steer_end_slack: 0.017453
+  cosine_scale: true
+  steer_then_drive: true
+  steer_tolerance: 0.17
+  roll_while_steering: true
+  blend_steer_drive: true
+  blend_margin: 0.7
+  blend_stall_s: 1.0
+  cmd_timeout_s: 0.3
+sim_actuators:
+  steer:
+    mode: position
+    velocity_limit: 4.7962
+    effort_limit: 4.1
+  drive:
+    mode: velocity
+    velocity_limit: 7.9137
+    effort_limit: 3.0

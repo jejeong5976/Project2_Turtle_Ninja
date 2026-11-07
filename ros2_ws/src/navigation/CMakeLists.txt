@@ -29,6 +29,9 @@ target_link_libraries(cmd_vel_hold rclcpp::rclcpp ${geometry_msgs_TARGETS} ${std
 
 # Nav2 설정은 레포 config/nav2.yaml (bringup 이 share/bringup/config 로 설치) -> launch/nav2.launch.py 가 찾음
 install(TARGETS scan_merger pose_guard cmd_vel_hold DESTINATION lib/${PROJECT_NAME})
+# RL 지역 계획기 노드 (주행 nf · 정밀 접근 dock, nav2.launch.py local_planner:=rl). 정책 = 레포 config/rl/*.npz (numpy, torch 없음)
+install(PROGRAMS scripts/local_planner_node.py DESTINATION lib/${PROJECT_NAME})
+install(FILES scripts/box_tracker.py scripts/numpy_policy.py DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY launch config rviz DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)

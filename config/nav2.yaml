@@ -1,7 +1,7 @@
 # Nav2 설정 (ros2_ws/src/navigation/launch/nav2.launch.py 가 읽음, bringup 이 share/bringup/config 로 설치)
 # 바탕: /opt/ros/lyrical/share/nav2_bringup/params/nav2_params.yaml. 바꾼 것만 주석
 #   - 4륜 스워브 = 홀로노믹: AMCL OmniMotionModel, MPPI omni 모델 (vy 사용), 앞으로만 가기 비용 뺌
-#   - 속도 · 가속 = 실물 config/controllers.yaml swerve_controller (0.2 m/s · 0.5 rad/s, 0.5 m/s² · 2.0 rad/s², 2026-11-04). 시뮬은 브리지 --real_speed 로 같게
+#   - 속도 · 가속 = 실물 config/controllers.yaml swerve_controller (0.255 m/s · 0.5 rad/s, 0.5 m/s² · 2.0 rad/s², 2026-11-06 0.2 → 0.255). 시뮬은 브리지 --real_speed 로 같게
 #   - 차체 외곽 = ±0.16 m 사각형 (차체 0.266 m + 바퀴 · 라이다, 받침 자세 팔은 차체 안)
 #   - 라이다 = /lidar_front/scan, /lidar_rear/scan (시뮬 브리지와 실물 드라이버 같은 이름으로 앎, 사용자 2026-11-01. 실물 ros2 topic list 로 최종 확인)
 #   - 프레임: map / odom / base_link (AMCL 은 base_footprint). 지도 해상도 0.025 m 에 맞춤
@@ -139,9 +139,9 @@ controller_server:
       vx_std: 0.15
       vy_std: 0.15
       wz_std: 0.4
-      vx_max: 0.2
-      vx_min: -0.2
-      vy_max: 0.2
+      vx_max: 0.255                 # 2026-11-06 0.2 → 0.255 (controllers.yaml max_linear)
+      vx_min: -0.255
+      vy_max: 0.255
       wz_max: 0.5
       iteration_count: 1
       temperature: 0.3
@@ -370,7 +370,9 @@ collision_monitor:
     FootprintApproach:
       type: "polygon"
       action_type: "approach"
-      footprint_topic: "/local_costmap/published_footprint"
+      # 차체 외곽 고정 (2026-11-07, 옛 footprint_topic /local_costmap/published_footprint): RL 주행 (local_planner:=rl) 은 controller_server ·
+      #   local costmap 이 없어 그 토픽이 안 나옴 → 모양 없음 ('Polygon shape is not set yet') 으로 감속을 못 했음. 외곽 = costmap footprint ±0.16 과 같음
+      points: "[[0.16, 0.16], [0.16, -0.16], [-0.16, -0.16], [-0.16, 0.16]]"
       time_before_collision: 1.0
       simulation_time_step: 0.05
       min_points: 2

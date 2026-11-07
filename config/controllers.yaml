@@ -56,7 +56,7 @@ swerve_controller:
     motion_mode_ack_topic: /control/motion_mode_ack   # "이 요청 번호로 잠갔음" 답 → control_master 가 받아야 팔 시작
 
     # ---- 속도 ----
-    max_linear: 0.20               # [m/s] 주행 0.2 (하드웨어 끝 0.26)
+    max_linear: 0.255              # [m/s] 주행 0.255 (2026-11-06 사용자, 옛 0.2). 하드웨어 끝 0.261 (바퀴 7.9 rad/s) 의 98 % → 이동 + 회전이면 같은 비율로 줄어듦, 배터리 11.1 V 면 약 0.245 (실물 측정 필요)
     max_angular: 0.5               # [rad/s]
     max_wheel_speed: 7.9           # [rad/s] 바퀴 모터 한계 (XM430-W210 Velocity Limit 330 × 0.229 rpm = 7.91). 넘으면 네 바퀴를 같은 비율로 줄임
                                    #   (다이나믹셀은 한계를 넘는 속도 명령을 무시하고 이전 속도로 계속 돎). 0.2 m/s 에선 약 6.1 rad/s 라 닿지 않음
