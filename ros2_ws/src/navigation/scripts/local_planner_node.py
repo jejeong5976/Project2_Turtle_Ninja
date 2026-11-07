@@ -11,6 +11,9 @@ Isaac 시험 = sim/robot_sim/rl/tasks/local_planner/deploy/run_isaac_dock.sh (�
   → 접근 중 slam_toolbox 가 map → odom 을 고쳐도 (루프 클로저 등 1–2 cm 튐) 목표가 안 따라 튐. 정밀 접근 (dock_to_pose, 0.8 m 안 · 수 초) 용. 짧은 거리라 odom 미끄러짐은 작음
 박스 맞춤 (--box_track, 정밀 접근 노드): 목표 = 지도 정차점 (박스를 봄, 박스 중심에서 --box_dist) → 스캔마다 박스 앞면을 맞춰 (box_tracker.py)
   목표를 '잰 박스 중심에서 box_dist, 정면' 으로 옮김. SLAM 지도 때와 시연 때 박스 자리가 달라도 원하는 거리에 섬. 경로 = 지금 자리 → 목표 직선 (학습과 같음)
+  직선 경로를 몸 + 1 cm 가 쓸고 갈 때 박스 아닌 점 (벽) 이 연속 --dock_block_n 스캔 걸리면 멈추고 실패 (실물 11-07 B1 왼쪽 벽 충돌)
+출발 자리 영역 끄기 (--near_disable_polygons, 주행 노드): 빠져나오기 경로를 썼거나 PolygonStop 이 지금 막을 때만 끔, 끈 동안 병진 --near_vmax
+경로: 목표가 지도 장애물이면 (박스를 지도에 넣은 매핑) 목표를 보는 방향 반대로 물려 계획 + 직선 (--goal_back_m)
 정책: --policy <exported/policy_N.pt> (TorchScript, torch 필요) 또는 <exported/policy_N.npz> (numpy, torch 없음 = Jetson). 둘 다 export.py 가 만듦
 그림자 모드 (--shadow): 실물 시험용. navigate_to_pose 를 받지 않음 (MPPI · bt_navigator 가 주행), 대신 /plan (planner_server 경로, 끝 = 목표)
   을 받아 같은 목표로 정책 명령을 계산 → --shadow_topic (기본 cmd_vel_rl_shadow) 에만 냄 (collision_monitor · /cmd_vel 로 안 감).
@@ -34,6 +37,7 @@ import rclpy.executors
 import tf2_ros
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from nav2_msgs.action import ComputePathToPose, NavigateToPose
+from nav2_msgs.msg import CollisionMonitorState
 from nav_msgs.msg import Odometry
 from nav_msgs.msg import Path as PathMsg
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
@@ -119,12 +123,26 @@ class LocalPlanner(Node):
         # 정밀 접근 (정차 0.2575 = 차체 앞 끝 ↔ 박스 면 1 cm) 동안 collision_monitor 영역 끄기: PolygonStop ±0.18 · FootprintApproach 가
         #   박스에 걸려 마지막 몇 cm 를 못 감. 목표마다 끄고 끝나면 (성공 · 실패 · 취소) 다시 켬
         self.cm_polygons = [x for x in a.disable_polygons.split(',') if x]
-        # 정밀 접근 정차 (박스 면 1–2 cm) 에서 출발할 때: 영역이 박스에 걸려 0 속도 → 목표 시작 때 스캔 최소가 near_dist 안이면 영역 끄고,
-        #   출발 자리에서 near_leave_m 멀어지면 다시 켬 (그 목표 동안 한 번만). 주행 정책은 정차점 (면 2 cm) 에서 출발을 학습함 (collision_monitor 없이)
-        #   박스 면 (몸 중심 약 0.165 m) 은 scan_merger 몸 상자 (x ≤ 0.17) 안이라 /scan 에서 지워짐 → 보이는 건 박스 모서리 0.23–0.25 m
-        #   (PolygonStop ±0.18 은 0.17–0.18 띠로 박스를 봄) → near_dist 0.30 (Isaac 2026-11-06: 0.24 면 B4 정차 24.8 cm 로 안 걸려 43 s 멈춤)
+        # 정밀 접근 정차 (박스 면 1–2 cm) 에서 출발할 때: PolygonStop 이 박스에 걸려 0 속도 → 그때만 영역 끄고 출발 자리에서 벗어나면 다시 켬
+        #   끄는 조건 (2026-11-07 실물: 옛 조건 '스캔 최소 < 0.30' 이 출발 구역 벽에도 걸려 영역 끈 채 B1 로 가다 벽 충돌):
+        #     빠져나오기 경로를 씀 (= 치명 영역 안 출발) 또는 PolygonStop 이 지금 막고 있음 (collision_monitor_state STOP · PolygonStop,
+        #     또는 /scan 점이 PolygonStop + 1 cm 안). 박스 면은 scan_merger 몸 상자 경계라 보였다 말았다 함 → 벗어날 때까지 매 주기 봄
+        #   켜는 조건: near_leave_m 멀어짐, 또는 near_clear_m 움직였고 PolygonStop + near_clear_pad 안에 점 없음
+        #   끈 동안 병진 near_vmax 상한 (몸 상자 안은 /scan 에 안 보여 벽에 붙어도 모름)
         self.near_polygons = [x for x in a.near_disable_polygons.split(',') if x]
-        self.near_dist, self.near_leave, self.near_off = a.near_dist, a.near_leave_m, False
+        self.near_leave, self.near_off = a.near_leave_m, False
+        self.near_clear_m, self.near_clear_pad, self.near_vmax = a.near_clear_m, a.near_clear_pad, a.near_vmax
+        self.stop_half = a.stop_half                            # collision_monitor PolygonStop 반 변 (config/nav2.yaml ±0.18)
+        self.cm_state, self.cm_state_t = None, -1e9
+        # 정밀 접근 직선 경로 검사 (--box_track): 지금 자리 → 목표 직선을 몸 (dock_body_half + 1 cm) 이 쓸고 갈 때 박스 아닌 점 (벽) 이 걸리면
+        #   멈추고 실패로 끝냄 (planning 이 1 단계부터 다시 = Nav2 로 정차점 뒤까지 온 뒤 넘김). 실물 11-07 B1: 정밀 접근 중 왼쪽 벽 충돌
+        self.dock_body = np.array([float(v) for v in a.dock_body_half.split(',')])
+        self.dock_block_n = a.dock_block_n
+        self.box_reject_n = a.box_reject_n
+        # 목표가 지도 장애물 (박스를 지도에 넣고 매핑 = arena5) 이라 planner 가 경로를 못 내면: 목표를 보는 방향 반대로 0.05 m 씩
+        #   goal_back_m 까지 물려 계획하고 끝에 '물린 점 → 목표' 직선을 붙임 (박스 정면으로 들어옴). planner tolerance 를 키우는 것 대신
+        #   (tolerance 는 아무 방향 가까운 빈 칸으로 끝내 박스 옆 · 비스듬히 들어옴)
+        self.goal_back_m, self.goal_back = a.goal_back_m, None
         self.cm_client = self.create_client(SetParameters, f'{a.cm_node}/set_parameters') if (self.cm_polygons or self.near_polygons) else None
         cb = ReentrantCallbackGroup()
         qs = QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT)
@@ -135,6 +153,8 @@ class LocalPlanner(Node):
         self.create_subscription(Odometry, '/odom', self.on_odom, 10, callback_group=cb)
         self.create_subscription(JointState, '/joint_states', self.on_js, 10, callback_group=cb)
         self.create_subscription(LaserScan, a.scan_topic, self.on_scan, qs, callback_group=cb)
+        if self.near_polygons:
+            self.create_subscription(CollisionMonitorState, a.cm_state_topic, self.on_cm_state, 10, callback_group=cb)
         self.scan_stale_s = a.scan_stale_s
         self.tf = tf2_ros.Buffer()
         self.tfl = tf2_ros.TransformListener(self.tf, self)
@@ -166,6 +186,68 @@ class LocalPlanner(Node):
 
     def on_scan(self, m):
         self.scan, self.scan_t = m, self.now()
+
+    def on_cm_state(self, m):
+        self.cm_state, self.cm_state_t = m, self.now()
+
+    def body_points(self):
+        """/scan 점 → base_footprint xy (몸 상자 안 점은 scan_merger 가 이미 버림). 없으면 None"""
+        m = self.scan
+        if m is None or self.now() - self.scan_t > self.scan_stale_s:
+            return None
+        r = np.asarray(m.ranges, float)
+        a = m.angle_min + np.arange(len(r)) * m.angle_increment
+        ok = np.isfinite(r) & (r >= m.range_min) & (r <= m.range_max)
+        if m.header.frame_id not in ('base_footprint', ''):
+            pts, _ = self.scan_points('base_footprint')
+            return pts
+        return np.stack([r[ok] * np.cos(a[ok]), r[ok] * np.sin(a[ok])], 1)
+
+    def stop_blocking(self):
+        """PolygonStop 이 지금 막고 있는지: collision_monitor 상태 (STOP · PolygonStop) 또는 /scan 점이 PolygonStop + 1 cm 안"""
+        st = self.cm_state
+        if st is not None and st.action_type == CollisionMonitorState.STOP and st.polygon_name in self.near_polygons:
+            return True
+        pts = self.body_points()
+        if pts is None or not len(pts):
+            return False
+        h = self.stop_half + 0.01
+        return bool(((np.abs(pts[:, 0]) <= h) & (np.abs(pts[:, 1]) <= h)).any())
+
+    def stop_zone_clear(self):
+        pts = self.body_points()
+        if pts is None:
+            return False
+        h = self.stop_half + self.near_clear_pad
+        return not bool(((np.abs(pts[:, 0]) <= h) & (np.abs(pts[:, 1]) <= h)).any())
+
+    def straight_blocked(self, pose, goal_xy, goal_yaw, tracker, pts):
+        """정밀 접근 직선 (pose → 목표) 을 몸이 쓸고 갈 때 박스 아닌 점이 몸 + 1 cm 안에 들어오는지. pts = goal_frame xy.
+        박스 점 = 잰 박스 앞면 평면 (로봇 쪽 +3 cm) 뒤 · 옆 반 변 + 8 cm 안 → 뺌 (마지막 정차는 면 1 cm 라 박스는 늘 걸림).
+        (걸린 점 수, 처음 걸린 거리) 돌려줌"""
+        if pts is None or not len(pts):
+            return 0, None
+        y = tracker.yaw0 + tracker.th
+        n = -np.array([math.cos(y), math.sin(y)])               # 박스 → 로봇 쪽 법선
+        t = np.array([-n[1], n[0]])
+        rel = pts - (tracker.c + tracker.h * n)
+        box = (rel @ n < 0.03) & (np.abs(rel @ t) < tracker.h + 0.08)
+        P = pts[~box]
+        L = float(np.linalg.norm(np.asarray(goal_xy) - pose[:2]))
+        if not len(P) or L < 1e-3:
+            return 0, None
+        hx, hy = self.dock_body + 0.01
+        dyaw = wrap(goal_yaw - pose[2])
+        for k in np.linspace(0.0, 1.0, max(2, int(L / 0.02) + 1)):
+            cx, cy = pose[:2] + k * (np.asarray(goal_xy) - pose[:2])
+            yw = pose[2] + k * dyaw
+            c, sn = math.cos(yw), math.sin(yw)
+            dx, dy = P[:, 0] - cx, P[:, 1] - cy
+            bx, by = c * dx + sn * dy, -sn * dx + c * dy
+            hit = (np.abs(bx) <= hx) & (np.abs(by) <= hy)
+            if hit.any():
+                return int(hit.sum()), k * L
+        return 0, None
 
     def on_js(self, m):
         idx = {n: i for i, n in enumerate(m.name)}
@@ -237,8 +319,9 @@ class LocalPlanner(Node):
     # ------------------------------------------------------------ 경로
     def plan(self, goal_ps):
         """planner_server 경로 (map). 실패하면 빠져나오기: 정밀 접근 정차 (박스 면 1 cm) 는 costmap 치명 영역 안이라 지금 자리에서는
-        경로가 안 나옴 → 몸 뒤 (보는 방향 반대) escape_m 이내 점에서 다시 계획해 '지금 자리 → 뒤 점 직선 + 그 경로' 로 씀"""
-        path = self._plan_from(goal_ps, None)
+        경로가 안 나옴 → 몸 뒤 (보는 방향 반대) escape_m 이내 점에서 다시 계획해 '지금 자리 → 뒤 점 직선 + 그 경로' 로 씀.
+        목표 쪽도 같음: 목표가 치명 영역이면 _plan_goal 이 목표를 물려 계획"""
+        path = self._plan_goal(goal_ps, None)
         if path is not None or self.escape_m <= 0:
             return path
         try:
@@ -250,11 +333,39 @@ class LocalPlanner(Node):
             st.header.frame_id, st.header.stamp = 'map', self.get_clock().now().to_msg()
             st.pose.position.x, st.pose.position.y = x - d * math.cos(yaw), y - d * math.sin(yaw)
             st.pose.orientation.z, st.pose.orientation.w = math.sin(yaw / 2), math.cos(yaw / 2)
-            path = self._plan_from(goal_ps, st)
+            path = self._plan_goal(goal_ps, st)
             if path is not None:
                 self.escaped = True
                 self.get_logger().info(f'지금 자리에서 경로 안 나옴 → 뒤 {d * 100:.0f} cm 로 빠져나와 감', throttle_duration_sec=2.0)
                 return Path([(x, y)] + [tuple(q) for q in path.p])
+        return None
+
+    def _plan_goal(self, goal_ps, start):
+        """목표 그대로 계획 → 실패하면 목표를 보는 방향 반대로 0.05 m 씩 goal_back_m 까지 물려 계획 + 끝에 목표 점 (직선).
+        성공한 물림 거리는 이 목표 동안 먼저 씀 (1 s 마다 다시 계획)"""
+        if self.goal_back is None:
+            path = self._plan_from(goal_ps, start)
+            if path is not None or self.goal_back_m <= 0:
+                return path
+        g = goal_ps.pose
+        gyaw = yaw_of(g.orientation)
+        backs = list(np.arange(0.05, self.goal_back_m + 1e-6, 0.05))
+        if self.goal_back is not None:
+            backs = [self.goal_back] + [b for b in backs if abs(b - self.goal_back) > 1e-6]
+        for b in backs:
+            ps = PoseStamped()
+            ps.header = goal_ps.header
+            ps.pose.orientation = g.orientation
+            ps.pose.position.x, ps.pose.position.y = g.position.x - b * math.cos(gyaw), g.position.y - b * math.sin(gyaw)
+            path = self._plan_from(ps, start)
+            if path is not None:
+                if self.goal_back is None or abs(b - self.goal_back) > 1e-6:
+                    self.get_logger().info(f'목표가 지도 장애물 → 목표 뒤 {b * 100:.0f} cm 까지 계획 + 직선', throttle_duration_sec=2.0)
+                self.goal_back = float(b)
+                return Path([tuple(q) for q in path.p] + [(g.position.x, g.position.y)])
+        if self.goal_back is not None:                           # 물린 자리도 막힘 → 다음엔 처음부터
+            self.goal_back = None
+            return self._plan_from(goal_ps, start)
         return None
 
     def _plan_from(self, goal_ps, start):
@@ -369,6 +480,8 @@ class LocalPlanner(Node):
         vlim = self.c['vmax']
         if self.c.get('approach_limit', False) and goal_dist is not None:
             vlim = min(vlim, self.c['approach_v0'] + self.c['approach_k'] * goal_dist)
+        if self.near_off and self.near_vmax > 0:      # 출발 자리 영역 끈 동안 (몸 옆 벽이 안 보임)
+            vlim = min(vlim, self.near_vmax)
         n = np.linalg.norm(lin)
         if n > vlim:
             lin *= vlim / n
@@ -452,6 +565,7 @@ class LocalPlanner(Node):
             goal_xy = np.array([goal_ps.pose.position.x, goal_ps.pose.position.y])
             goal_yaw = yaw_of(goal_ps.pose.orientation)
             self.escaped = False
+            self.goal_back = None
             fr = self.goal_frame
             if fr == 'odom':                                             # 목표를 지금 map → odom 으로 한 번 바꿔 고정
                 src = goal_ps.header.frame_id or 'map'
@@ -462,7 +576,7 @@ class LocalPlanner(Node):
                     gh.abort()
                     return NavigateToPose.Result()
                 self.get_logger().info(f'목표 odom 고정 ({goal_xy[0]:.3f}, {goal_xy[1]:.3f}, {math.degrees(goal_yaw):.1f}°)')
-            tracker, scan_seen = None, -1.0
+            tracker, scan_seen, n_block, n_off = None, -1.0, 0, 0
             if self.box_track:                                           # 박스 맞춤: 경로 = 직선 (학습과 같음), 목표는 스캔마다 고침
                 tracker = BoxTracker(goal_xy, goal_yaw, box_dist=self.box_dist)
                 path = Path([tuple(self.pose(fr)[:2]), tuple(goal_xy)])
@@ -501,6 +615,28 @@ class LocalPlanner(Node):
                         dc = tracker.c - tracker.c0
                         self.get_logger().info(f'박스 맞춤: 지도 대비 ({dc[0] * 100:+.1f}, {dc[1] * 100:+.1f}) cm · {math.degrees(tracker.th):+.1f}°'
                                                f' (측정 {tracker.n_ok} 번)', throttle_duration_sec=1.0)
+                    elif tracker.last_why != 'freeze':
+                        # 버린 이유 기록 (실물 11-07 20:04: dock3 측정 0 번인데 이유가 안 남아 원인을 못 찾음)
+                        self.get_logger().info(f'박스 맞춤 버림: {tracker.last_why}', throttle_duration_sec=1.0)
+                        # 박스는 보이는데 지도 자리 · 방향과 다름 (기울기 · 지도에서 N cm) 이 측정 한 번 없이 계속 → 지도 목표로 그냥 가지 않음
+                        #   (실물 11-07: 19:06 dock2 가 B1 박스를 쳐서 박스가 돌아간 것으로 봄 → 19:25 측정 +13°, 20:04 측정 0 번 · 지도 목표로 가다 충돌)
+                        off = tracker.last_why.startswith(('기울기', '지도에서'))
+                        n_off = n_off + 1 if off else 0
+                        if self.box_reject_n > 0 and tracker.n_ok == 0 and n_off >= self.box_reject_n:
+                            self.send(np.zeros(3))
+                            gh.abort()
+                            self.get_logger().warning(f'박스가 지도 자리와 다름 ({tracker.last_why}, 연속 {n_off} 스캔, 측정 0 번) → 멈추고 실패. '
+                                                      '박스 자리 · 방향 · 지도 정합 확인')
+                            return NavigateToPose.Result()
+                    if self.dock_block_n > 0 and pts is not None:      # 직선 경로에 벽 → 연속 dock_block_n 스캔이면 멈추고 실패
+                        nb, at = self.straight_blocked(self.pose(fr), goal_xy, goal_yaw, tracker, pts)
+                        n_block = n_block + 1 if nb else 0
+                        if n_block >= self.dock_block_n:
+                            self.send(np.zeros(3))
+                            gh.abort()
+                            self.get_logger().warning(f'정밀 접근 직선 경로에 박스 아닌 점 {nb} 개 ({at * 100:.0f} cm 앞) → 멈추고 실패 '
+                                                      f'(목표 {float(np.linalg.norm(goal_xy - self.pose(fr)[:2])) * 100:.0f} cm)')
+                            return NavigateToPose.Result()
                 if tracker is None and self.now() - t_plan > 1.0:        # 1 s 마다 경로 다시 (bt_navigator 와 같은 주기)
                     t_plan = self.now()
                     np_ = self.plan_frame(goal_ps, goal_xy, goal_yaw)
@@ -527,20 +663,23 @@ class LocalPlanner(Node):
                     if near_xy is None:
                         near_xy = pose[:2].copy()
                     moved = float(np.linalg.norm(pose[:2] - near_xy))
-                    if moved > self.near_leave:                          # 출발 자리 벗어남 → 끝 (껐으면 켬)
+                    cleared = self.near_off and moved > self.near_clear_m and self.stop_zone_clear()
+                    if moved > self.near_leave or cleared:               # 출발 자리 벗어남 · 정지 구역 비었음 → 끝 (껐으면 켬)
                         near_checked = True
                         if self.near_off:
                             self.set_polygons(True, self.near_polygons)
                             self.near_off = False
+                            self.get_logger().info(f'출발 자리 {moved * 100:.0f} cm 벗어남' + (' · 정지 구역 빔' if cleared else '') + ' → 영역 켬')
                     elif not self.near_off:
                         # 박스 면 (몸 중심 0.164–0.17 m) 은 scan_merger 몸 상자 경계라 스캔마다 보였다 말았다 함 → 한 번만 보면 놓침
                         #   (Isaac 11-06 START: 놓친 뒤 PolygonStop 이 면 점을 잡아 150 s 멈춤) → 벗어날 때까지 매 주기 보고, 빠져나오기 경로를 썼으면 바로 끔
-                        sc = self.lidar()
-                        dmin = float(sc.min()) if sc is not None else 0.0
-                        if (dmin < self.near_dist or self.escaped) and self.set_polygons(False, self.near_polygons):
+                        #   벽이 가깝기만 한 자리 (출발 구역) 는 PolygonStop 이 안 막으니 안 끔 (실물 11-07)
+                        blocking = self.stop_blocking()
+                        if (blocking or self.escaped) and self.set_polygons(False, self.near_polygons):
                             self.near_off = True
-                            why = '빠져나오기 경로' if self.escaped else f'스캔 최소 {dmin * 100:.0f} cm'
-                            self.get_logger().info(f'출발 자리 {why} → {self.near_leave * 100:.0f} cm 벗어날 때까지 영역 끔')
+                            why = '빠져나오기 경로' if self.escaped else 'PolygonStop 막힘'
+                            self.get_logger().info(f'출발 자리 {why} → {self.near_leave * 100:.0f} cm 벗어나거나 정지 구역 빌 때까지 영역 끔 '
+                                                   f'(병진 ≤ {self.near_vmax:.2f} m/s)')
                 dist = float(np.linalg.norm(goal_xy - pose[:2]))
                 dy = abs(wrap(goal_yaw - pose[2]))
                 # 도착 범위 안이면 0 명령으로 붙잡음 (바퀴 안 흔듦): 정책은 목표 근처에서 ±0.01 m/s · 회전 명령을 번갈아 내고,
@@ -571,7 +710,8 @@ class LocalPlanner(Node):
                 if hold >= self.c['goal_hold_s']:
                     self.send(np.zeros(3))
                     gh.succeed()
-                    extra = '' if tracker is None else f', 박스 지도 대비 {np.linalg.norm(tracker.c - tracker.c0) * 100:.1f} cm · {math.degrees(tracker.th):+.1f}° (측정 {tracker.n_ok} 번)'
+                    extra = '' if tracker is None else (f', 박스 지도 대비 {np.linalg.norm(tracker.c - tracker.c0) * 100:.1f} cm · {math.degrees(tracker.th):+.1f}° (측정 {tracker.n_ok} 번'
+                                                        + (f', 마지막 이유 {tracker.last_why})' if tracker.n_ok == 0 else ')'))
                     self.get_logger().info(f'도착 {self.now() - t0:.1f} s, 오차 {dist * 100:.1f} cm · {math.degrees(dy):.1f}°' + extra)
                     return NavigateToPose.Result()
                 if self.now() - t0 > T:
@@ -596,9 +736,17 @@ def main():
     p.add_argument('--scan_stale_s', type=float, default=0.5)
     p.add_argument('--disable_polygons', default='', help='목표 동안 끌 collision_monitor 영역 (쉼표). 정밀 접근 노드 = PolygonStop,FootprintApproach')
     p.add_argument('--cm_node', default='/collision_monitor')
-    p.add_argument('--near_disable_polygons', default='', help='출발 때 스캔 최소가 --near_dist 안이면 벗어날 때까지 끌 영역 (주행 노드 = PolygonStop,FootprintApproach: 정밀 접근 정차에서 떠날 때)')
-    p.add_argument('--near_dist', type=float, default=0.30, help='몸 중심 ↔ 스캔 점 [m]. 박스 면 1–2 cm 정차면 /scan 에 보이는 건 박스 모서리 0.23–0.25')
+    p.add_argument('--near_disable_polygons', default='', help='출발 때 PolygonStop 이 막거나 빠져나오기 경로면 벗어날 때까지 끌 영역 (주행 노드 = PolygonStop,FootprintApproach: 정밀 접근 정차에서 떠날 때)')
     p.add_argument('--near_leave_m', type=float, default=0.25, help='출발 자리에서 이만큼 멀어지면 영역 다시 켬 [m]')
+    p.add_argument('--near_clear_m', type=float, default=0.05, help='이만큼 움직였고 정지 구역 + --near_clear_pad 안에 점이 없으면 영역 다시 켬 [m]')
+    p.add_argument('--near_clear_pad', type=float, default=0.03, help='[m]')
+    p.add_argument('--near_vmax', type=float, default=0.10, help='출발 자리 영역 끈 동안 병진 상한 [m/s] (0 = 안 막음)')
+    p.add_argument('--stop_half', type=float, default=0.18, help='collision_monitor PolygonStop 반 변 [m] (config/nav2.yaml)')
+    p.add_argument('--cm_state_topic', default='/collision_monitor_state')
+    p.add_argument('--dock_body_half', default='0.145,0.153', help='정밀 접근 직선 경로 검사 몸 반 크기 x,y [m] (차체 앞 끝 · 바퀴)')
+    p.add_argument('--dock_block_n', type=int, default=3, help='정밀 접근 직선 경로가 연속 이만큼 스캔 막히면 멈추고 실패 (0 = 검사 안 함, --box_track 때만)')
+    p.add_argument('--box_reject_n', type=int, default=10, help='박스 맞춤이 측정 0 번인 채 기울기 · 지도 거리 한계로 연속 이만큼 스캔 버려지면 멈추고 실패 (0 = 안 함, 약 1 s)')
+    p.add_argument('--goal_back_m', type=float, default=0.45, help='목표가 지도 장애물이라 경로 실패면 목표를 이 거리까지 물려 계획 + 직선 [m] (0 = 안 함)')
     p.add_argument('--straight_max', type=float, default=0.6, help='planner 실패 때 이 거리 안이면 직선 경로로 대신 [m] (0 = 안 함)')
     p.add_argument('--goal_frame', default='map', choices=('map', 'odom'),
                    help='odom = 목표를 받을 때 odom 으로 고정 (접근 중 slam_toolbox map 보정에 안 흔들림). 정밀 접근 노드에 씀')

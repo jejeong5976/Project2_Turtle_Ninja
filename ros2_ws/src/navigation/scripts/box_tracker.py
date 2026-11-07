@@ -6,6 +6,8 @@
 방법 (스캔 하나마다):
   - 지금 박스 추정 기준 앞면 (로봇 쪽 면) 근처 창 안 점만 (면 수직 ±win, 면 방향 ±(반 변 + 6 cm))
   - 직선 맞춤 (PCA, 1.5 cm 넘는 점 빼고 한 번 더) → 면 방향 · 위치. 기울기 > max_yaw 면 버림
+  - 벽 거르기 (실물 11-07 B1: 벽을 박스 면으로 잡은 것으로 봄): 맞춘 직선 길이 > 한 변 + 3 cm, 또는 직선이 면 끝 밖으로 2 cm 넘어
+    이어짐 (창 밖 12 cm 까지 같은 직선 위 점 min_pts 개 이상 = 박스 모서리에서 안 끊김) 이면 버림. 길이 < min_len (조각 · 기둥) 도 버림
   - 옆 위치: 면 점 양 끝 폭이 한 변 − 3 cm 이상 (모서리 둘 다 보임) 일 때만 가운데로, 아니면 이전 추정 유지
   - 중심 = 면 가운데 − 반 변 × 면 법선, 지도 중심에서 max_shift 넘으면 버림, 최근 med_n 개 중앙값
   - 로봇이 목표 freeze_dist 안이면 안 고침 (면이 scan_merger 몸 상자 · range_min 안으로 들어가 안 보임)
@@ -21,7 +23,7 @@ def _wrap(a):
 
 class BoxTracker:
     def __init__(self, goal_xy, goal_yaw, box_dist=0.2575, half=0.1025, max_shift=0.08, max_yaw_deg=15.0,
-                 win=0.08, min_pts=8, freeze_dist=0.10, med_n=5):
+                 win=0.08, min_pts=8, freeze_dist=0.10, med_n=5, min_len=0.06):
         self.yaw0 = float(goal_yaw)
         self.dist, self.h = box_dist, half
         self.c0 = np.asarray(goal_xy, float) + box_dist * np.array([math.cos(goal_yaw), math.sin(goal_yaw)])   # 지도 박스 중심
@@ -30,6 +32,8 @@ class BoxTracker:
         self.win, self.min_pts, self.freeze = win, min_pts, freeze_dist
         self.hist = []
         self.med_n = med_n
+        self.min_len = min_len
+        self.n_wall = 0                                    # 벽으로 보고 버린 횟수 (디버그)
         self.n_ok = 0
         self.last_why = ''
         self.face = None
@@ -84,7 +88,22 @@ class BoxTracker:
             self.last_why = f'기울기 {math.degrees(th):.0f}°'
             return None
         s = (P - mu) @ d
-        if s.max() - s.min() >= 2 * self.h - 0.03:        # 모서리 둘 다 보임 → 옆 위치도 잼
+        span = float(s.max() - s.min())
+        if span > 2 * self.h + 0.03:
+            self.n_wall += 1
+            self.last_why = f'면 길이 {span * 100:.0f} cm (벽)'
+            return None
+        if span < self.min_len:
+            self.last_why = f'면 길이 {span * 100:.0f} cm (조각)'
+            return None
+        on_line = np.abs((pts - mu) @ nn) < 0.015       # 창 밖까지 같은 직선 위 점 = 벽이 박스 끝에서 안 끊김
+        sa = (pts - mu) @ d
+        beyond = on_line & (((sa > s.max() + 0.02) & (sa < s.max() + 0.14)) | ((sa < s.min() - 0.02) & (sa > s.min() - 0.14)))
+        if beyond.sum() >= self.min_pts:
+            self.n_wall += 1
+            self.last_why = f'면 밖으로 이어짐 {int(beyond.sum())} 점 (벽)'
+            return None
+        if span >= 2 * self.h - 0.03:        # 모서리 둘 다 보임 → 옆 위치도 잼
             s_mid = 0.5 * (s.max() + s.min())
         else:                                             # 한쪽만 → 옆은 이전 추정을 이 면에 투영
             s_mid = float((self.c - mu) @ d)
