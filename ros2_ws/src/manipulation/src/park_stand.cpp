@@ -298,10 +298,23 @@ bool park_nodes(
   const double x_stop = -c.inner_half + c.side + 0.004 + 0.006 - c.push_extra;
   const double pz = c.floor_z + c.push_h;
   const double r0 = c.push_r0;
-  if (!add("park_push_down", at(r0, pz + c.push_dz), 0.0, 0.0, true, "")) {return false;}
-  for (int k = 1; k <= c.push_steps; ++k) {
-    const double f = static_cast<double>(k) / c.push_steps;
-    if (!add("park_push" + std::to_string(k), at(r0 + (x_stop - r0) * f, pz + c.push_dz * (1.0 - f)), 0.0, 0.0, true, "")) {return false;}
+  // 굴삭기처럼: 기울임 −scoop (손끝 J1 쪽) · 높이 pz + push_dz − push_low 에서 시작 → 끝점에서 기울임 0 · 높이 pz. IK 안 되면 5° 씩 줄여 다시
+  {
+    const size_t n0 = nodes.size();
+    const Q5 q0 = q;
+    bool pushed = false;
+    for (double scoop = std::max(0.0, c.push_scoop_deg); !pushed; scoop -= 5.0) {
+      if (scoop < 0.0) {scoop = 0.0;}
+      nodes.resize(n0);
+      q = q0;
+      const double z0 = pz + c.push_dz - (scoop > 0.0 ? c.push_low : 0.0);
+      pushed = add("park_push_down", at(r0, z0), -scoop, 0.0, true, "");
+      for (int k = 1; k <= c.push_steps && pushed; ++k) {
+        const double f = static_cast<double>(k) / c.push_steps;
+        pushed = add("park_push" + std::to_string(k), at(r0 + (x_stop - r0) * f, z0 + (pz - z0) * f), -scoop * (1.0 - f), 0.0, true, "");
+      }
+      if (!pushed && scoop <= 0.0) {return false;}
+    }
   }
   if (!add("park_push_back", at(r0, pz), 0.0, 0.0, true, "") || !add("park_push_up", at(r0, std::max(c.floor_z + 0.0525, pz)), 0.0, 0.0, false, "")) {
     return false;

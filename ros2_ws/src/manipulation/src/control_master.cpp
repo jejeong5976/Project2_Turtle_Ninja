@@ -326,6 +326,8 @@ public:
     declare_parameter<double>("park_release_pull_mm", 0.0);      // > 0: 넣는 점에서 손가락만 살짝 풀고 (park_loose_grip_m) 같은 높이로 J1 쪽 (뒤) 으로 이만큼 곧게 당기며 놓음. 0 = 그 자리에서 놓음
     declare_parameter<double>("park_release_pull_dz_mm", 0.0);   // 당기는 동안 위아래 (− = 내려가며)
     declare_parameter<double>("park_push_extra_mm", 0.0);        // 밀어 세우기 끝점을 몸 (J1) 쪽으로 이만큼 더 (선 퍽 바깥 면 + 4 mm 앞에서 멈추던 것)
+    declare_parameter<double>("park_push_scoop_deg", 0.0);       // > 0: 굴삭기처럼 밀기 — 손끝을 몸 쪽으로 이만큼 기울여 낮게 시작, 밀면서 손을 세우며 올라감
+    declare_parameter<double>("park_push_low_mm", 0.0);          // 굴삭기처럼 밀기 시작 높이를 park_push_h_mm 보다 이만큼 낮게 (받침 바깥 벽 22.5 mm 위를 지나야 함)
     declare_parameter<double>("park_release_up_mm", 0.0);        // 넣는 끝점을 손등 (손목 카메라) 쪽으로 이만큼 (넣으면서 같이, 손 축에 수직)
     declare_parameter<int>("park_release_pull_steps", 3);       // 당기는 점 수
     declare_parameter<double>("park_speed_dps", 20.0);          // 받침에서 넣기 · 다시 쥐기 속도
@@ -1987,6 +1989,8 @@ private:
     pk.release_pull_dz = get_parameter("park_release_pull_dz_mm").as_double() / 1000.0;
     pk.release_up = get_parameter("park_release_up_mm").as_double() / 1000.0;
     pk.push_extra = get_parameter("park_push_extra_mm").as_double() / 1000.0;
+    pk.push_scoop_deg = get_parameter("park_push_scoop_deg").as_double();
+    pk.push_low = get_parameter("park_push_low_mm").as_double() / 1000.0;
     grip_.loose = get_parameter("park_loose_grip_m").as_double();
     pk.side = lying_h_;
     pk.length = puck_h_;
