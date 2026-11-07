@@ -313,7 +313,7 @@ planner_server:
     introspection_mode: "disabled"
     GridBased:
       plugin: "nav2_navfn_planner::NavfnPlanner"
-      tolerance: 0.1
+      tolerance: 0.1                  # 키우지 말 것 (실물 11-07 arena5 에서 0.35 로 돌림): 목표가 지도 박스 칸이면 아무 방향 빈 칸으로 끝나 박스 옆으로 들어옴. RL 노드가 목표를 박스 반대로 물려 계획 + 직선 (--goal_back_m 0.45)
       use_astar: true
       allow_unknown: false
 

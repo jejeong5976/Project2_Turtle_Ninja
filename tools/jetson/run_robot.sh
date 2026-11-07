@@ -42,8 +42,9 @@ port_ok() {   # 실제 장치를 읽고 쓸 수 있나 (udev 규칙의 그룹 ·
 PKG=bringup; LAUNCH=robot.launch.py
 if [ "$MODE" = slam ] || [ "$MODE" = remap ] || [ "$MODE" = locate ]; then   # navigation/slam.launch.py 가 robot.launch.py (바퀴만) 를 포함
   PKG=navigation; LAUNCH=slam.launch.py
-  LF=${NT_LIDAR_FRONT:-/dev/serial/by-path/platform-3610000.usb-usb-0:2.4:1.0-port0}
-  LR=${NT_LIDAR_REAR:-/dev/serial/by-path/platform-3610000.usb-usb-0:2.1:1.0-port0}
+  # USB 자리 (2026-11-07 실물: 앞 2.1 · 뒤 2.2 로 바뀜, 옛 앞 2.4 · 뒤 2.1)
+  LF=${NT_LIDAR_FRONT:-/dev/serial/by-path/platform-3610000.usb-usb-0:2.1:1.0-port0}
+  LR=${NT_LIDAR_REAR:-/dev/serial/by-path/platform-3610000.usb-usb-0:2.2:1.0-port0}
   [ "$LR" = none ] && { LR=""; say "⚠ 뒤 라이다 없이 앞만 (NT_LIDAR_REAR=none) — 뒤 반원이 비어 후진 · 옆 주행의 앞 물체 정지가 뒤를 못 봄"; }
   for L in $LF $LR; do port_ok "$L" || { say "✗ 라이다 포트 $L 를 열 수 없음 (없거나 권한) — ls -l /dev/serial/by-path/ 로 확인 후 NT_LIDAR_FRONT · NT_LIDAR_REAR"; exit 4; }; done
   [ -z "$LR" ] || [ "$(readlink -f "$LF")" != "$(readlink -f "$LR")" ] || { say "✗ 앞 · 뒤 라이다 포트가 같은 장치를 가리킴"; exit 4; }
