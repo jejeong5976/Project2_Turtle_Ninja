@@ -69,6 +69,8 @@ perception:
       depth_topic: /camera/camera/aligned_depth_to_color/image_raw
       info_topic: /camera/camera/color/camera_info
       image_qos: reliable                # reliable | best_effort. 컬러 · 깊이 구독, best_effort 면 장이 빠짐
+      drift_correct: true                # 손목 카메라가 손목에서 돈 만큼 (manipulation camera_drift_node, 홈 사진) 박스 윗면 · 적재함 칸 측정과 퍽 위쪽 방향을 바로잡음
+      drift_topic: /wrist_cam/drift      #   퍽 위치는 카메라 좌표로 내고 control_master 가 같은 값으로 되돌림 (두 번 안 곱함)
 
     rack:                                # 적재함 컵 바닥 AprilTag (손목 컬러만, 깊이 안 씀) → /perception/rack/cells
       enabled: true                      # ~/rack/enable 로 켜고 끔
