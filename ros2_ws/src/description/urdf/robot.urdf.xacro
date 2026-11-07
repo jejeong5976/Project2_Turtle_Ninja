@@ -1213,7 +1213,8 @@
     <collision name="birdeye_camera_link__collision__camera_connector"><geometry><mesh filename="${mesh}/camera/collision/birdeye_connector.obj" scale="1 1 1" /></geometry></collision>
   </link>
   <link name="birdeye_camera_optical_frame"/>
-  <joint name="birdeye_camera_joint" type="fixed"><parent link="profile_camera_bracket_link" /><child link="birdeye_camera_link" /><origin xyz="0.0555354645249 0.0065 0.0195025360476" rpy="0 0.698131700798 0" /></joint>
+  <!-- 11-07: 새 버드아이 브래킷 (cam_brkt - Part 3, 카메라 판 30°) → 아래 30° (예전 클램프 40°). 자리는 예전 그대로 (새 브래킷 자리는 아직 안 잼) -->
+  <joint name="birdeye_camera_joint" type="fixed"><parent link="profile_camera_bracket_link" /><child link="birdeye_camera_link" /><origin xyz="0.0555354645249 0.0065 0.0195025360476" rpy="0 0.523598775598 0" /></joint>
   <joint name="birdeye_camera_optical_joint" type="fixed"><parent link="birdeye_camera_link" /><child link="birdeye_camera_optical_frame" /><origin xyz="0 0 0" rpy="-1.57079632679 0 -1.57079632679" /></joint>
   </xacro:if>
 
