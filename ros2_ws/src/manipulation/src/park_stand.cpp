@@ -287,45 +287,60 @@ bool park_nodes(
         if (ok && c.insert_dj3 != 0.0) {nodes.back().q[2] += c.insert_dj3;}
       }
       if (!ok) {continue;}
-      // 손 빼기 (같은 기울임으로 위 · 바깥) → 바깥 위 수직 · 오므림
-      ok = add("park_back", p_rel + 0.01 * R + 0.03 * Z, cd.th, 0.0, true, "") &&
-        add("park_push_over", at(c.push_r0, std::max(c.floor_z + 0.0525, c.floor_z + c.push_h + 0.02)), 0.0, 0.0, false, "close");
+      if (c.press_mode) {
+        // 누르기 (밀기 대신, 11-07 사용자): 놓은 자리에서 같은 기울임으로 살짝 올리며 닫고 → J1 쪽 (뒤) 으로 → 곧게 눌러 내림 → 위로 빠짐
+        //   뒤 벽에 걸린 퍽을 닫은 손끝으로 눌러 받침 안으로 넣어 세움. 높이 올렸다 오지 않음 (손이 넣는 자세 옆이라 IK 도 됨)
+        const Eigen::Vector3d p_lift = p_rel + c.press_lift * Z;
+        const Eigen::Vector3d p_top = p_lift - c.press_back * R;
+        ok = add("park_press_lift", p_lift, cd.th, 0.0, true, "close") && add("park_press_back", p_top, cd.th, 0.0, true, "");
+        for (int k = 1; k <= c.press_steps && ok; ++k) {
+          const double f = static_cast<double>(k) / c.press_steps;
+          ok = add("park_press" + std::to_string(k), p_top - c.press_depth * f * Z, cd.th, 0.0, true, "");
+        }
+        ok = ok && add("park_press_up", p_top + 0.03 * Z, cd.th, 0.0, true, "");
+      } else {
+        // 손 빼기 (같은 기울임으로 위 · 바깥) → 바깥 위 수직 · 오므림
+        ok = add("park_back", p_rel + 0.01 * R + 0.03 * Z, cd.th, 0.0, true, "") &&
+          add("park_push_over", at(c.push_r0, std::max(c.floor_z + 0.0525, c.floor_z + c.push_h + 0.02)), 0.0, 0.0, false, "close");
+      }
       if (ok) {elev_used = elev; break;}
     }
   }
   if (!ok) {return false;}
-  // 밀기: 받침 바깥에서 바닥 위 push_h 로 안쪽으로, 선 퍽 바깥 면 + 4 mm + 손가락 반두께 앞에서 멈춤
-  const double x_stop = -c.inner_half + c.side + 0.004 + 0.006 - c.push_extra;
-  const double pz = c.floor_z + c.push_h;
-  const double r0 = c.push_r0;
-  // 굴삭기처럼: 기울임 −scoop (손끝 J1 쪽) · 높이 pz + push_dz − push_low 에서 시작 → 끝점에서 기울임 0 · 높이 pz. IK 안 되면 5° 씩 줄여 다시
-  {
-    const size_t n0 = nodes.size();
-    const Q5 q0 = q;
-    bool pushed = false;
-    for (double scoop = std::max(0.0, c.push_scoop_deg); !pushed; scoop -= 5.0) {
-      if (scoop < 0.0) {scoop = 0.0;}
-      nodes.resize(n0);
-      q = q0;
-      const double z0 = pz + c.push_dz - (scoop > 0.0 ? c.push_low : 0.0);
-      pushed = add("park_push_down", at(r0, z0), -scoop, 0.0, true, "");
-      for (int k = 1; k <= c.push_steps && pushed; ++k) {
-        const double f = static_cast<double>(k) / c.push_steps;
-        pushed = add("park_push" + std::to_string(k), at(r0 + (x_stop - r0) * f, z0 + (pz - z0) * f), -scoop * (1.0 - f), 0.0, true, "");
-        // J3 더 굽힘: 밀기 가운데서 가장 많이, 끝점에서 다시 0 (굽힌 채 끝나면 그리퍼가 받침에 닿음, 11-07 사용자)
-        if (pushed && c.push_dj3 != 0.0) {nodes.back().q[2] += c.push_dj3 * std::sin(M_PI * f);}
-        if (pushed && c.push_dj2 != 0.0) {   // J2 더 올림: + = 손끝 위 (관절 부호는 FK 로)
-          Q5 qu = nodes.back().q;
-          qu[1] += 1e-3;
-          const double up = arm_grip(m, qu).tip.z() > arm_grip(m, nodes.back().q).tip.z() ? 1.0 : -1.0;
-          nodes.back().q[1] += up * c.push_dj2 * std::sin(M_PI * f);
+  if (!c.press_mode) {
+    // 밀기: 받침 바깥에서 바닥 위 push_h 로 안쪽으로, 선 퍽 바깥 면 + 4 mm + 손가락 반두께 앞에서 멈춤
+    const double x_stop = -c.inner_half + c.side + 0.004 + 0.006 - c.push_extra;
+    const double pz = c.floor_z + c.push_h;
+    const double r0 = c.push_r0;
+    // 굴삭기처럼: 기울임 −scoop (손끝 J1 쪽) · 높이 pz + push_dz − push_low 에서 시작 → 끝점에서 기울임 0 · 높이 pz. IK 안 되면 5° 씩 줄여 다시
+    {
+      const size_t n0 = nodes.size();
+      const Q5 q0 = q;
+      bool pushed = false;
+      for (double scoop = std::max(0.0, c.push_scoop_deg); !pushed; scoop -= 5.0) {
+        if (scoop < 0.0) {scoop = 0.0;}
+        nodes.resize(n0);
+        q = q0;
+        const double z0 = pz + c.push_dz - (scoop > 0.0 ? c.push_low : 0.0);
+        pushed = add("park_push_down", at(r0, z0), -scoop, 0.0, true, "");
+        for (int k = 1; k <= c.push_steps && pushed; ++k) {
+          const double f = static_cast<double>(k) / c.push_steps;
+          pushed = add("park_push" + std::to_string(k), at(r0 + (x_stop - r0) * f, z0 + (pz - z0) * f), -scoop * (1.0 - f), 0.0, true, "");
+          // J3 더 굽힘: 밀기 가운데서 가장 많이, 끝점에서 다시 0 (굽힌 채 끝나면 그리퍼가 받침에 닿음, 11-07 사용자)
+          if (pushed && c.push_dj3 != 0.0) {nodes.back().q[2] += c.push_dj3 * std::sin(M_PI * f);}
+          if (pushed && c.push_dj2 != 0.0) {   // J2 더 올림: + = 손끝 위 (관절 부호는 FK 로)
+            Q5 qu = nodes.back().q;
+            qu[1] += 1e-3;
+            const double up = arm_grip(m, qu).tip.z() > arm_grip(m, nodes.back().q).tip.z() ? 1.0 : -1.0;
+            nodes.back().q[1] += up * c.push_dj2 * std::sin(M_PI * f);
+          }
         }
+        if (!pushed && scoop <= 0.0) {return false;}
       }
-      if (!pushed && scoop <= 0.0) {return false;}
     }
-  }
-  if (!add("park_push_back", at(r0, pz), 0.0, 0.0, true, "") || !add("park_push_up", at(r0, std::max(c.floor_z + 0.0525, pz)), 0.0, 0.0, false, "")) {
-    return false;
+    if (!add("park_push_back", at(r0, pz), 0.0, 0.0, true, "") || !add("park_push_up", at(r0, std::max(c.floor_z + 0.0525, pz)), 0.0, 0.0, false, "")) {
+      return false;
+    }
   }
   // 선 퍽 다시 쥐기 (선 자리 = 받침 중심 + regrasp_r, 시뮬 −6 mm). 손끝 = 윗면 − regrasp_depth (받침 벽 위)
   const double ptop = c.floor_z + c.length;
