@@ -320,6 +320,8 @@ public:
     declare_parameter<double>("park_insert_back_mm", 0.0);     // > 0: 다 기울인 자세를 이만큼 위에서 만들고 그 자세로 곧게 넣음 (from_back 이 있으면 뒤 위에서 대각선)
     declare_parameter<double>("park_insert_extra_mm", 0.0);    // 넣는 끝점을 이만큼 더 아래로 (턱에 걸치면 밀어 넣기)
     declare_parameter<double>("park_insert_from_back_mm", 0.0);  // 곧게 넣기 출발점을 J1 쪽 (로봇 뒤) 으로 이만큼 → 뒤 위에서 앞 아래로 대각선으로 넣음
+    declare_parameter<double>("park_release_pull_mm", 0.0);      // > 0: 넣는 점에서 손가락만 살짝 풀고 (park_loose_grip_m) 퍽 아래 끝을 축으로 J1 쪽으로 이만큼 당기며 놓음. 0 = 그 자리에서 놓음
+    declare_parameter<int>("park_release_pull_steps", 3);       // 당기는 점 수
     declare_parameter<double>("park_speed_dps", 20.0);          // 받침에서 넣기 · 다시 쥐기 속도
     declare_parameter<double>("park_push_speed_dps", 20.0);     // 받침에서 밀어 세우는 속도 (빠르면 손끝이 퍽 면을 타고 올라 넘어짐)
     declare_parameter<std::vector<double>>("look_rack_bias_mm", {0.0, 0.0});   // LOOK_RACK 칸 측정의 카메라 치우침 [x, y] mm (제자리 적재함에서 잰 값 − 칸 표)
@@ -1956,6 +1958,8 @@ private:
     pk.insert_back = get_parameter("park_insert_back_mm").as_double() / 1000.0;
     pk.insert_extra = get_parameter("park_insert_extra_mm").as_double() / 1000.0;
     pk.insert_from_back = get_parameter("park_insert_from_back_mm").as_double() / 1000.0;
+    pk.release_pull = get_parameter("park_release_pull_mm").as_double() / 1000.0;
+    pk.release_pull_steps = static_cast<int>(get_parameter("park_release_pull_steps").as_int());
     grip_.loose = get_parameter("park_loose_grip_m").as_double();
     pk.side = lying_h_;
     pk.length = puck_h_;
@@ -1991,7 +1995,7 @@ private:
     std::vector<PathNode> nodes;
     for (const auto & n : pn) {
       // 미는 구간 (park_push_down · 1–4 · back) 만 park_push_speed_dps (11-06 시뮬: 50 °/s 면 기대는 각 49° 아래에서 넘어짐, 20 °/s 면 ±2–4 mm 오차에도 섬)
-      const double sp = !n.slow ? 0.0 : (n.name.rfind("park_push", 0) == 0 ? v_push : v);
+      const double sp = !n.slow ? 0.0 : (n.name.rfind("park_push", 0) == 0 || n.name.rfind("park_pull", 0) == 0 ? v_push : v);
       nodes.push_back(model_node(n.name, q_to_ticks(model_, encoder_goal_q(model_, n.q, n.held_kg)), sp, n.grip));
       if (n.grip == "loose") {nodes.back().grip_on_way = true;}   // 팔을 안 멈추고 손가락만 풂
     }

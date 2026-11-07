@@ -73,6 +73,37 @@ TEST(ParkStand, VerticalGraspMatchesOldFormula)
   EXPECT_NEAR(s.tip.z(), tz, 1e-3);
 }
 
+// 당기며 놓기: 넣는 점은 loose, 아래 끝면 중심 둘레로 J1 쪽 수평 release_pull 만큼 · 위로, 끝점에서 open. 손 기울임 그대로
+TEST(ParkStand, ReleasePullMovesTowardJ1)
+{
+  const auto m = kin_data::model();
+  LyingGraspCfg gc;
+  for (bool straight : {false, true}) {
+    ParkCfg pk;
+    pk.release_pull = 0.010;
+    if (straight) {pk.insert_back = 0.015; pk.insert_extra = 0.003;}
+    std::vector<ParkNode> pn;
+    double elev = 0.0;
+    auto accept = [&](const LyingGrasp & c, std::string & w) {return park_nodes(m, pk, c, ticks_to_q(m, c.poses[0].ticks), pn, elev, w);};
+    LyingGrasp g;
+    std::string why;
+    ASSERT_TRUE(lying_grasp(m, 0.205, 0.0, kTop, 0.0, kHeights, gc, g, why, 0.0, accept)) << why;
+    const ParkNode * ins = find(pn, straight ? "park_insert" : "park_tilt8");
+    const ParkNode * p3 = find(pn, "park_pull3");
+    ASSERT_NE(ins, nullptr);
+    ASSERT_NE(p3, nullptr);
+    EXPECT_EQ(ins->grip, "loose");
+    EXPECT_EQ(find(pn, "park_pull1")->grip, "");
+    EXPECT_EQ(p3->grip, "open");
+    const Eigen::Vector2d rdir = (pk.center - m.j1_xy).normalized();
+    const Grip a = arm_grip(m, ins->q), b = arm_grip(m, p3->q);
+    EXPECT_NEAR((a.tip - b.tip).head<2>().dot(rdir), 0.010, 1e-3);
+    EXPECT_GT(b.tip.z(), a.tip.z());
+    EXPECT_NEAR(a.app.normalized().dot(b.app.normalized()), 1.0, 1e-4);
+    EXPECT_EQ(pn[static_cast<size_t>(p3 - pn.data()) + 1].name, "park_back");
+  }
+}
+
 // 먼 접선 방향 누운 퍽: 손을 기울이면 닫힘축이 팔 평면 안에서 기울어 퍽이 굴러 손가락에 맞음
 TEST(ParkStand, FarTangentialPuckRollsIntoTiltedHand)
 {
