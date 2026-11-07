@@ -329,6 +329,7 @@ public:
     declare_parameter<int>("park_release_pull_steps", 3);       // 당기는 점 수
     declare_parameter<double>("park_speed_dps", 20.0);          // 받침에서 넣기 · 다시 쥐기 속도
     declare_parameter<double>("park_push_speed_dps", 20.0);     // 받침에서 밀어 세우는 속도 (빠르면 손끝이 퍽 면을 타고 올라 넘어짐)
+    declare_parameter<bool>("store_match_grip_depth", true);   // STORE: 쥔 깊이가 박스 PICK 깊이와 다르면 (받침에서 다시 쥔 퍽) 칸 근처 높이를 그 차만큼
     declare_parameter<std::vector<double>>("look_rack_bias_mm", {0.0, 0.0});   // LOOK_RACK 칸 측정의 카메라 치우침 [x, y] mm (제자리 적재함에서 잰 값 − 칸 표)
     declare_parameter<bool>("pick_end_at_staging", false);       // PICK 끝에 박스 위 기준점으로 (false = 집은 자리에서 끝, STORE · PLACE 가 이어 감)
     declare_parameter<bool>("place_far_regrasp", true);         // 먼 자리 PLACE: 가까운 빈 자리에 내려놓고 손을 기울여 다시 쥔 뒤 놓기 (place_far_plan)
@@ -1187,6 +1188,17 @@ private:
         ox += c[0];
         oy += c[1];
         if (c.size() == 3 && std::isfinite(c[2])) {dz = c[2] / 1000.0;}
+      }
+      // 쥔 깊이가 박스 PICK (pick_heights_mm 마지막, 칸 보정을 맞춘 깊이) 과 다르면 칸 근처 높이를 그 차만큼 → 퍽 바닥이 같은 높이로
+      //   (11-07 실물: 받침에서 세워 30 mm 로 다시 쥔 퍽이 박스 PICK 50 mm 보다 20 mm 아래 매달려 S2 에 긁혀 안 들어감)
+      if (get_parameter("store_match_grip_depth").as_bool() && depth_from_pick_ && held_depth_mm_ > 0.0 && !pick_heights_.empty()) {
+        const double ref = -pick_heights_.back();
+        const double ddz = (ref - held_depth_mm_) / 1000.0;
+        if (std::fabs(ddz) > 1e-4) {
+          RCLCPP_INFO(get_logger(), "%s: 쥔 깊이 %.0f mm (박스 PICK %.0f mm) → 칸 근처 높이 %+.1f mm (store_match_grip_depth)", name.c_str(),
+            held_depth_mm_, ref, ddz * 1000.0);
+          dz += ddz;
+        }
       }
       if (known && get_parameter("store_to_cell").as_bool()) {
         Eigen::Vector2d tip;
@@ -2451,9 +2463,9 @@ private:
             if (task != kArmLookRack) {held_tilt_ = task == ArmTask::Goal::PICK ? pending_tilt_ : 0.0;}   // LOOK_RACK 은 쥔 퍽 그대로
             if (task == ArmTask::Goal::PICK) {held_lying_ = pending_lying_;}
             else if (task == ArmTask::Goal::RETRIEVE || !carrying_) {held_lying_ = false;}
-            if (task == ArmTask::Goal::PICK) {held_depth_mm_ = pending_depth_;}
-            else if (task == ArmTask::Goal::RETRIEVE) {held_depth_mm_ = retrieve_depth_mm_;}
-            else if (!carrying_) {held_depth_mm_ = 0.0;}
+            if (task == ArmTask::Goal::PICK) {held_depth_mm_ = pending_depth_; depth_from_pick_ = true;}
+            else if (task == ArmTask::Goal::RETRIEVE) {held_depth_mm_ = retrieve_depth_mm_; depth_from_pick_ = false;}
+            else if (!carrying_) {held_depth_mm_ = 0.0; depth_from_pick_ = false;}
           }
           if (c.end != ArmEnd::SUCCEEDED) {held_from_pick_ = false; look_rack_slot_.clear();}   // 도중에 끝남 → 집은 자리에서 잇기 안 함 (arm_off_path_)
           if (scanning_) {
@@ -2658,6 +2670,7 @@ private:
   double max_tilt_deg_{20.0};
   double held_tilt_{0.0};          // 쥔 퍽의 손 안 기울임 [°] (PICK 때 손 기울임, RETRIEVE = 0)
   double pending_tilt_{0.0};       // 받은 PICK 계획의 손 기울임 (성공하면 held_tilt_)
+  bool depth_from_pick_{false};    // held_depth_mm_ 이 PICK 계획의 깊이 (RETRIEVE 의 25 mm 는 추정값이라 STORE 높이 맞춤에 안 씀)
   double held_depth_mm_{0.0};      // 쥔 퍽 깊이 = 퍽 윗면 ↔ 손끝 [mm] (PICK = 그 계획의 쥐는 깊이, RETRIEVE = retrieve_grip_depth_mm, 0 = 모름)
   double pending_depth_{0.0};      // 받은 PICK 계획의 쥐는 깊이 (성공하면 held_depth_mm_)
   bool held_lying_{false};         // 쥔 퍽이 누운 네모 퍽 (STORE 거절, PLACE 는 누운 채로)
