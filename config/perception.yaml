@@ -56,6 +56,8 @@ perception:
       reset_move_m: 0.01                 # 장 사이 카메라가 이보다 움직이면 묶음 지움
       reset_rot_deg: 2.0
       depth_scale: 0.001                 # 16UC1 깊이 단위 → m
+      min_rise_m: 0.0                    # 윗면이 둘레 낮은 면보다 이만큼도 안 솟은 분할은 퍽 아님 (11-07 실물: 상자 로고를 green 퍽으로). 0 = 안 봄.
+                                         #   0.012 로 켜기 전에 퍽이 붙어 꽉 찬 박스에서 가운데 퍽이 안 빠지는지 확인 (둘레가 옆 퍽 윗면뿐이면 빠짐)
       publish_debug: false               # true 면 /perception/wrist_debug_image
       color_topic: /camera/camera/color/image_raw
       depth_topic: /camera/camera/aligned_depth_to_color/image_raw

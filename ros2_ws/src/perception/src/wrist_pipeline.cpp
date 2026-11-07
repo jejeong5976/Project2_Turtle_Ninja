@@ -49,6 +49,8 @@ WristPipeline::WristPipeline(
   reset_move_m_ = n.declare_parameter<double>("wrist.reset_move_m", 0.01);
   reset_rot_deg_ = n.declare_parameter<double>("wrist.reset_rot_deg", 2.0);
   depth_scale_ = n.declare_parameter<double>("wrist.depth_scale", 0.001);
+  // 윗면이 둘레 낮은 면보다 이만큼도 안 솟은 분할은 퍽이 아님 (납작한 무늬). 0 = 안 봄
+  min_rise_m_ = n.declare_parameter<double>("wrist.min_rise_m", 0.0);
   publish_debug_ = n.declare_parameter<bool>("wrist.publish_debug", false);
   const auto color_topic = n.declare_parameter<std::string>("wrist.color_topic", "/camera/camera/color/image_raw");
   const auto depth_topic = n.declare_parameter<std::string>(
@@ -185,7 +187,7 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
   }
   std::vector<pw::RawPuck> raws;
   for (const auto & s : inst) {
-    auto p = pw::puck_pose(s.mask, depth, K, tags, &up);
+    auto p = pw::puck_pose(s.mask, depth, K, tags, &up, min_rise_m_);
     if (!p) {continue;}
     pw::RawPuck r;
     r.pose = std::move(*p);

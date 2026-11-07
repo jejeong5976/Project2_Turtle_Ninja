@@ -149,9 +149,13 @@ void gravity_refine(PuckPose & p, const std::vector<Vec3> & pts, const Vec3 & up
 std::optional<double> support_height(const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K, const Vec3 & up,
   double top_h);
 
+// 마스크 둘레 고리 (RING_IN ~ RING_OUT 화소) 깊이 점의 높이 (위쪽 내적) 10 % 값 — 둘레에서 가장 낮은 면 쪽. 점이 RING_MIN_POINTS 보다 적으면 없음
+std::optional<double> ring_low_height(const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K, const Vec3 & up);
+
 // 마스크 1개 → 퍽 자세. 점 부족이면 없음. up_cam 은 카메라 좌표 월드 위쪽 (없으면 nullptr)
+//   min_rise_m > 0 이고 위쪽을 알면: 윗면이 둘레의 낮은 면 (ring_low_height) 보다 이만큼도 안 높으면 퍽이 아님 (상자에 인쇄된 무늬 등) → 없음
 std::optional<PuckPose> puck_pose(
   const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K,
-  const std::vector<TagPose> & tags, const Vec3 * up_cam);
+  const std::vector<TagPose> & tags, const Vec3 * up_cam, double min_rise_m = 0.0);
 
 }  // namespace perception::wrist
