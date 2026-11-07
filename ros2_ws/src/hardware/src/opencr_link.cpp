@@ -2,6 +2,8 @@
 
 #include "hardware/opencr_link.hpp"
 
+#include <cstdio>
+
 #include <cerrno>
 #include <cmath>
 #include <cstring>
@@ -154,6 +156,7 @@ int OpenCRLink::configure(double timeout_s)
 
   waiting_ack_ = true;
   ack_mask_ = -1;
+  pos_limits_ok_ = false;   // 이 CONFIG 뒤 POS_LIMITS 를 새로 받음
   const auto start = Clock::now();
   auto last_send = start - std::chrono::seconds(10);
   while (std::chrono::duration<double>(Clock::now() - start).count() < timeout_s) {
@@ -245,6 +248,20 @@ int OpenCRLink::poll()
           for (std::size_t i = 0; i < joints_.size(); ++i) {temps_[i] = t.c[i] == ntp::TEMP_UNKNOWN ? -1 : t.c[i];}
           ++temp_count_;
         }
+      } else if (parser_.type() == ntp::TYPE_POS_LIMITS) {
+        ntp::PosLimits l;
+        if (ntp::decode_pos_limits(parser_.data(), parser_.len(), l) && l.n == joints_.size()) {
+          pos_limits_.assign(l.n, {ntp::TF_NO_LIMIT, ntp::TF_NO_LIMIT});
+          for (uint8_t i = 0; i < l.n; ++i) {pos_limits_[i] = {l.lo[i], l.hi[i]};}
+          pos_limits_ok_ = true;
+        }
+      } else if (parser_.type() == ntp::TYPE_TORQUE_FAIL) {
+        ntp::TorqueFail f;
+        if (ntp::decode_torque_fail(parser_.data(), parser_.len(), f)) {
+          torque_fail_ = f;
+          torque_fail_time_ = Clock::now();
+          ++torque_fail_count_;
+        }
       } else if (parser_.type() == ntp::TYPE_CONFIG_ACK && waiting_ack_) {
         ntp::ConfigAck a;
         if (ntp::decode_ack(parser_.data(), parser_.len(), a) && a.n == joints_.size()) {
@@ -254,6 +271,89 @@ int OpenCRLink::poll()
     }
   }
   return new_states;
+}
+
+bool OpenCRLink::last_torque_fail(ntp::TorqueFail & f, double & age_s) const
+{
+  if (torque_fail_count_ == 0) {return false;}
+  f = torque_fail_;
+  age_s = std::chrono::duration<double>(Clock::now() - torque_fail_time_).count();
+  return true;
+}
+
+bool OpenCRLink::pos_limits(std::vector<std::pair<int32_t, int32_t>> & out) const
+{
+  if (!pos_limits_ok_) {return false;}
+  out = pos_limits_;
+  return true;
+}
+
+std::string pos_limits_text(
+  const std::vector<JointSpec> & joints, const std::vector<std::pair<int32_t, int32_t>> & lim,
+  const std::vector<double> & q, std::string & out_of_range)
+{
+  const double k = 2.0 * M_PI / 4096.0;
+  std::string line;
+  out_of_range.clear();
+  char buf[200];
+  for (std::size_t i = 0; i < joints.size() && i < lim.size(); ++i) {
+    if (lim[i].first == ntp::TF_NO_LIMIT) {continue;}
+    const double a = motor_to_joint(joints[i], (lim[i].first - 2048) * k) * 180.0 / M_PI;
+    const double b = motor_to_joint(joints[i], (lim[i].second - 2048) * k) * 180.0 / M_PI;
+    const double now = i < q.size() ? q[i] * 180.0 / M_PI : NAN;
+    std::snprintf(buf, sizeof(buf), "%s%s %+.0f°~%+.0f°", line.empty() ? "" : " · ", joints[i].name.c_str(), std::min(a, b), std::max(a, b));
+    line += buf;
+    if (std::isfinite(now)) {
+      std::snprintf(buf, sizeof(buf), " (지금 %+.0f°)", now);
+      line += buf;
+      const int tick = static_cast<int>(std::lround(joint_to_motor(joints[i], q[i]) / k)) + 2048;
+      if (tick < lim[i].first || tick > lim[i].second) {
+        std::snprintf(buf, sizeof(buf), "%s%s 지금 %+.0f° (%d 눈금) 이 위치 한계 %+.0f°~%+.0f° (%d–%d) 밖", out_of_range.empty() ? "" : " · ",
+          joints[i].name.c_str(), now, tick, std::min(a, b), std::max(a, b), lim[i].first, lim[i].second);
+        out_of_range += buf;
+      }
+    }
+  }
+  return line;
+}
+
+std::string torque_fail_text(const std::vector<JointSpec> & joints, const ntp::TorqueFail & f)
+{
+  const std::string name = f.idx < joints.size() ? joints[f.idx].name : std::string("?");
+  char who[96];
+  std::snprintf(who, sizeof(who), "%s (모터 %d)", name.c_str(), f.id);
+  // 지금 위치 → 관절 각 (영점 · 방향 반영) [°]
+  auto deg = [&](int32_t tick) -> double {
+      if (f.idx >= joints.size()) {return static_cast<double>(NAN);}
+      const double m = (tick - 2048) * 2.0 * M_PI / 4096.0;
+      return motor_to_joint(joints[f.idx], m) * 180.0 / M_PI;
+    };
+  char err[64] = "";
+  if (f.dxl_err) {
+    static const char * names[] = {"", "Result Fail", "Instruction", "CRC", "Data Range", "Data Length", "Data Limit", "Access"};
+    const int e = f.dxl_err & 0x7F;
+    std::snprintf(err, sizeof(err), " · 모터 오류 0x%02X (%s%s)", f.dxl_err, e < 8 ? names[e] : "?", (f.dxl_err & 0x80) ? " · Alert" : "");
+  } else if (f.lib_err) {
+    std::snprintf(err, sizeof(err), " · 통신 오류 %d (대답 없음 · 시간 초과)", f.lib_err);
+  }
+  char buf[320];
+  switch (f.step) {
+    case ntp::TF_READ:
+      std::snprintf(buf, sizeof(buf), "%s 지금 위치 읽기 실패%s → 선 · 전원 · 배터리 확인", who, err);
+      break;
+    case ntp::TF_RANGE:
+      std::snprintf(buf, sizeof(buf), "%s 지금 %d 눈금 (관절 %+.0f°) 이 모터 위치 한계 %d–%d 눈금 (관절 %+.0f°~%+.0f°) 밖 → 손으로 한계 안 "
+        "(조향이면 똑바로) 으로 돌려 놓고 다시 켤 것", who, f.pos, deg(f.pos), f.min_lim, f.max_lim,
+        std::min(deg(f.min_lim), deg(f.max_lim)), std::max(deg(f.min_lim), deg(f.max_lim)));
+      break;
+    case ntp::TF_GOAL:
+      std::snprintf(buf, sizeof(buf), "%s 목표 쓰기 실패 (지금 %d 눈금)%s", who, f.pos, err);
+      break;
+    default:
+      std::snprintf(buf, sizeof(buf), "%s Torque Enable 쓰기 실패%s", who, err);
+      break;
+  }
+  return buf;
 }
 
 bool OpenCRLink::wait_for_state(double timeout_s)

@@ -65,6 +65,11 @@ uint8_t volt_min_dv_ = 0;   // 0 = 이번 구간에 못 읽음
 uint8_t temp_c_[ntp::MAX_JOINTS];
 uint16_t temp_fresh_ = 0;   // 비트 i = 이 구간에 i 번째 온도를 읽었음
 uint32_t stop_attempt_us_ = 0;
+// 토크 켜기 실패 이유 (TORQUE_FAIL) — 위치 모터의 EEPROM 위치 한계 (CONFIG 때 읽음) · 이번 시도에서 처음 실패한 모터
+int32_t min_lim_[ntp::MAX_JOINTS];
+int32_t max_lim_[ntp::MAX_JOINTS];
+ntp::TorqueFail tf_;
+bool tf_new_ = false;
 
 bool last_ok()   // 바로 앞 단일 읽기 · 쓰기가 통신까지 성공했나
 {
@@ -221,9 +226,18 @@ uint16_t bus_configure(const ntp::Config &c)
     // Bus Watchdog: OpenCR 가 멈춰 명령이 끊기면 모터가 스스로 멈춤 (값이 0 이 아니면 켜짐, 단위 20 ms)
     good = dxl.writeControlTableItem(BUS_WATCHDOG, ids_[i], 0) && good;        // 걸려 있던 것 풀기
     good = dxl.writeControlTableItem(BUS_WATCHDOG, ids_[i], c.bus_watchdog) && good;
+    // 위치 한계 (EEPROM, 위치 모드만 — 확장 위치 · 전류 기반 위치 · 속도는 한계를 안 씀). 못 읽으면 검사 안 함
+    min_lim_[i] = max_lim_[i] = ntp::TF_NO_LIMIT;
+    if (modes_[i] == ntp::MODE_POSITION) {
+      const int32_t lo = dxl.readControlTableItem(MIN_POSITION_LIMIT, ids_[i]);
+      const bool lo_ok = last_ok();
+      const int32_t hi = dxl.readControlTableItem(MAX_POSITION_LIMIT, ids_[i]);
+      if (lo_ok && last_ok() && lo <= hi) {min_lim_[i] = lo; max_lim_[i] = hi;}
+    }
     if (good) {ok |= static_cast<uint16_t>(1u << i);}
   }
   ok_ = ok;
+  tf_new_ = false;
   torque_ = false;
   torque_lost_ = 0;
   hw_err_ = 0;
@@ -251,6 +265,20 @@ void bus_set_torque(bool on)
   // (R7) 모든 읽기 · 쓰기에 IO_TIMEOUT_MS, 한 번 시도 전체는 TORQUE_BUDGET_MS — 버스가 고장 나도 한 바퀴가 길어지지 않게
   const uint32_t t0 = millis();
   bool all = true;
+  bool noted = false;   // 이번 시도에서 처음 실패한 모터 하나만 기록 (TORQUE_FAIL, 펌웨어 루프가 0.5 s 마다 보냄)
+  auto note = [&](uint8_t i, uint8_t step, int32_t pos) {
+      if (noted) {return;}
+      noted = true;
+      tf_.idx = i;
+      tf_.id = ids_[i];
+      tf_.step = step;
+      tf_.dxl_err = dxl.getLastStatusPacketError();
+      tf_.lib_err = static_cast<uint8_t>(dxl.getLastLibErrCode());
+      tf_.pos = pos;
+      tf_.min_lim = min_lim_[i];
+      tf_.max_lim = max_lim_[i];
+      tf_new_ = true;
+    };
   for (uint8_t i = 0; i < n_; ++i) {
     if (!(ok_ & (1u << i))) {continue;}
     if (millis() - t0 > TORQUE_BUDGET_MS) {all = false; break;}   // 남은 모터는 다음 바퀴에
@@ -260,15 +288,40 @@ void bus_set_torque(bool on)
       if (!last_ok()) {
         // (R5) 읽기 실패면 돌려받은 값(0 등)이 "지금 위치" 가 아님 → 그걸 목표로 쓰면 켜는 순간 팔이 튐
         //      → 이 모터는 이번에 토크를 켜지 않음. all = false 라 10 ms 뒤 다시 시도, 계속 실패면 플러그인이 0.5 s 뒤 ERROR
+        note(i, ntp::TF_READ, 0);
         all = false;
         continue;
       }
-      all = timed_write(GOAL_POSITION, ids_[i], now_pos) && all;
+      // 지금 위치가 EEPROM 위치 한계 밖 (꺼진 동안 손 · 충돌로 돎) → 모터가 그 목표를 거절함. 쓰지 않고 이유만 알림
+      //   (자동으로 한계 안으로 돌리지 않음: 켜는 순간 바퀴 · 팔이 휙 돎. 사람이 손으로 돌려 놓고 다시 켬)
+      if (min_lim_[i] != ntp::TF_NO_LIMIT && (now_pos < min_lim_[i] || now_pos > max_lim_[i])) {
+        note(i, ntp::TF_RANGE, now_pos);
+        all = false;
+        continue;
+      }
+      if (!timed_write(GOAL_POSITION, ids_[i], now_pos)) {note(i, ntp::TF_GOAL, now_pos); all = false;}
     }
-    if (on && modes_[i] == ntp::MODE_VELOCITY) {all = timed_write(GOAL_VELOCITY, ids_[i], 0) && all;}
-    all = timed_write(TORQUE_ENABLE, ids_[i], on ? 1 : 0) && all;
+    if (on && modes_[i] == ntp::MODE_VELOCITY && !timed_write(GOAL_VELOCITY, ids_[i], 0)) {note(i, ntp::TF_GOAL, 0); all = false;}
+    if (!timed_write(TORQUE_ENABLE, ids_[i], on ? 1 : 0)) {note(i, ntp::TF_TORQUE, 0); all = false;}
   }
   if (all) {torque_ = on;}
+}
+
+void bus_pos_limits(ntp::PosLimits &l)
+{
+  l.n = n_;
+  for (uint8_t i = 0; i < n_; ++i) {
+    l.lo[i] = min_lim_[i];
+    l.hi[i] = max_lim_[i];
+  }
+}
+
+bool bus_torque_fail_take(ntp::TorqueFail &f)
+{
+  if (!tf_new_) {return false;}
+  f = tf_;
+  tf_new_ = false;
+  return true;
 }
 
 bool bus_torque_is_on()

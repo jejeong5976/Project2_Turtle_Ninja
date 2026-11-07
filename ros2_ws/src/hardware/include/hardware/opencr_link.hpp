@@ -202,6 +202,13 @@ struct TempReport
   std::vector<std::pair<std::string, std::string>> values;
 };
 TempReport temp_report(const std::vector<JointSpec> & joints, const std::vector<int> & c, int warn_c, int crit_c);
+// 토크 켜기 실패 이유 → 사람 말 (예: "steer_fl_joint (모터 11) 지금 3120 눈금 (+94°) 이 위치 한계 1024–3072 밖 → 손으로 한계 안으로 돌려 놓고 다시 켤 것")
+std::string torque_fail_text(const std::vector<JointSpec> & joints, const ntp::TorqueFail & f);
+// 위치 한계 → 켤 때 찍을 한 줄 (위치 모드 관절마다 "steer_fl_joint −90°~+90° (지금 +3°)").
+//   지금 위치 (관절 단위, NaN = 모름) 가 한계 밖인 관절은 out_of_range 에 사람 말로 (없으면 빈 문자열)
+std::string pos_limits_text(
+  const std::vector<JointSpec> & joints, const std::vector<std::pair<int32_t, int32_t>> & lim,
+  const std::vector<double> & q, std::string & out_of_range);
 
 class OpenCRLink
 {
@@ -243,6 +250,11 @@ public:
   // 모터 온도 [°C] (관절 순서, -1 = 모름) — 가장 최근 TEMP. temp_count() 가 바뀌면 새 것 (0 = TEMP 를 안 보내는 옛 펌웨어거나 아직 1 초 전)
   const std::vector<int> & temperatures() const {return temps_;}
   uint32_t temp_count() const {return temp_count_;}
+  // 토크 켜기 실패 이유 (TORQUE_FAIL, 새 펌웨어만) — 가장 최근 것과 받은 뒤 지난 시간 [s]. 받은 적 없으면 false
+  bool last_torque_fail(ntp::TorqueFail & f, double & age_s) const;
+  uint32_t torque_fail_count() const {return torque_fail_count_;}
+  // 모터별 EEPROM 위치 한계 [눈금] (POS_LIMITS, CONFIG 바로 뒤 한 번, 새 펌웨어만). 위치 모드가 아니면 ntp::TF_NO_LIMIT. 아직 못 받았으면 false
+  bool pos_limits(std::vector<std::pair<int32_t, int32_t>> & out) const;
   uint32_t frames_received() const {return frames_;}
   std::size_t size() const {return joints_.size();}
   const std::vector<JointSpec> & joints() const {return joints_;}
@@ -271,6 +283,11 @@ private:
   uint32_t diag_count_ = 0;
   std::vector<int> temps_;
   uint32_t temp_count_ = 0;
+  ntp::TorqueFail torque_fail_{};
+  std::vector<std::pair<int32_t, int32_t>> pos_limits_;
+  bool pos_limits_ok_ = false;
+  uint32_t torque_fail_count_ = 0;
+  Clock::time_point torque_fail_time_{};
 };
 
 }  // namespace hardware

@@ -29,6 +29,11 @@ void bus_set_torque(bool on);
 //   = 위의 쓰기가 전부 성공했고 + 운전 중 되읽은 Torque Enable 이 꺼진 모터가 없음 (R5)
 //   예전에는 "마지막 쓰기 성공" 만 기억해서, 운전 중 모터가 스스로 토크를 끄거나(과부하 shutdown) 재부팅돼도 몰랐음
 bool bus_torque_is_on();
+// 토크 켜기/끄기가 실패한 이유 (TORQUE_FAIL 상자) — 마지막 시도에서 처음 실패한 모터 · 단계 · 모터 오류 · 지금 위치 · 위치 한계.
+//   새 것이 있으면 true 로 꺼냄 (꺼내면 지움). 위치 한계는 CONFIG 때 EEPROM 에서 읽음 (위치 모드만)
+bool bus_torque_fail_take(ntp::TorqueFail &f);
+// CONFIG 때 읽은 모터별 EEPROM 위치 한계 (POS_LIMITS 상자, ACK 바로 뒤 한 번). 위치 모드가 아니거나 못 읽으면 TF_NO_LIMIT
+void bus_pos_limits(ntp::PosLimits &l);
 // 모터 상태 되읽기 한 칸 (매 주기 1 모터씩 돌아가며: Hardware Error Status · 입력 전압(배터리) + 온도 · Torque Enable). 14 개면 0.14 s 에 한 바퀴
 //   한 번에 모두 읽으면 버스 시간이 늘어서 하나씩. 통신 실패는 bus_read_states 의 comm_err 가 이미 잡음
 //   전압(144, 2 바이트) · 온도(146, 1 바이트)는 붙어 있어서 읽기 1 번에 3 바이트 → 온도 때문에 늘어난 버스 시간 = 1 바이트 (1 Mbps 에서 10 µs)
