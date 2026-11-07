@@ -274,23 +274,14 @@ bool park_nodes(
         ok = add("park_insert", p_ins, cd.th, c.held_kg, true, release);
         if (ok && c.insert_dj3 != 0.0) {nodes.back().q[2] += c.insert_dj3;}
       }
-      // 당기며 놓기: 손끝을 아래 끝면 중심 f 둘레로 R → Z 쪽 (퍽이 서는 쪽) 으로 돌려 J1 쪽으로 release_pull 만큼 (기울임 그대로), 끝점에서 놓음
+      // 당기며 놓기: 넣는 점에서 같은 높이 · 같은 기울임으로 J1 쪽 (뒤) 으로 곧게 release_pull 만큼 (+ release_pull_dz 위아래), 끝점에서 놓음
+      //   (11-07 실물: 아래 끝 둘레로 돌려 당기면 손이 10 mm 올라감 → 사용자: 올리지 말고 뒤로 천천히 밀며 넣기)
       Eigen::Vector3d p_rel = p_ins;
-      if (ok && pull) {
-        const Eigen::Vector3d v = p_ins - f;
-        const double vr = v.dot(R), vz = v.dot(Z), vt = v.dot(T);
-        auto rot = [&](double ph) {return Eigen::Vector3d(f + (vr * std::cos(ph) - vz * std::sin(ph)) * R + (vr * std::sin(ph) + vz * std::cos(ph)) * Z + vt * T);};
-        double phi = 0.0, best = 0.0;
-        for (double ph = 0.0; ph <= 60.0 / kDeg + 1e-9; ph += 0.1 / kDeg) {
-          const double dr = vr - (vr * std::cos(ph) - vz * std::sin(ph));   // J1 쪽으로 간 수평 거리
-          if (dr > best) {best = dr; phi = ph;}
-          if (dr >= c.release_pull) {phi = ph; break;}
-        }
-        for (int k = 1; k <= c.release_pull_steps && ok; ++k) {
-          p_rel = rot(phi * k / c.release_pull_steps);
-          ok = add("park_pull" + std::to_string(k), p_rel, cd.th, c.held_kg, true, k == c.release_pull_steps ? "open" : "");
-          if (ok && c.insert_dj3 != 0.0) {nodes.back().q[2] += c.insert_dj3;}
-        }
+      for (int k = 1; pull && ok && k <= c.release_pull_steps; ++k) {
+        const double fk = static_cast<double>(k) / c.release_pull_steps;
+        p_rel = p_ins + fk * (c.release_pull_dz * Z - c.release_pull * R);
+        ok = add("park_pull" + std::to_string(k), p_rel, cd.th, c.held_kg, true, k == c.release_pull_steps ? "open" : "");
+        if (ok && c.insert_dj3 != 0.0) {nodes.back().q[2] += c.insert_dj3;}
       }
       if (!ok) {continue;}
       // 손 빼기 (같은 기울임으로 위 · 바깥) → 바깥 위 수직 · 오므림
