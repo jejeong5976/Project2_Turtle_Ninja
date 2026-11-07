@@ -312,6 +312,7 @@ bool park_nodes(
       for (int k = 1; k <= c.push_steps && pushed; ++k) {
         const double f = static_cast<double>(k) / c.push_steps;
         pushed = add("park_push" + std::to_string(k), at(r0 + (x_stop - r0) * f, z0 + (pz - z0) * f), -scoop * (1.0 - f), 0.0, true, "");
+        if (pushed && c.push_dj3 != 0.0) {nodes.back().q[2] += c.push_dj3 * f;}   // 실물 맞춤 (11-07 사용자: 세울 때 J3 더 굽힘)
       }
       if (!pushed && scoop <= 0.0) {return false;}
     }
