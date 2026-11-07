@@ -1,4 +1,5 @@
 // park_stand: 누운 퍽 쥐기 (기울인 손 · 굴림) · 받침 넣기 자세
+#include <cctype>
 #include <gtest/gtest.h>
 
 #include <cmath>
@@ -185,6 +186,36 @@ TEST(ParkStand, ScoopPushTiltsFingertipsTowardJ1ThenUpright)
   EXPECT_LT(s0.app.head<2>().normalized().dot(rdir) * s0.app.head<2>().norm(), -0.1);   // 손끝이 J1 쪽
   EXPECT_NEAR((e0.tip - e20.tip).norm(), 0.0, 1e-3);
   EXPECT_NEAR(e20.app.normalized().z(), -1.0, 1e-3);
+}
+
+// 밀기 J3 더하기: 밀기 시작은 그대로, 밀기 점마다 J3 만 f × push_dj3 더해짐 (다른 관절 · 다른 점은 그대로)
+TEST(ParkStand, PushJ3OffsetRampsOverPush)
+{
+  const auto m = kin_data::model();
+  LyingGraspCfg gc;
+  auto plan = [&](double dj3, std::vector<ParkNode> & pn) {
+      ParkCfg pk;
+      pk.push_scoop_deg = 25.0;
+      pk.push_dj3 = dj3;
+      double elev = 0.0;
+      auto accept = [&](const LyingGrasp & c, std::string & w) {return park_nodes(m, pk, c, ticks_to_q(m, c.poses[0].ticks), pn, elev, w);};
+      LyingGrasp g;
+      std::string why;
+      return lying_grasp(m, 0.205, 0.0, kTop, 0.0, kHeights, gc, g, why, 0.0, accept);
+    };
+  std::vector<ParkNode> p0, p5;
+  ASSERT_TRUE(plan(0.0, p0));
+  ASSERT_TRUE(plan(-5.0 * M_PI / 180.0, p5));
+  ASSERT_EQ(p0.size(), p5.size());
+  for (size_t i = 0; i < p0.size(); ++i) {
+    double want = 0.0;
+    const std::string & nm = p0[i].name;
+    if (nm.rfind("park_push", 0) == 0 && nm.size() == 10 && std::isdigit(static_cast<unsigned char>(nm[9]))) {
+      want = -5.0 * M_PI / 180.0 * (nm[9] - '0') / ParkCfg{}.push_steps;
+    }
+    EXPECT_NEAR(p5[i].q[2] - p0[i].q[2], want, 1e-9) << nm;
+    for (int j : {0, 1, 3, 4}) {EXPECT_NEAR(p5[i].q[j], p0[i].q[j], 1e-9) << nm << " J" << j + 1;}
+  }
 }
 
 // 먼 접선 방향 누운 퍽: 손을 기울이면 닫힘축이 팔 평면 안에서 기울어 퍽이 굴러 손가락에 맞음
