@@ -281,6 +281,26 @@ TEST(Geometry, SupportHeightDecidesUpright)
   }
 }
 
+TEST(Geometry, FlatPrintIsNotAPuck)
+{
+  // 11-07 실물: 상자에 인쇄된 로고를 퍽으로 분할 → 둘레보다 안 솟았으면 퍽 아님 (min_rise_m)
+  const Intrinsics K{600.0, 600.0, 320.0, 240.0};
+  const Vec3 up(0, 0, -1);
+  cv::Mat1f depth(480, 640, 0.30f);
+  cv::Mat1b mask(480, 640, uint8_t(0));
+  cv::rectangle(mask, cv::Rect(300, 220, 40, 40), cv::Scalar(255), cv::FILLED);   // 윗면 = 상자 면 (무늬)
+  EXPECT_TRUE(puck_pose(mask, depth, K, {}, &up).has_value());                    // 안 보면 그대로
+  EXPECT_FALSE(puck_pose(mask, depth, K, {}, &up, 0.012).has_value());
+  // 누운 퍽 (윗면이 상자 면 위 34.8 mm) 은 남음
+  const double z = 0.30 - 0.0348;
+  cv::rectangle(depth, cv::Rect(300, 220, 40, 40), cv::Scalar(z), cv::FILLED);
+  EXPECT_TRUE(puck_pose(mask, depth, K, {}, &up, 0.012).has_value());
+  // 둘레 깊이가 없으면 판단 못 함 → 남김
+  cv::Mat1f d2(480, 640, 0.0f);
+  cv::rectangle(d2, cv::Rect(300, 220, 40, 40), cv::Scalar(0.30), cv::FILLED);
+  EXPECT_TRUE(puck_pose(mask, d2, K, {}, &up, 0.012).has_value());
+}
+
 TEST(Frame, AxisFrameAndQuat)
 {
   const Vec3 axis = Vec3(0.2, -0.9, 0.3).normalized();

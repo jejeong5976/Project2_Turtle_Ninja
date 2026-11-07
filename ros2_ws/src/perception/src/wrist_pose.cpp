@@ -96,6 +96,19 @@ std::vector<TagPose> detect_tags(const cv::Mat & gray, const Intrinsics & K, con
   std::vector<std::vector<cv::Point2f>> corners;
   std::vector<int> ids;
   detect_apriltags(gray, corners, ids);   // common.hpp (광각과 같은 검출기 · 설정)
+  // 퍽 태그를 하나도 못 읽으면 대비를 올려 (CLAHE) 한 번 더 — 11-07 실물: 누운 퍽 옆면 태그 (16 mm, 화면 약 25 px) 가 보였다 안 보였다.
+  //   적재함 칸 태그도 같은 처리로 2/12 → 12/12 (manipulation rack_tag_node)
+  if (std::none_of(ids.begin(), ids.end(), [](int id) {return is_puck_tag(id);})) {
+    thread_local const auto clahe = cv::createCLAHE(3.0, cv::Size(8, 8));
+    cv::Mat eq;
+    clahe->apply(gray, eq);
+    std::vector<std::vector<cv::Point2f>> c2;
+    std::vector<int> i2;
+    detect_apriltags(eq, c2, i2);
+    for (size_t k = 0; k < i2.size(); ++k) {
+      if (std::find(ids.begin(), ids.end(), i2[k]) == ids.end()) {ids.push_back(i2[k]); corners.push_back(c2[k]);}
+    }
+  }
   const cv::Matx33d Kc(K.fx, 0, K.cx, 0, K.fy, K.cy, 0, 0, 1);
   const cv::Mat D = dist.empty() ? cv::Mat::zeros(1, 5, CV_64F) : dist;
   std::vector<TagPose> out;
@@ -248,6 +261,19 @@ std::optional<double> support_height(const cv::Mat1b & mask, const cv::Mat1f & d
   return percentile(h, 50.0);   // 둘레 대부분이 놓인 면 (옆 퍽 · 박스 끝 바닥은 일부)
 }
 
+std::optional<double> ring_low_height(const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K, const Vec3 & up_in)
+{
+  const Vec3 up = up_in.normalized();
+  cv::Mat1b out_d, in_d;
+  cv::dilate(mask, out_d, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(2 * RING_OUT + 1, 2 * RING_OUT + 1)));
+  cv::dilate(mask, in_d, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(2 * RING_IN + 1, 2 * RING_IN + 1)));
+  const cv::Mat1b ring = out_d & ~in_d;
+  std::vector<double> h;
+  for (const auto & q : deproject(ring, depth_m, K)) {h.push_back(q.dot(up));}
+  if (static_cast<int>(h.size()) < RING_MIN_POINTS) {return std::nullopt;}
+  return percentile(h, 10.0);
+}
+
 void gravity_refine(PuckPose & p, const std::vector<Vec3> & pts, const Vec3 & up_in, std::optional<double> support_h)
 {
   const Vec3 up = up_in.normalized();
@@ -364,7 +390,7 @@ bool tag_lying_refine(PuckPose & p, const Intrinsics & K, const Vec3 & up_in)
 
 std::optional<PuckPose> puck_pose(
   const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K,
-  const std::vector<TagPose> & tags, const Vec3 * up_cam)
+  const std::vector<TagPose> & tags, const Vec3 * up_cam, double min_rise_m)
 {
   auto all = deproject(mask, depth_m, K);
   if (static_cast<int>(all.size()) < MIN_POSE_POINTS) {return std::nullopt;}
@@ -424,6 +450,11 @@ std::optional<PuckPose> puck_pose(
     p.axis = orient_axis(p.axis, up_cam);
     p.tag = t;
     break;
+  }
+  if (up_cam != nullptr && min_rise_m > 0.0) {   // 납작한 무늬 (11-07 실물: 상자 로고를 퍽으로 잡음) — 둘레보다 안 솟았으면 퍽 아님
+    const Vec3 upn = up_cam->normalized();
+    const auto low = ring_low_height(mask, depth_m, K, upn);
+    if (low && top_height(dots(pts, upn)) - *low < min_rise_m) {return std::nullopt;}
   }
   if (up_cam != nullptr) {
     const Vec3 upn = up_cam->normalized();

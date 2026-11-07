@@ -81,6 +81,7 @@ private:
 
   std::string frame_id_, world_frame_;
   double tf_timeout_s_{0.05}, reset_move_m_{0.01}, reset_rot_deg_{2.0}, depth_scale_{0.001};
+  double min_rise_m_{0.0};      // 납작한 무늬 거르기 (wrist.min_rise_m)
   bool publish_debug_{false};
   std::optional<wrist::Mat3> last_R_;
   wrist::Vec3 last_t_{wrist::Vec3::Zero()};
