@@ -2,7 +2,7 @@
 """규칙 정밀 접근 노드 — dock_to_pose (NavigateToPose) 를 받아 박스 · 장소 정차점에 붙음. 팀 RL dock3 (local_planner_node.py) 자리에 씀.
 
   nav2.launch.py dock:=simple  (기본 dock:=rl = 팀 RL)
-받는 것: dock_to_pose 목표 (보통 map, 박스를 봄), /scan (scan_merger, 박스 맞춤), /lidar_front/scan · /lidar_rear/scan (몸 상자 안 지운 원래 점, 안전),
+받는 것: dock_to_pose 목표 (보통 map, 박스를 봄), /scan (scan_merger, 박스 앞면 찾기 · 추적), /lidar_front/scan · /lidar_rear/scan (몸 상자 안 지운 원래 점, 안전),
          TF odom → base_footprint, map → odom (목표를 한 번 odom 으로)
 보내는 것: cmd_vel_nav (TwistStamped, 20 Hz) → collision_monitor → cmd_vel_hold → /cmd_vel. 끝나면 0 몇 번
 동작: simple_dock_core.DockCore (제자리로 돌아 박스를 보고 → 곧게 다가감, 최고 --v_max). 이 목표 동안 collision_monitor 영역을 끄고
@@ -70,7 +70,7 @@ class SimpleDock(Node):
         self.server = ActionServer(self, NavigateToPose, a.action_name, self.execute, callback_group=cb,
                                    goal_callback=self.on_goal, cancel_callback=lambda g: CancelResponse.ACCEPT)
         self.get_logger().info(f'규칙 정밀 접근: {a.action_name} · 최고 {a.v_max} m/s · 몸 둘레 {a.margin * 100:.0f} cm 안 물체면 멈춤 · '
-                               f'박스 맞춤 {"켬" if a.box_track else "끔"} · 끝 {a.tol_pos * 100:.1f} cm {a.tol_yaw_deg}° (안 줄면 {a.tol_ok * 100:.1f} cm)')
+                               f'박스 맞춤 {f"켬 (찾기 ±{a.search * 100:.0f} cm)" if a.box_track else "끔"} · 끝 {a.tol_pos * 100:.1f} cm {a.tol_yaw_deg}° (안 줄면 {a.tol_ok * 100:.1f} cm)')
 
     # ---------------------------------------------------------------- 입력
     def on_scan(self, m):
@@ -165,12 +165,13 @@ class SimpleDock(Node):
             g = apply(T, np.array([[ps.pose.position.x, ps.pose.position.y]]))[0]
             gyaw = yaw_of(ps.pose.orientation) + T[2]
             core = DockCore(g, gyaw, box_track=self.a.box_track, box_dist=self.a.box_dist, v_max=self.a.v_max, w_max=self.a.w_max, margin=self.a.margin,
-                            tol_pos=self.a.tol_pos, tol_yaw_deg=self.a.tol_yaw_deg, tol_ok=self.a.tol_ok)
+                            tol_pos=self.a.tol_pos, tol_yaw_deg=self.a.tol_yaw_deg, tol_ok=self.a.tol_ok, search=self.a.search)
             self.get_logger().info(f'정밀 접근 목표 odom ({g[0]:+.3f}, {g[1]:+.3f}, {math.degrees(gyaw):+.1f}°)')
             if not self.set_polygons(False):
                 self.get_logger().warning('영역을 못 꺼서 그대로 진행 (박스 앞에서 PolygonStop 이 세울 수 있음)')
             t0 = time.time()
             last_log = 0.0
+            seen = None
             period = 1.0 / self.a.rate
             while rclpy.ok():
                 if gh.is_cancel_requested:
@@ -195,7 +196,11 @@ class SimpleDock(Node):
                     self.get_logger().error('라이다 원래 점 (안전 검사용) 이 안 옴 → 실패')
                     gh.abort()
                     return res
-                core.update_box(self.scan_odom(), p[:2])
+                with self.lock:
+                    m = self.scan
+                if m is not None and m is not seen:      # 새 스캔마다 한 번 (주기 20 Hz > 스캔 10 Hz → 같은 스캔 두 번 넣지 않음)
+                    seen = m
+                    core.update_box(self.scan_odom(), p[:2])
                 cmd, st = core.step(p, raw, time.time() - t0)
                 if st == 'fail':
                     self.stop()
@@ -238,6 +243,7 @@ def main():
     p.add_argument('--box_dist', type=float, default=0.2575, help='목표 = 박스 중심에서 이 거리 (dice_map 정차 거리)')
     p.add_argument('--sim_time', action='store_true')
     p.add_argument('--no_box_track', dest='box_track', action='store_false', help='라이다 박스 맞춤 끔 (지도 정차점 그대로)')
+    p.add_argument('--search', type=float, default=0.25, help='처음 박스 앞면을 찾는 범위 = 지도 박스 자리 ± [m] (사람이 놓은 박스 · 지도 각도 오차)')
     p.add_argument('--raw_topics', default='/lidar_front/scan,/lidar_rear/scan')
     p.add_argument('--no_require_raw', dest='require_raw', action='store_false', help='라이다 원래 점이 없어도 진행 (시뮬)')
     p.add_argument('--disable_polygons', default='PolygonStop,FootprintApproach')
