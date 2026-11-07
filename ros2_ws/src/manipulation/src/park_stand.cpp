@@ -312,7 +312,14 @@ bool park_nodes(
       for (int k = 1; k <= c.push_steps && pushed; ++k) {
         const double f = static_cast<double>(k) / c.push_steps;
         pushed = add("park_push" + std::to_string(k), at(r0 + (x_stop - r0) * f, z0 + (pz - z0) * f), -scoop * (1.0 - f), 0.0, true, "");
-        if (pushed && c.push_dj3 != 0.0) {nodes.back().q[2] += c.push_dj3 * f;}   // 실물 맞춤 (11-07 사용자: 세울 때 J3 더 굽힘)
+        // J3 더 굽힘: 밀기 가운데서 가장 많이, 끝점에서 다시 0 (굽힌 채 끝나면 그리퍼가 받침에 닿음, 11-07 사용자)
+        if (pushed && c.push_dj3 != 0.0) {nodes.back().q[2] += c.push_dj3 * std::sin(M_PI * f);}
+        if (pushed && c.push_dj2 != 0.0) {   // J2 더 올림: + = 손끝 위 (관절 부호는 FK 로)
+          Q5 qu = nodes.back().q;
+          qu[1] += 1e-3;
+          const double up = arm_grip(m, qu).tip.z() > arm_grip(m, nodes.back().q).tip.z() ? 1.0 : -1.0;
+          nodes.back().q[1] += up * c.push_dj2 * std::sin(M_PI * f);
+        }
       }
       if (!pushed && scoop <= 0.0) {return false;}
     }

@@ -188,7 +188,7 @@ TEST(ParkStand, ScoopPushTiltsFingertipsTowardJ1ThenUpright)
   EXPECT_NEAR(e20.app.normalized().z(), -1.0, 1e-3);
 }
 
-// 밀기 J3 더하기: 밀기 시작은 그대로, 밀기 점마다 J3 만 f × push_dj3 더해짐 (다른 관절 · 다른 점은 그대로)
+// 밀기 J3 더하기: 밀기 점마다 J3 만 sin(π f) × push_dj3 더해짐 → 가운데 전부, 끝점 0 (다른 관절 · 다른 점은 그대로)
 TEST(ParkStand, PushJ3OffsetRampsOverPush)
 {
   const auto m = kin_data::model();
@@ -211,10 +211,36 @@ TEST(ParkStand, PushJ3OffsetRampsOverPush)
     double want = 0.0;
     const std::string & nm = p0[i].name;
     if (nm.rfind("park_push", 0) == 0 && nm.size() == 10 && std::isdigit(static_cast<unsigned char>(nm[9]))) {
-      want = -5.0 * M_PI / 180.0 * (nm[9] - '0') / ParkCfg{}.push_steps;
+      want = -5.0 * M_PI / 180.0 * std::sin(M_PI * (nm[9] - '0') / ParkCfg{}.push_steps);
     }
     EXPECT_NEAR(p5[i].q[2] - p0[i].q[2], want, 1e-9) << nm;
     for (int j : {0, 1, 3, 4}) {EXPECT_NEAR(p5[i].q[j], p0[i].q[j], 1e-9) << nm << " J" << j + 1;}
+  }
+}
+
+// 밀기 J2 더하기: + 면 밀기 가운데서 손끝이 올라가고 (J2 만 바뀜), 끝점은 그대로
+TEST(ParkStand, PushJ2OffsetLiftsFingertipsMidPush)
+{
+  const auto m = kin_data::model();
+  LyingGraspCfg gc;
+  auto plan = [&](double dj2, std::vector<ParkNode> & pn) {
+      ParkCfg pk;
+      pk.push_scoop_deg = 25.0;
+      pk.push_dj2 = dj2;
+      double elev = 0.0;
+      auto accept = [&](const LyingGrasp & c, std::string & w) {return park_nodes(m, pk, c, ticks_to_q(m, c.poses[0].ticks), pn, elev, w);};
+      LyingGrasp g;
+      std::string why;
+      return lying_grasp(m, 0.205, 0.0, kTop, 0.0, kHeights, gc, g, why, 0.0, accept);
+    };
+  std::vector<ParkNode> p0, p3;
+  ASSERT_TRUE(plan(0.0, p0));
+  ASSERT_TRUE(plan(3.0 * M_PI / 180.0, p3));
+  ASSERT_EQ(p0.size(), p3.size());
+  EXPECT_GT(arm_grip(m, find(p3, "park_push2")->q).tip.z(), arm_grip(m, find(p0, "park_push2")->q).tip.z() + 0.003);
+  EXPECT_NEAR((arm_grip(m, find(p3, "park_push4")->q).tip - arm_grip(m, find(p0, "park_push4")->q).tip).norm(), 0.0, 1e-6);
+  for (size_t i = 0; i < p0.size(); ++i) {
+    for (int j : {0, 2, 3, 4}) {EXPECT_NEAR(p3[i].q[j], p0[i].q[j], 1e-9) << p0[i].name << " J" << j + 1;}
   }
 }
 
