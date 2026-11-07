@@ -99,6 +99,7 @@ def make_nodes(context):
         raise RuntimeError(f"local_planner 는 rl | mppi (지금 {lp})")
     dock_tol = LaunchConfiguration("dock_tol").perform(context)
     dock = LaunchConfiguration("dock").perform(context).strip().lower()
+    dock_vmax = LaunchConfiguration("dock_vmax").perform(context)
     if dock not in ("rl", "simple"):
         raise RuntimeError(f"dock 은 rl | simple (지금 {dock})")
     # allow_substs: yaml 안 $(find-pkg-share nav2_bt_navigator) 같은 치환을 풀어 줌 (bt_navigator 행동 트리 폴더)
@@ -147,7 +148,7 @@ def make_nodes(context):
     if dock == "simple":
         # 규칙 정밀 접근: 같은 dock_to_pose · 영역 끔 · 목표 odom 고정 · 박스 맞춤 (box_tracker.py). dock_tol = 더 안 줄 때 받아 주는 거리
         nodes.append(Node(package="navigation", executable="simple_dock_node.py", name="simple_dock", output="screen",
-                          arguments=["--tol_ok", dock_tol, "--disable_polygons", POLYGONS] + (["--sim_time"] if sim else [])))
+                          arguments=["--tol_ok", dock_tol, "--v_max", dock_vmax, "--disable_polygons", POLYGONS] + (["--sim_time"] if sim else [])))
     else:
         nodes.append(rl_node("rl_dock", "dock3.npz", "dock3.json", rld, sim,
                              ["--action_name", "dock_to_pose", "--tol_pos", dock_tol, "--tol_yaw_deg", "2",
@@ -181,6 +182,8 @@ def generate_launch_description():
                               description="rl = RL 주행 (nf5) + 정밀 접근 (dock3) / mppi = MPPI · bt_navigator + 정밀 접근"),
         DeclareLaunchArgument("dock", default_value="rl",
                               description="정밀 접근 dock_to_pose: rl = rl_dock (dock3) / simple = simple_dock_node.py (규칙)"),
+        DeclareLaunchArgument("dock_vmax", default_value="0.15",
+                              description="dock:=simple 최고 속도 [m/s] (박스 가까이서는 남은 거리에 비례해 느려짐). 11-07 실물: 0.05 는 너무 느림"),
         DeclareLaunchArgument("dock_tol", default_value="0.015",
                               description="정밀 접근 성공 거리 [m] (Isaac 11-07: 0.01 이면 판정 안에 못 들어와 시간 초과 한 번)"),
         DeclareLaunchArgument("mission_hold", default_value="true",

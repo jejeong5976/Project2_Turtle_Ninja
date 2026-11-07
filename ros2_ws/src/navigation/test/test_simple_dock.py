@@ -152,9 +152,9 @@ def test_rotation_blocked_by_wall_escapes_then_docks():
 
 
 def test_person_steps_in_front_stops():
-    """다가가는 중 사람 다리가 몸 앞 14 cm 에 들어옴 → 멈추고 실패 (부딪히지 않음)"""
+    """다가가는 중 사람 다리가 몸 앞 약 15 cm 에 들어옴 (0.6 s, 최고 0.15 m/s) → 멈추고 실패 (부딪히지 않음)"""
     leg = ((0.25, -0.05), (0.25, 0.0))
-    r = run((-0.15, 0.0, 0.0), (0.55, 0.0), 0.0, person=(2.0, leg))
+    r = run((-0.15, 0.0, 0.0), (0.55, 0.0), 0.0, person=(0.6, leg))
     assert r['st'] == 'fail' and '막힘' in r['why'], r
     assert r['gap'] > 0.0, r
 
