@@ -18,7 +18,7 @@
 
 perception:
   ros__parameters:
-    wide:                                # 광각 Arducam UC-684, 아래 40°
+    wide:                                # 광각 Arducam UC-684, 아래 30° (11-07 새 브래킷, 예전 40°)
       image_topic: /wide_cam/image_raw
       image_qos: reliable                # reliable | best_effort. 큰 영상을 best_effort 로 받으면 프로세스 사이에서 유실
       frame_id: birdeye_camera_optical_frame   # 출력 header.frame_id = 배포판 URDF 이름. "" 면 드라이버 영상 header 그대로
