@@ -135,6 +135,19 @@ WristPipeline::WristPipeline(
   opt.callback_group = group;   // message_filters 입력 구독도 손목 그룹으로
   info_sub_ = node.create_subscription<CameraInfo>(info_topic, rclcpp::SensorDataQoS(),
       [this](CameraInfo::ConstSharedPtr m) {info_ = m;}, opt);
+  drift_correct_ = n.declare_parameter<bool>("wrist.drift_correct", true);
+  drift_sub_ = node.create_subscription<geometry_msgs::msg::QuaternionStamped>(
+    n.declare_parameter<std::string>("wrist.drift_topic", "/wrist_cam/drift"), rclcpp::QoS(1).transient_local().reliable(),
+    [this](geometry_msgs::msg::QuaternionStamped::ConstSharedPtr m) {
+      const auto & q = m->quaternion;
+      const double nq = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+      if (!(std::abs(nq - 1.0) < 0.01)) {return;}
+      drift_R_ = pw::quat_to_mat({q.x / nq, q.y / nq, q.z / nq, q.w / nq});
+      drift_frame_ = m->header.frame_id;
+      RCLCPP_INFO(node_.get_logger(), "[wrist] 손목 카메라 보정 받음: %.2f° (%s)%s",
+        std::acos(std::clamp((drift_R_.trace() - 1.0) / 2.0, -1.0, 1.0)) * 180.0 / M_PI, drift_frame_.c_str(),
+        drift_correct_ ? "" : " — wrist.drift_correct false 라 안 씀");
+    }, opt);
   color_sub_.subscribe(&node, color_topic, img_qos, opt);
   depth_sub_.subscribe(&node, depth_topic, img_qos, opt);
   if (barcode_) {   // 동기 전 컬러 → 바코드 (깊이 · TF 와 무관, 켜져 있을 때만)
@@ -200,7 +213,7 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
     const auto tf = tf_buffer_->lookupTransform(world_frame_, frame_id_, color->header.stamp,
         rclcpp::Duration::from_seconds(tf_timeout_s_));
     const auto & q = tf.transform.rotation;
-    R = pw::quat_to_mat({q.x, q.y, q.z, q.w});
+    R = camera_rot(pw::quat_to_mat({q.x, q.y, q.z, q.w}));
     t = pw::Vec3(tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z);
   } catch (const tf2::TransformException & e) {
     RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] TF %s ← %s 없음: %s (발행 안 함)",
@@ -285,6 +298,12 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
   }
 }
 
+pw::Mat3 WristPipeline::camera_rot(const pw::Mat3 & R_tf) const
+{
+  if (!drift_correct_ || drift_frame_.empty() || drift_frame_ != frame_id_) {return R_tf;}
+  return R_tf * drift_R_;   // 실제 카메라 좌표 점 p → 로봇 = TF · (drift · p)
+}
+
 bool WristPipeline::to_depth_m(const Image::ConstSharedPtr & depth_msg, cv::Mat1f & depth)
 {
   try {
@@ -324,7 +343,7 @@ void WristPipeline::on_box(const Image::ConstSharedPtr & color, const Image::Con
     const auto tf = tf_buffer_->lookupTransform(box_frame_, frame_id_, color->header.stamp,
         rclcpp::Duration::from_seconds(tf_timeout_s_));
     const auto & q = tf.transform.rotation;
-    R = pw::quat_to_mat({q.x, q.y, q.z, q.w});
+    R = camera_rot(pw::quat_to_mat({q.x, q.y, q.z, q.w}));
     t = pw::Vec3(tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z);
   } catch (const tf2::TransformException & e) {
     RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[box] TF %s ← %s 없음: %s (발행 안 함)",
@@ -379,7 +398,7 @@ void WristPipeline::on_rack(const Image::ConstSharedPtr & color)
     const auto tf = tf_buffer_->lookupTransform(rack_frame_, frame_id_, color->header.stamp,
         rclcpp::Duration::from_seconds(tf_timeout_s_));
     const auto & q = tf.transform.rotation;
-    R = pw::quat_to_mat({q.x, q.y, q.z, q.w});
+    R = camera_rot(pw::quat_to_mat({q.x, q.y, q.z, q.w}));
     t = pw::Vec3(tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z);
   } catch (const tf2::TransformException & e) {
     RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[rack] TF %s ← %s 없음: %s (발행 안 함)",

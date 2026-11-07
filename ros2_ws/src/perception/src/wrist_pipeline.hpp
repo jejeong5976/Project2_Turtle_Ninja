@@ -52,6 +52,7 @@
 #include <message_filters/subscriber.hpp>
 #include <message_filters/sync_policies/approximate_time.hpp>
 #include <message_filters/synchronizer.hpp>
+#include <geometry_msgs/msg/quaternion_stamped.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
@@ -119,6 +120,13 @@ private:
   rclcpp::Publisher<interfaces::msg::DetectionArray>::SharedPtr det_pub_;
   rclcpp::Publisher<Image>::SharedPtr debug_pub_;
   rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr info_sub_;
+  // 손목 카메라가 손목에서 돈 만큼 (manipulation camera_drift_node, 홈 사진 비교): 실제 카메라 = 명목 (TF) · drift_R_
+  //   박스 윗면 · 적재함 칸 (로봇 프레임으로 냄) 은 TF 에 곱해 바로잡고, 퍽 검출은 위쪽 방향만 (위치는 카메라 좌표로 내고 control_master 가 되돌림)
+  rclcpp::Subscription<geometry_msgs::msg::QuaternionStamped>::SharedPtr drift_sub_;
+  wrist::Mat3 drift_R_{wrist::Mat3::Identity()};   // 손목 콜백 그룹 안에서만 읽고 씀
+  bool drift_correct_{true};
+  wrist::Mat3 camera_rot(const wrist::Mat3 & R_tf) const;   // TF 회전 · drift_R_ (보정 꺼짐 · 다른 프레임이면 TF 그대로)
+  std::string drift_frame_;
   sensor_msgs::msg::CameraInfo::ConstSharedPtr info_;   // 손목 콜백 그룹 안에서만 읽고 씀
   message_filters::Subscriber<Image> color_sub_, depth_sub_;
   std::shared_ptr<Sync> sync_;
