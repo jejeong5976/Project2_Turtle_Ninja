@@ -4,6 +4,8 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -312,3 +314,69 @@ TEST(LazyFold, KeepsGripOrStopNodes)
   EXPECT_FALSE(manipulation::cut_fold_tail(store, fold));      // 받침에서 닫기가 사라짐
   EXPECT_TRUE(store.ends_home);
 }
+
+// 실제 config/arm_paths.yaml: 받침에서 시작하는 빼기 · LOOK 경로는 앞이 unfold 와 같아야 P0 에서 바로 시작 (lazy_fold).
+//   11-07: 빼기 경로에서 upJ3a 를 지우자 P0 잇기가 조용히 안 됨 (Fable 검수) → 경로를 고칠 때 깨지지 않게
+#ifdef ARM_PATHS_YAML
+namespace
+{
+std::vector<std::string> list_items(const std::string & line)
+{
+  std::vector<std::string> out;
+  const auto a = line.find('['), b = line.rfind(']');
+  if (a == std::string::npos || b == std::string::npos || b <= a) {return out;}
+  std::stringstream ss(line.substr(a + 1, b - a - 1));
+  std::string it;
+  while (std::getline(ss, it, ',')) {
+    const auto l = it.find_first_not_of(" \""), r = it.find_last_not_of(" \"");
+    out.push_back(l == std::string::npos ? "" : it.substr(l, r - l + 1));
+  }
+  return out;
+}
+
+bool load_path(const std::string & want, ArmPath & p)
+{
+  std::ifstream f(ARM_PATHS_YAML);
+  std::string line;
+  bool in = false;
+  std::vector<std::string> nodes, q, grip, stop;
+  while (std::getline(f, line)) {
+    if (line == "      " + want + ":") {in = true; continue;}
+    if (!in) {continue;}
+    if (line.rfind("        ", 0) != 0) {break;}
+    const auto key = line.substr(8, line.find(':') - 8);
+    if (key == "nodes") {nodes = list_items(line);}
+    if (key == "q") {q = list_items(line);}
+    if (key == "grip") {grip = list_items(line);}
+    if (key == "stop") {stop = list_items(line);}
+  }
+  if (nodes.empty() || q.size() != nodes.size() * 5 || grip.size() != nodes.size() || stop.size() != nodes.size()) {return false;}
+  p = ArmPath{want, {}, false};
+  for (std::size_t i = 0; i < nodes.size(); ++i) {
+    PathNode n;
+    n.name = nodes[i];
+    for (int j = 0; j < 5; ++j) {n.q.push_back(std::stod(q[i * 5 + j]));}
+    n.grip = grip[i] == "-" ? "" : grip[i];
+    n.stop = stop[i] == "true";
+    p.nodes.push_back(n);
+  }
+  return true;
+}
+}  // namespace
+
+TEST(RealPaths, RetrieveAndLookStartWithUnfold)
+{
+  ArmPath unfold;
+  ASSERT_TRUE(load_path("unfold", unfold));
+  std::vector<std::string> names{"look", "look_barcode"};
+  for (int c = 1; c <= 12; ++c) {names.push_back("retrieve_S" + std::to_string(c));}
+  for (const auto & nm : names) {
+    ArmPath p;
+    ASSERT_TRUE(load_path(nm, p)) << nm;
+    const std::size_t n0 = p.nodes.size();
+    EXPECT_TRUE(manipulation::skip_unfold(p, unfold)) << nm << ": 앞이 unfold 와 달라 P0 에서 바로 시작 못 함";
+    EXPECT_EQ(p.nodes.front().name, "P0") << nm;
+    EXPECT_EQ(p.nodes.size(), n0 - (unfold.nodes.size() - 1)) << nm;
+  }
+}
+#endif
