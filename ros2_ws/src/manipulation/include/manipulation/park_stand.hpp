@@ -78,6 +78,13 @@ struct ParkCfg
   // 밀기 동안 J2 를 이만큼 더 [rad, + = 손끝 위 (FK 로 방향을 정함)], push_dj3 와 같은 모양 (가운데 전부, 시작 · 끝 0) → 손끝이 퍽 뒷면
   //   아래 모서리를 긁어 올리며 세움 (11-07 사용자: J2 도 같이 올려 퍽을 밑에서 들어 세우는 느낌)
   double push_dj2{0.0};
+  // 누르기 (press_mode, 밀기 대신, 11-07 사용자): 넣고 놓기까지 같음 → 놓은 자리에서 같은 손 기울임으로 press_lift 올리며 그리퍼 닫고 →
+  //   J1 쪽 (뒤) 으로 press_back → 곧게 press_depth 눌러 내림 → 위로 빠짐. 뒤 벽에 걸린 퍽을 닫은 손끝으로 눌러 받침 안으로 넣어 세움
+  bool press_mode{false};
+  double press_lift{0.010};      // [m]
+  double press_back{0.015};      // [m]
+  double press_depth{0.020};     // [m] (올린 높이에서 이만큼 아래까지). 실물 값 (놓기 끌기 10) 이면 손끝 바닥 위 26 mm = 벽 위 (22.5) 3 mm 위에서 멈춤
+  int press_steps{4};
   double regrasp_depth{0.030};   // 선 퍽 다시 쥐는 깊이 (윗면 아래)
   double regrasp_r{-0.006};      // 선 퍽 다시 쥐는 자리 = 받침 중심에서 반지름 방향 (− = J1 쪽, 시뮬 −6 mm)
   double insert_back{0.0};       // > 0: 다 기울인 자세를 이만큼 위에서 만들고 그 자세 그대로 곧게 내려 넣음 [m] (기울이며 내려가다 턱을 쓸지 않게)

@@ -330,6 +330,10 @@ public:
     declare_parameter<double>("park_push_low_mm", 0.0);          // 굴삭기처럼 밀기 시작 높이를 park_push_h_mm 보다 이만큼 낮게 (받침 바깥 벽 22.5 mm 위를 지나야 함)
     declare_parameter<double>("park_push_j3_deg", 0.0);         // 밀어 세우는 동안 J3 를 이만큼 더 [°, + = 손끝 위], 밀기 가운데서 전부 · 시작 · 끝점 0 (11-07 사용자: J3 를 더 굽혀, 끝에선 펴기)
     declare_parameter<double>("park_push_j2_deg", 0.0);         // 밀어 세우는 동안 J2 를 이만큼 더 올림 [°, + = 손끝 위], J3 와 같은 모양 → 퍽 뒷면 아래 모서리를 긁어 올려 세움 (11-07 사용자)
+    declare_parameter<bool>("park_press_mode", false);          // true = 밀기 대신 누르기: 놓은 자리에서 살짝 올리며 그리퍼 닫고 → 뒤 (J1 쪽) 로 → 눌러 내려 걸린 퍽을 세움 (11-07 사용자)
+    declare_parameter<double>("park_press_lift_mm", 10.0);      // 누르기: 놓은 자리에서 올리는 높이
+    declare_parameter<double>("park_press_back_mm", 15.0);      // 누르기: 올린 뒤 J1 쪽 (뒤) 으로
+    declare_parameter<double>("park_press_depth_mm", 20.0);     // 누르기: 거기서 곧게 눌러 내리는 깊이 (실물 값이면 손끝이 받침 벽 위 3 mm 에서 멈춤)
     declare_parameter<double>("park_release_up_mm", 0.0);        // 넣는 끝점을 손등 (손목 카메라) 쪽으로 이만큼 (넣으면서 같이, 손 축에 수직)
     declare_parameter<int>("park_release_pull_steps", 3);       // 당기는 점 수
     declare_parameter<double>("park_speed_dps", 20.0);          // 받침에서 넣기 · 다시 쥐기 속도
@@ -1994,6 +1998,10 @@ private:
     pk.push_scoop_deg = get_parameter("park_push_scoop_deg").as_double();
     pk.push_dj3 = get_parameter("park_push_j3_deg").as_double() * M_PI / 180.0;
     pk.push_dj2 = get_parameter("park_push_j2_deg").as_double() * M_PI / 180.0;
+    pk.press_mode = get_parameter("park_press_mode").as_bool();
+    pk.press_lift = get_parameter("park_press_lift_mm").as_double() / 1000.0;
+    pk.press_back = get_parameter("park_press_back_mm").as_double() / 1000.0;
+    pk.press_depth = get_parameter("park_press_depth_mm").as_double() / 1000.0;
     pk.push_low = get_parameter("park_push_low_mm").as_double() / 1000.0;
     grip_.loose = get_parameter("park_loose_grip_m").as_double();
     pk.side = lying_h_;
