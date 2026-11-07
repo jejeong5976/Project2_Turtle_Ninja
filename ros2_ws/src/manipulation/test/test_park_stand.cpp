@@ -139,6 +139,29 @@ TEST(ParkStand, ReleaseUpShiftsInsertTowardCameraSide)
   }
 }
 
+// 밀기 끝점: push_extra 만큼 J1 쪽으로 더 (높이 그대로)
+TEST(ParkStand, PushExtraGoesFurtherTowardJ1)
+{
+  const auto m = kin_data::model();
+  LyingGraspCfg gc;
+  auto push_end = [&](double extra) {
+      ParkCfg pk;
+      pk.push_extra = extra;
+      std::vector<ParkNode> pn;
+      double elev = 0.0;
+      auto accept = [&](const LyingGrasp & c, std::string & w) {return park_nodes(m, pk, c, ticks_to_q(m, c.poses[0].ticks), pn, elev, w);};
+      LyingGrasp g;
+      std::string why;
+      EXPECT_TRUE(lying_grasp(m, 0.205, 0.0, kTop, 0.0, kHeights, gc, g, why, 0.0, accept)) << why;
+      const ParkNode * p4 = find(pn, "park_push4");
+      return p4 ? arm_grip(m, p4->q).tip : Eigen::Vector3d(Eigen::Vector3d::Constant(1e9));
+    };
+  const Eigen::Vector3d a = push_end(0.0), b = push_end(0.004);
+  const Eigen::Vector2d rdir = (ParkCfg{}.center - m.j1_xy).normalized();
+  EXPECT_NEAR((a - b).head<2>().dot(rdir), 0.004, 3e-4);
+  EXPECT_NEAR(a.z(), b.z(), 3e-4);
+}
+
 // 먼 접선 방향 누운 퍽: 손을 기울이면 닫힘축이 팔 평면 안에서 기울어 퍽이 굴러 손가락에 맞음
 TEST(ParkStand, FarTangentialPuckRollsIntoTiltedHand)
 {
