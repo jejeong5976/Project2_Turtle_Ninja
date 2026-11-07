@@ -48,9 +48,10 @@ Project2_Turtle_Ninja/
 │       ├── hardware/            # OpenCR 2대(바퀴/팔) Dynamixel 통신
 │       ├── swerve_controller/   # cmd_vel → 바퀴별 조향각/속도, 휠 오도메트리
 │       ├── manipulation/        # 팔 제어, 밀기·집기·적재함 동작
-│       ├── navigation/          # 라이다 2 개 합치기 · slam_toolbox 지도 만들기/위치 찾기 · 위치 감시
+│       ├── navigation/          # 라이다 2 개 합치기 · slam_toolbox 지도 만들기/위치 찾기 · 위치 감시, Nav2 실행 (설정 config/nav2.yaml)
 │       ├── perception/          # YOLO 추론, 바코드 판독, 퍽 AprilTag · 색, 신호등
-│       └── mission/             # 바코드 → task 변환, 미션 순서 관리
+│       ├── planning/            # 실행 층: Nav2 · 팔 액션 실행, 재시도, 감시, 퍽 기록부 · 재고
+│       └── mission/             # 발제 미션: 바코드 · 신호등 기록 · dice 계획 · 재검증, mission_manager 노드
 ├── yolo/
 │   ├── wide/                # 광각 상자 YOLO (퍽·바코드·신호등) 학습·평가·변환
 │   └── wrist/               # 손목 D435 퍽 seg + 깊이 자세 추정
@@ -59,8 +60,7 @@ Project2_Turtle_Ninja/
 │   └── robot_sim/           # Isaac Sim 로봇 주행 시뮬레이션 (ROS 2 연동)
 ├── tools/                   # ROS 밖에서 단독 실행하는 개발 도구
 │   ├── camera_calib/        # 카메라 캘리브레이션 사진 수집 (OpenCV)
-│   ├── d435_viewer/         # 손목 D435 실시간 퍽 자세 보기 · 사진 저장
-│   ├── wrist_calib/         # 손목 D435 장착 자세 (핸드-아이) 캘리브레이션
+│   ├── wrist_d435/          # 손목 D435: 실시간 퍽 자세 보기 · 사진 저장, 장착 자세 (핸드-아이) 캘리브레이션
 │   ├── drive/               # 경로 주행 (path_follow: 모양 · 경유점 · 지도 기준, 앞 물체 정지)
 │   ├── diagnostics/         # 센서 점검 (sensor_check: IMU · odom · 라이다 · SLAM 대조)
 │   └── jetson/              # 젯슨 빌드 · 실행 (run_robot.sh) · 포트 규칙 · 지도 저장

@@ -1,19 +1,35 @@
 #!/usr/bin/env python3
-"""손목 D435 실시간 퍽 자세 추정 · 시각화 (wrist_pose.py). pyrealsense2 필요.
+"""d435_puck_viewer.py — 손목 D435 실시간 퍽 자세 확인 · 장면 저장, ROS 없음
 
-화면: 왼쪽 = 컬러 + 퍽 윤곽 · 속 중심(노란 점) · 긴축(노란 선, 양 끝 = 끝 면 중심, 길이 6 cm) · 선 퍽 윗면 중심(흰 십자) · AprilTag 윤곽(보라)
-      흰 화살표 = 월드 위쪽 (--up plane: 책상 · 선반 윗면 법선, 기본). 위쪽이 있으면 선/누운 퍽 판정 · 중심 높이 보정 (시뮬 평가: 긴축 90% 2.7°)
-      CUT = 퍽이 화면 끝에 잘림 (자세 믿지 말 것)
-      오른쪽 = 컬러에 정렬된 깊이 (0–1.2 m 색지도, 검정 = 깊이 없음)
-키: q 끝, s 저장 (컬러 png · 깊이 npy(m) · 내부 파라미터 · 결과 json · 시각화), p 지금 퍽 점군 3D 그림 (matplotlib), r 확정 묶음 초기화 (--seg)
-저장 위치: yolo/wrist/datasets/real_d435/<시각>/ (커밋 안 됨)
-
-예) cd tools/d435_viewer && python3 d435_puck_viewer.py
-    --frames 5 : 창 없이 1 초 간격 5 장만 처리해 저장 (원격 · 확인용)
-    --offline <저장 폴더> : 카메라 없이 저장한 장면 다시 처리
-    --seg ../../yolo/wrist/runs/wrist/seg8_sim/weights/best.pt : HSV 대신 손목 YOLO-seg 로 퍽 분할 (클래스 · 신뢰도 표시)
-        + wrist_detector 파이프라인: 거르기(잘림 · 크기 · 점 수, 빨간 X + 이유) → 최근 5 장 중 3 장 확정 (흰 상자 'OK').
-          확정 퍽은 planning Detection 형식으로 터미널 · result.json('detections') 에 나옴. 팔을 움직이면 r 키로 묶음 초기화
+역할
+  - D435 컬러 · 정렬 깊이로 퍽마다 중심 · 긴축 · 선/누움 · 태그 ID 계산, 계산은 yolo/wrist/scripts/wrist_pose.py
+  - 퍽 분할: 기본 HSV 색 분할, --seg 를 주면 손목 YOLO-seg + wrist_detector.py 거르기 · 최근 5 장 중 3 장 확정
+  - 월드 위쪽 --up: plane = 깊이에서 가장 큰 평면 법선, fixed = --pitch_deg · --roll_deg, none = 안 씀
+  - 화면 창 Viewer 제공, handeye.py 도 이것을 씀
+받는 것
+  - USB 로 붙은 실물 D435: 컬러 640×480 + 깊이, pyrealsense2
+  - --offline <폴더>: 저장해 둔 color.png · depth_m.npy · intrinsics.json
+  - --seg <best.pt>: 손목 YOLO-seg 가중치
+내보내는 것
+  - 화면 왼쪽: 컬러 + 퍽 윤곽 · 속 중심 노란 점 · 긴축 노란 선 6 cm · 선 퍽 윗면 중심 흰 십자 · 태그 윤곽 보라 · 위쪽 흰 화살표
+  - 화면 오른쪽: 정렬 깊이 0–1.2 m 색지도, 검정 = 깊이 없음
+  - s 키 저장 yolo/wrist/datasets/real_d435/<시각>/: color.png · depth_m.npy · intrinsics.json · result.json · vis.png
+  - --seg 확정 퍽은 planning Detection 형식으로 터미널 · result.json detections 에 나옴, 카메라 광학 프레임
+실행
+  cd tools/wrist_d435
+  python3 d435_puck_viewer.py                                                      # HSV 색 분할
+  python3 d435_puck_viewer.py --seg ../../yolo/wrist/runs/wrist/seg8_sim/weights/best.pt
+  python3 d435_puck_viewer.py --frames 5                                           # 창 없이 1 초 간격 5 장 저장
+  python3 d435_puck_viewer.py --offline <저장 폴더>                                # 카메라 없이 다시 처리
+  키: q 끝, s 저장, p 퍽 점군 3D 그림, r 확정 묶음 초기화
+note
+  - 패키지는 레포 최상위 requirements.txt, --seg 는 ultralytics 추가
+  - CUT 표시 = 퍽이 화면 끝에 잘림 → 자세를 믿지 말 것
+  - HSV 색 분할은 모니터 속 퍽 · 피부도 잡음
+  - 팔을 움직이면 r 키로 확정 묶음을 지울 것, 묶음이 카메라 좌표 기준임
+  - D435 는 IMU 가 없어 위쪽을 평면으로 추정함. 로봇에서는 TF 로 넣음
+  - YOLO venv 의 OpenCV 는 headless 판이라 cv2.imshow 가 안 됨 → Tk 창으로 대신 보여줌
+  - 저장 폴더는 커밋 안 함
 """
 import argparse
 import json

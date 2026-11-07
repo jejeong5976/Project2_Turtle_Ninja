@@ -5,6 +5,7 @@
 # 출력 토픽
 #   - /perception/wide/detections   DetectionArray  광각 퍽, 위치 NaN → RViz · 디버깅용
 #   - /perception/wrist/detections  DetectionArray  손목 퍽, 3D 자세 → planning 이 받음
+#   - /perception/rack/cells        DetectionArray  적재함 칸 바닥 중심 · yaw (base_link), 컵 바닥 태그
 #   - /perception/traffic_light     TrafficLight    RED · YELLOW · GREEN · OFF · UNKNOWN + visible
 #   - /perception/task_text         TaskText        바코드 원문, 켜져 있는 동안 확정될 때마다
 # 실행
@@ -25,19 +26,24 @@ perception:
       model: ""                          # 광각 .engine, launch 인자 wide_model:= 로 줌
       conf: 0.5                          # 검출 신뢰도 기준
       iou: 0.7
-      max_hz: 15.0                       # 이보다 빨리 오는 영상은 검출 건너뜀, 바코드 넘기기는 함
+      max_hz: 30.0                       # 이보다 빨리 오는 영상은 검출 건너뜀, 바코드 넘기기는 함. 엔진 960 추론 약 9 ms (Jetson trtexec) → 카메라 30 Hz 전부
       enabled: true                      # ~/wide/enable 로 켜고 끔, 검출 · 신호등
+      publish_debug: false               # true 면 /perception/wide_debug_image (상자 · 신호등 칸 · 칸 밝기), 구독자 있을 때만 그림
       read_tags: false                   # 16 mm 퍽 태그는 광각 1 m 에서 칸당 2 px 미만이라 거의 안 읽힘 → 끔, 출력 id 는 늘 ""
       tag_min_side_px: 60                # 잘라 낸 상자가 이보다 작으면 키워서 태그 검출. 퍽 태그 ID 0–11 만 받음
       puck_classes: [red_cyl, green_cyl, red_box, green_box]
 
-    traffic_light:                       # 광각 상자 중 신호등 → 칸 밝기 판정 + 다수결
+    traffic_light:                       # 광각 상자 중 신호등 → 칸 흰색 비율 · 밝기 판정 + 다수결
       enabled: true
       class: traffic_light
-      red: [0.10, 0.40]                  # [확인 필요] 상자 높이 대비 칸 위치, 위 → 아래. 실물 신호등으로 다시 잴 것
-      yellow: [0.40, 0.70]
-      green: [0.70, 1.00]
-      v_margin: 40.0                     # 가장 밝은 칸이 나머지보다 이만큼 밝아야 켜짐, 아니면 OFF
+      red: [0.36, 0.56]                  # [확인 필요] 상자 높이 대비 칸 위치, 위 → 아래. 위 흰 뚜껑(0–0.33) 은 뺌
+      yellow: [0.60, 0.75]               #   2026-11-03 실물 한 장 (책상 약 1.5 m, 초록 켬) 에서 잰 임시값, 관측 위치에서 다시 잴 것
+      green: [0.80, 0.98]
+      white_min: 0.30                    # 1) 흰색: 흰 화소 비율이 가장 높은 칸이 이 이상이고
+      white_margin: 0.20                 #    다른 칸보다 이만큼 높으면 켜짐 (실측 켜진 칸 0.71 · 꺼진 렌즈 0.03)
+      white_v: 240.0                     #    흰 화소 = V ≥ white_v · S ≤ white_s
+      white_s: 60.0
+      v_margin: 40.0                     # 2) 밝기: 1) 로 못 정하면 가장 밝은 칸이 나머지보다 이만큼 밝아야 켜짐, 아니면 OFF
       window: 5                          # 최근 이 장 수 중
       need: 3                            #   이 장 수가 같으면 확정
       timeout: 1.0                       # 이 시간 동안 못 찾으면 다수결 비움. 못 찾은 영상 자체는 바로 UNKNOWN + visible=false
@@ -63,6 +69,39 @@ perception:
       depth_topic: /camera/camera/aligned_depth_to_color/image_raw
       info_topic: /camera/camera/color/camera_info
       image_qos: reliable                # reliable | best_effort. 컬러 · 깊이 구독, best_effort 면 장이 빠짐
+
+    rack:                                # 적재함 컵 바닥 AprilTag (손목 컬러만, 깊이 안 씀) → /perception/rack/cells
+      enabled: true                      # ~/rack/enable 로 켜고 끔
+      frame: base_link                   # 출력 frame_id. 이 프레임 ← wrist.frame_id TF 로 바꿈 (z = 위)
+      # 칸 S1 … S12 의 컵 바닥 태그 ID (실물 2026-11-03 붙인 그대로, 위치 순서라 S 번호 순서와 다름)
+      #   S1 20 · S2 21 · S3 22 · S4 31 · S5 26 · S6 24 · S7 29 · S8 23 · S9 30 · S10 27 · S11 25 · S12 28
+      #   태그를 다시 붙이면 여기만 고침. 퍽 0–11 · 장소 12–14 와 겹치면 안 됨
+      cell_tag_ids: [20, 21, 22, 31, 26, 24, 29, 23, 30, 27, 25, 28]
+      tag_side_m: 0.026                  # 검은 테두리 한 변. 인쇄 후 자로 잰 값으로 바꿀 것
+      max_view_deg: 25.0                 # 태그 법선 ↔ 시선 각도 한계. 컵 벽 28 mm 때문에 실제로는 약 8° 넘으면 태그가 가려짐
+      max_tilt_deg: 10.0                 # 태그 법선 ↔ frame z 각도 한계 (PnP 두 해 중 틀린 해 · 들뜬 태그 거름)
+      max_reproj_px: 1.5                 # 모서리 재투영 오차 RMS 한계
+      window: 5                          # 칸마다 최근 이 장 수 중
+      min_hits: 3                        #   이 장 수 이상 보이면 중앙값으로 확정
+      max_hz: 10.0                       # 이 주기로 한 장씩 (손목 콜백 안에서)
+      still_move_m: 0.002                # 장 사이 카메라가 이보다 움직이면 그 장은 안 셈 + 묶음 지움
+      still_rot_deg: 0.5
+      compare_nominal: true              # URDF rack_cell_<칸>_link 와 차이를 로그 · 그림에 냄 (확인용)
+      publish_debug: false               # true 면 /perception/rack_debug_image
+
+    box:                                 # 장소 · 시작 박스 윗면 (손목 깊이) → /perception/wrist/box, 중심 · yaw
+      enabled: true                      # ~/box/enable 로 켜고 끔. 엔진 없이도 돎 (깊이 · TF 만 씀)
+      frame: base_footprint              # 바닥 = 0, z = 위인 프레임. 출력 frame_id
+      size: 0.205                        # 윗면 한 변 [m]
+      top_z: 0.07                        # 윗면 높이 [m]
+      band: 0.012                        # 윗면으로 볼 높이 폭 ± (처짐 · 깊이 잡음)
+      drop: 0.03                         # 윗면보다 이만큼 낮으면 바닥 쪽 (테두리 판정)
+      min_x: 0.15                        # 이보다 가까운 점 = 차체 (앞 끝 0.145 m, 바퀴 포함), 안 씀
+      front_min_x: 0.175                 # 뒤 변을 못 봤을 때만: 맞춘 앞 변이 이보다 가까우면 실패 (차체에 가려 앞뒤가 틀어짐)
+      min_side_pts: 40                   # 앞뒤 · 좌우 축마다 한 변은 이 점 수 이상 보여야 성공
+      stride: 2                          # 화소 건너뛰기
+      guess: [0.2575, 0.0, 0.0]          # 처음 추정 (frame 기준 x, y, yaw) = 정차 자리에서 본 박스 중심 (dice_map 정차 거리)
+      max_hz: 5.0
 
     barcode:                             # 벽 1D 바코드, zxing-cpp 로 Code128 판독
       camera: wrist                      # wide | wrist. 이 카메라 컬러 영상에서 읽음

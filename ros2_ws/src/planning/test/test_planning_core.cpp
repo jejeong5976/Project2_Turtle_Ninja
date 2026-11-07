@@ -1,4 +1,4 @@
-// test_planning_core.cpp — planning 실행 층 순수 계산 시험, ROS 없이: 기록부 · grasp · 적재함 · 감시
+// test_planning_core.cpp — planning 실행 층 순수 계산 시험, ROS 없이: 기록부 · grasp · 적재함 · 재고 불확실 · 감시
 //   실행: colcon build → source install/setup.bash → ./build/planning/test_planning_core
 
 #include <gtest/gtest.h>
@@ -12,7 +12,9 @@
 #include "planning/cargo.hpp"
 #include "planning/grasp.hpp"
 #include "planning/health.hpp"
+#include "planning/inventory_policy.hpp"
 #include "planning/puck_registry.hpp"
+#include "planning/types.hpp"
 
 using namespace planning;
 
@@ -301,6 +303,312 @@ TEST(Cargo, SaveLoadRoundTrip)
   fs::remove(path);
 }
 
+// ============================================================================ inventory_policy (재고 불확실)
+// STORE 7 → R1 이 수락 뒤 실패한 상태 (기록 = 그리퍼 7, R1 빔)
+Cargo store_doubt()
+{
+  Cargo c({"R1", "R2"});
+  c.on_pick(item("7"));
+  c.set_doubt(make_doubt(c, kArmStore, "7", "R1", CargoItem{}, "arm:STORE:7>R1", "팔 작업 실패"));
+  return c;
+}
+
+TEST(InventoryPolicy, DoubtOnlyWhenRiskyTaskWasSent)
+{
+  for (const uint8_t t : {kArmPick, kArmStore, kArmRetrieve, kArmPlace, kArmLookRack}) {
+    EXPECT_FALSE(inventory_doubt_after(t, ArmEnd::NotSent)) << int(t);     // 보내기 전 실패 → 재시도 · 재계획 그대로
+    EXPECT_FALSE(inventory_doubt_after(t, ArmEnd::Rejected)) << int(t);    // 목표 거절 → 팔 안 움직임
+    EXPECT_FALSE(inventory_doubt_after(t, ArmEnd::Succeeded)) << int(t);
+    EXPECT_TRUE(inventory_doubt_after(t, ArmEnd::Failed)) << int(t);       // 수락 뒤 실패 · 취소
+    EXPECT_TRUE(inventory_doubt_after(t, ArmEnd::Unknown)) << int(t);      // 시간 초과 · FAULT 취소 결과 모름
+    EXPECT_TRUE(inventory_doubt_after(t, ArmEnd::Mismatch)) << int(t);     // 최종 성공인데 기록 모순
+  }
+  for (const uint8_t t : {kArmHome, kArmLook, kArmLookBarcode}) {   // 재고 안 바꿈
+    EXPECT_FALSE(inventory_doubt_after(t, ArmEnd::Failed)) << int(t);
+    EXPECT_FALSE(inventory_doubt_after(t, ArmEnd::Unknown)) << int(t);
+    EXPECT_FALSE(inventory_doubt_after(t, ArmEnd::Mismatch)) << int(t);
+  }
+}
+
+TEST(InventoryPolicy, DoubtKeepsLastConfirmedRecordAndFirstCause)
+{
+  Cargo c = store_doubt();
+  ASSERT_TRUE(c.doubt().has_value());
+  EXPECT_EQ(c.doubt()->item.puck_id, "7");
+  EXPECT_EQ(c.gripper()->puck_id, "7");          // lost 로 지우지 않음
+  EXPECT_FALSE(c.slots()[0].second.has_value());
+  EXPECT_FALSE(c.set_doubt(make_doubt(c, kArmPlace, "7", "", CargoItem{}, "arm:PLACE", "x")));   // 첫 원인 유지
+  EXPECT_EQ(c.doubt()->arm_task, kArmStore);
+  c.clear_gripper();                             // 그리퍼 기록을 지워도 불확실 표시는 남음
+  EXPECT_TRUE(c.doubt().has_value());
+}
+
+TEST(InventoryPolicy, BeforeKeepsRecord)
+{
+  Cargo c = store_doubt();
+  std::string id, state, err;
+  ASSERT_TRUE(resolve_doubt(c, DoubtFix::Before, &id, &state, &err)) << err;
+  EXPECT_FALSE(c.doubt().has_value());
+  EXPECT_EQ(c.gripper()->puck_id, "7");
+  EXPECT_FALSE(c.slots()[0].second.has_value());
+  EXPECT_EQ(id, "7");
+  EXPECT_EQ(state, "");                          // 기록부 상태 안 바꿈
+}
+
+TEST(InventoryPolicy, DoneAppliesSuccessOnce)
+{
+  Cargo c = store_doubt();
+  std::string id, state, err;
+  ASSERT_TRUE(resolve_doubt(c, DoubtFix::Done, &id, &state, &err)) << err;
+  EXPECT_FALSE(c.holding());
+  ASSERT_TRUE(c.slots()[0].second.has_value());
+  EXPECT_EQ(c.slots()[0].second->puck_id, "7");
+  EXPECT_EQ(state, "in_cargo:R1");
+  const Cargo after = c;
+  EXPECT_FALSE(resolve_doubt(c, DoubtFix::Done, &id, &state, &err));   // 표시 없음 → 두 번 반영 안 함
+  EXPECT_EQ(c.stored_count(), after.stored_count());
+
+  // PICK · RETRIEVE · PLACE 도 성공 전환 그대로
+  Cargo p({"R1"});
+  CargoItem pk = item("4");
+  pk.color = "red";
+  p.set_doubt(make_doubt(p, kArmPick, "4", "", pk, "arm:PICK:4", "팔 작업 실패"));
+  ASSERT_TRUE(resolve_doubt(p, DoubtFix::Done, &id, &state, &err)) << err;
+  EXPECT_EQ(p.gripper()->color, "red");
+  EXPECT_EQ(state, "in_gripper");
+  p.on_store("R1");
+  p.set_doubt(make_doubt(p, kArmRetrieve, "4", "R1", CargoItem{}, "arm:RETRIEVE:R1>4", "시간 초과"));
+  EXPECT_EQ(p.doubt()->item.color, "red");      // RETRIEVE = 그 칸 내용
+  ASSERT_TRUE(resolve_doubt(p, DoubtFix::Done, &id, &state, &err)) << err;
+  EXPECT_EQ(p.gripper()->puck_id, "4");
+  EXPECT_EQ(state, "in_gripper");
+  p.set_doubt(make_doubt(p, kArmPlace, "4", "", CargoItem{}, "arm:PLACE:4>L1#0", "FAULT 로 취소"));
+  ASSERT_TRUE(resolve_doubt(p, DoubtFix::Done, &id, &state, &err)) << err;
+  EXPECT_FALSE(p.holding());
+  EXPECT_EQ(state, "delivered");                 // 사람 확인이 있을 때만 delivered
+}
+
+TEST(InventoryPolicy, DoneRefusedWhenRecordDisagreesOrNoTransition)
+{
+  Cargo c({"R1"});
+  c.on_pick(item("3"));
+  c.on_store("R1");                              // R1 이미 참
+  c.on_pick(item("7"));
+  c.set_doubt(make_doubt(c, kArmStore, "7", "R1", CargoItem{}, "arm:STORE:7>R1", "팔 작업 실패"));
+  std::string id, state, err;
+  EXPECT_FALSE(resolve_doubt(c, DoubtFix::Done, &id, &state, &err));
+  EXPECT_FALSE(err.empty());
+  EXPECT_TRUE(c.doubt().has_value());            // 실패하면 표시 · 기록 그대로
+  EXPECT_EQ(c.gripper()->puck_id, "7");
+  EXPECT_EQ(c.slots()[0].second->puck_id, "3");
+
+  Cargo r({"R1"});
+  r.on_pick(item("5"));
+  r.set_doubt(make_doubt(r, kArmLookRack, "5", "R1", CargoItem{}, "arm:LOOK_RACK:R1", "팔 작업 실패"));
+  EXPECT_FALSE(resolve_doubt(r, DoubtFix::Done, &id, &state, &err));   // 전환 없는 작업
+  EXPECT_TRUE(r.doubt().has_value());
+}
+
+TEST(InventoryPolicy, RemovedClearsOnlyThatPuck)
+{
+  Cargo c({"R1", "R2"});
+  c.on_pick(item("3"));
+  c.on_store("R1");
+  c.on_pick(item("7"));
+  c.on_store("R2");
+  c.set_doubt(make_doubt(c, kArmRetrieve, "7", "R2", CargoItem{}, "arm:RETRIEVE:R2>7", "팔 작업 실패"));
+  std::string id, state, err;
+  ASSERT_TRUE(resolve_doubt(c, DoubtFix::Removed, &id, &state, &err)) << err;
+  EXPECT_FALSE(c.slots()[1].second.has_value());
+  EXPECT_EQ(c.slots()[0].second->puck_id, "3");  // 다른 칸은 그대로
+  EXPECT_FALSE(c.holding());
+  EXPECT_EQ(id, "7");
+  EXPECT_EQ(state, "removed");                   // lost 아님 = 사람이 뺀 것
+
+  Cargo s = store_doubt();
+  ASSERT_TRUE(resolve_doubt(s, DoubtFix::Removed, &id, &state, &err)) << err;
+  EXPECT_FALSE(s.holding());
+}
+
+TEST(InventoryPolicy, LateSuccessMatchesCause)
+{
+  const Cargo c = store_doubt();
+  EXPECT_TRUE(doubt_matches(*c.doubt(), kArmStore, "7", "R1"));
+  EXPECT_FALSE(doubt_matches(*c.doubt(), kArmStore, "7", "R2"));
+  EXPECT_FALSE(doubt_matches(*c.doubt(), kArmPlace, "7", ""));
+}
+
+// 기록 = 그리퍼 7, R1 빔, R2 = 3
+Cargo holding7_r2_3()
+{
+  Cargo c({"R1", "R2"});
+  c.on_pick(item("3"));
+  c.on_store("R2");
+  c.on_pick(item("7"));
+  return c;
+}
+
+TEST(InventoryPolicy, PreflightStoreLookRackPlaceNeedThatPuckInGripper)
+{
+  const Cargo c = holding7_r2_3();
+  std::string err;
+  EXPECT_TRUE(arm_preflight_ok(c, kArmStore, "7", "R1", &err)) << err;
+  EXPECT_TRUE(arm_preflight_ok(c, kArmLookRack, "7", "R1", &err)) << err;
+  EXPECT_TRUE(arm_preflight_ok(c, kArmPlace, "7", "", &err)) << err;
+  for (const uint8_t t : {kArmStore, kArmLookRack, kArmPlace}) {   // 그리퍼 기록과 다른 퍽
+    err.clear();
+    EXPECT_FALSE(arm_preflight_ok(c, t, "5", "R1", &err)) << int(t);
+    EXPECT_FALSE(err.empty()) << int(t);
+    EXPECT_FALSE(arm_preflight_ok(c, t, "", "R1", &err)) << int(t);   // 단계 퍽 ID 없음
+  }
+  EXPECT_FALSE(arm_preflight_ok(c, kArmStore, "7", "R2", &err));      // 칸 기록 이미 참
+  EXPECT_FALSE(arm_preflight_ok(c, kArmStore, "7", "R9", &err));      // 없는 칸
+  const Cargo empty({"R1"});
+  EXPECT_FALSE(arm_preflight_ok(empty, kArmStore, "7", "R1", &err));  // 빈 그리퍼
+  EXPECT_FALSE(arm_preflight_ok(empty, kArmPlace, "7", "", &err));
+}
+
+TEST(InventoryPolicy, PreflightRetrieveNeedsThatPuckInSlotAndEmptyGripper)
+{
+  Cargo c({"R1", "R2"});
+  c.on_pick(item("3"));
+  c.on_store("R2");
+  std::string err;
+  EXPECT_TRUE(arm_preflight_ok(c, kArmRetrieve, "3", "R2", &err)) << err;
+  EXPECT_FALSE(arm_preflight_ok(c, kArmRetrieve, "4", "R2", &err));   // 칸에 다른 퍽
+  EXPECT_FALSE(arm_preflight_ok(c, kArmRetrieve, "3", "R1", &err));   // 빈 칸
+  EXPECT_FALSE(arm_preflight_ok(c, kArmRetrieve, "3", "R9", &err));   // 없는 칸
+  c.on_pick(item("8"));
+  EXPECT_FALSE(arm_preflight_ok(c, kArmRetrieve, "3", "R2", &err));   // 그리퍼 기록 참
+}
+
+TEST(InventoryPolicy, PreflightPickNeedsEmptyGripperAndNoDuplicate)
+{
+  const Cargo c = holding7_r2_3();
+  std::string err;
+  EXPECT_FALSE(arm_preflight_ok(c, kArmPick, "9", "", &err));          // 그리퍼 기록 참
+  Cargo d({"R1", "R2"});
+  d.on_pick(item("3"));
+  d.on_store("R2");
+  EXPECT_TRUE(arm_preflight_ok(d, kArmPick, "9", "", &err)) << err;
+  EXPECT_FALSE(arm_preflight_ok(d, kArmPick, "3", "", &err));          // 이미 칸에 실린 ID
+  EXPECT_FALSE(arm_preflight_ok(d, kArmPick, "", "", &err));
+  for (const uint8_t t : {kArmHome, kArmLook, kArmLookBarcode}) {   // 재고 무관 → 확인 없음
+    EXPECT_TRUE(arm_preflight_ok(c, t, "", "", &err)) << int(t);
+  }
+}
+
+TEST(InventoryPolicy, SuccessAppliesTransitionAndState)
+{
+  Cargo c = holding7_r2_3();
+  ArmSuccessApplied r;
+  std::string err;
+  ASSERT_TRUE(apply_arm_success(c, kArmStore, "7", "R1", CargoItem{}, &r, &err)) << err;
+  EXPECT_TRUE(r.changed);
+  EXPECT_FALSE(r.doubt_cleared);
+  EXPECT_EQ(r.puck_state, "in_cargo:R1");
+  EXPECT_FALSE(c.holding());
+  EXPECT_EQ(c.slots()[0].second->puck_id, "7");
+
+  ASSERT_TRUE(apply_arm_success(c, kArmRetrieve, "3", "R2", CargoItem{}, &r, &err)) << err;
+  EXPECT_EQ(r.puck_state, "in_gripper");
+  ASSERT_TRUE(apply_arm_success(c, kArmPlace, "3", "", CargoItem{}, &r, &err)) << err;
+  EXPECT_EQ(r.puck_state, "delivered");
+  ASSERT_TRUE(r.placed.has_value());
+  EXPECT_EQ(r.placed->puck_id, "3");
+  ASSERT_TRUE(apply_arm_success(c, kArmPick, "9", "", item("9"), &r, &err)) << err;
+  EXPECT_EQ(c.gripper()->puck_id, "9");
+
+  const Cargo before = c;
+  ASSERT_TRUE(apply_arm_success(c, kArmHome, "", "", CargoItem{}, &r, &err)) << err;   // 전환 없음
+  EXPECT_FALSE(r.changed);
+  EXPECT_EQ(r.puck_state, "");
+  EXPECT_EQ(c.gripper()->puck_id, before.gripper()->puck_id);
+}
+
+// 예전: 전환이 거부돼도 기록부를 in_gripper · in_cargo · delivered 로 바꾸고 경고만 → 이제 아무것도 안 바꾸고 false
+TEST(InventoryPolicy, SuccessMismatchChangesNothing)
+{
+  Cargo c = holding7_r2_3();
+  ArmSuccessApplied r;
+  r.puck_state = "untouched";
+  std::string err;
+  EXPECT_FALSE(apply_arm_success(c, kArmStore, "7", "R2", CargoItem{}, &r, &err));   // R2 기록 참
+  EXPECT_FALSE(err.empty());
+  EXPECT_EQ(r.puck_state, "untouched");          // 기록부에 넣을 상태 안 나옴
+  EXPECT_EQ(c.gripper()->puck_id, "7");
+  EXPECT_EQ(c.slots()[1].second->puck_id, "3");
+  EXPECT_FALSE(c.slots()[0].second.has_value());
+  EXPECT_FALSE(apply_arm_success(c, kArmPlace, "5", "", CargoItem{}, &r, &err));    // 다른 퍽을 놓았다고 함
+  EXPECT_TRUE(c.holding());
+  EXPECT_FALSE(apply_arm_success(c, kArmPick, "9", "", item("9"), &r, &err));       // 그리퍼 기록 참
+  EXPECT_EQ(c.gripper()->puck_id, "7");
+  Cargo e({"R1"});
+  EXPECT_FALSE(apply_arm_success(e, kArmPlace, "7", "", CargoItem{}, &r, &err));    // 빈 그리퍼 PLACE
+  EXPECT_FALSE(apply_arm_success(e, kArmRetrieve, "7", "R1", CargoItem{}, &r, &err));
+  EXPECT_FALSE(e.holding());
+}
+
+// 늦은 최종 성공: 전환과 표시 해소가 함께 (전환 실패면 표시 유지 = 지운 뒤 실패하는 창 없음)
+TEST(InventoryPolicy, LateSuccessClearsMatchingDoubtOnlyWithTransition)
+{
+  Cargo c = store_doubt();
+  ArmSuccessApplied r;
+  std::string err;
+  ASSERT_TRUE(apply_arm_success(c, kArmStore, "7", "R1", CargoItem{}, &r, &err)) << err;
+  EXPECT_TRUE(r.doubt_cleared);
+  EXPECT_FALSE(c.doubt().has_value());
+  EXPECT_EQ(c.slots()[0].second->puck_id, "7");
+  EXPECT_FALSE(apply_arm_success(c, kArmStore, "7", "R1", CargoItem{}, &r, &err));   // 같은 결과 두 번 반영 안 됨
+
+  Cargo m({"R1"});                               // 원인 단계와 같지만 기록이 안 맞음 (R1 이미 참)
+  m.on_pick(item("3"));
+  m.on_store("R1");
+  m.on_pick(item("7"));
+  m.set_doubt(make_doubt(m, kArmStore, "7", "R1", CargoItem{}, "arm:STORE:7>R1", "FAULT 로 취소"));
+  EXPECT_FALSE(apply_arm_success(m, kArmStore, "7", "R1", CargoItem{}, &r, &err));
+  ASSERT_TRUE(m.doubt().has_value());            // 표시 그대로
+  EXPECT_EQ(m.gripper()->puck_id, "7");
+
+  Cargo o = store_doubt();                       // 다른 단계 표시는 안 지움
+  o.on_store("R2");
+  ASSERT_TRUE(apply_arm_success(o, kArmRetrieve, "7", "R2", CargoItem{}, &r, &err)) << err;
+  EXPECT_FALSE(r.doubt_cleared);
+  EXPECT_TRUE(o.doubt().has_value());
+
+  Cargo k({"R1"});                               // LOOK_RACK: 전환 없이 표시만 해소
+  k.on_pick(item("5"));
+  k.set_doubt(make_doubt(k, kArmLookRack, "5", "R1", CargoItem{}, "arm:LOOK_RACK:R1", "FAULT 로 취소"));
+  ASSERT_TRUE(apply_arm_success(k, kArmLookRack, "5", "R1", CargoItem{}, &r, &err)) << err;
+  EXPECT_TRUE(r.doubt_cleared);
+  EXPECT_TRUE(r.changed);
+  EXPECT_EQ(r.puck_state, "");
+  EXPECT_EQ(k.gripper()->puck_id, "5");
+}
+
+TEST(InventoryPolicy, DoubtSurvivesSaveLoad)
+{
+  namespace fs = std::filesystem;
+  const std::string path = (fs::temp_directory_path() / "planning_test_cargo_doubt.yaml").string();
+  const Cargo a = store_doubt();
+  std::string err;
+  ASSERT_TRUE(a.save(path, &err)) << err;
+  Cargo b({"R1", "R2"});
+  ASSERT_TRUE(b.load(path, &err)) << err;
+  ASSERT_TRUE(b.doubt().has_value());            // 재시작 (cargo_restore) 해도 불확실 유지
+  EXPECT_EQ(b.doubt()->arm_task, kArmStore);
+  EXPECT_EQ(b.doubt()->slot, "R1");
+  EXPECT_EQ(b.doubt()->step_name, "arm:STORE:7>R1");
+  EXPECT_EQ(b.doubt()->item.puck_id, "7");
+  ASSERT_TRUE(b.holding());
+
+  Cargo plain({"R1", "R2"});                     // 표시 없는 파일 → 표시 없음 (예전 파일 호환)
+  ASSERT_TRUE(plain.save(path, &err)) << err;
+  ASSERT_TRUE(b.load(path, &err)) << err;
+  EXPECT_FALSE(b.doubt().has_value());
+  fs::remove(path);
+}
+
 // ============================================================================ health
 TEST(Health, BlocksImmediatelyAndRecoversAfterStableGood)
 {
@@ -359,6 +667,35 @@ TEST(Health, LocalizationHealthLevels)
   h = LocHealth{0, 7.5};                          // 2.5 s 끊김 = 상실
   EXPECT_TRUE(loc_health_lost(h, 10.0, 2.0));
   EXPECT_FALSE(loc_health_ready(h, 10.0, 2.0));
+}
+
+TEST(Health, LocalizationLostBlocksOnlyMapDependentArmStart)
+{
+  // 위치 상실: PICK · map 의존 목표 (Puck · Custom) 의 PLACE 차단 = LOOK 직후 위치 점프 중 미션 PLACE 시작 방지
+  EXPECT_TRUE(arm_start_blocked(kArmPick, Target::Puck, false, true));
+  EXPECT_TRUE(arm_start_blocked(kArmPlace, Target::Custom, false, true));
+  EXPECT_TRUE(arm_start_blocked(kArmPlace, Target::Puck, false, true));
+  // 로봇 자체 기준 동작은 목표 종류와 상관없이 허용 (arm_target 이 목표를 안 씀)
+  for (const uint8_t t : {kArmHome, kArmLook, kArmLookBarcode, kArmLookRack, kArmStore, kArmRetrieve}) {
+    for (const Target g : {Target::None, Target::Puck, Target::Custom}) {
+      EXPECT_FALSE(arm_start_blocked(t, g, false, true)) << int(t) << " " << int(g);
+      EXPECT_FALSE(arm_goal_uses_map(t, g)) << int(t) << " " << int(g);
+    }
+  }
+  // PLACE 라도 목표가 없거나 고정이면 위치 의존 아님
+  EXPECT_FALSE(arm_start_blocked(kArmPlace, Target::None, false, true));
+  EXPECT_FALSE(arm_start_blocked(kArmPlace, Target::Fixed, false, true));
+  // 감시가 꺼져 있으면 (require_localization false 포함) 막지 않음
+  EXPECT_FALSE(arm_start_blocked(kArmPick, Target::Puck, false, false));
+  EXPECT_FALSE(arm_start_blocked(kArmPlace, Target::Custom, false, false));
+}
+
+TEST(Health, DetectionLostBlocksOnlyPickStart)
+{
+  EXPECT_TRUE(arm_start_blocked(kArmPick, Target::Puck, true, false));
+  EXPECT_FALSE(arm_start_blocked(kArmPlace, Target::Custom, true, false));   // 검출 끊김은 PLACE 와 무관
+  EXPECT_FALSE(arm_start_blocked(kArmStore, Target::Puck, true, false));
+  EXPECT_FALSE(arm_start_blocked(kArmHome, Target::None, true, false));
 }
 
 TEST(Health, CovarianceStd)

@@ -85,7 +85,7 @@ std::optional<TransferPlan> collect_then_deliver(
   const std::array<int, kNumPlaces> & cells_done, std::string * error)
 {
   const int carried = (cargo.gripper() ? 1 : 0) + static_cast<int>(cargo.stored_count());
-  if (carried + static_cast<int>(in.on_boxes.size()) > static_cast<int>(cargo.capacity()) + 1) {
+  if (carried + static_cast<int>(in.on_boxes.size()) > static_cast<int>(cargo.capacity())) {
     set_error(error, "대체 해: 적재함 칸이 모자라 남은 퍽을 다 실을 수 없음");
     return std::nullopt;
   }
@@ -278,6 +278,13 @@ std::vector<ArmAction> collect_box_actions(
     ArmAction a = action_of(ArmOp::Pick, it);
     a.box = p.box;
     out.push_back(a);
+    // 바로 넣음 (퍽 쥔 채 주행 안 함 → 박스를 떠날 때 그리퍼가 비어 있어야 함)
+    const auto slot = sim.free_slot();
+    if (!slot) {set_error(error, "적재함 빈 칸 없음"); return {};}
+    ArmAction s = action_of(ArmOp::Store, it);
+    s.slot = *slot;
+    if (!sim.on_store(*slot, error)) {return {};}
+    out.push_back(s);
   }
   return out;
 }

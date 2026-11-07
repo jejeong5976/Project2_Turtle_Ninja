@@ -160,6 +160,15 @@ protected:
     ASSERT_TRUE(spin_until([&] {return exec_->arm_phase().empty();}));   // 결과 도착 (active 끝)
   }
 
+  static Step look()
+  {
+    Step s;
+    s.type = StepType::Arm;
+    s.arm_task = kArmLook;
+    s.name = "arm:LOOK";
+    return s;
+  }
+
   static Step store(const std::string & puck, const std::string & slot)
   {
     Step s;
@@ -226,11 +235,11 @@ TEST_F(ExecutorActions, NavStopBeforeAcceptCancelsNewGoalOnly)
   EXPECT_EQ(nav_srv_->cancel_requests[0], nav_srv_->goals[1]->get_goal_id());
 }
 
-// 팔도 같음: STORE A 성공 → STORE B 보냄 (안 받음) → stop()
+// 팔도 같음: STORE A 성공 → LOOK B 보냄 (안 받음) → stop()   (B 를 STORE 로 하면 재고 확인에서 걸려 안 보냄 — 쥔 퍽 없음)
 TEST_F(ExecutorActions, ArmStopBeforeAcceptCancelsNewGoalOnly)
 {
   start("P1");
-  exec_->set_steps({store("P1", "S1"), store("P2", "S2")});
+  exec_->set_steps({store("P1", "S1"), look()});
   ASSERT_TRUE(spin_until([&] {return !arm_srv_->goals.empty();}, [&] {exec_->step(now());}));
   arm_succeed_without_step(0);
   ASSERT_EQ(exec_->step(now()).kind, ExecEvent::Kind::StepOk);
@@ -290,7 +299,7 @@ TEST_F(ExecutorActions, ArmTimeoutWithoutResultFaults)
   ExecEvent ev;
   ASSERT_TRUE(spin_until([&] {return ev.kind != ExecEvent::Kind::None;}, [&] {ev = exec_->step(now());}));
   EXPECT_EQ(ev.kind, ExecEvent::Kind::Fault);
-  EXPECT_EQ(ev.code, "ARM_NO_RESULT");
+  EXPECT_EQ(ev.code, "INVENTORY_UNCERTAIN");   // 재고를 바꾸는 작업은 재고 불확실 (팀 재고 정책), 그 밖 (LOOK 등) 은 ARM_NO_RESULT
   ASSERT_EQ(arm_srv_->cancel_requests.size(), 1u);
 
   exec_->stop();
@@ -324,7 +333,7 @@ TEST_F(ExecutorActions, ArmTimeoutServerGoneFaultsThenForgets)
       ev = exec_->step(now());
     }));
   EXPECT_EQ(ev.kind, ExecEvent::Kind::Fault);
-  EXPECT_EQ(ev.code, "ARM_NO_RESULT");
+  EXPECT_EQ(ev.code, "INVENTORY_UNCERTAIN");
 
   exec_->stop();
   ASSERT_TRUE(not_ready("ARM_SERVER"));

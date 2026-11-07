@@ -1,4 +1,4 @@
-# Jetson 에서 돌리는 Python 도구용 (tools/wrist_calib · tools/d435_viewer)
+# Jetson 에서 돌리는 Python 도구용 (tools/wrist_d435)
 # - 로봇 노드(ros2_ws, C++)는 pip 필요 없음 (JetPack · apt · colcon)
 # - 설치: python3 -m venv --system-site-packages ~/venvs/tools && ~/venvs/tools/bin/pip install -r requirements.txt
 #   (--system-site-packages = 시스템 ROS 2 rclpy 를 같이 씀. handeye.py --joints ros 때 필요)

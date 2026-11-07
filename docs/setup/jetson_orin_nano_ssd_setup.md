@@ -277,3 +277,4 @@ nvpmodel -q
 - [ ] 다음 전원 차단 시 **FC REC–GND 점퍼 제거** (꽂아 두면 계속 복구 모드로 켜짐)
 - [ ] SSD 방열 패드 또는 방열판 장착
 - [ ] 인터넷 연결 후 `sudo apt update && sudo apt upgrade` (접속 시 업데이트 374개 대기)
+- [ ] 로봇 코드용 패키지 설치: [jetson_install_list.md](jetson_install_list.md) (zxing-cpp · TensorRT 확인)

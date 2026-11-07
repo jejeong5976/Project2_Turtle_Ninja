@@ -14,6 +14,8 @@
 //         HOME           start 승인 뒤 · 복구 뒤 항상 여기부터. 출발 전에는 안 움직임
 //         READ_BARCODE   이동 → LOOK_BARCODE → 읽기 → HOME. 이 단계 동안만 perception 바코드 판독을 켬
 //         OBSERVE_SIGNAL 출발 구역에 선 채 12 점멸 기록 끝까지 기다림, signal_wait_s 넘으면 불완전으로 진행
+//                        불완전 ('?' · 개수 · 끊김 · 횟수 규칙) 이면 signal_retries 번까지 기록을 비우고 다음 시퀀스를 다시 기록
+//                        (운영자가 12 점멸 + 3 s 소등 뒤 다시 틀어 줌)
 //         COLLECT        기록이 완전하고 횟수 규칙에 맞아야 시작, 아니면 복귀. 박스마다 이동 → LOOK → Plan
 //         DELIVER        운반 계획대로 [RETRIEVE] PLACE, 목표 = 장소 중심 + 주사위 눈 오프셋
 //         VERIFY         재검증 순서로 장소마다 이동 → LOOK → Plan Verify
@@ -21,13 +23,19 @@
 // 입력
 //   - /perception/traffic_light  interfaces/TrafficLight  신호등 상태 → 점멸 기록, signal_recorder.hpp
 //   - /perception/task_text      interfaces/TaskText      바코드 원문 → parse_task
+//   - box_topic                  interfaces/DetectionArray 장소 박스 윗면 중심 · yaw (손목 깊이, kind place_box) → map 으로 모음
+//       장소 LOOK 뒤 측정이 box_min_samples 개 이상이면 PLACE 칸 · 재검증 기준 = 측정 중심 + 박스 회전만큼 돈 눈 오프셋
 //   - 실행기가 받는 검출 · motion_mode · odom · scan · amcl 은 executor.hpp
 //   - 서비스 std_srvs/Trigger
 //       /mission/start          STANDBY + 준비 완료 → RUNNING, 안 되면 거절 + 이유
-//       /mission/resume         FAULT → STANDBY, 사람이 로봇 · 재고 확인 뒤
-//       /mission/clear_gripper  그리퍼 재고 기록 지움, 기록이 남아 있으면 start 거절
+//       /mission/resume         FAULT → STANDBY, 사람이 로봇 · 재고 확인 뒤. 재고 불확실이면 거절
+//       /mission/clear_gripper  그리퍼 재고 기록 지움, 기록이 남아 있으면 start 거절. 재고 불확실이면 거절
+//       /mission/inventory_before   재고 불확실 정합: 실물이 원인 단계 전과 같음 (기록 그대로)
+//       /mission/inventory_done     재고 불확실 정합: 실물이 원인 단계 성공과 같음 (성공 전환 한 번 반영)
+//       /mission/inventory_removed  재고 불확실 정합: 사람이 그 퍽을 로봇에서 뺌 (그리퍼 · 그 칸 기록에서 지움)
+//         셋 다 RUNNING 아닐 때 · 팔 작업 최종 결과 뒤에만. 사람이 실물을 직접 본 뒤 부를 것
 //       /mission/reset_signal   신호등 기록 지우고 다시 기다림, RUNNING 중에는 출발 구역 단계일 때만
-//   - 파일: dice_map = maps/dice_map.yaml, travel_table = maps/dice_travel_times.yaml
+//   - 파일: dice_map = maps/dice_map.yaml, travel_table = maps/dice_travel_times.yaml, barcode_table = maps/dice_barcodes.json
 // 출력
 //   - /mission/status          interfaces/MissionStatus  2 Hz
 //   - /mission/hold            std_msgs/Bool             주행을 막을 때 true: STANDBY · FAULT · 이동 차단 원인 → navigation cmd_vel_hold
@@ -35,22 +43,26 @@
 //   - /planning/verify_record  interfaces/VerifyRecord   transient_local
 //   - 서비스 호출 barcode_enable_service std_srvs/SetBool, 기본 /perception/barcode/enable
 //   - 실행기 출력: navigate_to_pose · /arm_task · /mission/cargo · /planning/markers
-//   - 기록 파일 <record_dir>/run_<시각>/ signal.json · allocation.json · allocation_rev<N>.json · verify.yaml
+//   - 기록 파일 <record_dir>/run_<시각>/ signal.json · signal_attempt<N>.json (다시 기록 전 불완전 기록) · allocation.json · allocation_rev<N>.json · verify.yaml
 // 실행
 //   ros2 launch mission mission.launch.py
 // note
 //   - 계산 = 해석 · dice · 운반 계획 · 재검증 판정 · 기록 파일은 ROS 를 모르는 파일로 분리 → test/
 //   - 신호등은 STANDBY · HOME · 첫 READ_BARCODE 중에도 기록 → 운영자가 언제 신호를 시작해도 놓치지 않음. 이미 끝났으면 OBSERVE_SIGNAL 건너뜀
 //   - 단계가 재시도 뒤에도 실패하면 그 퍽 · 장소를 빼고 재계획 dice_recover, max_replans 넘거나 못 하면 복귀. 놓은 퍽은 그대로
+//   - 재고 작업 (PICK · STORE · RETRIEVE · PLACE · LOOK_RACK) 이 수락 뒤 성공으로 안 끝나면 재계획 없이 FAULT INVENTORY_UNCERTAIN
+//       (실행기 판정, planning/inventory_policy.hpp). 사람이 실물 확인 → /mission/inventory_* → resume → start
+//       최종 성공인데 재고 기록과 안 맞아도 같음. 보내기 전 단계 퍽 · 칸이 기록과 안 맞으면 팔 명령 없이 FAULT INVENTORY_MISMATCH
 //   - 대기 원인은 상태가 아님: 실행기 wait_reasons = DRIVE_LOST · SCAN_LOST · DETECTION_LOST · LOCALIZATION_LOST
 //   - time_limit_s > 0 이면 첫 start 부터 재서 시간이 모자랄 때 RETURN_HOME. 기본 0 = 제한 없음
-//   - FAULT 원인: 실행기 Fault = 제어 끊김 · 감시 회복 실패 · HOME 실패 · DRIVE 복구 안 됨, 경기장 파일 문제, 미등록 바코드, dice 계획 불가
+//   - FAULT 원인: 실행기 Fault = 제어 끊김 · 감시 회복 실패 · HOME 실패 · DRIVE 복구 안 됨 · 재고 불확실, 경기장 파일 문제, 미등록 바코드, dice 계획 불가
 //   - 파라미터는 레포 config/planning.yaml, 최상위 키 mission_manager
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <deque>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -61,6 +73,7 @@
 #include <string>
 #include <vector>
 
+#include "interfaces/msg/detection_array.hpp"
 #include "interfaces/msg/mission_status.hpp"
 #include "interfaces/msg/signal_record.hpp"
 #include "interfaces/msg/task_text.hpp"
@@ -76,6 +89,7 @@
 #include "mission/dice.hpp"
 #include "mission/dice_map.hpp"
 #include "mission/dice_record.hpp"
+#include "mission/place_box.hpp"
 #include "mission/dice_steps.hpp"
 #include "mission/dice_verify.hpp"
 #include "mission/signal_recorder.hpp"
@@ -153,9 +167,12 @@ public:
         return dice_cell_target(s, out, detail);
       });
     exec_->set_arm_sent_hook([this](const Step & s, double now) {
-        if (s.arm_task != kArmLook) {return;}
+        if (!is_look_task(s.arm_task)) {return;}
         if (box_of(s) >= 1 && box_of(s) <= kNumBoxes) {look_started_[box_of(s) - 1] = now;}
-        if (place_of(s) >= 0 && place_of(s) < kNumPlaces) {look_place_started_[place_of(s)] = now;}
+        if (place_of(s) >= 0 && place_of(s) < kNumPlaces) {
+          look_place_started_[place_of(s)] = now;
+          place_frame_[place_of(s)].reset();   // 새로 보면 기준도 새로 (kPlaceBox 가 확정)
+        }
       });
 
     // ---------------------------------------------------------------- 설정값 (기본값은 여기, 실제 값은 레포 config/planning.yaml)
@@ -164,7 +181,9 @@ public:
     if (dice_map_path_.empty()) {dice_map_path_ = std::string(MISSION_MAPS_DIR) + "/dice_map.yaml";}
     travel_table_path_ = declare_parameter<std::string>("travel_table", "");
     if (travel_table_path_.empty()) {travel_table_path_ = std::string(MISSION_MAPS_DIR) + "/dice_travel_times.yaml";}
-    for (const auto b : declare_parameter<std::vector<int64_t>>("collect_order", {1, 2, 6, 3, 4, 5})) {
+    barcode_table_path_ = declare_parameter<std::string>("barcode_table", "");
+    if (barcode_table_path_.empty()) {barcode_table_path_ = std::string(MISSION_MAPS_DIR) + "/dice_barcodes.json";}
+    for (const auto b : declare_parameter<std::vector<int64_t>>("collect_order", {1, 2, 6, 4, 5, 3})) {
       collect_order_.push_back(static_cast<int>(b));
     }
     look_dwell_s_ = declare_parameter<double>("look_dwell_s", 1.0);           // LOOK 뒤 검출 모으는 시간
@@ -182,6 +201,14 @@ public:
     max_replans_ = declare_parameter<int>("max_replans", 6);
     // 바코드는 손목으로 읽음: READ_BARCODE = 이동 → LOOK_BARCODE → 읽기 → HOME
     barcode_look_ = declare_parameter<bool>("barcode_look", true);
+    // 적재함: STORE 앞에 LOOK_RACK (퍽 쥔 채 그 칸을 손목으로 봄 → perception 칸 측정 → STORE target)
+    rack_look_ = declare_parameter<bool>("rack_look", false);
+    // 장소 박스 측정 (손목 깊이): LOOK 뒤 측정 중앙값으로 칸 기준을 고침. 못 받거나 지도 중심에서 box_max_shift_m 넘게 멀면 지도 값
+    box_measure_ = declare_parameter<bool>("box_measure", true);
+    box_topic_ = declare_parameter<std::string>("box_topic", "/perception/wrist/box");
+    box_min_samples_ = declare_parameter<int>("box_min_samples", 3);
+    box_max_shift_m_ = declare_parameter<double>("box_max_shift_m", 0.06);
+    box_wait_s_ = declare_parameter<double>("box_wait_s", 2.0);   // 장소 LOOK 뒤 측정 기다리는 최대 시간
     read_timeout_s_ = declare_parameter<double>("read_timeout_s", 5.0);
     tick_hz_ = declare_parameter<double>("tick_hz", 10.0);
     time_limit_s_ = declare_parameter<double>("time_limit_s", 0.0);
@@ -191,7 +218,9 @@ public:
     // 신호등 점멸 기록 (발제 v5). 값 설명은 signal_recorder.hpp
     signal_timeout_s_ = declare_parameter<double>("signal_timeout_s", 1.0);
     signal_record_ = declare_parameter<bool>("signal_record", true);
-    signal_wait_s_ = declare_parameter<double>("signal_wait_s", 90.0);   // OBSERVE_SIGNAL 최대 대기 (넘으면 불완전으로 진행)
+    signal_wait_s_ = declare_parameter<double>("signal_wait_s", 90.0);   // OBSERVE_SIGNAL 최대 대기 (넘으면 불완전, 다시 기록할 때마다 새로 셈)
+    // 기록이 불완전하면 비우고 다음 시퀀스를 다시 기록하는 횟수 (운영자가 다시 틀어 줌). 0 = 바로 포기 · 복귀
+    signal_retries_ = declare_parameter<int>("signal_retries", 2);
     SignalRecorderConfig sc;
     sc.expected = declare_parameter<int>("signal_expected", sc.expected);
     sc.min_on_s = declare_parameter<double>("signal_min_on_s", sc.min_on_s);
@@ -206,11 +235,13 @@ public:
     // READ_BARCODE 동안만 perception 바코드 판독을 켬 (std_srvs/SetBool). "" 면 안 부름 (perception 이 늘 켜져 있을 때)
     barcode_enable_service_ = declare_parameter<std::string>("barcode_enable_service", "/perception/barcode/enable");
 
-    // 경기장 좌표 · 이동 시간표
+    // 경기장 좌표 · 이동 시간표 · 바코드 표
     std::string err;
-    map_ok_ = load_dice_map(dice_map_path_, dice_map_, &err) && load_transfer_costs(travel_table_path_, costs_, &err);
+    map_ok_ = load_dice_map(dice_map_path_, dice_map_, &err) && load_transfer_costs(travel_table_path_, costs_, &err) &&
+      load_barcode_table(barcode_table_path_, barcodes_, &err);
     if (map_ok_) {
-      RCLCPP_INFO(get_logger(), "dice_map: %s, 이동 시간표: %s", dice_map_path_.c_str(), travel_table_path_.c_str());
+      RCLCPP_INFO(get_logger(), "dice_map: %s, 이동 시간표: %s, 바코드 표: %s (%zu 개)", dice_map_path_.c_str(),
+        travel_table_path_.c_str(), barcode_table_path_.c_str(), barcodes_.size());
     } else {
       RCLCPP_ERROR(get_logger(), "dice 경기장 읽기 실패: %s", err.c_str());
     }
@@ -226,6 +257,11 @@ public:
         last_text_ = m->raw_text;
         last_text_s_ = now_s();
       });
+
+    if (box_measure_) {
+      sub_box_ = create_subscription<interfaces::msg::DetectionArray>(
+        box_topic_, 10, [this](interfaces::msg::DetectionArray::ConstSharedPtr m) {on_box(*m);});
+    }
 
     // ---------------------------------------------------------------- 보내기
     pub_status_ = create_publisher<MissionStatus>("/mission/status", 10);
@@ -246,6 +282,7 @@ public:
         RCLCPP_INFO(get_logger(), "/mission/resume: %s", res->message.c_str());
       });
     // 그리퍼 재고 기록 지우기 (사람이 퍽을 빼고 확인한 뒤). 그리퍼 기록이 남아 있으면 start 거절됨
+    //   재고 불확실이면 거절 (불확실은 아래 inventory_* 로만 정합)
     srv_clear_gripper_ = create_service<Trigger>(
       "/mission/clear_gripper", [this](const std::shared_ptr<Trigger::Request>, std::shared_ptr<Trigger::Response> res) {
         if (op_ == Op::RUNNING) {
@@ -253,10 +290,26 @@ public:
           res->message = "RUNNING 중에는 안 됨";
           return;
         }
-        exec_->clear_gripper();
-        res->success = true;
-        res->message = "그리퍼 기록 지움";
+        res->success = exec_->clear_gripper(res->message);
       });
+    // 재고 불확실 정합 (사람이 실물을 보고 셋 중 맞는 것 하나). 성공해야 resume · start 가 됨
+    const std::array<std::pair<const char *, planning::DoubtFix>, 3> fixes{{
+      {"/mission/inventory_before", planning::DoubtFix::Before},
+      {"/mission/inventory_done", planning::DoubtFix::Done},
+      {"/mission/inventory_removed", planning::DoubtFix::Removed}}};
+    for (const auto & f : fixes) {
+      srv_inventory_.push_back(create_service<Trigger>(
+        f.first, [this, name = std::string(f.first), fix = f.second](const std::shared_ptr<Trigger::Request>,
+        std::shared_ptr<Trigger::Response> res) {
+          if (op_ == Op::RUNNING) {
+            res->success = false;
+            res->message = "RUNNING 중에는 안 됨";
+          } else {
+            res->success = exec_->resolve_inventory(fix, res->message);
+          }
+          RCLCPP_INFO(get_logger(), "%s: %s", name.c_str(), res->message.c_str());
+        }));
+    }
     // 신호등 기록 지우고 다시 기다림 (운영자가 시퀀스를 다시 보여 줄 때). 로봇이 움직이는 중에는 안 됨
     srv_reset_signal_ = create_service<Trigger>(
       "/mission/reset_signal", [this](const std::shared_ptr<Trigger::Request>, std::shared_ptr<Trigger::Response> res) {
@@ -361,6 +414,11 @@ private:
     const std::string pending = exec_->cancel_pending_reason();
     if (!pending.empty()) {
       why = pending;
+      return false;
+    }
+    // 재고 불확실: HOME 성공 · resume 으로는 안 지움, 사람이 실물 확인 뒤 /mission/inventory_* 로 먼저 정합
+    if (const auto doubt = exec_->doubt_text(); !doubt.empty()) {
+      why = "재고 불확실: " + doubt + " → 실물 확인 뒤 /mission/inventory_before · done · removed 중 하나";
       return false;
     }
     op_ = Op::STANDBY;
@@ -481,6 +539,7 @@ private:
   // 기록 끝 (또는 시간 초과) → 결과 남기고 읽어 둔 task 실행. 불완전해도 색을 추정해 채우지 않음
   void end_observe(double now)
   {
+    if (!signal_.finished() && retry_signal(now, "signal_wait_s 안에 안 끝남")) {return;}
     if (!signal_.finished()) {
       RCLCPP_WARN(get_logger(), "신호등 기록 %.0f s 안에 안 끝남 (%s, %s) → 불완전으로 진행",
         now - observe_start_s_, signal_status_name(signal_.status()), signal_.sequence().c_str());
@@ -540,6 +599,7 @@ private:
     placed_count_ = {0, 0, 0};
     look_started_.fill(0.0);
     look_place_started_.fill(0.0);
+    for (auto & f : place_frame_) {f.reset();}
     place_dead_ = {false, false, false};
     yellow_used_shape_.clear();
     replans_ = 0;
@@ -738,7 +798,10 @@ private:
     }
     op_ = Op::FAULT;
     barcode_want_ = false;
-    exec_->stop();
+    exec_->stop();   // 진행 중이던 재고 작업은 여기서 불확실 표시될 수 있음
+    if (const auto doubt = exec_->doubt_text(); !doubt.empty() && code != "INVENTORY_UNCERTAIN") {
+      detail_ += " / 재고 불확실: " + doubt;
+    }
     publish_hold();
   }
 
@@ -758,6 +821,7 @@ private:
       case kPlanDelivery:
       case kPlanVerify:
         return run_plan(s, now, started, detail);
+      case kPlaceBox: return run_place_box(s, now, started);
       default:
         detail = "모르는 Custom 단계: " + std::to_string(s.kind);
         return StepResult::Fail;
@@ -765,19 +829,83 @@ private:
   }
 
   // PLACE 목표: 장소 중심 + 주사위 눈 오프셋 (map). 높이 = 놓는 면 + 퍽 반높이 + grasp_offset
+  //   이 장소 LOOK 뒤 박스 측정이 있으면 측정 중심 + 박스 회전만큼 돈 오프셋 (place_box.hpp), 없으면 지도 값
   bool dice_cell_target(const Step & s, geometry_msgs::msg::PoseStamped & out, std::string & detail)
   {
-    const auto pt = (is_dice_cell(s) && dice_plan_) ?
-      dice_cell_point(*dice_plan_, dice_map_, place_of(s), cell_of(s)) : std::nullopt;
+    const int p = place_of(s), k = cell_of(s);
+    const auto pt = (is_dice_cell(s) && dice_plan_) ? dice_cell_point(*dice_plan_, dice_map_, p, k) : std::nullopt;
     if (!pt) {
-      detail = "dice 칸 없음: L" + std::to_string(place_of(s) + 1) + " #" + std::to_string(cell_of(s));
+      detail = "dice 칸 없음: L" + std::to_string(p + 1) + " #" + std::to_string(k);
       return false;
     }
+    std::array<double, 2> xy = *pt;
+    if (const auto & f = place_frame_[p]) {
+      xy = frame_point(*f, dice_plan_->places[p].pip_offsets[k]);
+      RCLCPP_INFO(get_logger(), "L%d #%d: 박스 측정 기준 (지도 대비 %.1f mm 이동 · %.1f° 회전) → 칸 (%.3f, %.3f)", p + 1, k,
+        1000.0 * std::hypot((*pt)[0] - xy[0], (*pt)[1] - xy[1]), f->dyaw * 180.0 / M_PI, xy[0], xy[1]);
+    }
     out.header.frame_id = exec_->map_frame();
-    out.pose.position.x = (*pt)[0];
-    out.pose.position.y = (*pt)[1];
-    out.pose.position.z = dice_map_.places[place_of(s)].top_z + exec_->puck_half_height_m() + exec_->grasp_offset_m();
+    out.pose.position.x = xy[0];
+    out.pose.position.y = xy[1];
+    out.pose.position.z = dice_map_.places[p].top_z + exec_->puck_half_height_m() + exec_->grasp_offset_m();
     return true;
+  }
+
+  // 장소 LOOK 뒤: 팔이 선 뒤 (started) 측정이 box_min_samples 개 모이면 그 장소 칸 기준 확정, box_wait_s 넘으면 지도 값
+  //   확정한 기준은 다음 LOOK 전까지 그 장소 PLACE 에 씀 (놓는 중 측정은 팔 · 퍽이 가려 안 씀)
+  StepResult run_place_box(const Step & s, double now, double started)
+  {
+    const int p = place_of(s);
+    if (p < 0 || p >= kNumPlaces) {return StepResult::Success;}
+    if (const auto f = measured_place(p, started, now - started >= box_wait_s_)) {
+      place_frame_[p] = f;
+      const auto & c = dice_map_.places[p].center;
+      RCLCPP_INFO(get_logger(), "L%d 박스 측정 %d 개: 지도 중심 대비 (%+.1f, %+.1f) mm · %+.1f° → 이 기준으로 놓음", p + 1, f->n,
+        1000.0 * (f->x - c[0]), 1000.0 * (f->y - c[1]), f->dyaw * 180.0 / M_PI);
+      return StepResult::Success;
+    }
+    if (now - started < box_wait_s_) {return StepResult::Running;}
+    place_frame_[p].reset();
+    RCLCPP_WARN(get_logger(), "L%d 박스 측정 %.1f s 안에 못 받음 → 지도 중심으로 놓음", p + 1, box_wait_s_);
+    return StepResult::Success;
+  }
+
+  // 박스 측정 (perception box.frame) → map 으로 모음. 정차 중 측정이라 최신 TF 로 바꿔도 됨
+  void on_box(const interfaces::msg::DetectionArray & msg)
+  {
+    for (const auto & d : msg.detections) {
+      if (d.kind != "place_box") {continue;}
+      geometry_msgs::msg::PoseStamped in, out;
+      in.header = d.header.frame_id.empty() ? msg.header : d.header;
+      in.pose = d.pose;
+      std::string why;
+      if (!exec_->transform_pose(in, exec_->map_frame(), out, &why)) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "박스 측정 지도 변환 실패: %s", why.c_str());
+        continue;
+      }
+      const auto & q = out.pose.orientation;
+      BoxSample b;
+      b.stamp = rclcpp::Time(in.header.stamp).seconds();
+      b.x = out.pose.position.x;
+      b.y = out.pose.position.y;
+      b.yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+      box_samples_.push_back(b);
+      while (box_samples_.size() > 300) {box_samples_.pop_front();}
+    }
+  }
+
+  // 장소 place 박스 기준 (since 뒤 측정 중앙값). 끔 · LOOK 전 · 측정 부족이면 nullopt (지도 값 사용)
+  std::optional<PlaceFrame> measured_place(int place, double since, bool warn = true) const
+  {
+    if (!box_measure_ || place < 0 || place >= kNumPlaces || since <= 0.0) {return std::nullopt;}
+    std::string why;
+    const std::vector<BoxSample> v(box_samples_.begin(), box_samples_.end());
+    auto f = place_frame_from(v, since, dice_map_.places[place].center, dice_map_.map_from_arena.yaw, box_max_shift_m_,
+      box_min_samples_, &why);
+    if (!f && warn) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "L%d 박스 측정 못 씀 (%s) → 지도 중심 사용", place + 1, why.c_str());
+    }
+    return f;
   }
 
   // ---------------------------------------------------------------- ReadBarcode
@@ -788,7 +916,7 @@ private:
   {
     if (last_text_s_ > started) {
       std::string err;
-      auto task = parse_task(last_text_, &err);
+      auto task = parse_task(last_text_, barcodes_, &err);
       if (task) {
         if (done_ids_.count(task->task_id)) {
           detail = "이미 처리한 바코드: " + task->raw_text;
@@ -809,7 +937,7 @@ private:
 
   // ---------------------------------------------------------------- Plan
   //   LOOK 뒤 look_dwell_s 동안 검출을 모은 다음
-  //   CollectBox: 이 박스에서 본 퍽 → [STORE] PICK … 을 바로 뒤에 끼워 넣음 (마지막 퍽은 그리퍼에 남김)
+  //   CollectBox: 이 박스에서 본 퍽 → PICK → STORE … 을 바로 뒤에 끼워 넣음 (마지막 퍽도 넣음, 퍽 쥔 채 주행 안 함)
   //   Delivery  : 실은 퍽 + 이 박스 퍽으로 할당 · 운반 계획 → 배달 · 재검증 단계
   //   Verify    : 장소 재검증 판정 · 기록
   StepResult run_plan(const Step & s, double now, double started, std::string & detail)
@@ -839,7 +967,7 @@ private:
         detail = "B" + std::to_string(box) + " 집기 계획 실패: " + err;
         return StepResult::Fail;
       }
-      exec_->insert_after_current(arm_steps(actions));
+      exec_->insert_after_current(arm_steps(actions, rack_look_, box_measure_));
       return StepResult::Success;
     }
     return plan_from_state(true, now) ? StepResult::Success : StepResult::Fail;   // kPlanDelivery
@@ -970,7 +1098,7 @@ private:
       RCLCPP_WARN(get_logger(), "배달 계획: 채울 수 있는 장소 없음 (남은 퍽 %d, %s)", avail, err.c_str());
       delivery_steps_.clear();
     } else {
-      delivery_steps_ = transfer_steps(*best, dice_map_);
+      delivery_steps_ = transfer_steps(*best, dice_map_, rack_look_, box_measure_);
       RCLCPP_INFO(get_logger(), "배달 계획: %s (%d 곳), 남은 퍽 %d, Y 모양 %s, 예상 %.0f s, 정차 %zu",
         chosen.c_str(), best_n, avail, best->yellow_shape.c_str(), best->cost_s, best->stops.size());
     }
@@ -997,8 +1125,10 @@ private:
   //             이동 실패면 그 박스를 건너뜀 (마지막 박스였으면 지금 자리에서 배달 계획)
   //   DELIVER : 지금 상태에서 plan_from_state 로 남은 단계 전부 다시
   //   VERIFY  : 그 장소 재검증만 건너뜀
-  //   퍽 영향 : PICK 실패 = 그 퍽 박스에 남김 (skipped), STORE · RETRIEVE · PLACE 실패 = 그 퍽 잃음 (lost, 기록에서 뺌)
-  //             PLACE 실패한 장소는 더 안 건드림 (빈 칸이 흐트러졌을 수 있음 = 설계 8장)
+  //   퍽 영향 : 여기 오는 PICK · STORE · RETRIEVE · PLACE · LOOK_RACK 실패 = 보내기 전 실패 · 목표 거절뿐 (팔 안 움직임)
+  //             (수락 뒤 실패는 실행기가 재고 불확실 FAULT 로 보냄 → 여기 안 옴). 그래서 재고 기록은 안 바꿈 (lost 단정 안 함)
+  //             PICK 실패 = 그 퍽 박스에 남김 (skipped, 다시 안 집음)
+  //             PLACE 실패한 장소는 더 안 건드림 (같은 이유로 다시 실패할 수 있음, 퍽은 그리퍼에 남아 다른 장소에 씀)
   //   실행기 사건 처리 중 (주기 사이) 에만 부름 → 단계 목록을 바꿔도 됨
   bool dice_recover(const Step & f)
   {
@@ -1006,29 +1136,17 @@ private:
       RCLCPP_WARN(get_logger(), "재계획 %d 번 넘음 → 포기", max_replans_);
       return false;
     }
-    std::string err;
     if (f.type == StepType::Arm) {
       switch (f.arm_task) {
         case kArmPick:
           exec_->mark_puck(f.puck_id, "skipped");
           break;
-        case kArmStore:
-          exec_->cargo_drop_gripper();
-          exec_->mark_puck(f.puck_id, "lost");
-          break;
-        case kArmRetrieve:
-          if (exec_->cargo_retrieve(f.slot, &err)) {exec_->cargo_drop_gripper();}
-          exec_->mark_puck(f.puck_id, "lost");
-          break;
         case kArmPlace:
-          exec_->cargo_drop_gripper();
-          exec_->mark_puck(f.puck_id, "lost");
           if (place_of(f) >= 0 && place_of(f) < kNumPlaces) {place_dead_[place_of(f)] = true;}
           break;
         default:
-          break;   // LOOK 실패: 그 자리 퍽을 못 봄 → Plan 이 본 것만으로 진행
+          break;   // STORE · RETRIEVE · LOOK_RACK: 재고 그대로 다시 계획. LOOK 실패: 그 자리 퍽을 못 봄 → Plan 이 본 것만으로 진행
       }
-      exec_->cargo_changed();
     }
     alloc_reason_ = "replan: " + f.name + " 실패";
     RCLCPP_WARN(get_logger(), "재계획 %d/%d: %s 실패 → %s", replans_, max_replans_, f.name.c_str(),
@@ -1094,18 +1212,24 @@ private:
   // ================================================================ 재검증
 
   // 재검증 장소 하나: since 뒤 새 관측 중 장소 반경 안 → 판정 → 발행 · 기록
-  void verify_place(int place, double since, double now)
+  //   looked = LOOK 성공 뒤 (Plan Verify 단계 시작), 박스 측정은 이 뒤 것만 씀 (팔이 움직이는 중 장 뺌)
+  void verify_place(int place, double looked, double now)
   {
     if (!dice_plan_ || place < 0 || place >= kNumPlaces) {
       RCLCPP_WARN(get_logger(), "재검증 L%d: 계획 없음", place + 1);
       return;
     }
-    const auto & c = dice_map_.places[place].center;
-    // 이 장소 LOOK 을 시작한 뒤 촬영된 관측만 (촬영 시각 기준, 기록부의 옛 ID 를 쓰지 않음)
+    // 퍽 관측: 이 장소 LOOK 을 시작한 뒤 촬영된 것만 (촬영 시각 기준, 기록부의 옛 ID 를 쓰지 않음)
+    double since = looked;
     const double look_t = look_place_started_[place];
     if (look_t > 0.0) {since = look_t;}
+    // 박스 측정이 있으면 재검증 LOOK 에서 새로 잰 기준으로 판정 (놓은 뒤 박스가 밀렸어도 박스 기준으로 봄), 없으면 지도 값
+    DiceMap arena = dice_map_;
+    DicePlan plan = *dice_plan_;
+    if (const auto f = measured_place(place, looked)) {apply_place_frame(arena, plan, place, *f);}
+    const auto & c = arena.places[place].center;
     const auto obs = gather_place_obs(c, since);
-    auto pv = judge_place(place, *dice_plan_, dice_map_, obs, verify_cell_tol_m_, now - start_s_);
+    auto pv = judge_place(place, plan, arena, obs, verify_cell_tol_m_, now - start_s_);
     RCLCPP_INFO(get_logger(), "재검증 L%d (%c%d): 본 퍽 %zu 개 → %s", place + 1, pv.group, pv.expected, pv.seen.size(),
       pv.ok ? "맞음" : "문제 있음");
     for (const auto & i : pv.issues) {RCLCPP_WARN(get_logger(), "  재검증: %s", i.c_str());}
@@ -1355,10 +1479,33 @@ private:
     if (signal_.status() != before) {
       if (signal_.finished()) {
         log_signal();
+        if (signal_.status() == SignalStatus::Incomplete && retry_signal(t, "불완전")) {return;}
         write_signal_record();
       }
       publish_signal();
     }
+  }
+
+  // 불완전 기록 → signal_retries 남았으면 signal_attempt<N>.json 으로 남기고 비운 뒤 다음 시퀀스를 기다림 (true)
+  //   발제: 12 점멸 뒤 3 s 소등 = 끝, 운영자가 그 뒤 다시 틀어 줌. 끝 판정이 소등 2.5 s 라 다음 시퀀스 앞부분은 안 놓침
+  //   불명 색을 추정해 채우지 않음 — 새 시퀀스를 처음부터 다시 봄
+  bool retry_signal(double now, const char * why)
+  {
+    if (signal_attempt_ >= signal_retries_) {return false;}
+    ++signal_attempt_;
+    signal_prev_ = signal_.sequence();
+    const auto path = write_record("signal_attempt" + std::to_string(signal_attempt_) + ".json",
+        signal_to_json(signal_, node_start_s_, !signal_.finished()));
+    RCLCPP_WARN(get_logger(), "신호등 기록 %s (%s) → 비우고 다음 시퀀스 다시 기록 %d/%d%s%s", why, signal_prev_.c_str(),
+      signal_attempt_, signal_retries_, path.empty() ? "" : ", 앞 기록 ", path.c_str());
+    signal_.reset();
+    signal_timed_out_ = false;
+    observe_start_s_ = now;
+    if (phase_ == Phase::OBSERVE_SIGNAL) {
+      detail_ = "신호등 다시 기록 " + std::to_string(signal_attempt_) + "/" + std::to_string(signal_retries_) + " (앞 기록 " + signal_prev_ + ")";
+    }
+    publish_signal();
+    return true;
   }
 
   void publish_signal()
@@ -1378,6 +1525,9 @@ private:
     m.count_green = u8(signal_.count('G'));
     m.count_unknown = u8(signal_.count('?'));
     m.issues = signal_.issues();
+    if (signal_attempt_ > 0) {
+      m.issues.push_back("다시 기록 " + std::to_string(signal_attempt_) + "/" + std::to_string(signal_retries_) + " 번째 (앞 기록 " + signal_prev_ + ")");
+    }
     if (signal_timed_out_ && !signal_.finished()) {
       m.status = SignalRecord::INCOMPLETE;
       m.issues.push_back("signal_wait_s 안에 기록이 안 끝남");
@@ -1436,7 +1586,11 @@ private:
   std::vector<std::string> wait_reasons() const
   {
     if (op_ == Op::STANDBY) {return not_ready_;}
-    if (op_ == Op::FAULT) {return {fault_code_};}
+    if (op_ == Op::FAULT) {
+      std::vector<std::string> r{fault_code_};
+      if (!exec_->doubt_text().empty() && fault_code_ != "INVENTORY_UNCERTAIN") {r.push_back("INVENTORY_UNCERTAIN");}
+      return r;
+    }
     if (op_ != Op::RUNNING) {return {};}
     return exec_->wait_reasons();
   }
@@ -1453,12 +1607,21 @@ private:
   std::unique_ptr<Executor> exec_;
 
   // 설정
-  std::string dice_map_path_, travel_table_path_, record_dir_;
+  std::string dice_map_path_, travel_table_path_, barcode_table_path_, record_dir_;
+  BarcodeTable barcodes_;   // 바코드 원문 → 정렬 방향 (barcode_table)
   double tick_hz_ = 10.0, time_limit_s_ = 0.0, return_margin_s_ = 60.0, read_timeout_s_ = 5.0;
   double look_dwell_s_ = 1.0, dice_pick_fresh_s_ = 90.0;
   double verify_radius_m_ = 0.18, verify_cell_tol_m_ = 0.03, verify_vote_ratio_ = 0.7;
   int transfer_max_remaining_ = 4, max_replans_ = 6;
   bool auto_start_ = false, barcode_look_ = true;
+  bool rack_look_ = false;
+  bool box_measure_ = true;                  // 장소 박스 측정으로 칸 기준 고침
+  std::string box_topic_;
+  int box_min_samples_ = 3;
+  double box_max_shift_m_ = 0.06, box_wait_s_ = 2.0;
+  std::array<std::optional<PlaceFrame>, kNumPlaces> place_frame_{};   // 장소별 확정한 박스 기준 (없으면 지도 값)
+  std::deque<BoxSample> box_samples_;        // map, 최근 300 개
+  rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr sub_box_;                   // STORE 앞에 LOOK_RACK (적재함 칸 측정 → STORE target)
   std::vector<int> collect_order_;
 
   // 경기장
@@ -1496,6 +1659,9 @@ private:
   bool signal_record_ = true;
   double signal_timeout_s_ = 1.0, signal_wait_s_ = 90.0;
   double observe_start_s_ = 0.0;
+  int signal_retries_ = 2;
+  int signal_attempt_ = 0;                   // 다시 기록한 횟수 (불완전 기록은 signal_attempt<N>.json 으로 남김)
+  std::string signal_prev_;                  // 바로 앞 불완전 기록 순서 (상태 · 발행용)
   bool signal_timed_out_ = false;            // OBSERVE_SIGNAL 시간 초과 (불완전으로 진행, reset_signal 전까지 다시 안 봄)
   double last_light_s_ = -1.0;
 
@@ -1530,6 +1696,7 @@ private:
   rclcpp::Subscription<TrafficLight>::SharedPtr sub_sig_;
   rclcpp::Subscription<TaskText>::SharedPtr sub_text_;
   rclcpp::Service<Trigger>::SharedPtr srv_start_, srv_resume_, srv_clear_gripper_, srv_reset_signal_;
+  std::vector<rclcpp::Service<Trigger>::SharedPtr> srv_inventory_;   // /mission/inventory_before · done · removed
   rclcpp::Publisher<MissionStatus>::SharedPtr pub_status_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr pub_hold_;
   rclcpp::Publisher<SignalRecord>::SharedPtr pub_signal_;

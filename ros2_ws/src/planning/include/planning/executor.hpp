@@ -8,6 +8,7 @@
 //   - ArmTask target 계산: PICK = 퍽 집기 점 · 방향, Custom 목표 = 미션이 준 점 → base_link
 // 입력
 //   - detection_topics     interfaces/DetectionArray  퍽, 촬영 시각 TF 로 map · odom 변환. 기본 /perception/wrist/detections
+//   - rack_topic           interfaces/DetectionArray  적재함 칸 (kind rack_cell, label = 칸 이름, base_link). 기본 /perception/rack/cells
 //   - /control/motion_mode interfaces/MotionMode      주행은 DRIVE 일 때만, 팔 작업은 ready 일 때만
 //   - /odom                nav_msgs/Odometry          제어 생존 확인
 //   - scan_topics          sensor_msgs/LaserScan      라이다마다 생존 확인만, 기본 /lidar_front/scan · /lidar_rear/scan
@@ -17,6 +18,7 @@
 //   - /tf                  map → odom 신선도, 검출 · 목표 변환
 // 출력
 //   - 액션 navigate_to_pose → Nav2, /arm_task → control_master
+//   - 액션 dock_action (기본 dock_to_pose, NavigateToPose 형) → RL 정밀 접근 노드. Step.dock 인 이동만
 //   - 서비스 호출 <lifecycle_manager>/is_active, 1 Hz
 //   - /mission/cargo       interfaces/CargoState              적재함 · 그리퍼 재고, 바뀔 때 + 1 Hz
 //   - /planning/markers    visualization_msgs/MarkerArray     퍽 기록부 · 후보 · Nav2 목표, 2 Hz
@@ -29,17 +31,43 @@
 //       Custom 단계 실행 중에는 insert_after_current 만, 성공하면 바로 뒤에 끼움
 //   - step() 은 사건 ExecEvent 를 돌려줌 → 실패 뒤 처리와 FAULT 결정은 미션이 함
 //   - 재시도는 실행기가 함: nav_retries · pick_retries · place_retries, PICK 재시도는 앞 이동부터
+//       PICK 이 팔을 움직이고 실패하면 (pick_relook) HOME → 같은 정차 LOOK 다시 → 그 뒤 검출로 PICK (relook_wait_s 안에 안 보이면 실패)
+//       PICK · STORE · RETRIEVE · PLACE · LOOK_RACK 은 보내기 전 실패 · 목표 거절일 때만 재시도 (팔 안 움직임)
+//   - 재고 불확실 (inventory_policy.hpp): 위 작업이 수락된 뒤 성공으로 안 끝남 (실패 · 취소 · 시간 초과 · 결과 모름)
+//       → 재시도 · StepFailed 없이 Fault INVENTORY_UNCERTAIN, 재고 = 마지막 확인 그대로 + 불확실 표시 (원인 단계)
+//       → stop() 때 진행 중 · 결과 대기 중이던 위 작업도 같이 표시. 결과는 왔는데 step() 이 처리 전이면 그 결과대로 반영
+//       → 표시가 있으면 ready_reasons 에 INVENTORY_UNCERTAIN (start 거절), clear_gripper 거절
+//       → 지우는 길: 원인 작업의 늦은 최종 성공 (control 확인) 또는 사람 확인 resolve_inventory. HOME 성공으로는 안 지움
+//       → 늦은 최종 성공도 기록과 안 맞으면 반영 · 해소 안 함 (표시 유지). RUNNING 중 표시가 있으면 supervise 가 FAULT
+//   - 최종 성공인데 기록과 안 맞는 전환 (apply_arm_success 실패) → 재고 · 기록부 그대로, 불확실 표시 + Fault INVENTORY_UNCERTAIN
+//       정상 · 시간 초과 뒤 성공 · FAULT 뒤 늦은 성공 (update) · stop() 선반영 모두 update_cargo 한 곳으로 (각 결과는 한 번만 반영)
+//   - 보내기 전 재고 확인 (arm_preflight_ok): PICK · STORE · LOOK_RACK · RETRIEVE · PLACE 의 퍽 · 칸이 기록과 안 맞으면
+//       팔 명령 없이 Fault INVENTORY_MISMATCH (재시도 · 재계획 안 함, 팔 안 움직였으므로 불확실 표시는 안 함)
+//   - 감시 대기 원인별 차단 (새 목표 보내기 전만, 진행 중 팔 작업은 안 취소, 회복 · FAULT 는 supervise)
+//       DRIVE_LOST · SCAN_LOST = 이동 차단 / DETECTION_LOST = PICK 시작 차단
+//       LOCALIZATION_LOST = 이동 + PICK + Target::Puck · Custom 팔 목표 (PLACE 등) 시작 차단, HOME · LOOK 류 · STORE · RETRIEVE 허용
+//         Custom 은 resolver 프레임을 미리 모름 (미션 PLACE = map) → 보수적으로 차단 (arm_start_blocked, health.hpp)
 //   - 취소한 목표의 최종 결과가 오기 전에는 새 목표를 안 보냄, server_wait_s 넘으면 단계 실패 (서버가 없어지면 안 기다림)
 //   - 팔 시간 초과는 취소 결과까지 기다려 판정, 결국 성공이면 단계 성공, 결과가 끝내 안 오면 FAULT (ARM_NO_RESULT)
-//   - FAULT 등으로 취소한 팔 작업이 결국 성공하면 update() 가 재고에 반영. 취소한 팔 작업은 HOME 필요로 봄
-//       성공 결과는 왔는데 step() 이 반영하기 전에 stop() 한 작업도 같음 (반영은 한 번만)
+//   - FAULT 등으로 취소한 팔 작업이 결국 성공하면 update() 가 재고에 반영 (한 번만). 취소한 팔 작업은 HOME 필요로 봄
+//       사람이 정합한 뒤 온 늦은 결과는 반영 안 함 (사람 확인이 기준)
 //   - 미션 판단으로 단계 목록을 바꿀 때는 arm_busy() 가 false 일 때만, 팔 결과 처리 전 교체 방지
+//   - 정밀 접근 (Step.dock, 박스 · 장소 정차 2026-11-06): 정차점이 박스 면 1 cm (0.2575 m) 라 Nav2 외곽 · collision_monitor 와 겹침
+//       → 1 단계 Nav2 목표 = 정차점 뒤 dock_nav_back_m (박스 면 2 cm = nf 학습 구간 끝과 같음, planner 가 경로 냄)
+//         정차점까지 dock_handoff_m 안에 들어오면 Nav2 취소 → 취소 결과 뒤 바로 2 단계 dock_action 으로 정차점 (서지 않고 넘김)
+//         Nav2 목표가 넘김 자리보다 멀어서 MPPI · nf 가 넘김 전에 감속 안 함. 넘김이 안 걸리면 Nav2 도착 뒤 2 단계
+//       두 단계가 한 이동 단계 (재시도 = 1 단계부터)
+//       dock_action "" 이면 정차점으로 Nav2 바로 (가짜 세계 · 옛 흐름). 접근 노드가 collision_monitor 영역을 끄고 켬
+//   - 그리퍼 기록에 퍽이 있는데 이동 단계가 오면 이동 안 하고 Fault CARRY_DRIVE (퍽 쥔 채 주행 안 함, 2026-11-04)
 //   - 팔이 LOOK · LOOK_BARCODE 로 펴진 채 이동 단계가 오면 HOME 을 먼저 끼움 (control 은 접힘 실측 뒤에만 DRIVE → 기다리면 drive_wait_s 손해)
+//   - LOOK_RACK: 성공 뒤 그 칸 측정을 rack_wait_s 동안 기다림 (팔 결과 뒤 촬영분만) → 다음 STORE target 에 넣음
+//       못 받거나 LOOK_RACK 이 거절되면 단계는 성공으로 넘기고 STORE target 은 빈 프레임 (= 녹화 경로 그대로)
 
 #pragma once
 
 #include <array>
 #include <deque>
+#include <map>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -71,6 +99,7 @@
 #include "planning/approach.hpp"
 #include "planning/cargo.hpp"
 #include "planning/health.hpp"
+#include "planning/inventory_policy.hpp"
 #include "planning/puck_registry.hpp"
 #include "planning/types.hpp"
 
@@ -143,7 +172,7 @@ public:
   std::string current_step_name() const {return step_i_ < steps_.size() ? steps_[step_i_].name : "";}
 
   // ---- 멈추기 · 재개 확인
-  void stop();                                           // 모든 목표 취소 + DRIVE 대기 해제 (FAULT)
+  void stop();                                           // 모든 목표 취소 + DRIVE 대기 해제 (FAULT), 진행 중 재고 작업은 불확실 표시
   void cancel_nav();
   std::string cancel_pending_reason() const;             // 취소한 목표의 최종 결과 전이면 이유 (resume 막음)
 
@@ -159,12 +188,14 @@ public:
   // ---- 기록부 · 재고
   const PuckRegistry & registry() const {return registry_;}
   const Cargo & cargo() const {return cargo_;}
+  bool cargo_retrieve(const std::string & slot, std::string * error) {return cargo_.on_retrieve(slot, error);}   // 시험용 (한 번만 반영 확인)
   const std::deque<ObsRecord> & recent_obs() const {return raw_obs_;}
   void mark_puck(const std::string & id, const std::string & state) {registry_.set_state(id, state);}
-  void cargo_drop_gripper() {cargo_.clear_gripper();}    // 그리퍼 퍽 잃음 (기록에서만 뺌)
-  bool cargo_retrieve(const std::string & slot, std::string * error) {return cargo_.on_retrieve(slot, error);}
   void cargo_changed();                                  // 저장 + 발행
-  void clear_gripper();                                  // /mission/clear_gripper (저장 + 발행)
+  bool clear_gripper(std::string & why);                 // /mission/clear_gripper (저장 + 발행). 재고 불확실이면 거절
+  // 재고 불확실 사람 정합 (실물 확인 뒤). 팔 결과 대기 중 · 표시 없음 · 기록과 안 맞음이면 false + msg
+  bool resolve_inventory(DoubtFix fix, std::string & msg);
+  std::string doubt_text() const;                        // 불확실 표시 설명 (없으면 "")
   void set_task_id(const std::string & id) {task_id_ = id;}   // PICK 때 재고 기록에 적음
   void set_pick_fresh_s(double s) {pick_fresh_override_ = s;}  // < 0 = pick_fresh_s 파라미터
 
@@ -172,6 +203,9 @@ public:
   double puck_half_height_m() const {return puck_half_height_m_;}
   double grasp_offset_m() const {return grasp_offset_m_;}
   const std::string & map_frame() const {return map_frame_;}
+  // in → target 프레임 (최신 TF, 위치 · 방향). 정차 중 측정을 지도로 옮길 때 씀. 실패하면 false + why
+  bool transform_pose(const geometry_msgs::msg::PoseStamped & in, const std::string & target,
+    geometry_msgs::msg::PoseStamped & out, std::string * why = nullptr) const;
 
 private:
   using Nav = nav2_msgs::action::NavigateToPose;
@@ -204,6 +238,11 @@ private:
     std_msgs::msg::Header header;
     std::optional<geometry_msgs::msg::TransformStamped> tf;
   };
+  struct RackSeen                            // 적재함 칸 측정 (perception /perception/rack/cells)
+  {
+    geometry_msgs::msg::PoseStamped pose;    // 칸 바닥 중심 + yaw
+    double stamp = 0.0;                      // 촬영 시각 [s]
+  };
   struct LifecycleCheck                      // Nav2 lifecycle_manager is_active
   {
     std::string name;
@@ -232,14 +271,19 @@ private:
   void to_grasp_point(geometry_msgs::msg::PoseStamped & target, bool has_q, bool yaw_known, bool is_box,
     const std::string & puck_id) const;
   bool to_base(const geometry_msgs::msg::PoseStamped & in, bool with_orientation, geometry_msgs::msg::PoseStamped & out);
-  void update_cargo(const Step & s);
+  // 팔 작업 최종 성공 → 재고 · 기록부 반영 (같은 단계 불확실 표시 해소 포함, 저장 한 번). 기록과 안 맞으면 아무것도 안 바꾸고 false + why
+  bool update_cargo(const Step & s, std::string & why);
+  CargoItem pick_item(const Step & s) const;  // PICK 대상 퍽 → 재고 항목 (기록부 색 · 모양, task)
+  void mark_doubt(const Step & s, const std::string & why);   // 재고 불확실 표시 (이미 있으면 첫 원인 유지)
   void on_fail(ExecEvent & ev);
   int retries_allowed(const Step & s) const;
   bool insert_home_counted(const std::string & why, ExecEvent & ev);
   void insert_home_at_current(const std::string & why);
+  void insert_relook(const std::string & puck_id);
   bool update_drive_reason(double now, bool drive_step, ExecEvent & ev);
+  StepResult wait_rack(const Step & s, double now);   // LOOK_RACK 성공 뒤 칸 측정 기다리기
+  void on_rack(const interfaces::msg::DetectionArray & msg);
   void stop_blocked_nav();
-  bool pick_blocked() const;
 
   // 감시
   std::vector<std::string> stale_scan_topics(double now) const;   // 끊긴 라이다 토픽 (하나라도 있으면 SCAN_LOST)
@@ -251,7 +295,7 @@ private:
 
   // 액션
   bool server_wait_expired(double now, const std::string & what);
-  bool send_nav(const Pose2D & p);
+  bool send_nav(const Pose2D & p, bool dock = false);
   StepResult poll_nav(double now, double timeout_s);
   bool send_arm(const ArmTask::Goal & goal);
   void cancel_arm();
@@ -273,9 +317,17 @@ private:
   double loc_ready_xy_std_, loc_ready_yaw_std_, loc_lost_xy_std_, loc_lost_yaw_std_;
   std::vector<std::string> detection_frames_;
   double action_retry_s_, action_retry_max_s_, server_wait_s_, nav_timeout_s_, arm_timeout_s_, drive_wait_s_;
+  std::string dock_action_;                  // "" = 정밀 접근 안 씀
+  double dock_nav_back_m_ = 0.025, dock_timeout_s_ = 40.0, dock_handoff_m_ = 0.40;
+  bool nav_docking_ = false;                 // 지금 이동 단계가 2 단계 (정밀 접근) 중
+  bool nav_handoff_ = false;                 // 1 단계 끝 (도착 또는 넘김 취소) → 2 단계 보낼 차례
   double puck_standoff_m_, pick_fresh_s_, puck_half_height_m_, grasp_offset_m_;
   double pick_fresh_override_ = -1.0;
   int nav_retries_, pick_retries_, place_retries_;
+  bool pick_relook_ = true;                  // PICK 이 팔을 움직이고 실패하면 재시도 전에 같은 정차 LOOK 다시
+  double relook_wait_s_ = 1.5;               // 다시 보기 LOOK 뒤 새 검출 기다리는 최대 시간
+  std::map<std::string, double> relook_after_;   // 퍽 ID → 다시 보기 LOOK 성공 시각 (이 뒤 검출로만 집음)
+  double rack_wait_s_, rack_fresh_s_;
 
   // 미션 함수
   CustomRunner custom_;
@@ -287,6 +339,9 @@ private:
   std::unordered_map<std::string, LocalSeen> local_seen_;
   std::deque<ObsRecord> raw_obs_;
   Cargo cargo_;
+  std::unordered_map<std::string, RackSeen> rack_seen_;   // 칸 이름 → 마지막 측정
+  std::unordered_map<std::string, RackSeen> rack_meas_;   // LOOK_RACK 으로 받은 측정 → 다음 STORE target
+  double rack_wait_start_ = -1.0;            // LOOK_RACK 성공 뒤 측정 기다리기 시작 (-1 = 안 기다림)
   std::string cargo_file_;
   std::string task_id_;
 
@@ -368,6 +423,8 @@ private:
   //   arm_step_ = 보낸 팔 단계, 성공을 재고에 반영하면 비움 (반영 전에 arm_ 을 비우면 late_arm_ok_ 로 넘김)
   std::optional<Step> arm_step_, arm_cancel_step_, late_arm_ok_;   // 보낸 팔 단계 · 취소한 팔 단계 · 늦게 성공한 단계
   bool arm_timeout_wait_ = false;            // 팔 시간 초과 → 취소 결과 기다리는 중 (성공이면 그 단계 성공)
+  ArmEnd arm_end_ = ArmEnd::NotSent;         // 이번 run_arm 실패의 끝난 모양 (on_fail 이 재고 불확실 판정)
+  bool preflight_refused_ = false;           // 이번 run_arm 이 재고 기록 불일치로 팔 명령을 안 보냄 (on_fail → FAULT)
   double arm_cancel_s_ = 0.0;
   Pose2D nav_goal_pose_;
   std::string arm_phase_;
@@ -376,6 +433,7 @@ private:
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   std::vector<rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr> sub_det_;
+  rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr sub_rack_;
   rclcpp::Subscription<interfaces::msg::MotionMode>::SharedPtr sub_mode_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_odom_;
   std::vector<rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr> sub_scan_;
@@ -385,7 +443,8 @@ private:
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_markers_;
   rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr pub_approach_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_front_scan_;
-  rclcpp_action::Client<Nav>::SharedPtr nav_client_;
+  rclcpp_action::Client<Nav>::SharedPtr nav_client_, dock_client_;
+  rclcpp_action::Client<Nav>::SharedPtr nav_cur_client_;   // 마지막 이동 목표를 보낸 쪽 (취소 · 대기 판정)
   rclcpp_action::Client<ArmTask>::SharedPtr arm_client_;
   rclcpp::TimerBase::SharedPtr lifecycle_timer_, cargo_timer_, marker_timer_;
 };

@@ -20,6 +20,7 @@ Step nav_step(const Pose2D & p, const std::string & name, int node)
   s.name = "nav:" + name;
   if (is_box_node(node)) {box_of(s) = node;}
   if (is_place_node(node)) {place_of(s) = node_place(node);}
+  s.dock = is_box_node(node) || is_place_node(node);   // 박스 · 장소 정차 = 면 1 cm → 중간 정차 + 정밀 접근
   return s;
 }
 
@@ -32,6 +33,7 @@ void set_box_approach(Step & s, const DiceMap & arena, int node)
   s.approach_face_m = std::hypot(b.center[0] - b.stop.x, b.center[1] - b.stop.y) - arena.box_size / 2.0;
 }
 
+// 관찰 자세: 박스 · 장소 모두 LOOK
 Step look_step(int box, int place)
 {
   Step s;
@@ -39,7 +41,7 @@ Step look_step(int box, int place)
   s.arm_task = kArmLook;
   box_of(s) = box;
   place_of(s) = place;
-  s.name = "arm:LOOK:" + (box > 0 ? "B" + std::to_string(box) : "L" + std::to_string(place + 1));
+  s.name = std::string("arm:LOOK:") + (box > 0 ? "B" + std::to_string(box) : "L" + std::to_string(place + 1));
   return s;
 }
 }  // namespace
@@ -73,7 +75,8 @@ std::vector<Step> collect_steps(const DiceMap & arena, const std::vector<int> & 
   return steps;
 }
 
-std::vector<Step> arm_steps(const std::vector<ArmAction> & actions)
+std::vector<Step> arm_steps(
+  const std::vector<ArmAction> & actions, bool rack_look, bool box_wait)
 {
   std::vector<Step> steps;
   for (const auto & a : actions) {
@@ -83,6 +86,14 @@ std::vector<Step> arm_steps(const std::vector<ArmAction> & actions)
     switch (a.op) {
       case ArmOp::Look:
         steps.push_back(look_step(a.box, a.place));
+        if (box_wait && a.box <= 0 && a.place >= 0 && a.place < kNumPlaces) {   // 장소: 박스 측정으로 칸 기준 확정
+          Step w;
+          w.type = StepType::Custom;
+          w.kind = kPlaceBox;
+          place_of(w) = a.place;
+          w.name = "box:L" + std::to_string(a.place + 1);
+          steps.push_back(w);
+        }
         continue;
       case ArmOp::Pick:
         s.arm_task = kArmPick;
@@ -91,6 +102,13 @@ std::vector<Step> arm_steps(const std::vector<ArmAction> & actions)
         s.name = "arm:PICK:" + a.puck_id;
         break;
       case ArmOp::Store:
+        if (rack_look) {   // 퍽 쥔 채 그 칸 관찰 → 칸 측정
+          Step look = s;
+          look.arm_task = kArmLookRack;
+          look.slot = a.slot;
+          look.name = "arm:LOOK_RACK:" + a.slot;
+          steps.push_back(look);
+        }
         s.arm_task = kArmStore;
         s.slot = a.slot;
         s.name = "arm:STORE:" + a.puck_id + ">" + a.slot;
@@ -114,15 +132,16 @@ std::vector<Step> arm_steps(const std::vector<ArmAction> & actions)
   return steps;
 }
 
-std::vector<Step> transfer_steps(const TransferPlan & plan, const DiceMap & arena)
+std::vector<Step> transfer_steps(
+  const TransferPlan & plan, const DiceMap & arena, bool rack_look, bool box_wait)
 {
   std::vector<Step> steps;
   for (const auto & st : plan.stops) {
     if (st.move) {
       steps.push_back(nav_step(node_stop(arena, st.node), node_name(st.node), st.node));
-      set_box_approach(steps.back(), arena, st.node);
+      set_box_approach(steps.back(), arena, st.node);   // (옛) 라이다 마지막 접근, box_approach_m 0 이면 안 씀 (정밀 접근 dock 이 대신)
     }
-    auto arm = arm_steps(st.actions);
+    auto arm = arm_steps(st.actions, rack_look, box_wait);
     steps.insert(steps.end(), arm.begin(), arm.end());
   }
   return steps;

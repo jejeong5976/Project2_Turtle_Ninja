@@ -29,12 +29,12 @@ yolo/wide/
 │   ├── val.py                 # 평가 (클래스별 mAP, 혼동 행렬)
 │   ├── predict.py             # 예측 결과 그림 저장
 │   ├── live_detect.py         # 카메라 실시간 검출
-│   └── export.py              # .pt → ONNX (TensorRT 엔진은 Jetson 에서)
+│   └── export_onnx.py         # .pt → ONNX + .names.txt (C++ perception 노드용, 엔진은 Jetson trtexec)
 └── notebooks/
-    └── train_real.ipynb       # 2단계 학습 · 평가 · conf 0.5 혼동 행렬 (실행 결과 포함)
+    └── train.ipynb            # 1·2단계 학습 · 평가 · conf 0.5 혼동 행렬 (실행 결과 포함)
 ```
 커밋하지 않는 것: `datasets/`, `runs/`, `models/`, `configs/data_*.yaml` (각자 PC 절대경로), `yolo26n.pt`, 가중치(`*.pt`, `*.onnx`, `*.engine`).
-학습한 가중치는 Google Drive 에 올린다 ([가중치 폴더](⟪Drive 링크⟫)).
+학습한 가중치는 레포에 올리지 않는다 (공유 위치는 팀에서 정함).
 
 ## 환경
 
@@ -47,9 +47,13 @@ yolo/wide/
 | 그 외 | albumentations, tensorboard, opencv-python, pyyaml |
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install ultralytics==8.4.185 albumentations tensorboard
+python3 -m venv ~/Desktop/physical_ai/.venvs/yolo
+~/Desktop/physical_ai/.venvs/yolo/bin/pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128   # RTX 50 계열
+~/Desktop/physical_ai/.venvs/yolo/bin/pip install ultralytics==8.4.185 albumentations tensorboard onnx ipykernel
+~/Desktop/physical_ai/.venvs/yolo/bin/python -m ipykernel install --user --name yolo --display-name "Python (yolo venv)"   # 노트북 커널
 ```
+
+- albumentations 가 `opencv-python-headless` 를 같이 깔아 `cv2.imshow` 가 안 됨 → `live_detect.py` 는 Tk 창으로 대신 보여 줌
 
 `yolo26n.pt` 는 첫 학습 때 ultralytics 가 자동으로 받는다.
 
@@ -65,7 +69,7 @@ pip install ultralytics==8.4.185 albumentations tensorboard
 | val | 392 |
 | test | 374 |
 
-학습 입력 크기는 imgsz 960 이다. 1단계 학습에는 합성 train 만 쓰고, best epoch 는 **실제 val** 로 고른다.
+학습 입력 크기는 imgsz 960 이다. 1단계 학습에는 합성 train 만 쓴다. 실제 val 은 학습 곡선 보기용이고, 33 epoch 고정 학습 뒤 `last.pt` 를 2단계로 넘긴다.
 
 ### 실제
 
@@ -79,7 +83,7 @@ pip install ultralytics==8.4.185 albumentations tensorboard
 | split | 장수 | 어두운 사진 | 비고 |
 |---|---|---|---|
 | train | 490 | 45 | 2단계 학습 |
-| val | 68 | – | 1·2단계 best epoch 고르기 |
+| val | 68 | – | 1단계 곡선 보기, 2단계 best epoch 고르기 |
 | test | 52 | 9 | 상자 103개, 최종 성능은 이것으로만 |
 
 ## 실행 순서
@@ -100,7 +104,7 @@ python prepare_data.py
 python train.py --stage sim
 
 # 3) 2단계: 실제 데이터만으로 미세조정
-python train.py --stage real --weights ../runs/wide/sim_pre/weights/best.pt
+python train.py --stage real --weights ../runs/wide/sim_pre/weights/last.pt
 
 # 4) 실제 test 평가
 python val.py --weights ../runs/wide/real_ft/weights/best.pt --data ../configs/data_real.yaml --split test
@@ -133,19 +137,21 @@ python live_detect.py --model real_ft --dev 2
 | 항목 | 값 |
 |---|---|
 | 시작 가중치 | yolo26n.pt |
-| 데이터 | 합성 train 2834장 / 실제 val 68장으로 best 선택 |
+| 데이터 | 합성 train 2834장 (실제 val 68장은 곡선 보기용) |
 | imgsz | 960 |
 | lr0 | 0.001 |
-| epoch | ⟪실험 후 확정: 최대 150, patience 30 / 또는 33 고정⟫ |
+| epoch | 33 고정 (patience 0), `last.pt` 사용 |
+
+val 이 68장뿐이라 best epoch 로 고르면 시작점이 운에 따라 크게 바뀐다 (ep9 → 2단계 test 0.907, ep33 → 0.949).
 
 ### 2차 (실제만)
 
 | 항목 | 값 |
 |---|---|
-| 시작 가중치 | 1차 ⟪best.pt / last.pt⟫ |
+| 시작 가중치 | 1차 `last.pt` |
 | 데이터 | 실제 train 490 / val 68 / test 52 |
 | lr0 | 0.0005 |
-| epoch | 최대 60, patience 30 (best ⟪ep⟫) |
+| epoch | 최대 60, patience 30 (37 epoch 에서 멈춤, best ep7) |
 | freeze | 없음 (전체 층 학습) |
 
 ## 최종 성능 (실제 test 52장)
@@ -154,18 +160,19 @@ mAP 는 conf 0.001(표준), 혼동 행렬은 planning 기준 conf 0.5, IoU 0.5 �
 
 | 모델 | 구분 | mAP50 | mAP50-95 |
 |---|---|---|---|
-| 1차만 (합성) | 전체 | ⟪ ⟫ | ⟪ ⟫ |
-| **2차 (최종)** | 전체 | ⟪ ⟫ | ⟪ ⟫ |
-| | 밝음 (43장) | ⟪ ⟫ | ⟪ ⟫ |
-| | 어두움 (9장) | ⟪ ⟫ | ⟪ ⟫ |
+| 1차만 (합성) | 전체 | 0.597 | 0.383 |
+| **2차 (최종)** | 전체 | **0.949** | **0.705** |
+| | 밝음 (43장) | 0.950 | 0.690 |
+| | 어두움 (9장) | 0.995 | 0.823 |
 
 클래스별 mAP50:
 
-| red_cyl | green_cyl | red_box | green_box | barcode | traffic_light |
-|---|---|---|---|---|---|
-| ⟪ ⟫ | ⟪ ⟫ | ⟪ ⟫ | ⟪ ⟫ | ⟪ ⟫ | ⟪ ⟫ |
+| 모델 | red_cyl | green_cyl | red_box | green_box | barcode | traffic_light |
+|---|---|---|---|---|---|---|
+| 1차만 | 0.870 | 0.663 | 0.454 | 0.105 | 0.964 | 0.523 |
+| 2차 | 0.957 | 0.924 | 0.961 | 0.891 | 0.968 | 0.993 |
 
-conf 0.5 혼동 행렬: 정답 103개 중 맞힘 ⟪ ⟫, 다른 클래스 ⟪ ⟫, 놓침 ⟪ ⟫, 오검출 ⟪ ⟫
+conf 0.5 에서 틀린 것 (정답 → 예측, 개수): green_cyl → green_box 7, red_box 놓침 6, barcode 놓침 3, red_box → red_cyl 2, traffic_light 놓침 1, red_cyl 놓침 1 (그림 `runs/eval/confusion_conf05.png`)
 
 실시간 검출(`live_detect.py`, RTX 5060, imgsz 960): 약 32 FPS, 추론 6 ms
 
@@ -177,8 +184,18 @@ conf 0.5 혼동 행렬: 정답 103개 중 맞힘 ⟪ ⟫, 다른 클래스 ⟪ �
 
 ## Jetson 배포
 
+C++ perception 노드(`ros2_ws/src/perception`, 광각 파이프라인)가 쓰는 방식. 손목 모델과 같음.
+
 ```bash
-python export.py --weights ../runs/wide/real_ft/weights/best.pt      # PC: ONNX (736×1280)
-# Jetson 에서 엔진 빌드 (다른 GPU 에서 만든 엔진은 안 돎)
-python3 -c "from ultralytics import YOLO; YOLO('best.pt').export(format='engine', imgsz=(736, 1280), half=True)"
+# PC: ONNX + 클래스 이름 파일 (가중치 옆에 best_544x960.onnx, best_544x960.names.txt)
+python export_onnx.py --weights ../runs/wide/real_ft/weights/best.pt                         # 기본 544×960
+python export_onnx.py --weights ../runs/wide/real_ft/weights/best.pt --height 736 --width 1280
+
+# Jetson: 엔진 빌드 (다른 GPU 에서 만든 엔진은 안 돎)
+trtexec --onnx=best_544x960.onnx --saveEngine=best_544x960.engine --fp16
+ros2 launch perception perception.launch.py wide_model:=<경로>/best_544x960.engine
 ```
+
+- 엔진 옆에 같은 이름 `.names.txt` 필수 (없으면 노드가 엔진 읽기에서 멈춤)
+- ultralytics `export(format='engine')` 는 쓰지 않음: 엔진 앞에 메타데이터를 붙여 C++ `TrtEngine` 이 못 읽음
+- 입력 크기는 노드가 엔진에서 읽음. 544×960 = 학습 imgsz 960 과 같은 축척, 736×1280 = 원본 축척. Jetson `trtexec` 속도로 고름

@@ -11,6 +11,7 @@
   python live_detect.py --model ../models/best.pt --dev 2
   python live_detect.py --device cpu                   # GPU 로 학습 중일 때
 카메라 번호 찾기: v4l2-ctl --list-devices
+창: OpenCV 가 화면 기능 없는 판(yolo venv, albumentations 가 headless 판을 깔아 cv2.imshow 안 됨)이면 Tk 창으로 대신 보여 줌
 """
 import argparse
 import time
@@ -18,11 +19,52 @@ from collections import Counter
 from pathlib import Path
 
 import cv2
+import numpy as np
 from ultralytics import YOLO
 
 YOLO_DIR = Path(__file__).resolve().parent.parent
 COLORS = {'red_cyl': (60, 60, 255), 'green_cyl': (60, 220, 60), 'red_box': (0, 0, 200),
           'green_box': (0, 150, 0), 'barcode': (255, 200, 0), 'traffic_light': (0, 200, 255)}
+
+
+class Viewer:
+    """OpenCV 창, 안 되면 Tk 창(PIL ImageTk). tools/wrist_d435/d435_puck_viewer.py 와 같은 방식"""
+
+    def __init__(self, title: str):
+        self.title, self.key, self.tk = title, None, None
+        try:
+            cv2.namedWindow(title, cv2.WINDOW_NORMAL)
+        except cv2.error:
+            import tkinter as tk
+            from PIL import Image, ImageTk
+            root = tk.Tk()
+            root.title(title)
+            label = tk.Label(root)
+            label.pack()
+            root.bind('<Key>', lambda e: setattr(self, 'key', e.char or None))
+            root.protocol('WM_DELETE_WINDOW', lambda: setattr(self, 'key', 'q'))
+            self.tk = (root, label, Image, ImageTk)
+            print('OpenCV 창 기능 없음 -> Tk 창으로 표시 (창을 클릭한 뒤 키 입력)', flush=True)
+
+    def show(self, img) -> str | None:
+        """그림 갱신 -> 눌린 키 (문자 하나 또는 None)"""
+        if self.tk is None:
+            cv2.imshow(self.title, img)
+            k = cv2.waitKey(1) & 0xFF
+            return chr(k) if k != 255 else None
+        root, label, Image, ImageTk = self.tk
+        photo = ImageTk.PhotoImage(Image.fromarray(np.ascontiguousarray(img[..., ::-1])))
+        label.configure(image=photo)
+        label.image = photo                                      # 참조 안 잡아 두면 그림이 지워짐
+        root.update()
+        k, self.key = self.key, None
+        return k
+
+    def close(self):
+        if self.tk is None:
+            cv2.destroyAllWindows()
+        else:
+            self.tk[0].destroy()
 
 
 def main():
@@ -54,8 +96,7 @@ def main():
 
     out_dir = YOLO_DIR / 'runs' / 'live'
     conf, paused, fps, frame, shown = a.conf, False, 0.0, None, None
-    win = f'live: {w.parent.parent.name}'
-    cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+    view = Viewer(f'live: {w.parent.parent.name}')
     t_prev = time.time()
     while True:
         if not paused:
@@ -80,24 +121,23 @@ def main():
             info = f'FPS {fps:4.1f} | infer {infer_ms:4.0f} ms | conf {conf:.2f} | ' + (' '.join(f'{k}:{v}' for k, v in sorted(cnt.items())) or '검출 없음')
             cv2.rectangle(shown, (0, 0), (shown.shape[1], 30), (0, 0, 0), -1)
             cv2.putText(shown, info.replace('검출 없음', 'none'), (8, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-        cv2.imshow(win, shown)
-        k = cv2.waitKey(1) & 0xFF
-        if k in (ord('q'), 27):
+        k = view.show(shown)
+        if k in ('q', '\x1b'):
             break
-        if k == ord(' '):
+        if k == ' ':
             paused = not paused
-        if k in (ord('+'), ord('=')):
+        if k in ('+', '='):
             conf = min(0.95, conf + 0.05)
-        if k in (ord('-'), ord('_')):
+        if k in ('-', '_'):
             conf = max(0.05, conf - 0.05)
-        if k == ord('s') and shown is not None:
+        if k == 's' and shown is not None:
             out_dir.mkdir(parents=True, exist_ok=True)
             p = out_dir / f'{w.parent.parent.name}_{time.strftime("%H%M%S")}.jpg'
             cv2.imwrite(str(p), shown)
             cv2.imwrite(str(p.with_name(p.stem + '_raw.jpg')), frame)   # 박스 없는 원본 (나중에 라벨링용)
             print('저장:', p)
     cap.release()
-    cv2.destroyAllWindows()
+    view.close()
 
 
 if __name__ == '__main__':

@@ -17,7 +17,7 @@ find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
-# ---- 경기장 파일 기본 위치 = 레포 최상위 maps/ (dice_map.yaml · dice_travel_times.yaml)
+# ---- 경기장 파일 기본 위치 = 레포 최상위 maps/ (dice_map.yaml · dice_travel_times.yaml · dice_barcodes.json)
 #   - 빌드할 때 소스 위치 기준 절대경로를 코드에 넣음 → 레포 안 ros2_ws 에서 빌드해야 맞음
 #   - 다른 곳이면 --cmake-args -DMISSION_MAPS_DIR=<경로> (예전 이름 PLANNING_MAPS_DIR 도 받음)
 if(DEFINED PLANNING_MAPS_DIR AND NOT DEFINED MISSION_MAPS_DIR)
@@ -37,6 +37,7 @@ add_library(mission_core STATIC
   src/dice_record.cpp
   src/transfer_solver.cpp
   src/transfer_planner.cpp
+  src/place_box.cpp
 )
 target_include_directories(mission_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -64,6 +65,7 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_mission_core test/test_mission_core.cpp)
   target_link_libraries(test_mission_core mission_core)
+  target_compile_definitions(test_mission_core PRIVATE TEST_BARCODE_TABLE="${MISSION_MAPS_DIR}/dice_barcodes.json")
   ament_add_gtest(test_transfer test/test_transfer.cpp)
   target_link_libraries(test_transfer mission_core)
   target_compile_definitions(test_transfer PRIVATE

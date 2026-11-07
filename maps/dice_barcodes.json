@@ -1,0 +1,24 @@
+{
+  "barcodes": [
+    {
+      "barcode": "P2-01",
+      "sortOrder": "ASC",
+      "sortLabel": "오름차순"
+    },
+    {
+      "barcode": "P2-02",
+      "sortOrder": "DESC",
+      "sortLabel": "내림차순"
+    },
+    {
+      "barcode": "P2-03",
+      "sortOrder": "ASC",
+      "sortLabel": "오름차순"
+    },
+    {
+      "barcode": "P2-04",
+      "sortOrder": "DESC",
+      "sortLabel": "내림차순"
+    }
+  ]
+}

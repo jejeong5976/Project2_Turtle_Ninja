@@ -17,7 +17,7 @@
 // note
 //   - ROS 를 모르는 순수 C++
 //   - 좌표는 map 프레임 x · y m, yaw rad
-//   - STORE · RETRIEVE · LOOK · LOOK_BARCODE 는 control_master 구현 전에는 거절됨
+//   - STORE · RETRIEVE · LOOK · LOOK_BARCODE · LOOK_RACK 은 control_master 구현 전에는 거절됨
 
 #pragma once
 
@@ -81,10 +81,11 @@ struct Step
   Pose2D pose;                  // Target::Fixed 일 때
   std::string puck_id;          // 대상 퍽 (PICK · STORE · RETRIEVE · PLACE, Target::Puck)
   uint8_t arm_task = 0;         // StepType::Arm 일 때 (ArmTask 상수와 같은 값)
-  std::string slot;             // STORE · RETRIEVE 일 때 적재함 칸
+  std::string slot;             // STORE · RETRIEVE · LOOK_RACK 일 때 적재함 칸
   int kind = 0;                 // 미션이 정하는 종류 (Custom 단계 · Custom 목표). 실행기는 해석 안 함
   std::array<int, 3> ref{{-1, -1, -1}};   // 미션이 정하는 번호 (뜻은 미션 쪽에서 정함). 실행기는 해석 안 함
   double timeout_s = 0.0;       // 0 = 설정 기본값 사용
+  bool dock = false;            // Navigate: 정밀 접근 정차 (dock_action 켜져 있으면 중간 정차까지 Nav2 → 정밀 접근 액션)
   std::string name;             // 상태 표시용 이름
   // Navigate 마지막 접근 (박스): approach_m > 0 이면 pose 에서 그만큼 물러난 곳까지 Nav2, 그 뒤 앞쪽 라이다로 재며 똑바로 붙음
   double approach_m = 0.0;
@@ -100,6 +101,10 @@ constexpr uint8_t kArmStore = 3;
 constexpr uint8_t kArmRetrieve = 4;
 constexpr uint8_t kArmLook = 5;
 constexpr uint8_t kArmLookBarcode = 6;   // 바코드 정면 보기 (손목, 2026-11-01)
+constexpr uint8_t kArmLookRack = 8;      // 퍽 쥔 채 적재함 칸 관찰 → 다음 STORE 에 칸 측정값 (2026-11-03)
+
+// 손목 관찰 자세 (LOOK) 인지. 성공하면 팔이 펴진 채 남음
+inline bool is_look_task(uint8_t t) {return t == kArmLook;}
 
 // ---------------------------------------------------------------- 공통 도우미
 

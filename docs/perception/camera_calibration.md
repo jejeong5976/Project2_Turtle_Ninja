@@ -141,7 +141,7 @@ OpenCV fisheye 모델(`cv2.fisheye.calibrate`)을 쓴다.
 ### 다른 문서·코드에 미치는 영향
 
 - **YOLO26 가이드 3.4절**은 수평 FOV 120°(pinhole)를 가정해서 1.2 m에서 퍽이 약 9 px라고 계산했다. 실측값으로는 화면 중앙 기준 **1.2 m에서 약 21 px, 1.8 m에서 약 14 px**(≈ fx × 0.03 / 거리)다. 가장자리에서는 더 작다.
-- **`yolo/dataset_gen/generate.py`**의 `CAMERA_PROFILES["wide"]`는 pinhole HFOV 100° 임시값이다. Isaac Sim fisheye 카메라로 바꿀 때 위 K, D를 넣는다.
+- 시뮬 생성기 `sim/robot_sim/scripts/make_yolo_dataset.py` 는 위 K, D (`sim_core/turtleninja_maze_env.py` 의 `BIRDEYE_K_FULL` · `BIRDEYE_D`)로 1280×720 어안 영상을 만든다 (반영됨).
 
 ### 다시 측정해야 하는 경우
 

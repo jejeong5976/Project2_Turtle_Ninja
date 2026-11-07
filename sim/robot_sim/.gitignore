@@ -12,3 +12,4 @@ __pycache__/
 rl/logs/
 robot_description/team/
 usd/team_robot/
+rl/data/

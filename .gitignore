@@ -37,6 +37,7 @@ rosbag2_*/
 
 # Claude Code (local only, never commit)
 CLAUDE.md
+AGENTS.md
 .claude/
 
 # Datasets (synthetic / real)
@@ -48,6 +49,9 @@ tools/jetson/99-ninja-turtle-opencr.rules
 
 # YOLO 학습 결과 (runs/wide, runs/eval, runs/logs, TensorBoard)
 yolo/wide/runs/
+# 광각 data.yaml (prepare_data.py 가 각자 PC 절대경로로 만듦) · Jetson 으로 옮길 모델 모음
+yolo/wide/configs/data_*.yaml
+yolo/wide/models/
 
 # 손목 seg 학습 결과
 yolo/wrist/runs/
@@ -65,6 +69,6 @@ yolo/wrist/experiments/train_eval.ipynb
 yolo/wrist/experiments/train_eval_2.ipynb
 
 # 손목 카메라 캘리브레이션: 인쇄용 PDF · 미리보기 (make_gt_sheet.py 로 다시 만듦), 실물 오차 시험 도구
-tools/wrist_calib/gt_sheet.pdf
-tools/wrist_calib/gt_sheet_preview.png
-tools/wrist_calib/eval_sheet.py
+tools/wrist_d435/gt_sheet.pdf
+tools/wrist_d435/gt_sheet_preview.png
+tools/wrist_d435/eval_sheet.py

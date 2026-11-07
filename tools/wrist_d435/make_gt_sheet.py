@@ -1,16 +1,24 @@
 #!/usr/bin/env python3
-"""손목 D435 퍽 중심 정답 측정용 종이 (A4 가로) 만들기 -> gt_sheet.pdf + gt_sheet.json.
+"""make_gt_sheet.py — 손목 D435 실물 정답 종이 만들기, A4 가로
 
-종이: 테두리 = ArUco 마커 30개 (DICT_4X4_100, 20 mm, 퍽 AprilTag 36h11 과 다른 계열이라 안 헷갈림)
-      안쪽 = 퍽 발자국 윤곽 5칸 (선 사각 · 선 원기둥 · 누운 퍽 가로 / 세로 / 45°) + 칸 중심 십자
-      아래 여백 = 100 mm 자 눈금 (인쇄 축척 확인용)
-쓰는 법: 실제 크기(100 %)로 인쇄 -> 자로 100 mm 눈금 · 마커 한 변 20 mm 확인 -> 평평한 곳에 붙임
-      -> 퍽을 윤곽에 맞춰 놓고 d435_puck_viewer 로 저장 -> 마커로 종이 자세(PnP) -> 칸 정답 중심과 추정 중심 비교
-종이 좌표 (gt_sheet.json 의 단위 m): 원점 = 테두리 바깥 왼쪽 위 모서리, x 오른쪽, y 아래(종이 위에서 봤을 때),
-      z = x × y = 종이 속으로 (책상 쪽). 종이 위쪽 = -z
-퍽 정답 중심 = 칸 중심 (x, y) + z = -높이/2 (선 퍽 -0.030, 누운 퍽 -0.015)
-
-예) cd tools/wrist_calib && python3 make_gt_sheet.py
+역할
+  - 테두리 ArUco 마커 30 개 DICT_4X4_100 20 mm: 종이 자세를 PnP 로 구하는 데 씀
+  - 안쪽 퍽 발자국 윤곽 5 칸 + 칸 중심 십자: 선 사각 · 선 원기둥 · 누운 퍽 가로 · 세로 · 45°
+  - 아래 여백 100 mm 자 눈금: 인쇄 축척 확인용
+받는 것
+  - 없음, 종이 치수는 코드 상수
+내보내는 것
+  - gt_sheet.pdf: 인쇄용, 커밋 안 함
+  - gt_sheet.json: 마커 위치 · 칸 정답 중심, handeye.py · eval_sheet.py 가 읽음
+  - gt_sheet_preview.png: 미리 보기, 커밋 안 함
+실행
+  cd tools/wrist_d435 && python3 make_gt_sheet.py
+  → 100 % 로 인쇄 → 자로 100 mm 눈금 · 마커 한 변 20 mm 확인 → 평평한 곳에 테이프로 고정
+note
+  - 종이 좌표 단위 m: 원점 = 테두리 바깥 왼쪽 위 모서리, x 오른쪽, y 아래, z = x × y = 종이 속 책상 쪽, 종이 위쪽 = −z
+  - 퍽 정답 중심 = 칸 중심 x · y + z = −높이/2, 선 퍽 −0.030 · 누운 퍽 −0.015
+  - ArUco 4X4 는 퍽 AprilTag 36h11 과 다른 계열이라 서로 헷갈리지 않음
+  - 같은 코드면 같은 종이가 나옴 → pdf 는 다시 만들어 씀
 """
 import json
 from pathlib import Path
@@ -118,7 +126,7 @@ def main():
                           center_m=[c[0] / 1000, c[1] / 1000, -h / 1000], axis_m=axis, yaw_deg=s['yaw']))
 
     # 위 여백: 제목 · 주의
-    d.text((round(ORIGIN_MM[0] * PPM), round(2.5 * PPM)), '손목 D435 퍽 중심 정답 종이 (tools/wrist_calib/gt_sheet.json)', font=f_b, fill=0)
+    d.text((round(ORIGIN_MM[0] * PPM), round(2.5 * PPM)), '손목 D435 퍽 중심 정답 종이 (tools/wrist_d435/gt_sheet.json)', font=f_b, fill=0)
     d.text((round(ORIGIN_MM[0] * PPM), round(9 * PPM)),
            '실제 크기(100 %)로 인쇄 · 마커 한 변 20.0 mm, 아래 자 100 mm 확인 · 퍽을 윤곽에 맞춰 놓기 · 원점 = 왼쪽 위 마커 바깥 모서리 (x →, y ↓)',
            font=f_s, fill=0)
