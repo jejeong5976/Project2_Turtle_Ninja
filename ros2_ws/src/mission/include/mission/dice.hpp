@@ -106,6 +106,9 @@ std::vector<std::array<double, 2>> pips_view_to_map(
 // DicePlan 의 장소마다 보는 방향 적용 (dice_layout 결과는 그림 좌표 = 보는 방향 (0, 1)) → 먼 칸부터 정렬까지 함
 //   view_dir[i] = L(i+1) 관찰 원 → 장소 중심 단위 벡터. 접근 방향(장소 → 로봇) = −view_dir 로 order_far_first
 void apply_view_directions(DicePlan & plan, const std::array<std::array<double, 2>, 3> & view_dir);
+// 그림 위쪽 방향 up[i] (map, 발제 p.4 = 경기장 +Y 를 세 곳 다) 으로 눈을 놓고, 놓는 순서만 보는 방향 view_dir 기준 먼 칸부터
+void apply_place_directions(DicePlan & plan, const std::array<std::array<double, 2>, 3> & up,
+  const std::array<std::array<double, 2>, 3> & view_dir);
 
 // 놓는 순서: 접근 방향 (장소 중심 → 로봇 쪽 단위 벡터 (ax, ay)) 기준 먼 점부터
 //   → 먼저 놓은 퍽을 그리퍼가 건드리지 않게. pip_offsets 만 재정렬 (그룹 안 퍽은 아무 점에 놓아도 됨)

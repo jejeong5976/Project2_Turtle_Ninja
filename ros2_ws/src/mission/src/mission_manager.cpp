@@ -209,7 +209,12 @@ public:
     box_min_samples_ = declare_parameter<int>("box_min_samples", 3);
     box_max_shift_m_ = declare_parameter<double>("box_max_shift_m", 0.06);
     box_wait_s_ = declare_parameter<double>("box_wait_s", 2.0);   // 장소 LOOK 뒤 측정 기다리는 최대 시간
+    // 장소별 PLACE 놓는 점 보정 [앞, 왼쪽] mm (정차점에서 장소를 보는 로봇 기준) — 놓는 목표에만 더함, 재검증 · 기록은 눈 점 그대로
+    //   실행 중 바로 바꿈 (다음 PLACE 부터): ros2 param set /mission_manager place_offset_L1_mm "[5.0, 0.0]"
+    for (int i = 1; i <= kNumPlaces; ++i) {declare_parameter<std::vector<double>>("place_offset_L" + std::to_string(i) + "_mm", {0.0, 0.0});}
     read_timeout_s_ = declare_parameter<double>("read_timeout_s", 5.0);
+    read_retries_ = declare_parameter<int>("read_retries", 6);   // 안 읽히면 같은 자리에서 다시 읽는 횟수 (11-08: 한 번 실패로 미션 전체 포기하던 것)
+    pip_frame_ = declare_parameter<std::string>("dice_pip_frame", "arena");   // arena = 발제 p.4 지도 +Y 기준 세 곳 같은 방향 · viewer = 보는 사람 기준 (11-07 까지)
     tick_hz_ = declare_parameter<double>("tick_hz", 10.0);
     time_limit_s_ = declare_parameter<double>("time_limit_s", 0.0);
     return_margin_s_ = declare_parameter<double>("return_margin_s", 60.0);
@@ -445,7 +450,10 @@ private:
     }
     // ③ 신호등 점멸 기록 (출발 구역에 선 채, 단계 목록 없음)
     if (phase_ == Phase::OBSERVE_SIGNAL && !exec_->waiting_drive()) {
-      if (signal_.finished() || now - observe_start_s_ > signal_wait_s_) {end_observe(now);}
+      // 기록 중이면 signal_wait_s 를 넘어도 끝까지 (12 점멸 24 s + 끝 3 s 를 넉넉히 40 s 더). 기다리다 늦게 시작한 신호를 지우지 않게 (11-08)
+      const double waited = now - observe_start_s_;
+      const bool recording = signal_.status() == SignalStatus::Recording;
+      if (signal_.finished() || (waited > signal_wait_s_ && (!recording || waited > signal_wait_s_ + 40.0))) {end_observe(now);}
       return;
     }
     // ④ 단계 실행 → 사건 처리 (단계 목록은 여기서만 바꿈)
@@ -595,7 +603,13 @@ private:
     verify_log_file_.clear();
     // 장소 그룹 · 눈 수 · 눈 위치는 신호 · 바코드로 바로 정해짐 (퍽 할당은 마지막 박스에서 운반 계획기가 함)
     dice_plan_ = dice_layout(dice_counts_, task.dice_order);
-    apply_view_directions(*dice_plan_, place_view_dirs(dice_map_));
+    if (pip_frame_ == "viewer") {
+      apply_view_directions(*dice_plan_, place_view_dirs(dice_map_));
+    } else {   // 발제 p.4: 지도 위쪽 +Y, 모든 장소 같은 방향 (2 · 3 대각선 · 6 두 열 그림대로, 회전 대체 불가). 놓는 순서만 보는 방향
+      const double ay = dice_map_.map_from_arena.yaw;
+      const std::array<double, 2> up{{-std::sin(ay), std::cos(ay)}};   // 경기장 +Y (map)
+      apply_place_directions(*dice_plan_, {{up, up, up}}, place_view_dirs(dice_map_));
+    }
     placed_count_ = {0, 0, 0};
     look_started_.fill(0.0);
     look_place_started_.fill(0.0);
@@ -759,6 +773,15 @@ private:
   {
     switch (phase_) {
       case Phase::READ_BARCODE:
+        // 안 읽힘 → 같은 자리에서 다시 읽기 (read_retries 번, 11-08). 이미 처리한 바코드 · 팔 · 이동 실패는 예전처럼 끝
+        if (detail_.find("바코드 안 읽힘") != std::string::npos && read_tries_ < read_retries_ && op_ == Op::RUNNING) {
+          ++read_tries_;
+          RCLCPP_WARN(get_logger(), "바코드 안 읽힘 → 그 자리 그 팔 자세로 다시 읽기 %d / %d", read_tries_, read_retries_);
+          auto again = build_read_steps(dice_map_.barcode_view, read_timeout_s_, barcode_look_);
+          while (!again.empty() && again.front().kind != kReadBarcode) {again.erase(again.begin());}   // 이동 · LOOK 빼고 읽기 (+ HOME)
+          set_steps(Phase::READ_BARCODE, std::move(again));
+          break;
+        }
         ++bar_i_;
         begin_read_next();
         // LOOK_BARCODE 로 팔을 들었을 수 있음 → 다음 이동 전에 접음 (HOME 은 이미 접혔으면 바로 성공)
@@ -843,6 +866,19 @@ private:
       xy = frame_point(*f, dice_plan_->places[p].pip_offsets[k]);
       RCLCPP_INFO(get_logger(), "L%d #%d: 박스 측정 기준 (지도 대비 %.1f mm 이동 · %.1f° 회전) → 칸 (%.3f, %.3f)", p + 1, k,
         1000.0 * std::hypot((*pt)[0] - xy[0], (*pt)[1] - xy[1]), f->dyaw * 180.0 / M_PI, xy[0], xy[1]);
+    }
+    {   // 장소별 놓는 점 보정 (place_offset_L*_mm, 로봇 기준 [앞, 왼쪽]) → 이 장소 보는 방향으로 map 에 더함
+      const std::string name = "place_offset_L" + std::to_string(p + 1) + "_mm";
+      const auto off = get_parameter(name).as_double_array();
+      if (off.size() != 2 || !std::isfinite(off[0]) || !std::isfinite(off[1])) {
+        detail = name + " 는 [앞, 왼쪽] mm 두 개";
+        return false;
+      }
+      if (off[0] != 0.0 || off[1] != 0.0) {
+        const auto d = place_offset_map(dice_map_.places[p].view_dir, {off[0], off[1]});
+        xy = {xy[0] + d[0], xy[1] + d[1]};
+        RCLCPP_INFO(get_logger(), "L%d #%d: 놓는 점 보정 앞 %+.1f · 왼쪽 %+.1f mm (%s) → (%.3f, %.3f)", p + 1, k, off[0], off[1], name.c_str(), xy[0], xy[1]);
+      }
     }
     out.header.frame_id = exec_->map_frame();
     out.pose.position.x = xy[0];
@@ -1237,7 +1273,7 @@ private:
       [place](const PlaceVerify & v) {return v.place == place;}), verify_places_.end());
     verify_places_.push_back(std::move(pv));
     const auto r = summarize(verify_places_);
-    if (r.complete) {write_verify_log(r);}
+    write_verify_log(r);   // 장소마다 씀 (세 곳 다 못 봐도 본 곳 ID · 위치가 남게, status PENDING)
     publish_verify(r);
     if (r.complete) {
       RCLCPP_INFO(get_logger(), "재검증 %s (중복 %zu · 누락 %zu)%s%s", r.pass ? "PASS" : "FAIL", r.duplicate_ids.size(),
@@ -1644,6 +1680,8 @@ private:
 
   // task
   std::size_t bar_i_ = 0;                    // 처리한 바코드 수 (바코드는 하나)
+  int read_tries_ = 0, read_retries_ = 6;    // 바코드 다시 읽은 횟수 · 최대
+  std::string pip_frame_ = "arena";          // 주사위 눈 방향 기준 (dice_pip_frame)
   std::optional<Task> pending_task_;         // 방금 읽은 task
   std::optional<Task> current_task_;         // 실행 중인 task
   std::optional<Task> queued_task_;          // 읽었지만 점멸 관측 뒤에 실행할 task

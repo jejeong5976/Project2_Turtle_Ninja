@@ -456,6 +456,69 @@ TEST(Transfer, RetrievesNearestSlotFirst)
   EXPECT_EQ(n, 12);
 }
 
+// 실물 채우는 순서 + 칸 제약 (planning.yaml): 다 실은 뒤 배달할 때 S12 가 찬 채 S7 · S5 가 찬 채 S10 · S2 가 찬 채 S1 을 안 뺌
+//   (같은 장소 안 순서 바꾸기 → 그래도 걸리면 막는 퍽을 빈 칸으로 옮김: RETRIEVE → STORE)
+TEST(Transfer, RetrieveKeepsRackRules)
+{
+  const auto all = q1_pucks();
+  Cargo cargo({"S12", "S7", "S9", "S4", "S3", "S8", "S11", "S6", "S10", "S5", "S1", "S2"});
+  cargo.set_rules({{"S1", "S2"}, {"S9", "S4"}, {"S10", "S5"}, {"S11", "S6"}, {"S12", "S7"}}, {{"S1", "S2"}, {"S7", "S12"}, {"S10", "S5"}});
+  for (const auto & p : all) {
+    const CargoItem it{p.id, kind_color(p.kind), kind_shape(p.kind), "", false};
+    ASSERT_TRUE(cargo.on_pick(it));
+    ASSERT_TRUE(cargo.on_store(*cargo.free_slot_for(it)));
+  }
+  SolverInput in = q1_input();
+  in.position = 5;
+  in.stopped = true;
+  ASSERT_TRUE(fill_carried(cargo, in));
+  std::string err;
+  const auto plan = plan_transfer(in, test_costs(), cargo, {{0, 0, 0}}, &err);
+  ASSERT_TRUE(plan.has_value()) << err;
+  std::set<std::string> full;
+  for (const auto & s : cargo.slots()) {full.insert(s.first);}
+  const std::map<std::string, std::string> needs = {{"S1", "S2"}, {"S7", "S12"}, {"S10", "S5"}};
+  int placed = 0;
+  for (const auto & s : plan->stops) {
+    for (const auto & a : s.actions) {
+      if (a.op == ArmOp::Store) {full.insert(a.slot);}
+      if (a.op == ArmOp::Place) {++placed;}
+      if (a.op != ArmOp::Retrieve) {continue;}
+      const auto it = needs.find(a.slot);
+      if (it != needs.end()) {EXPECT_EQ(full.count(it->second), 0u) << a.slot << " 를 " << it->second << " 가 찬 채 뺌";}
+      full.erase(a.slot);
+    }
+  }
+  EXPECT_EQ(placed, 12);
+  EXPECT_TRUE(full.empty());
+}
+
+// 한 장소에 놓을 두 종류: 먼저 꺼낼 종류의 칸이 제약에 걸리면 (S7 ← S12) 같은 장소의 다른 종류부터 꺼냄
+TEST(Transfer, SamePlaceRetrieveReorderedForRackRules)
+{
+  Cargo cargo({"S12", "S7"});
+  cargo.set_rules({}, {{"S7", "S12"}});
+  ASSERT_TRUE(cargo.on_pick(CargoItem{"a", "red", "cylinder", "", false}));
+  ASSERT_TRUE(cargo.on_store("S12"));
+  ASSERT_TRUE(cargo.on_pick(CargoItem{"b", "red", "box", "", false}));
+  ASSERT_TRUE(cargo.on_store("S7"));
+  SolverInput in;
+  in.place_group = {{'R', 'G', 'Y'}};
+  in.slots_left = {{2, 0, 0}};
+  in.cargo_capacity = 2;
+  ASSERT_TRUE(fill_carried(cargo, in));
+  std::string err;
+  const auto plan = plan_transfer(in, test_costs(), cargo, {{0, 0, 0}}, &err);
+  ASSERT_TRUE(plan.has_value()) << err;
+  std::vector<std::string> order;
+  for (const auto & st : plan->stops) {
+    for (const auto & a : st.actions) {
+      if (a.op == ArmOp::Retrieve) {order.push_back(a.slot);}
+    }
+  }
+  EXPECT_EQ(order, (std::vector<std::string>{"S12", "S7"}));
+}
+
 TEST(Transfer, PicksNearestFirstAtBox)
 {
   // 마지막 박스 B5 에 종류가 다른 퍽 2 개 → on_boxes 순서 (노드가 가까운 순으로 넣음) 대로만 집어야 함
@@ -1016,4 +1079,28 @@ TEST(PlaceBox, WaitStepAfterPlaceLook)
   EXPECT_EQ(place_of(st[1]), 2);
   EXPECT_TRUE(is_custom(st[2], kPlaceBox));
   EXPECT_EQ(place_of(st[2]), 2);
+}
+
+// 장소별 놓는 점 보정: 로봇 기준 [앞, 왼쪽] mm 를 그 장소 보는 방향으로 map 에 (정차 yaw 회전과 같음). 재검증 눈 점 (dice_cell_point) 은 안 건드림
+TEST(PlaceBox, PlaceOffsetFollowsViewDirection)
+{
+  DiceMap a;
+  ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
+  for (int p = 0; p < kNumPlaces; ++p) {
+    const double yaw = a.places[p].stop.yaw;
+    const auto d = place_offset_map(a.places[p].view_dir, {10.0, 5.0});
+    EXPECT_NEAR(d[0], 0.010 * std::cos(yaw) - 0.005 * std::sin(yaw), 1e-9) << "L" << p + 1;
+    EXPECT_NEAR(d[1], 0.010 * std::sin(yaw) + 0.005 * std::cos(yaw), 1e-9) << "L" << p + 1;
+    EXPECT_NEAR(std::hypot(d[0], d[1]), std::hypot(0.010, 0.005), 1e-12);
+  }
+  // L1: 경기장 +X 를 봄 = map −X (출발이 map 원점) → 앞 +10 = map x −0.010, 왼쪽 +5 = map y −0.005
+  const auto d1 = place_offset_map(a.places[0].view_dir, {10.0, 5.0});
+  EXPECT_NEAR(d1[0], -0.010, 1e-4);
+  EXPECT_NEAR(d1[1], -0.005, 1e-4);
+  const auto z = place_offset_map({0.0, 0.0}, {10.0, 5.0});   // 방향 없음 → 0
+  EXPECT_DOUBLE_EQ(z[0], 0.0);
+  EXPECT_DOUBLE_EQ(z[1], 0.0);
+  const auto z2 = place_offset_map(a.places[2].view_dir, {0.0, 0.0});
+  EXPECT_DOUBLE_EQ(z2[0], 0.0);
+  EXPECT_DOUBLE_EQ(z2[1], 0.0);
 }

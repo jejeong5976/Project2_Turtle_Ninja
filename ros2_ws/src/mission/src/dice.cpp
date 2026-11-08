@@ -174,9 +174,15 @@ std::vector<std::array<double, 2>> pips_view_to_map(
 
 void apply_view_directions(DicePlan & plan, const std::array<std::array<double, 2>, 3> & view_dir)
 {
-  for (size_t i = 0; i < plan.places.size(); ++i) {
+  apply_place_directions(plan, view_dir, view_dir);
+}
+
+void apply_place_directions(DicePlan & plan, const std::array<std::array<double, 2>, 3> & up,
+  const std::array<std::array<double, 2>, 3> & view_dir)
+{
+  for (size_t i = 0; i < plan.places.size() && i < up.size(); ++i) {
     auto & pl = plan.places[i];
-    pl.pip_offsets = pips_view_to_map(pl.pip_offsets, view_dir[i][0], view_dir[i][1]);
+    pl.pip_offsets = pips_view_to_map(pl.pip_offsets, up[i][0], up[i][1]);
     order_far_first(pl, -view_dir[i][0], -view_dir[i][1]);
   }
 }

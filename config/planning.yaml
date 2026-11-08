@@ -43,7 +43,7 @@ mission_manager:
     barcode_look: true                # READ_BARCODE = 이동 → 팔 LOOK_BARCODE (손목으로 바코드 정면) → 읽기 → 팔 HOME
     barcode_enable_service: /perception/barcode/enable   # READ_BARCODE 동안만 perception 바코드 판독 켬 (std_srvs/SetBool). "" 면 안 부름
     signal_wait_s: 90.0               # OBSERVE_SIGNAL 최대 대기 (넘으면 불완전으로 진행, 색 추정 안 함)
-    signal_retries: 2                 # 기록이 불완전 ('?' · 개수 · 끊김 · 횟수 규칙) 이면 비우고 다음 시퀀스를 다시 기록하는 횟수 (운영자가 3 s 소등 뒤 다시 틀어 줌). 0 = 바로 포기 · 복귀
+    signal_retries: 0                 # 기록이 불완전하면 비우고 다시 기록하는 횟수. 발제 p.6: 팀 오류로 신호를 다시 안 보여 줌 → 0 = 실제 기록을 signal.json 에 남기고 정지 · 복귀 (11-08, 전 2)
     signal_expected: 12               # 점멸 수
     signal_min_on_s: 0.3              # 이보다 짧은 켜짐은 깜빡임 (오검출)
     signal_min_off_s: 0.25            # 점멸 사이 소등으로 인정하는 최소 길이
@@ -87,11 +87,15 @@ mission_manager:
     nav_timeout_s: 60.0
     arm_timeout_s: 60.0
     read_timeout_s: 5.0               # 바코드 지점 도착 뒤 읽기 대기
+    read_retries: 6                   # 안 읽히면 같은 자리에서 다시 읽기 (5 s × 6). 한 번 실패로 미션 전체를 포기하지 않게 (11-08)
+    dice_pip_frame: arena             # 주사위 눈 방향: arena = 발제 p.4 지도 +Y 기준 세 곳 같은 방향 (11-08) · viewer = 보는 사람 기준 (11-07 까지)
 
     # ---- 재고 (적재함 · 그리퍼)
     # 채우는 순서 = 11-01 실물 적재 시험 순서 (칸마다 그때 찬 칸 조건 그대로 성공한 순서). dice 는 11 칸 이상 필요
     #   먼 칸부터(S1 →) 채우면 S10 을 넣을 때 S5 퍽에 손가락이 닿음 (pose_safety, 11-02). 빼기 제약은 config/rack_cells.yaml
     cargo_slots: [S12, S7, S9, S4, S3, S8, S11, S6, S10, S5, S1, S2]   # URDF rack_cell_S* 이름
+    rack_store_needs_empty: ["S1:S2", "S9:S4", "S10:S5", "S11:S6", "S12:S7"]   # 넣기 전에 비어야 할 칸 (config/rack_cells.yaml rack_constraints). 첫 빈 칸이 어기면 다음 빈 칸
+    rack_retrieve_needs_empty: ["S1:S2", "S7:S12", "S10:S5"]                # 빼기 전에 비어야 할 칸 (S7 ← S12 실제로 닿음 −13 mm). 같은 종류 중 지키는 칸 먼저
     # 적재함 칸 측정: STORE 앞에 LOOK_RACK (퍽 쥔 채 그 칸 관찰 자세, 칸마다 다름 = control 표)
     #   → perception /perception/rack/cells 의 그 칸 (base_link 칸 바닥 중심 + yaw) → STORE target
     #   LOOK_RACK 거절 (control 구현 전) · 측정 못 받음 → STORE target 빈 프레임 (= 녹화 경로 그대로)
@@ -106,6 +110,12 @@ mission_manager:
     box_min_samples: 3                # LOOK 뒤 이 개수 모이면 확정
     box_wait_s: 2.0                   # LOOK 뒤 측정 기다리는 최대 시간
     box_max_shift_m: 0.06             # 지도 중심에서 이보다 먼 측정은 버림
+    # 장소별 PLACE 놓는 점 보정 [앞, 왼쪽] mm — 정차점에서 장소를 보는 로봇 기준 (로봇은 늘 같은 정차점에서 장소를 봄). 놓는 목표에만 더함,
+    #   재검증 · 기록은 눈 점 그대로. 세 장소 공통 치우침은 control_master place_offset_x/y_mm (base_link) 로 (둘 다 더해짐)
+    #   실물에서 맞추기: 놓인 퍽이 눈 점보다 로봇 쪽으로 5 mm 면 앞 +5. 실행 중: ros2 param set /mission_manager place_offset_L1_mm "[5.0, 0.0]"
+    place_offset_L1_mm: [0.0, 0.0]
+    place_offset_L2_mm: [0.0, 0.0]
+    place_offset_L3_mm: [0.0, 0.0]
     cargo_file: ""                    # 재고 기록 파일 (빈 문자열 = 저장 안 함)
     cargo_restore: false              # 시작할 때 파일에서 복원 (노드 재시작 때만 true)
 
@@ -116,7 +126,9 @@ mission_manager:
     dock_action: dock_to_pose         # RL 정밀 접근 노드 액션 (NavigateToPose 형). "" = 정차점으로 Nav2 바로 (가짜 세계)
     dock_nav_back_m: 0.025            # Nav2 목표 = 정차점 뒤 이 거리 (박스 중심 0.2825 = 면 2 cm, nf 학습 구간 끝 · planner 가 경로 냄)
     dock_timeout_s: 40.0
-    dock_handoff_m: 0.40              # 정차점까지 이 거리 안에 들어오면 Nav2 취소 → 정밀 접근으로 넘김 (Nav2 목표가 더 멀어 감속 없이). 0 = Nav2 도착 뒤 넘김
+    dock_handoff_m: 0.40              # 정차점 뒤 이 거리 안 (+ 옆 · 방향 통로 안) 에 들어오면 Nav2 취소 → 정밀 접근으로 넘김 (Nav2 목표가 더 멀어 감속 없이). 0 = Nav2 도착 뒤 넘김
+    dock_handoff_lat_m: 0.15          # 넘김 통로 옆 [m] (팀장님 11-07 2 차: 박스 옆을 스치며 오면 안 넘김 → Nav2 가 정차점 뒤까지)
+    dock_handoff_yaw_deg: 60.0        # 넘김 통로 방향 [°]
     pick_fresh_s: 2.0                 # 이보다 오래 전에 본 위치로는 집지 않음
     puck_half_height_m: 0.03          # 퍽 높이 6 cm 의 절반 (PLACE 때 놓은 퍽 중심 = place_height + 이 값)
     grasp_offset_m: 0.015             # 그리퍼 중심 = 퍽 중심 + 쥘 끝 방향으로 이 값 (긴축 한쪽 끝 3 cm 구간을 쥠, 적재함 설계 기준)

@@ -387,6 +387,45 @@ TEST(Dice, ApplyViewDirectionsOrdersFarFromViewer)
   }
 }
 
+// 발제 p.4: 지도 +Y 기준 세 곳 같은 방향 (회전 대체 불가). 놓는 순서는 장소마다 보는 사람에서 먼 칸부터
+TEST(Dice, PlaceDirectionsSameOrientationEverywhere)
+{
+  const double p = 0.06;
+  for (const double ay : {0.0, -3.2446}) {   // map_from_arena yaw (arena5 맞춤 값 포함)
+    auto plan = mission::dice_layout(mission::SignalCounts{2, 4, 6}, mission::DiceOrder::Ascending);   // L1 2 · L2 4 · L3 6
+    ASSERT_TRUE(plan.has_value());
+    const std::array<double, 2> up{{-std::sin(ay), std::cos(ay)}}, rx{{std::cos(ay), std::sin(ay)}};
+    auto rot = [&](double x, double y) {return std::array<double, 2>{{x * rx[0] + y * up[0], x * rx[1] + y * up[1]}};};
+    // 보는 방향 (map): L1 서 → 동 · L2 북 → 남 · L3 남 → 북 (경기장 기준을 map 으로)
+    const std::array<std::array<double, 2>, 3> view{{rot(1, 0), rot(0, -1), rot(0, 1)}};
+    mission::apply_place_directions(*plan, {{up, up, up}}, view);
+    auto has = [&](const mission::DicePlace & pl, double x, double y) {
+        const auto q = rot(x, y);
+        for (const auto & o : pl.pip_offsets) {
+          if (std::hypot(o[0] - q[0], o[1] - q[1]) < 1e-9) {return true;}
+        }
+        return false;
+      };
+    for (const auto & pl : plan->places) {
+      if (pl.pips == 2) {   // 그림: 왼쪽 위 · 오른쪽 아래 (경기장 좌표, L1 이라도 안 돌림)
+        EXPECT_TRUE(has(pl, -p, p));
+        EXPECT_TRUE(has(pl, p, -p));
+      }
+      if (pl.pips == 6) {   // 두 열 = 경기장 x 로 나뉨
+        for (double y : {-p, 0.0, p}) {
+          EXPECT_TRUE(has(pl, -p, y));
+          EXPECT_TRUE(has(pl, p, y));
+        }
+      }
+    }
+    for (int i = 0; i < 3; ++i) {   // 첫 칸 = 보는 방향 투영 최대 (먼 칸)
+      const auto & o = plan->places[i].pip_offsets;
+      for (const auto & q : o) {
+        EXPECT_LE(q[0] * view[i][0] + q[1] * view[i][1], o[0][0] * view[i][0] + o[0][1] * view[i][1] + 1e-12);
+      }
+    }
+  }
+}
 
 // ============================================================================ dice_steps (바코드 읽기 · 복귀)
 TEST(DiceSteps, ReadStepsWithLook)
