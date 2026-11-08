@@ -54,7 +54,8 @@
 //   - 미션 판단으로 단계 목록을 바꿀 때는 arm_busy() 가 false 일 때만, 팔 결과 처리 전 교체 방지
 //   - 정밀 접근 (Step.dock, 박스 · 장소 정차 2026-11-06): 정차점이 박스 면 1 cm (0.2575 m) 라 Nav2 외곽 · collision_monitor 와 겹침
 //       → 1 단계 Nav2 목표 = 정차점 뒤 dock_nav_back_m (박스 면 2 cm = nf 학습 구간 끝과 같음, planner 가 경로 냄)
-//         정차점까지 dock_handoff_m 안에 들어오면 Nav2 취소 → 취소 결과 뒤 바로 2 단계 dock_action 으로 정차점 (서지 않고 넘김)
+//         정차점 뒤 통로 (뒤 dock_handoff_m · 옆 dock_handoff_lat_m · 방향 dock_handoff_yaw_deg) 안에 들어오면 Nav2 취소
+//         → 취소 결과 뒤 바로 2 단계 dock_action 으로 정차점 (서지 않고 넘김, 11-08: 반지름만 보던 것을 팀장님 통로로)
 //         Nav2 목표가 넘김 자리보다 멀어서 MPPI · nf 가 넘김 전에 감속 안 함. 넘김이 안 걸리면 Nav2 도착 뒤 2 단계
 //       두 단계가 한 이동 단계 (재시도 = 1 단계부터)
 //       dock_action "" 이면 정차점으로 Nav2 바로 (가짜 세계 · 옛 흐름). 접근 노드가 collision_monitor 영역을 끄고 켬
@@ -319,6 +320,7 @@ private:
   double action_retry_s_, action_retry_max_s_, server_wait_s_, nav_timeout_s_, arm_timeout_s_, drive_wait_s_;
   std::string dock_action_;                  // "" = 정밀 접근 안 씀
   double dock_nav_back_m_ = 0.025, dock_timeout_s_ = 40.0, dock_handoff_m_ = 0.40;
+  double dock_handoff_lat_m_ = 0.15, dock_handoff_yaw_deg_ = 60.0;   // 넘김 통로 옆 · 방향 (팀장님 11-07)
   bool nav_docking_ = false;                 // 지금 이동 단계가 2 단계 (정밀 접근) 중
   bool nav_handoff_ = false;                 // 1 단계 끝 (도착 또는 넘김 취소) → 2 단계 보낼 차례
   double puck_standoff_m_, pick_fresh_s_, puck_half_height_m_, grasp_offset_m_;

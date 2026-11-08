@@ -280,6 +280,45 @@ TEST(Cargo, RejectsInconsistentTransitions)
   EXPECT_FALSE(err.empty());
 }
 
+// 칸 제약: 넣기는 제약을 지키는 첫 빈 칸 (없으면 첫 빈 칸), 빼기 가능 여부
+TEST(Cargo, SlotRulesPickStoreAndRetrieveOrder)
+{
+  Cargo c({"S12", "S7", "S9"});
+  c.set_rules({{"S12", "S7"}}, {{"S7", "S12"}});
+  auto put = [&](const std::string & id, const std::string & slot) {
+      ASSERT_TRUE(c.on_pick(CargoItem{id, "red", "circle", "", false}));
+      ASSERT_TRUE(c.on_store(slot));
+    };
+  EXPECT_EQ(c.free_slot().value(), "S12");   // S7 비어 있음 → S12 그대로
+  put("1", "S12");
+  put("2", "S7");
+  EXPECT_FALSE(c.retrieve_ok("S7"));          // S12 가 참
+  EXPECT_TRUE(c.retrieve_ok("S12"));
+  ASSERT_TRUE(c.on_retrieve("S12"));
+  ASSERT_TRUE(c.on_place().has_value());
+  EXPECT_TRUE(c.retrieve_ok("S7"));
+  // S12 가 비었지만 S7 이 참 → 넣기는 S9 먼저
+  EXPECT_EQ(c.free_slot().value(), "S9");
+  put("3", "S9");
+  EXPECT_EQ(c.free_slot().value(), "S12");   // 지키는 칸이 없으면 첫 빈 칸 (막지 않음)
+}
+
+// 빼기 짝 칸 (S7 · S12): 짝에 다른 색 퍽이 있으면 그 칸은 미루고, 같은 종류 퍽이 오면 그 칸. 막는 칸 알려 줌
+TEST(Cargo, FreeSlotForKeepsPairsSameKind)
+{
+  Cargo c({"S12", "S7", "S9"});
+  c.set_rules({}, {{"S7", "S12"}});
+  const CargoItem red{"1", "red", "cylinder", "", false}, green{"2", "green", "box", "", false}, red2{"3", "red", "cylinder", "", false};
+  ASSERT_TRUE(c.on_pick(red));
+  ASSERT_TRUE(c.on_store(*c.free_slot_for(red)));     // S12
+  EXPECT_EQ(c.free_slot_for(green).value(), "S9");     // S7 짝 (S12) 이 빨강 → 미룸
+  EXPECT_EQ(c.free_slot_for(red2).value(), "S7");
+  ASSERT_TRUE(c.on_pick(red2));
+  ASSERT_TRUE(c.on_store("S7"));
+  EXPECT_EQ(c.retrieve_blocker("S7").value(), "S12");
+  EXPECT_FALSE(c.retrieve_blocker("S12").has_value());
+}
+
 TEST(Cargo, SaveLoadRoundTrip)
 {
   namespace fs = std::filesystem;

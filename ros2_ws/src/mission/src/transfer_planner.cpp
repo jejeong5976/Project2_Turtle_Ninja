@@ -190,7 +190,37 @@ std::optional<TransferPlan> plan_transfer(
       cur_open = false;
     };
 
-  for (const auto & st : sol->steps) {
+  // 꺼낼 칸: 그 종류가 든 칸 중 뒤에서부터 (나중에 넣은 칸 먼저), 칸 제약 (S7 ← S12 등) 을 지키는 칸 먼저. ok = 지키는 칸
+  auto retrieve_slot = [&](PuckKind kind, bool & ok) {
+      std::optional<std::string> any;
+      const auto & slots = sim.slots();
+      for (auto s = slots.rbegin(); s != slots.rend(); ++s) {
+        if (!s->second || puck_kind(s->second->color, s->second->shape) != kind) {continue;}
+        if (!any) {any = s->first;}
+        if (sim.retrieve_ok(s->first)) {ok = true; return std::optional<std::string>(s->first);}
+      }
+      ok = false;
+      return any;
+    };
+  std::vector<SolverStep> steps = sol->steps;
+  for (std::size_t si = 0; si < steps.size(); ++si) {
+    // 같은 장소에서 꺼내기 · 놓기가 이어지면 (한 장소 = 한 색 묶음, 순서 무관) 칸 제약을 지키는 종류부터 (11-08: S1 ← S2 · S10 ← S5)
+    if (steps[si].act == SolverAct::Retrieve && si + 1 < steps.size() && steps[si + 1].act == SolverAct::Place) {
+      bool ok = false;
+      retrieve_slot(steps[si].kind, ok);
+      for (std::size_t sj = si + 2; !ok && sj + 1 < steps.size() && steps[sj].act == SolverAct::Retrieve && steps[sj].node == steps[si].node &&
+        steps[sj + 1].act == SolverAct::Place && steps[sj + 1].place == steps[si + 1].place; sj += 2)
+      {
+        bool ok2 = false;
+        retrieve_slot(steps[sj].kind, ok2);
+        if (ok2) {
+          std::swap(steps[si], steps[sj]);
+          std::swap(steps[si + 1], steps[sj + 1]);
+          ok = true;
+        }
+      }
+    }
+    const SolverStep & st = steps[si];
     switch (st.act) {
       case SolverAct::Move: {
           close();
@@ -221,8 +251,9 @@ std::optional<TransferPlan> plan_transfer(
           break;
         }
       case SolverAct::Store: {
-          const auto slot = sim.free_slot();
-          if (!slot || !sim.gripper()) {set_error(error, "펼치기 오류: 넣을 칸 · 퍽 없음"); return std::nullopt;}
+          if (!sim.gripper()) {set_error(error, "펼치기 오류: 넣을 칸 · 퍽 없음"); return std::nullopt;}
+          const auto slot = sim.free_slot_for(*sim.gripper());
+          if (!slot) {set_error(error, "펼치기 오류: 넣을 칸 · 퍽 없음"); return std::nullopt;}
           ArmAction a = action_of(ArmOp::Store, *sim.gripper());
           a.slot = *slot;
           if (!sim.on_store(*slot, error)) {return std::nullopt;}
@@ -230,13 +261,36 @@ std::optional<TransferPlan> plan_transfer(
           break;
         }
       case SolverAct::Retrieve: {
-          // 칸 목록은 팔에서 먼 칸부터 (채우는 순서) → 꺼낼 때는 뒤에서부터 = 가까운 칸 먼저
-          std::optional<std::string> slot;
-          const auto & slots = sim.slots();
-          for (auto s = slots.rbegin(); s != slots.rend(); ++s) {
-            if (s->second && puck_kind(s->second->color, s->second->shape) == st.kind) {slot = s->first; break;}
-          }
+          // 지키는 칸이 없으면 뒤에서 첫 칸 (막지 않음, 11-08 전에는 제약을 안 봐서 S12 가 찬 채 S7 을 뺌)
+          bool ok = false;
+          const auto slot = retrieve_slot(st.kind, ok);
           if (!slot) {set_error(error, "펼치기 오류: 꺼낼 종류가 칸에 없음"); return std::nullopt;}
+          // 그래도 제약에 걸리면 (막는 칸 퍽이 다른 장소로 감) 막는 퍽을 빈 칸으로 옮긴 뒤 뺌: RETRIEVE 막는 칸 → STORE 빈 칸
+          //   (RETRIEVE 끝 = STORE 시작 = 박스 위 기준점). 빈 칸이 없으면 그대로 (막지 않음). 11-08
+          for (int guard = 0; !ok && guard < 3; ++guard) {
+            const auto blk = sim.retrieve_blocker(*slot);
+            if (!blk) {break;}
+            const auto& slots = sim.slots();
+            std::optional<CargoItem> moved;
+            for (const auto & s : slots) {
+              if (s.first == *blk && s.second) {moved = s.second;}
+            }
+            if (!moved || !sim.retrieve_ok(*blk)) {break;}
+            Cargo trial = sim;
+            if (!trial.on_retrieve(*blk)) {break;}
+            const auto to = trial.free_slot_for(*moved);
+            if (!to || *to == *blk || !trial.store_ok(*to)) {break;}
+            if (!sim.on_retrieve(*blk, error)) {return std::nullopt;}
+            ArmAction r = action_of(ArmOp::Retrieve, *moved);
+            r.slot = *blk;
+            cur.actions.push_back(r);
+            if (!sim.on_store(*to, error)) {return std::nullopt;}
+            ArmAction w = action_of(ArmOp::Store, *moved);
+            w.slot = *to;
+            cur.actions.push_back(w);
+            plan.cost_s += costs.retrieve_s + costs.store_s;
+            ok = sim.retrieve_ok(*slot);
+          }
           if (!sim.on_retrieve(*slot, error)) {return std::nullopt;}
           ArmAction a = action_of(ArmOp::Retrieve, *sim.gripper());
           a.slot = *slot;
@@ -266,7 +320,7 @@ std::vector<ArmAction> collect_box_actions(
   Cargo sim = cargo;
   for (const auto & p : at_box) {
     if (sim.gripper()) {
-      const auto slot = sim.free_slot();
+      const auto slot = sim.free_slot_for(*sim.gripper());
       if (!slot) {set_error(error, "적재함 빈 칸 없음"); return {};}
       ArmAction s = action_of(ArmOp::Store, *sim.gripper());
       s.slot = *slot;
@@ -279,7 +333,7 @@ std::vector<ArmAction> collect_box_actions(
     a.box = p.box;
     out.push_back(a);
     // 바로 넣음 (퍽 쥔 채 주행 안 함 → 박스를 떠날 때 그리퍼가 비어 있어야 함)
-    const auto slot = sim.free_slot();
+    const auto slot = sim.free_slot_for(it);
     if (!slot) {set_error(error, "적재함 빈 칸 없음"); return {};}
     ArmAction s = action_of(ArmOp::Store, it);
     s.slot = *slot;

@@ -5,6 +5,7 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <algorithm>
 #include <fstream>
 
 namespace planning
@@ -77,9 +78,67 @@ std::optional<CargoItem> * Cargo::find_slot(const std::string & slot)
 std::optional<std::string> Cargo::free_slot() const
 {
   for (const auto & s : slots_) {
+    if (!s.second && store_ok(s.first)) {return s.first;}
+  }
+  for (const auto & s : slots_) {   // 제약을 지키는 빈 칸이 없음 → 첫 빈 칸 (막지 않음, 팔 쪽 경로 검사가 알림)
     if (!s.second) {return s.first;}
   }
   return std::nullopt;
+}
+
+std::optional<std::string> Cargo::free_slot_for(const CargoItem & item) const
+{
+  auto content = [&](const std::string & name) -> const std::optional<CargoItem> * {
+      for (const auto & s : slots_) {
+        if (s.first == name) {return &s.second;}
+      }
+      return nullptr;
+    };
+  // 짝 점수: 2 = 짝이 비었거나 같은 종류 (색 · 모양), 1 = 같은 색, 0 = 다른 색
+  std::optional<std::string> best;
+  int best_score = -1;
+  for (const auto & s : slots_) {
+    if (s.second || !store_ok(s.first)) {continue;}
+    int score = 2;
+    for (const auto & [a, b] : retrieve_rules_) {
+      const std::string partner = s.first == a ? b : (s.first == b ? a : "");
+      if (partner.empty()) {continue;}
+      const auto * c = content(partner);
+      if (!c || !*c) {continue;}
+      score = std::min(score, (*c)->color != item.color ? 0 : ((*c)->shape != item.shape ? 1 : 2));
+    }
+    if (score == 2) {return s.first;}
+    if (score > best_score) {best = s.first; best_score = score;}
+  }
+  return best ? best : free_slot();
+}
+
+std::optional<std::string> Cargo::retrieve_blocker(const std::string & slot) const
+{
+  for (const auto & [cell, must_empty] : retrieve_rules_) {
+    if (cell != slot) {continue;}
+    for (const auto & s : slots_) {
+      if (s.first == must_empty && s.second) {return must_empty;}
+    }
+  }
+  return std::nullopt;
+}
+
+void Cargo::set_rules(SlotRules store_needs_empty, SlotRules retrieve_needs_empty)
+{
+  store_rules_ = std::move(store_needs_empty);
+  retrieve_rules_ = std::move(retrieve_needs_empty);
+}
+
+bool Cargo::rule_ok(const SlotRules & rules, const std::string & slot) const
+{
+  for (const auto & [cell, must_empty] : rules) {
+    if (cell != slot) {continue;}
+    for (const auto & s : slots_) {
+      if (s.first == must_empty && s.second) {return false;}
+    }
+  }
+  return true;
 }
 
 std::size_t Cargo::stored_count() const
