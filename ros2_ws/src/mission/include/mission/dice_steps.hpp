@@ -64,4 +64,8 @@ std::optional<std::array<double, 2>> dice_cell_point(
 // 보는 방향 3 개 (apply_view_directions 입력)
 std::array<std::array<double, 2>, 3> place_view_dirs(const DiceMap & arena);
 
+// 장소 PLACE 보정 [앞, 왼쪽] mm (정차점에서 장소를 보는 로봇 기준, planning place_offset_L*_mm) → map 이동 [m]
+//   앞 = view_dir, 왼쪽 = 그 90° 왼쪽. 놓는 점에만 더함 (재검증 · 기록은 눈 점 그대로)
+std::array<double, 2> place_offset_map(const std::array<double, 2> & view_dir, const std::array<double, 2> & fwd_left_mm);
+
 }  // namespace mission

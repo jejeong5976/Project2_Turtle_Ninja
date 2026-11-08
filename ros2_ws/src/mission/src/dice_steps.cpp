@@ -205,4 +205,13 @@ std::array<std::array<double, 2>, 3> place_view_dirs(const DiceMap & arena)
   return {arena.places[0].view_dir, arena.places[1].view_dir, arena.places[2].view_dir};
 }
 
+std::array<double, 2> place_offset_map(const std::array<double, 2> & view_dir, const std::array<double, 2> & fwd_left_mm)
+{
+  const double n = std::hypot(view_dir[0], view_dir[1]);
+  if (!(n > 1e-9)) {return {0.0, 0.0};}
+  const double fx = view_dir[0] / n, fy = view_dir[1] / n;   // 앞, 왼쪽 = (−fy, fx)
+  const double f = fwd_left_mm[0] / 1000.0, l = fwd_left_mm[1] / 1000.0;
+  return {f * fx - l * fy, f * fy + l * fx};
+}
+
 }  // namespace mission
