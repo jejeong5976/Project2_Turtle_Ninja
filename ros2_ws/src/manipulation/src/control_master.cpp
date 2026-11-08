@@ -181,6 +181,8 @@ public:
     place_clear_mm_ = declare_parameter<double>("place_bottom_clear_mm", 2.0);      // 놓을 때 퍽 바닥 ↔ 놓을 면
     retrieve_depth_mm_ = declare_parameter<double>("retrieve_grip_depth_mm", 25.0); // 칸에서 꺼낸 퍽을 쥔 깊이 (11-01 실물 빼기 때 쓴 깊이, unload_cell.py)
     tilted_depth_mm_ = declare_parameter<double>("pick_tilted_depth_mm", 30.0);     // 손을 10° 넘게 기울인 PICK 의 쥐는 깊이 (퍽 무게중심)
+    // 선 퍽 PICK: 손목 인지가 낸 윗면을 이만큼 높게 봄 [mm] → 쥐는 손끝이 그만큼 얕아짐. pick_heights_mm (= STORE 칸 높이 맞춤 기준) 은 그대로
+    declare_parameter<double>("pick_top_bias_mm", 0.0);
     surface_z_ = declare_parameter<double>("puck_surface_z", 0.037);
     puck_h_ = declare_parameter<double>("puck_height", 0.060);
     // 누운 네모 퍽: 높이 = 한 변 (34.8 mm). 수직 손 · 닫힘축 = 긴축에 수직 (손가락이 긴 옆면 두 개를 쥠), 윗면 위 40 · 10 · 쥐기 −20
@@ -1643,6 +1645,17 @@ private:
     double x, y, top, yaw;
     bool lying = false;
     if (!target_in_model(goal, false, x, y, top, yaw, lying, why)) {return {};}
+    // 선 퍽 윗면 높이 보정 (pick_top_bias_mm). 11-08 저녁 실물: 명령 −50 (예전엔 인지가 윗면을 약 1 cm 높게 봐 실제 40) 이 실제로
+    //   너무 깊게 쥠 → 윗면을 10 mm 높게 봐 예전과 같은 실제 깊이로. 쥔 깊이 기록 (pending_depth_) 은 명령값 그대로라
+    //   STORE 칸 높이 맞춤 (store_match_grip_depth: 박스 PICK 50 − 받침 다시 쥐기 30 = +20) 이 바뀌지 않음. 누운 퍽은 안 건드림
+    if (!lying) {
+      const double bias = get_parameter("pick_top_bias_mm").as_double();
+      if (!std::isfinite(bias) || std::fabs(bias) > 30.0) {why = "pick_top_bias_mm 이 숫자가 아니거나 30 mm 넘음"; return {};}
+      if (bias != 0.0) {
+        top += bias / 1000.0;
+        RCLCPP_INFO(get_logger(), "PICK: 선 퍽 윗면을 %+.0f mm 높게 봄 (pick_top_bias_mm) → 쥐는 손끝도 그만큼 얕게", bias);
+      }
+    }
     std::vector<std::pair<double, std::string>> cands;
     std::string open_kw;
     const double zc = top - model_.team_base_z_floor + model_.base_z_floor - (lying ? lying_h_ : puck_h_) / 2.0;   // 퍽 중심 (base_link)
