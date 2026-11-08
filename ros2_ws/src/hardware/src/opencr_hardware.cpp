@@ -297,10 +297,6 @@ CallbackReturn OpenCRHardware::on_configure(const rclcpp_lifecycle::State &)
     return CallbackReturn::ERROR;
   }
   publish_states();
-  {
-    const std::string tn = link_->take_turn_note();
-    if (!tn.empty()) {RCLCPP_WARN(get_logger(), "여러 바퀴 관절 바로잡음 — %s", tn.c_str());}
-  }
   RCLCPP_INFO(get_logger(), "OpenCR 준비 끝 (IMU %s)",
     (link_->state().status & ntp::ST_IMU_OK) ? "정상" : "없음 — odom 회전은 바퀴 계산으로");
   // 모터 EEPROM 위치 한계 (새 펌웨어가 CONFIG 바로 뒤 보냄) — 켤 때 찍고, 지금 위치가 밖이면 토크를 켜기 전에 알림
@@ -381,10 +377,6 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
   if (link_->poll() < 0) {
     RCLCPP_ERROR(get_logger(), "시리얼 포트 고장 (USB 가 빠졌나?)");
     return return_type::ERROR;
-  }
-  {   // 여러 바퀴 모드 (J1 · 그리퍼) 를 켤 때 바로잡았으면 한 번 알림 (11-08: 안 바로잡으면 J1 이 −6.26 rad 로 읽혀 팔 컨트롤러가 꺼짐)
-    const std::string tn = link_->take_turn_note();
-    if (!tn.empty()) {RCLCPP_WARN(get_logger(), "여러 바퀴 관절 바로잡음 — %s", tn.c_str());}
   }
   const double age = link_->seconds_since_state();
   if (age > state_timeout_s_) {
