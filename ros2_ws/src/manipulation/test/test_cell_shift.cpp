@@ -126,8 +126,8 @@ TEST(CellShift, RejectsNonFinite)
   EXPECT_FALSE(manipulation::shift_cell_path(m, p, true, kCellS9, Eigen::Vector2d(std::nan(""), 0.0), rep, why));
 }
 
-// 칸 경로를 옮긴 점은 관절 범위를 15 틱까지 넘어도 됨 (store_S10 J4: 원래 2431 · 범위 2430)
-TEST(CellShift, ShiftedPointMayPassJointRangeBy15Ticks)
+// 칸 경로를 옮긴 점은 관절 범위를 넘어도 됨: 보통 15 틱, J4 위쪽은 40 틱 (2470 = 실물 재생 j4_hi, 멈춤 ~2485)
+TEST(CellShift, ShiftedPointMayPassJ4RangeBy40Ticks)
 {
   const auto m = kin_data::model();
   const ArmPath p0 = store_path();
@@ -143,11 +143,34 @@ TEST(CellShift, ShiftedPointMayPassJointRangeBy15Ticks)
   }
   ASSERT_GT(top, -1e9);
   auto tight = m;
-  tight.tick_range[3][1] = top - 10.0;   // 10 틱 넘음 → 됨
+  tight.tick_range[3][1] = top - 35.0;   // 35 틱 넘음 → 됨
   ArmPath q = p0;
   EXPECT_TRUE(manipulation::shift_cell_path(tight, q, true, kCellS9, d, rep, why)) << why;
-  tight.tick_range[3][1] = top - 20.0;   // 20 틱 넘음 → 거절
+  tight.tick_range[3][1] = top - 45.0;   // 45 틱 넘음 → 거절
   q = p0;
   EXPECT_FALSE(manipulation::shift_cell_path(tight, q, true, kCellS9, d, rep, why));
   EXPECT_NE(why.find("관절 4 범위 밖"), std::string::npos) << why;
+}
+
+// 놓는 점이 둘째 점에서 12 점보다 가까워도 (store_look_S1: 9 점째) 놓는 점은 다 옮김
+TEST(CellShift, ReleaseNearTheStartGetsTheFullShift)
+{
+  const auto m = kin_data::model();
+  ArmPath p{"store_look_S9", {}, true};
+  p.nodes.push_back(node("rack_look", kLift));
+  for (int i = 1; i < 10; ++i) {p.nodes.push_back(node("r" + std::to_string(i), lerp(kLift, kInCell, i / 10.0)));}
+  p.nodes.push_back(node("in_cell", kInCell, false, "release"));
+  for (int i = 1; i < 30; ++i) {p.nodes.push_back(node("b" + std::to_string(i), lerp(kInCell, kP0, i / 30.0)));}
+  p.nodes.push_back(node("P0_복귀", kP0, true));
+  const ArmPath before = p;
+  manipulation::CellShiftReport rep;
+  std::string why;
+  ASSERT_TRUE(manipulation::shift_cell_path(m, p, true, kCellS9, Eigen::Vector2d(0.003, -0.002), rep, why, -0.004)) << why;
+  const size_t k = 10;
+  ASSERT_EQ(p.nodes[k].grip, "release");
+  const Eigen::Vector3d moved = (tip(m, p.nodes[k].q) - tip(m, before.nodes[k].q)) * 1000.0;
+  EXPECT_NEAR(moved.x(), 3.0, 0.2);
+  EXPECT_NEAR(moved.y(), -2.0, 0.2);
+  EXPECT_NEAR(moved.z(), -4.0, 0.2);
+  for (int j = 0; j < 5; ++j) {EXPECT_DOUBLE_EQ(p.nodes[0].q[j], before.nodes[0].q[j]);}
 }

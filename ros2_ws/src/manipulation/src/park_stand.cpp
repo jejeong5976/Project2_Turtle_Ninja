@@ -310,7 +310,14 @@ bool park_nodes(
       if (ok) {elev_used = elev; break;}
     }
   }
-  if (!ok) {return false;}
+  if (!ok) {
+    if (why.empty()) {   // 어느 넣는 각에서도 손 기울임 · 닫힘 부호 후보가 없어 add 가 한 번도 안 불림
+      char buf[160];
+      std::snprintf(buf, sizeof(buf), "받침에 넣는 각 %.0f~%.0f° 에서 쥔 퍽 긴축을 맞출 손 기울임이 없음", c.elev_deg, c.min_elev_deg);
+      why = buf;
+    }
+    return false;
+  }
   if (!c.press_mode) {
     // 밀기: 받침 바깥에서 바닥 위 push_h 로 안쪽으로, 선 퍽 바깥 면 + 4 mm + 손가락 반두께 앞에서 멈춤
     const double x_stop = -c.inner_half + c.side + 0.004 + 0.006 - c.push_extra;

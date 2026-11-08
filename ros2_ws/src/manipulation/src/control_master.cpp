@@ -57,6 +57,9 @@
 //   - PICK 이 끝나 박스 위 기준점에 있을 때 손목 카메라 가까이 보이는 퍽 태그 (손목 좌표) 를 모아 중앙값
 //   - ~/save_held_reference (std_srvs/Trigger): STORE 가 잘 들어간 PICK 의 값을 기준으로 저장 (~/.ros/held_reference.txt)
 //   - STORE 때 기준과 차이를 로그로 남기고, held_correct 가 true 면 그 차이를 놓는 자세의 손 방향으로 돌려 칸 근처 경로를 옮김
+//   - PLACE 는 place_held_correct 가 true 일 때만 같은 보정 (바로 놓기만)
+//
+// PLACE 놓는 점 보정: place_offset_x/y_mm (base_link, 모든 PLACE) + planning 의 장소별 place_offset_L*_mm (목표에 이미 더해져 옴)
 
 #include <algorithm>
 #include <array>
@@ -234,6 +237,10 @@ public:
     //   실물 기록 재생 경로는 놓는 점이 칸보다 팔 J1 축 반대쪽으로 7 ~ 13 mm 나가 있음 (실물: S7 +13 · S12 +5 mm 에서 들어감 = 이 계산과 2 mm 안)
     declare_parameter<bool>("store_to_cell", false);
     declare_parameter<double>("store_offset_y_mm", 0.0);
+    // PLACE 놓는 점 보정 [mm, base_link, x+ = 앞 · y+ = 왼쪽] — 모든 PLACE 목표에 더함 (먼 자리 다시 쥐기의 마지막 놓기도). 장소별은 planning place_offset_L*_mm
+    //   실행 중 바로 바꿈: ros2 param set /control_master place_offset_x_mm -5.0 (다음 PLACE 부터)
+    declare_parameter<double>("place_offset_x_mm", 0.0);
+    declare_parameter<double>("place_offset_y_mm", 0.0);
     tf_buf_ = std::make_unique<tf2_ros::Buffer>(get_clock());
     tf_listen_ = std::make_unique<tf2_ros::TransformListener>(*tf_buf_);
     // 손목 카메라가 손목에서 돈 만큼 (camera_drift_node, 홈 사진) — 손목 검출을 카메라 좌표에서 되돌린 뒤 TF 로 바꿈
@@ -334,6 +341,7 @@ public:
     declare_parameter<double>("park_press_r_mm", -16.0);        // 꽂는 손끝 자리 = 받침 중심에서 반지름 방향 (− = 뒤 · J1 쪽, 뒤 벽 안쪽 면 −23.5)
     declare_parameter<double>("park_press_top_mm", 66.0);       // 올리는 · 넘어가는 손끝 높이 = 바닥 위 (수직 손이 닿는 끝 66)
     declare_parameter<double>("park_press_h_mm", 10.0);         // 꽂는 가장 낮은 손끝 높이 = 바닥 위
+    declare_parameter<double>("park_press_speed_dps", 0.0);     // 꽂아 내리기 (park_press1–4 · up) 속도, 0 = park_speed_dps (11-07 실물에서 이 속도로 섬)
     declare_parameter<double>("park_release_up_mm", 0.0);        // 넣는 끝점을 손등 (손목 카메라) 쪽으로 이만큼 (넣으면서 같이, 손 축에 수직)
     declare_parameter<int>("park_release_pull_steps", 3);       // 당기는 점 수
     declare_parameter<double>("park_speed_dps", 20.0);          // 받침에서 넣기 · 다시 쥐기 속도
@@ -342,6 +350,8 @@ public:
     declare_parameter<std::vector<double>>("look_rack_bias_mm", {0.0, 0.0});   // LOOK_RACK 칸 측정의 카메라 치우침 [x, y] mm (제자리 적재함에서 잰 값 − 칸 표)
     declare_parameter<bool>("pick_end_at_staging", false);       // PICK 끝에 박스 위 기준점으로 (false = 집은 자리에서 끝, STORE · PLACE 가 이어 감)
     declare_parameter<bool>("place_far_regrasp", true);         // 먼 자리 PLACE: 가까운 빈 자리에 내려놓고 손을 기울여 다시 쥔 뒤 놓기 (place_far_plan)
+    // 먼 자리 다시 쥐기의 열기 (far_re_above) 를 팔을 멈추지 않고 (내려놓은 뒤 빈손, PICK 퍽 위로 가며 열기와 같음) — 한 번에 약 1.1 s. 실물 확인 전이라 끔
+    declare_parameter<bool>("place_far_open_on_way", false);
     declare_parameter<double>("park_max_tilt_deg", 30.0);       // 먼 누운 퍽: 쥘 때 손을 10° 씩 이만큼까지 기울여 봄 (0 = 수직 손만)
     declare_parameter<double>("park_max_roll_deg", 12.0);       // 기울인 손에 퍽이 굴러 맞는 각 최대 (시뮬: 20° 는 들다 놓침)
     declare_parameter<double>("park_roll_margin_mm", 2.5);      // 기울인 손에 퍽이 굴러 맞을 때 들어가는 열린 손가락 ↔ 퍽 최소 여유
@@ -369,6 +379,8 @@ public:
     declare_parameter<std::string>("held_reference_file", "~/.ros/held_reference.txt");
     // 손 안 위치로 STORE 경로 옮기기 (false = 재서 로그만). 실행 중: ros2 param set /control_master held_correct true
     declare_parameter<bool>("held_correct", false);
+    // 같은 보정을 PLACE 놓는 점에도 (바로 놓기만, 다시 쥐는 먼 자리는 안 함 — 다시 쥐면 손 안 위치가 바뀜). 실행 중: ros2 param set /control_master place_held_correct true
+    declare_parameter<bool>("place_held_correct", false);
     held_max_mm_ = declare_parameter<double>("held_max_mm", 8.0);   // 기준과 이보다 다르면 잘못 잰 것으로 보고 안 옮김
     load_held_reference();
     sub_held_ = create_subscription<interfaces::msg::DetectionArray>(
@@ -1262,24 +1274,38 @@ private:
     if (!model_ok_) {why = "팔 모델 없음 → 칸 경로를 못 옮김"; return false;}
     CellShiftReport rep;
     std::string err;
-    // 다 옮기면 관절 범위 밖이면 (11-06 mock: S11 넣는 점 맞추기 10.7 mm → J4 범위 밖) 75 · 50 · 25 % 로 줄여 되는 만큼만, 그래도 안 되면 기록 그대로
+    // 다 옮기면 관절 범위 밖이면 (11-06 mock: S11 넣는 점 맞추기 10.7 mm → J4 범위 밖) 줄여 되는 만큼만, 그래도 안 되면 기록 그대로
     //   (기록 경로는 실물에서 들어간 경로 — 거절하지 않음)
-    double used = 0.0;
-    for (double sc : {1.0, 0.75, 0.5, 0.25}) {
+    //   11-08: 수평 · 높이를 따로 줄임 — 수평은 다 두고 높이부터 100 → 5 % (5 % 씩) · 0, 그래도 안 되면 높이 0 에 수평 0.75 · 0.5 · 0.25
+    //   (11-07 실물: 세운 퍽 +20 mm 가 수평까지 같이 줄여 S4 · S5 · S6 · S8 · S10 · S11 칸 보정이 통째로 빠짐)
+    double used = 0.0, used_z = 0.0;
+    std::vector<std::pair<double, double>> tries;
+    const bool has_z = std::fabs(dz) > 1e-6, has_xy = d.norm() > 1e-6;
+    if (has_z) {   // 높이는 5 % 씩 (11-08: 25 % 씩이면 세운 퍽 높이가 S8 · S11 등에서 0 으로 떨어짐)
+      for (int q = 20; q >= 1; --q) {tries.emplace_back(1.0, q / 20.0);}
+    }
+    if (has_xy) {
+      for (double sc : {1.0, 0.75, 0.5, 0.25}) {tries.emplace_back(sc, 0.0);}   // 높이 0 (has_z 가 없으면 첫 1.0 이 그대로 다 옮김)
+    }
+    for (const auto & [sc, sz] : tries) {
       ArmPath p2 = path;
       std::string e2;
-      if (shift_cell_path(model_, p2, store, rack_xy_[i], d * sc, rep, e2, dz * sc)) {path = p2; used = sc; break;}
+      if (shift_cell_path(model_, p2, store, rack_xy_[i], d * sc, rep, e2, dz * sz)) {path = p2; used = sc; used_z = sz; break;}
       if (err.empty()) {err = e2;}
     }
     if (used == 0.0) {
-      RCLCPP_WARN(get_logger(), "%s: 칸 근처를 (%+.1f, %+.1f) mm 옮기면 관절 범위 밖 (%s) → 25 %% 도 안 됨, 기록 경로 그대로", name.c_str(),
-        d.x() * 1000.0, d.y() * 1000.0, err.c_str());
+      RCLCPP_WARN(get_logger(), "%s: 칸 근처를 (%+.1f, %+.1f) mm · 높이 %+.1f mm 옮기면 관절 범위 밖 (%s) → 줄여도 안 됨, 기록 경로 그대로",
+        name.c_str(), d.x() * 1000.0, d.y() * 1000.0, dz * 1000.0, err.c_str());
       return true;
     }
     const Eigen::Vector2d du = d * used;
+    std::string cut;
+    if (used < 1.0 || (used_z < 1.0 && has_z)) {
+      cut = " (다 옮기면 관절 범위 밖 → 수평 " + std::to_string(static_cast<int>(used * 100)) + " % · 높이 " +
+        std::to_string(static_cast<int>(used_z * 100)) + " %)";
+    }
     RCLCPP_INFO(get_logger(), "%s: 칸 근처를 (%+.1f, %+.1f) mm · 높이 %+.1f mm 옮김%s = 적재함 움직임 (%+.1f, %+.1f) + 칸 보정 (%+.1f, %+.1f) "
-      "(점 %d 개 · 관절 최대 %.2f° · 손끝 어긋남 %.2f mm)", name.c_str(), du.x() * 1000.0, du.y() * 1000.0, dz * used * 1000.0,
-      used < 1.0 ? (" (다 옮기면 관절 범위 밖 → " + std::to_string(static_cast<int>(used * 100)) + " %)").c_str() : "",
+      "(점 %d 개 · 관절 최대 %.2f° · 손끝 어긋남 %.2f mm)", name.c_str(), du.x() * 1000.0, du.y() * 1000.0, dz * used_z * 1000.0, cut.c_str(),
       d_rack.x() * 1000.0, d_rack.y() * 1000.0, d_set.x() * 1000.0, d_set.y() * 1000.0, rep.moved, rep.max_joint_deg, rep.worst_pos_mm);
     return true;
   }
@@ -1966,6 +1992,7 @@ private:
     if (pc.size() != 2) {why = "park_center 는 [x, y]"; return {};}
     const double v = get_parameter("park_speed_dps").as_double();
     const double v_push = get_parameter("park_push_speed_dps").as_double();
+    const double v_press = get_parameter("park_press_speed_dps").as_double();
     LyingGraspCfg gc;
     gc.side = lying_h_;
     gc.length = puck_h_;
@@ -2038,7 +2065,10 @@ private:
     std::vector<PathNode> nodes;
     for (const auto & n : pn) {
       // 미는 구간 (park_push_down · 1–4 · back) 만 park_push_speed_dps (11-06 시뮬: 50 °/s 면 기대는 각 49° 아래에서 넘어짐, 20 °/s 면 ±2–4 mm 오차에도 섬)
-      const double sp = !n.slow ? 0.0 : (n.name.rfind("park_push", 0) == 0 || n.name.rfind("park_pull", 0) == 0 ? v_push : v);
+      //   꽂아 누르기 (park_press1–4) 는 park_press_speed_dps (0 = park_speed_dps, 11-07 실물 그대로)
+      const double sp = !n.slow ? 0.0 : (n.name.rfind("park_push", 0) == 0 || n.name.rfind("park_pull", 0) == 0 ? v_push :
+        (v_press > 0.0 && n.name.rfind("park_press", 0) == 0 && n.name != "park_press_lift" && n.name != "park_press_turn" &&
+        n.name != "park_press_over" ? v_press : v));
       nodes.push_back(model_node(n.name, q_to_ticks(model_, encoder_goal_q(model_, n.q, n.held_kg)), sp, n.grip));
       if (n.grip == "loose") {nodes.back().grip_on_way = true;}   // 팔을 안 멈추고 손가락만 풂
     }
@@ -2047,8 +2077,10 @@ private:
     pending_lying_ = false;   // 세운 퍽을 쥐고 끝남
     pending_empty_ = false;
     RCLCPP_INFO(get_logger(), "PICK 받침 세우기: 누운 퍽 (%.3f, %.3f) 긴축 %.0f° → 끝 쪽 %.0f mm 를 손 %.0f° (퍽 굴림 %.0f° · 손 안 기울기 %.0f° · 쥐는 깊이 %.0f mm · "
-      "손가락 여유 %.1f mm) 로 쥐고 받침에 %.0f° 로 넣어 놓고, 받침 바닥 위 %.0f mm 로 밀어 세운 뒤 다시 쥠 (윗면 − %.0f mm) → 기준점", x, y, axis,
-      gc.grip_offset * 1000.0, lg.tilt_deg, lg.roll_deg, lg.pitch_deg, lg.depth_mm, lg.margin_mm, elev, pk.push_h * 1000.0, pk.regrasp_depth * 1000.0);
+      "손가락 여유 %.1f mm) 로 쥐고 받침에 %.0f° 로 넣어 놓고, %s %.0f mm 로 %s 세운 뒤 다시 쥠 (윗면 − %.0f mm) → 기준점", x, y, axis,
+      gc.grip_offset * 1000.0, lg.tilt_deg, lg.roll_deg, lg.pitch_deg, lg.depth_mm, lg.margin_mm, elev,
+      pk.press_mode ? "받침 뒤에 닫은 손을 수직으로 바닥 위" : "받침 바닥 위", (pk.press_mode ? pk.press_h : pk.push_h) * 1000.0,
+      pk.press_mode ? "꽂아" : "밀어", pk.regrasp_depth * 1000.0);
     pending_step_ = get_parameter("park_step").as_bool();
     return pick_path(unfold, lg.poses, open_kw, nodes, why, lg.tip.x(), lg.tip.y(), axis, true);
   }
@@ -2093,6 +2125,11 @@ private:
     bool lying = false;
     if (!target_in_model(goal, held_lying_, x, y, top, yaw, lying, why)) {return {};}
     if (lying && !held_lying_) {why = "누운 목표인데 쥔 퍽은 선 퍽 — 선 퍽은 세워서만 놓음"; return {};}
+    // 놓는 점 보정 (place_offset_x/y_mm): 목표를 옮긴 뒤 빈 자리 검사 · IK — 먼 자리 다시 쥐기의 내려놓을 자리도 옮긴 목표 기준 (임의 빈 자리라 상관없음)
+    place_off_mm_ = Eigen::Vector2d(get_parameter("place_offset_x_mm").as_double(), get_parameter("place_offset_y_mm").as_double());
+    if (!place_off_mm_.allFinite()) {why = "place_offset_x_mm · y_mm 가 숫자가 아님"; return {};}
+    x += place_off_mm_.x() / 1000.0;
+    y += place_off_mm_.y() / 1000.0;
     std::vector<std::pair<double, std::string>> cands;
     std::string open_kw;
     const double zc = top - model_.team_base_z_floor + model_.base_z_floor - (held_lying_ ? lying_h_ : puck_h_) / 2.0;
@@ -2136,8 +2173,36 @@ private:
       P = poses_for(x, y, top, yaw, heights, cands, open_kw, why, t, 0.0);
       if (P.size() != 3) {why = "놓는 손 기울임 " + std::to_string(static_cast<int>(t)) + "° 의 놓기 높이로 다시 풀면 IK 안 됨: " + why; return {};}
     }
-    RCLCPP_INFO(get_logger(), "PLACE: %s(%.3f, %.3f) 쥔 깊이 %.0f mm · 쥘 때 기울임 %.0f° · 놓는 손 %.0f° → 놓기 높이 %.1f mm", held_lying_ ? "누운 퍽 " : "",
-      x, y, held_depth_mm_, held_tilt_, P.back().tilt_deg, heights.back());
+    // 쥔 퍽 손 안 위치 보정 (place_held_correct, STORE 의 held_correct 와 같음): 기준과 차이를 놓는 자세의 손목 방향으로 돌려 반대로 옮기고 같은 기울임으로 다시 풂
+    if (get_parameter("place_held_correct").as_bool()) {
+      std::string hid;
+      Eigen::Vector3d hp, hn;
+      int hc = 0;
+      if (!held_now(hid, hp, hn, hc) || !held_ref_p_ || !held_ref_n_) {
+        RCLCPP_INFO(get_logger(), "PLACE: 쥔 퍽 태그 %s (%d 장) → 손 안 위치 보정 없음", held_ref_p_ ? "못 봄" : "기준 없음", hc);
+      } else {
+        const Eigen::Vector3d dw = hp - *held_ref_p_;   // 손 안에서 퍽이 기준보다 움직인 양 (손목 좌표)
+        const double face = std::acos(std::clamp(hn.dot(*held_ref_n_), -1.0, 1.0)) * 180.0 / M_PI;
+        const Eigen::Vector3d dworld = arm_frames(model_, ticks_to_q(model_, P[2].ticks))[4].block<3, 3>(0, 0) * dw;   // 놓는 자세에서 퍽이 비키는 양
+        const bool use = face < 20.0 && dw.norm() * 1000.0 <= held_max_mm_;
+        RCLCPP_INFO(get_logger(), "PLACE: 쥔 퍽 태그 %s 기준과 차 손목 (%+.1f, %+.1f, %+.1f) mm · 면 %.0f° (%d 장) → 놓는 자리에서 (%+.1f, %+.1f) mm %s",
+          hid.c_str(), dw.x() * 1000.0, dw.y() * 1000.0, dw.z() * 1000.0, face, hc, dworld.x() * 1000.0, dworld.y() * 1000.0,
+          use ? "→ 반대로 옮김" : "(면이 다르거나 너무 커서 안 옮김)");
+        if (use) {
+          std::string w;
+          auto Pc = poses_for(x - dworld.x(), y - dworld.y(), top, yaw, heights, cands, open_kw, w, P.back().tilt_deg, 0.0);
+          if (Pc.size() == 3) {
+            x -= dworld.x();
+            y -= dworld.y();
+            P = Pc;
+          } else {
+            RCLCPP_WARN(get_logger(), "PLACE: 손 안 위치 보정 자리는 IK 안 됨 (%s) → 보정 없이 놓음", w.c_str());
+          }
+        }
+      }
+    }
+    RCLCPP_INFO(get_logger(), "PLACE: %s(%.3f, %.3f) 쥔 깊이 %.0f mm · 쥘 때 기울임 %.0f° · 놓는 손 %.0f° → 놓기 높이 %.1f mm · 보정 (%+.1f, %+.1f) mm (place_offset)",
+      held_lying_ ? "누운 퍽 " : "", x, y, held_depth_mm_, held_tilt_, P.back().tilt_deg, heights.back(), place_off_mm_.x(), place_off_mm_.y());
     ArmPath path;
     path.name = "place";
     path.ends_home = true;
@@ -2225,6 +2290,7 @@ private:
             model_node("far_put_clear", Pp[0].enc, slow_dps_), model_node("far_re_above", Pr[0].enc, slow_dps_, "open"),
             model_node("far_re_down", Pr[1].enc, slow_dps_), model_node("far_re_grasp", Pr[2].enc, slow_dps_, "close"),
             model_node("far_re_up", Pr[1].enc, slow_dps_), model_node("far_re_lift", Pr[0].enc, slow_dps_)};
+          mid[5].grip_early = get_parameter("place_far_open_on_way").as_bool();   // 내려놓은 뒤 빈손 → 다시 쥘 자리 위로 가며 엶 (그리퍼 기다림 하나를 뺌)
           sx = q.x();
           sy = q.y();
           put_tilt = Pp.back().tilt_deg;
@@ -2234,8 +2300,8 @@ private:
     }
     if (mid.empty()) {why = "먼 자리 놓기: 손 " + std::to_string(static_cast<int>(t)) + "° 로 다시 쥘 빈 자리가 없음 (마지막: " + last + ")"; return {};}
     RCLCPP_INFO(get_logger(), "PLACE 먼 자리 (%.3f, %.3f): 손 %.0f° 로 놓아야 함 → (%.3f, %.3f) 에 손 %.0f° 로 내려놓고 %.0f° 로 다시 쥠 (깊이 %.0f mm) → 목표에 %.0f° 로 놓음 "
-      "(계산 목표 %.2f s · 자리 %.2f s)", x, y, t, sx, sy, put_tilt, t, tilted_depth_mm_, t, t_target,
-      std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count() - t_target);
+      "· 보정 (%+.1f, %+.1f) mm (place_offset) (계산 목표 %.2f s · 자리 %.2f s)", x, y, t, sx, sy, put_tilt, t, tilted_depth_mm_, t, place_off_mm_.x(),
+      place_off_mm_.y(), t_target, std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count() - t_target);
     ArmPath path;
     path.name = "place_far";
     path.ends_home = true;
@@ -2724,6 +2790,7 @@ private:
   std::deque<HeldTag> held_buf_;
   double held_since_{1e18};
   double held_max_mm_{8.0};
+  Eigen::Vector2d place_off_mm_{0.0, 0.0};   // 이번 PLACE 에 더한 놓는 점 보정 [mm] (place_offset_x/y_mm, 로그용)
   std::optional<Eigen::Vector3d> held_ref_p_, held_ref_n_;
   rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr sub_held_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr srv_held_ref_;

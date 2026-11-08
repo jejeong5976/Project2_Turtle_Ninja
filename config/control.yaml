@@ -85,6 +85,10 @@ control_master:
     pick_max_tilt_deg: 40.0
     store_offset_x_mm: 0.0
     store_offset_y_mm: 0.0
+    # PLACE 놓는 점 보정 [mm, base_link, x+ = 앞 · y+ = 왼쪽] — 모든 PLACE 목표에 더함 (먼 자리 다시 쥐기의 마지막 놓기도). 장소별 차이는 planning.yaml place_offset_L*_mm
+    #   실물에서 맞추기: 놓인 퍽이 눈 점보다 로봇 쪽으로 5 mm 면 x +5. 실행 중: ros2 param set /control_master place_offset_x_mm 5.0 (다음 PLACE 부터)
+    place_offset_x_mm: 0.0
+    place_offset_y_mm: 0.0
     # 칸마다 더하는 STORE 보정 [x, y] 또는 [x, y, 높이] mm (없는 칸 = 0, 높이 − = 더 내려 놓기). 실행 중: ros2 param set /control_master store_offset.S7 "[0.0, 5.0]"
     store_offset:
       # 11-06 새 적재함 · 카메라 회전을 고친 뒤 실물: 오른쪽 4 칸 (S4 · S7 · S9 · S12) 은 로봇 앞으로 놓임 (스캔으로 잰 칸은 칸 표와 x 3.4 mm 안 → 팔 쪽 차이)
@@ -122,6 +126,7 @@ control_master:
     # 쥔 퍽 손 안 위치 (손목 카메라, rack_tag_node 를 띄워야 잼): false = STORE 때 로그만, true = 기준과 차이만큼 칸 근처 경로를 옮김
     #   기준: STORE 가 잘 들어간 PICK 뒤 (넣기 전, 기준점에서) ros2 service call /control_master/save_held_reference std_srvs/srv/Trigger
     held_correct: false
+    place_held_correct: false   # 같은 보정을 PLACE 바로 놓기에도 (다시 쥐는 먼 자리는 안 함). 켜기: ros2 param set /control_master place_held_correct true
     # 손목 카메라가 손목에서 돈 만큼 손목 검출을 되돌림 (camera_drift_node 의 /wrist_cam/drift, 아래 camera_drift_node 설명)
     wrist_cam_drift_correct: true
     # 누운 네모 퍽 PICK 때 세움 (경로 표 config/standup_paths.txt, Isaac 강화학습 → 피드백 없이 재생). false = 누운 채 PICK (예전)
@@ -149,6 +154,7 @@ control_master:
     park_press_r_mm: -16.0           # 꽂는 손끝 자리 = 받침 중심에서 [mm] (− = 뒤 · J1 쪽, 뒤 벽 안쪽 면 −23.5, 손가락 반두께 6)
     park_press_top_mm: 66.0          # 올려 빼는 · 넘어가는 손끝 높이 = 바닥 위 [mm] (수직 손이 닿는 끝 66, 선 퍽 윗면 60)
     park_press_h_mm: 10.0            # 꽂는 가장 낮은 손끝 높이 = 바닥 위 [mm]
+    park_press_speed_dps: 0.0        # 꽂아 내리기 (park_press1–4 · up) 속도 [°/s], 0 = park_speed_dps (11-07 실물 그대로). 퍽이 튀면 20 (밀기 속도)
     park_regrasp_depth_mm: 30.0      # 선 퍽 다시 쥐기 깊이 (손끝이 받침 벽 위)
     park_regrasp_r_mm: 0.0           # 선 퍽 다시 쥐는 자리 = 받침 중심에서 반지름 방향 (+ = 로봇 정면, − = J1 쪽). 시뮬 -6, 11-06 실물 (받침 넓힌 뒤): 0 = 받침 중심에서 쥐면 맞음 (-10 · -16 은 앞쪽을 쥠, -26 부터는 IK 안 됨). 11-07: 1 mm 더 정면, 다시 3 mm 더 (4) · 11-07 오후 실물: 오늘 바꾼 값들로는 한 번도 안 서서 11-07 00:41 (92b9e1a) 값으로 되돌림 → 성공
     park_insert_j3_deg: 0.0          # 넣는 자세 (기울이는 점들) 의 J3 를 이만큼 더 [°, + = 손끝 위]. 11-07 사용자: 넣을 때 J3 5° 더 올려 (넣는 점에서 위 22 · 바깥 9 mm · 손 5° 덜 기욺) · 11-07 오후 실물: 오늘 바꾼 값들로는 한 번도 안 서서 11-07 00:41 (92b9e1a) 값으로 되돌림 → 성공
@@ -178,6 +184,9 @@ control_master:
     look_rack_bias_mm: [0.0, 0.0]
     pick_end_at_staging: false       # PICK 뒤 박스 위 기준점 (y +38 mm) 안 감 — STORE 는 집은 자리에서 칸 경로 실제 시작점으로 바로 (11-06 사용자)
     place_far_regrasp: true          # 먼 자리 PLACE: 가까운 빈 자리에 내려놓고 손을 기울여 다시 쥔 뒤 놓기
+    # 먼 자리 다시 쥐기의 열기를 팔을 멈추지 않고 (내려놓은 뒤 빈손으로 다시 쥘 자리 위로 가며, PICK 미리 열기와 같음) — 한 번에 약 1.1 s (모델 11-08).
+    #   격자 먼 줄 (정차 0.2575 → x 0.3175) 은 20° 손이 0.3075 까지라 매번 다시 쥠 (미션에 4–6 번). 실물 확인 뒤 켜기: ros2 param set /control_master place_far_open_on_way true
+    place_far_open_on_way: false
     # 세우기 경로 전체를 위아래로 [mm]: 실물이 명령보다 약 10 mm 얕게 쥠 → −10 이면 시뮬 (윗면 아래 20 mm 쥐기) 과 같아짐
     #   더 내리지 말 것 (11-05 실물 −25: 경로 전체가 시뮬보다 15 mm 낮아 손가락이 박스를 긁음)
     standup_dz_mm: -10.0

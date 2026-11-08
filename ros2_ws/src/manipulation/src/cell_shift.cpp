@@ -17,6 +17,9 @@ constexpr int kRamp = 12;
 // 칸 경로를 옮긴 점은 관절 범위 (tick_lo · hi) 를 이만큼까지 넘어도 됨 [틱, 1.3°]. 실물 경로가 범위 끝에 붙어 있음
 //   (store_S10 칸 위 J4 2416 ~ 2431 틱, 범위 2430 → 칸 보정 (-9, -8) mm 로 2443). 실물 J4 멈춤은 약 2485 틱이라 범위 끝 + 15 도 그 안
 constexpr double kEdgeSlackTick = 15.0;
+// J4 위쪽은 40 틱 (2430 → 2470 = pose_safety 가 실물 재생 구간에 허용한 j4_hi, 기계 멈춤 ~2485 · 2495 에서 과부하, 11-01)
+//   11-08: 세운 퍽 (+20 mm) 은 J4 가 2445 에 막혀 S4 · S5 · S8 · S10 · S11 칸 근처를 못 올림
+constexpr double kJ4HiSlackTick = 40.0;
 constexpr double kDeg = 180.0 / M_PI;
 constexpr double kT2R = 2.0 * M_PI / 4096.0;
 
@@ -84,10 +87,17 @@ bool shift_cell_path(
   const int k = find_node(path, store ? "P0_복귀" : "P0");
   if (k < 0) {why = path.name + ": 경유점 " + (store ? "P0_복귀" : "P0") + " 없음"; return false;}
   const int lo = store ? 1 : k, hi = store ? k : n - 1;
+  // 놓는 점 (STORE release) · 쥐는 점 (RETRIEVE close) 은 다 옮겨야 함 → 그 점이 끝에서 12 점보다 가까우면 그 사이에서 0 → 1
+  //   (11-08: store_look_S1 은 놓는 점이 둘째 점에서 9 점째라 75 % 만 옮기고 로그엔 100 % 로 나옴)
+  int key = -1;
+  for (int i = lo; i <= hi && key < 0; ++i) {
+    if (path.nodes[i].grip == (store ? "release" : "close")) {key = i;}
+  }
+  const double r_in = key > lo ? std::min(kRamp, key - lo) : kRamp, r_out = key >= 0 && key < hi ? std::min(kRamp, hi - key) : kRamp;
   std::vector<PathNode> out = path.nodes;
   for (int i = 0; i < n; ++i) {
     if (path.nodes[i].q.size() != 5) {why = path.name + ": 관절 수가 5 가 아닌 점"; return false;}
-    const double ramp = std::clamp(std::min(i - lo, hi - i) / static_cast<double>(kRamp), 0.0, 1.0);
+    const double ramp = std::clamp(std::min((i - lo) / r_in, (hi - i) / r_out), 0.0, 1.0);
     if (ramp <= 0.0) {continue;}
     const V5 c0 = Eigen::Map<const V5>(path.nodes[i].q.data());
     const Grip g0 = grip_of_cmd(m, c0);
@@ -102,7 +112,8 @@ bool shift_cell_path(
     rep.max_joint_deg = std::max(rep.max_joint_deg, (c - c0).cwiseAbs().maxCoeff() * kDeg);
     for (int j = 0; j < 5; ++j) {
       const double t = tick_of_cmd(m, j, c[j]);
-      if (!std::isfinite(t) || t < m.tick_range[j][0] - kEdgeSlackTick || t > m.tick_range[j][1] + kEdgeSlackTick) {
+      const double hi_slack = j == 3 ? kJ4HiSlackTick : kEdgeSlackTick;
+      if (!std::isfinite(t) || t < m.tick_range[j][0] - kEdgeSlackTick || t > m.tick_range[j][1] + hi_slack) {
         why = path.name + ": " + path.nodes[i].name + " 를 옮기면 관절 " + std::to_string(j + 1) + " 범위 밖";
         return false;
       }
