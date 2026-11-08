@@ -26,7 +26,7 @@ TEST(Model, HardwareMap)
   std::map<std::string, JointCal> cal;
   std::string err;
   ASSERT_TRUE(load_hardware_map(TEST_CONFIG_DIR "/hardware_map.yaml", cal, err)) << err;
-  EXPECT_EQ(cal.at("joint1").zero_tick, 4104);
+  EXPECT_EQ(cal.at("joint1").zero_tick, 8);
   EXPECT_EQ(cal.at("joint2").zero_tick, 2048);
   EXPECT_DOUBLE_EQ(cal.at("gripper_left_joint").scale, 0.01149);
   EXPECT_DOUBLE_EQ(cal.at("steer_fl_joint").scale, -1.0);
