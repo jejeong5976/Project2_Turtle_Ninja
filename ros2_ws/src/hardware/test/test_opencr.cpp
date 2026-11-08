@@ -925,33 +925,43 @@ TEST(JointConvert, MultiTurnUnwrapKeepsTheJointWithinHalfATurn)
   EXPECT_DOUBLE_EQ(hardware::unwrap_turn_rad(NAN, j1.zero_rad), 0.0);
 }
 
-// 11-08 저녁: 받침대에 앉힌 J1 이 16 눈금 크게 읽혀 hardware_map 영점 4088 → 4104. HOME (−0.0061 rad) = 4100 눈금 > 4095
-//   → HOME 에서 켜면 거의 매번 4 로 읽힘. 바퀴 보정으로 같은 HOME, 명령도 모터 자기 셈 (4) 으로 → 몸통이 한 바퀴 돌지 않음
+// 11-08 저녁: 받침대에 앉힌 J1 이 16 눈금 크게 읽혀 영점 4088 → 4104. 플러그인은 zero_tick 0~4095 만 받으므로 hardware_map 은
+//   한 바퀴 뺀 8. HOME (−0.0061 rad) = 모터 4. 켤 때 경계 아래 (4090 대) 로 읽혀도 바퀴 보정으로 같은 자리, 명령도 모터 자기 셈으로
 TEST(JointConvert, MultiTurnUnwrapWithJ1ZeroPastTheWrap)
 {
   const double k = 2.0 * M_PI / 4096.0;
   const auto m = [k](double tick) {return (tick - 2048.0) * k;};
   hardware::JointSpec j1;
   j1.mode = ntp::MODE_CURRENT_POSITION;
-  j1.zero_rad = (4104 - 2048) * k;
+  j1.zero_rad = (8 - 2048) * k;
   const double home = -0.0061;
-  // HOME 에서 켬: 4 로 읽힘 → +1 바퀴 → HOME
+  // HOME 에서 켬: 4 로 읽힘 → 보정 없음 → HOME. HOME 명령 = 모터 4
   j1.turn_rad = hardware::unwrap_turn_rad(m(4), j1.zero_rad);
-  EXPECT_NEAR(j1.turn_rad, 2.0 * M_PI, 1e-12);
+  EXPECT_DOUBLE_EQ(j1.turn_rad, 0.0);
   EXPECT_NEAR(hardware::motor_to_joint(j1, m(4)), -4 * k, 1e-9);
   EXPECT_NEAR(hardware::motor_to_joint(j1, m(4)), home, 0.5 * k);
-  EXPECT_NEAR(hardware::joint_to_motor(j1, home) / k + 2048.0, 4.0, 0.5);     // HOME 명령 = 모터 4 (4100 이 아님)
-  // 받침대 좌우 여유 안 (4097 ~ 4106 = 켜면 1 ~ 10) 어디서 켜도 HOME 근처
-  for (double t : {1.0, 10.0}) {
-    EXPECT_NEAR(hardware::unwrap_turn_rad(m(t), j1.zero_rad), 2.0 * M_PI, 1e-12);
-  }
-  // 경계 아래 (4090 대, 바로 읽힘) 는 그대로
-  EXPECT_DOUBLE_EQ(hardware::unwrap_turn_rad(m(4093), j1.zero_rad), 0.0);
-  // 왼쪽 적재함 (예전 4388 → 4404) 에서 켜 308 로 읽힘 → +1 바퀴
-  EXPECT_NEAR(hardware::unwrap_turn_rad(m(308), j1.zero_rad), 2.0 * M_PI, 1e-12);
+  EXPECT_NEAR(hardware::joint_to_motor(j1, home) / k + 2048.0, 4.0, 0.5);
+  // 받침대 좌우 여유 안 (켜면 1 ~ 10) 은 그대로
+  for (double t : {1.0, 10.0}) {EXPECT_DOUBLE_EQ(hardware::unwrap_turn_rad(m(t), j1.zero_rad), 0.0);}
+  // 경계 아래 (몸통이 HOME 보다 오른쪽, 4093 으로 읽힘) → −1 바퀴 = 관절 −11 눈금 (HOME 오른쪽 7 눈금, 보정 없으면 +6.27 rad)
+  j1.turn_rad = hardware::unwrap_turn_rad(m(4093), j1.zero_rad);
+  EXPECT_NEAR(j1.turn_rad, -2.0 * M_PI, 1e-12);
+  EXPECT_NEAR(hardware::motor_to_joint(j1, m(4093)), -11 * k, 1e-9);
+  // 왼쪽 적재함 (예전 4388 → 새 4404 = 모터 308) 에서 켬 → 보정 없음, 관절 +300 눈금
+  j1.turn_rad = hardware::unwrap_turn_rad(m(308), j1.zero_rad);
+  EXPECT_NEAR(hardware::motor_to_joint(j1, m(308)), 300 * k, 1e-9);
   // J1 범위 끝 (팔 모델 tick_lo · hi = 영점 ± 2025 눈금) 도 답이 하나
-  EXPECT_DOUBLE_EQ(hardware::unwrap_turn_rad(m(4104 - 2025), j1.zero_rad), 0.0);
-  EXPECT_NEAR(hardware::unwrap_turn_rad(m(4104 + 2025 - 4096), j1.zero_rad), 2.0 * M_PI, 1e-12);
+  EXPECT_DOUBLE_EQ(hardware::unwrap_turn_rad(m(8 + 2025), j1.zero_rad), 0.0);
+  EXPECT_NEAR(hardware::unwrap_turn_rad(m(8 - 2025 + 4096), j1.zero_rad), -2.0 * M_PI, 1e-12);
+  // 8 과 4104 는 같은 영점: 켤 때 어느 값으로 읽혀도 관절값이 같음
+  hardware::JointSpec j2 = j1;
+  j2.zero_rad = (4104 - 2048) * k;
+  for (int t = 0; t < 4096; t += 7) {
+    j1.turn_rad = hardware::unwrap_turn_rad(m(t), j1.zero_rad);
+    j2.turn_rad = hardware::unwrap_turn_rad(m(t), j2.zero_rad);
+    EXPECT_NEAR(hardware::motor_to_joint(j1, m(t)), hardware::motor_to_joint(j2, m(t)), 1e-9) << t;
+    EXPECT_NEAR(hardware::joint_to_motor(j1, 0.3), hardware::joint_to_motor(j2, 0.3), 1e-9) << t;
+  }
 }
 
 TEST(OpenCRLink, MultiTurnJointIsUnwrappedAfterEachConfig)
