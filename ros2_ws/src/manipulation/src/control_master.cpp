@@ -278,9 +278,6 @@ public:
         for (const auto & n : rack_names_) {declare_parameter<std::vector<double>>("store_offset." + n, std::vector<double>{0.0, 0.0});}
         // 칸마다 RETRIEVE 보정 [x, y] 또는 [x, y, 높이] mm (11-07: STORE 보정은 빼기에 안 들어감 → 따로): ros2 param set /control_master retrieve_offset.S12 "[-10.0, -5.0]"
         for (const auto & n : rack_names_) {declare_parameter<std::vector<double>>("retrieve_offset." + n, std::vector<double>{0.0, 0.0});}
-        // 칸마다 실물로 잰 빼기 쥔 깊이 [mm, 퍽 윗면 ↔ 손끝] — 0 = 기본 retrieve_grip_depth_mm. PLACE 놓는 높이가 이 깊이로 정해짐 (11-08)
-        //   재기: r<칸> 뒤 손끝 아래로 나온 퍽 길이 L → 60 − L. 실행 중: ros2 param set /control_master retrieve_grip_depth.S12 30.0
-        for (const auto & n : rack_names_) {declare_parameter<double>("retrieve_grip_depth." + n, 0.0);}
       }
     }
     rack_ref_file_ = declare_parameter<std::string>("rack_reference_file", "~/.ros/rack_reference.txt");
@@ -1174,7 +1171,6 @@ private:
   {
     const bool store = name.rfind("store_", 0) == 0;
     if (!store && name.rfind("retrieve_", 0) != 0) {return true;}
-    if (!store) {pending_retrieve_dz_mm_ = 0.0;}   // 이 RETRIEVE 에서 칸 근처를 실제로 옮긴 높이 (아래에서 정함, 쥔 깊이 = 기본 − 이 값)
     const std::string cell = name.substr(name.rfind('_') + 1);   // store_S7 · retrieve_S7 · store_look_S7
     size_t i = 0;
     while (i < rack_names_.size() && rack_names_[i] != cell) {++i;}
@@ -1303,7 +1299,6 @@ private:
       return true;
     }
     const Eigen::Vector2d du = d * used;
-    if (!store) {pending_retrieve_dz_mm_ = dz * used_z * 1000.0;}   // 더 깊게 쥔 만큼 (줄여 옮겼으면 줄인 만큼) → RETRIEVE 끝에 쥔 깊이로
     std::string cut;
     if (used < 1.0 || (used_z < 1.0 && has_z)) {
       cut = " (다 옮기면 관절 범위 밖 → 수평 " + std::to_string(static_cast<int>(used * 100)) + " % · 높이 " +
@@ -2553,17 +2548,7 @@ private:
             if (task == ArmTask::Goal::PICK) {held_lying_ = pending_lying_;}
             else if (task == ArmTask::Goal::RETRIEVE || !carrying_) {held_lying_ = false;}
             if (task == ArmTask::Goal::PICK) {held_depth_mm_ = pending_depth_; depth_from_pick_ = true;}
-            else if (task == ArmTask::Goal::RETRIEVE) {
-              // 칸마다 잰 깊이 (retrieve_grip_depth.<칸>) 가 있으면 그 값 — 없으면 기본 25. 모든 칸을 25 로 보면 칸에 따라 높이서 떨굼 (11-08)
-              const std::string & slot = arm_goal_->get_goal()->slot;
-              const std::string pname = "retrieve_grip_depth." + slot;
-              const double cell_depth = has_parameter(pname) ? get_parameter(pname).as_double() : 0.0;
-              held_depth_mm_ = manipulation::retrieve_held_depth_mm(retrieve_depth_mm_, cell_depth);
-              depth_from_pick_ = false;
-              RCLCPP_INFO(get_logger(), "RETRIEVE %s: 쥔 깊이 %.0f mm (%s) · 칸 근처 높이 보정 %+.1f mm — PLACE 가 이 깊이로 놓는 높이를 정함. "
-                "놓을 때 떨구면 손끝 아래 퍽 길이 L 을 재서 %s = 60 − L", slot.c_str(), held_depth_mm_,
-                cell_depth > 0.0 ? "칸마다 잰 값" : "기본 retrieve_grip_depth_mm", pending_retrieve_dz_mm_, pname.c_str());
-            }
+            else if (task == ArmTask::Goal::RETRIEVE) {held_depth_mm_ = retrieve_depth_mm_; depth_from_pick_ = false;}
             else if (!carrying_) {held_depth_mm_ = 0.0; depth_from_pick_ = false;}
           }
           if (c.end != ArmEnd::SUCCEEDED) {held_from_pick_ = false; look_rack_slot_.clear();}   // 도중에 끝남 → 집은 자리에서 잇기 안 함 (arm_off_path_)
@@ -2770,8 +2755,7 @@ private:
   double held_tilt_{0.0};          // 쥔 퍽의 손 안 기울임 [°] (PICK 때 손 기울임, RETRIEVE = 0)
   double pending_tilt_{0.0};       // 받은 PICK 계획의 손 기울임 (성공하면 held_tilt_)
   bool depth_from_pick_{false};    // held_depth_mm_ 이 PICK 계획의 깊이 (RETRIEVE 의 25 mm 는 추정값이라 STORE 높이 맞춤에 안 씀)
-  double held_depth_mm_{0.0};      // 쥔 퍽 깊이 = 퍽 윗면 ↔ 손끝 [mm] (PICK = 그 계획의 쥐는 깊이, RETRIEVE = retrieve_grip_depth_mm + 칸 더 깊게, 0 = 모름)
-  double pending_retrieve_dz_mm_{0.0};   // 마지막 RETRIEVE 계획에서 칸 근처를 실제로 옮긴 높이 [mm] (− = 더 깊이 쥠, rack_adjust)
+  double held_depth_mm_{0.0};      // 쥔 퍽 깊이 = 퍽 윗면 ↔ 손끝 [mm] (PICK = 그 계획의 쥐는 깊이, RETRIEVE = retrieve_grip_depth_mm, 0 = 모름)
   double pending_depth_{0.0};      // 받은 PICK 계획의 쥐는 깊이 (성공하면 held_depth_mm_)
   bool held_lying_{false};         // 쥔 퍽이 누운 네모 퍽 (STORE 거절, PLACE 는 누운 채로)
   bool pending_empty_{false};      // 받은 PICK 계획이 세우기만 (퍽을 안 쥐고 LOOK 에서 끝남)
