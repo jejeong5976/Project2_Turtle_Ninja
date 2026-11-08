@@ -134,11 +134,4 @@ bool shift_cell_path(
   return true;
 }
 
-double retrieve_held_depth_mm(double base_depth_mm, double cell_depth_mm)
-{
-  constexpr double kPuckHeightMm = 60.0;
-  const double d = std::isfinite(cell_depth_mm) && cell_depth_mm > 0.0 ? cell_depth_mm : base_depth_mm;
-  return std::clamp(std::isfinite(d) ? d : 0.0, 0.0, kPuckHeightMm);
-}
-
 }  // namespace manipulation
