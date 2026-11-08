@@ -21,6 +21,8 @@
 //   - 칸 이름은 control 과 같은 이름을 씀, 팔이 닿는 칸만 등록. 기본 S1–S12 = URDF rack_cell_S*, 팔에서 먼 칸부터
 //   - 빈 칸은 목록 순서대로 채움 (free_slot) → S1 = 가장 먼 칸부터
 //   - 꺼낼 칸은 운반 계획 (transfer_planner) 이 정함: 목록 뒤 = 가까운 칸부터
+//   - 칸 제약 (set_rules, 11-08): 넣기 · 빼기 전에 비어 있어야 하는 칸 (config/rack_cells.yaml rack_constraints, 팔 경로가 옆 칸 퍽에 닿음)
+//       free_slot 은 제약을 지키는 첫 빈 칸, 그런 칸이 없으면 첫 빈 칸 (막지 않음). 빼기는 retrieve_ok 로 고름
 
 #pragma once
 
@@ -61,10 +63,21 @@ public:
   // ---------------------------------------------------------------- 조회
   bool holding() const {return gripper_.has_value();}
   const std::optional<CargoItem> & gripper() const {return gripper_;}
-  std::optional<std::string> free_slot() const;                      // 첫 빈 칸
+  std::optional<std::string> free_slot() const;                      // 첫 빈 칸 (칸 제약을 지키는 칸 먼저)
+  // 이 퍽을 넣을 칸: free_slot 과 같되, 빼기 제약 짝 칸 (S7 · S12 등) 의 짝에 다른 색 퍽이 있으면 그 칸은 미룸
+  //   (같은 색 = 보통 같은 장소 → 배달 때 같은 장소 안에서 순서만 바꿔 제약을 지킴, 11-08). 다른 칸이 없으면 그 칸
+  std::optional<std::string> free_slot_for(const CargoItem & item) const;
   std::size_t stored_count() const;                                  // 칸에 실린 수 (그리퍼 제외)
   std::size_t capacity() const {return slots_.size();}
   const std::vector<std::pair<std::string, std::optional<CargoItem>>> & slots() const {return slots_;}
+
+  // ---------------------------------------------------------------- 칸 제약 (칸, 그 동작 전에 비어 있어야 할 칸)
+  using SlotRules = std::vector<std::pair<std::string, std::string>>;
+  void set_rules(SlotRules store_needs_empty, SlotRules retrieve_needs_empty);
+  bool store_ok(const std::string & slot) const {return rule_ok(store_rules_, slot);}
+  bool retrieve_ok(const std::string & slot) const {return rule_ok(retrieve_rules_, slot);}
+  // slot 을 빼기 전에 비어 있어야 하는데 찬 칸 (첫 하나), 없으면 nullopt
+  std::optional<std::string> retrieve_blocker(const std::string & slot) const;
 
   // ---------------------------------------------------------------- 전환 (팔 작업 성공 시에만 호출)
   bool on_pick(const CargoItem & item, std::string * error = nullptr);
@@ -89,10 +102,12 @@ public:
 
 private:
   std::optional<CargoItem> * find_slot(const std::string & slot);
+  bool rule_ok(const SlotRules & rules, const std::string & slot) const;   // slot 의 제약 칸이 다 비었나
 
   std::vector<std::pair<std::string, std::optional<CargoItem>>> slots_;
   std::optional<CargoItem> gripper_;
   std::optional<CargoDoubt> doubt_;
+  SlotRules store_rules_, retrieve_rules_;
 };
 
 }  // namespace planning

@@ -109,6 +109,8 @@ Executor::Executor(rclcpp::Node & node)
   dock_nav_back_m_ = node_.declare_parameter<double>("dock_nav_back_m", 0.025);
   dock_timeout_s_ = node_.declare_parameter<double>("dock_timeout_s", 40.0);
   dock_handoff_m_ = node_.declare_parameter<double>("dock_handoff_m", 0.40);
+  dock_handoff_lat_m_ = node_.declare_parameter<double>("dock_handoff_lat_m", 0.15);
+  dock_handoff_yaw_deg_ = node_.declare_parameter<double>("dock_handoff_yaw_deg", 60.0);
   pick_fresh_s_ = node_.declare_parameter<double>("pick_fresh_s", 2.0);
   puck_half_height_m_ = node_.declare_parameter<double>("puck_half_height_m", 0.03);
   grasp_offset_m_ = node_.declare_parameter<double>("grasp_offset_m", 0.015);
@@ -126,6 +128,22 @@ Executor::Executor(rclcpp::Node & node)
   // ---- 재고: 칸 이름 (팔이 닿는 칸만), 기록 파일 (빈 문자열 = 저장 안 함)
   cargo_ = Cargo(node_.declare_parameter<std::vector<std::string>>("cargo_slots",
     {"S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12"}));
+  {   // 칸 제약 "칸:비어야 할 칸" (config/rack_cells.yaml rack_constraints, 11-02 최악 검사 + 실물 S7 ← S12 −13 mm)
+    auto rules = [&](const char * name, const std::vector<std::string> & def) {
+        Cargo::SlotRules out;
+        for (const auto & r : node_.declare_parameter<std::vector<std::string>>(name, def)) {
+          const auto k = r.find(':');
+          if (k == std::string::npos || k == 0 || k + 1 == r.size()) {
+            RCLCPP_WARN(logger(), "%s: '%s' 는 '칸:비어야 할 칸' 꼴이 아님 → 무시", name, r.c_str());
+            continue;
+          }
+          out.emplace_back(r.substr(0, k), r.substr(k + 1));
+        }
+        return out;
+      };
+    cargo_.set_rules(rules("rack_store_needs_empty", {"S1:S2", "S9:S4", "S10:S5", "S11:S6", "S12:S7"}),
+      rules("rack_retrieve_needs_empty", {"S1:S2", "S7:S12", "S10:S5"}));
+  }
   cargo_file_ = node_.declare_parameter<std::string>("cargo_file", "");
   if (node_.declare_parameter<bool>("cargo_restore", false) && !cargo_file_.empty()) {
     std::string cerr;
@@ -611,6 +629,17 @@ void Executor::insert_after_current(std::vector<Step> more)
   pending_after_.insert(pending_after_.end(), more.begin(), more.end());
 }
 
+// 넘김 통로 (팀장님 11-07 2 차): 로봇이 정차점 뒤 (−0.02 ~ handoff m) · 옆 lat m 안 · 방향 yaw° 안일 때만 Nav2 를 끊고 정밀 접근으로.
+//   반지름만 보면 박스 옆을 스치며 다가올 때 넘겨져 정밀 접근이 박스 옆에서 출발함 (11-08 리뷰)
+static bool in_dock_handoff(const Pose2D & r, const Pose2D & stop, double handoff_m, double lat_m, double yaw_deg)
+{
+  const double dx = stop.x - r.x, dy = stop.y - r.y;
+  const double ahead = dx * std::cos(stop.yaw) + dy * std::sin(stop.yaw);
+  const double lat = -dx * std::sin(stop.yaw) + dy * std::cos(stop.yaw);
+  const double dyaw = std::remainder(stop.yaw - r.yaw, 2.0 * M_PI);
+  return ahead > -0.02 && ahead < handoff_m && std::fabs(lat) < lat_m && std::fabs(dyaw) < yaw_deg * M_PI / 180.0;
+}
+
 static Step home_step(const std::string & name)
 {
   Step home;
@@ -884,10 +913,10 @@ StepResult Executor::run_navigate(const Step & s, double now)
   if (approach_.active) {return run_approach(s, now);}
   if (!nav_docking_) {
     if (!nav_handoff_) {
-      // 정차점까지 dock_handoff_m 안에 들어오면 서지 않고 넘김: Nav2 취소 → 취소 결과 뒤 바로 정밀 접근
+      // 정차점 뒤 통로 (dock_handoff_m · lat · yaw) 안에 들어오면 서지 않고 넘김: Nav2 취소 → 취소 결과 뒤 바로 정밀 접근
       Pose2D rp, fin;
       if (two_stage && dock_handoff_m_ > 0.0 && nav_.active && navigate_goal(s, fin) && robot_pose(rp) &&
-        std::hypot(rp.x - fin.x, rp.y - fin.y) < dock_handoff_m_)
+        in_dock_handoff(rp, fin, dock_handoff_m_, dock_handoff_lat_m_, dock_handoff_yaw_deg_))
       {
         cancel_nav();
       } else {
