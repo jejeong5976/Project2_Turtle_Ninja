@@ -181,6 +181,8 @@ const uint8_t TF_READ = 1;        // ① 지금 위치 읽기 실패 (대답 없
 const uint8_t TF_RANGE = 2;       // 지금 위치가 위치 한계 밖 → 목표 · 토크를 안 씀
 const uint8_t TF_GOAL = 3;        // ② 목표 쓰기 실패 (위치 모터 = 지금 위치, 바퀴 = 속도 0)
 const uint8_t TF_TORQUE = 4;      // ③ Torque Enable 쓰기 실패
+const uint8_t TF_LOST = 5;        // 켜 둔 토크가 꺼짐 (Torque Enable 되읽기 0 — 과부하 · 과열 · 전압 등으로 모터가 스스로 끔). pos = Hardware Error Status
+const uint8_t TF_BUDGET = 6;      // 한 번 켜기 시도가 TORQUE_BUDGET_MS 를 넘음 → 이 모터부터는 다음 바퀴 (버스가 느림)
 const int32_t TF_NO_LIMIT = -1;   // 위치 한계를 못 읽음 · 위치 모드가 아님
 
 struct TorqueFail
@@ -190,7 +192,7 @@ struct TorqueFail
   uint8_t step;            // TF_*
   uint8_t dxl_err;         // 모터 상태 패킷 Error 칸 (0x04 Data Range · 0x06 Data Limit · 0x07 Access … · 비트 7 = Alert) — 대답이 없으면 0
   uint8_t lib_err;         // Dynamixel2Arduino 오류 코드 (0 = 통신 성공)
-  int32_t pos;             // 지금 위치 [눈금] (못 읽었으면 0)
+  int32_t pos;             // 지금 위치 [눈금] (못 읽었으면 0) · TF_LOST 면 Hardware Error Status
   int32_t min_lim;         // EEPROM Min Position Limit [눈금] (TF_NO_LIMIT = 모름)
   int32_t max_lim;         // EEPROM Max Position Limit [눈금]
 };
@@ -477,7 +479,7 @@ inline bool decode_torque_fail(const uint8_t *d, uint8_t len, TorqueFail &f)
   get(p, &f.pos, 4);
   get(p, &f.min_lim, 4);
   get(p, &f.max_lim, 4);
-  return f.step >= TF_READ && f.step <= TF_TORQUE;
+  return f.step >= TF_READ && f.step <= TF_BUDGET;
 }
 
 // ------------------------------------------------------------------ 받는 쪽: 바이트를 하나씩 넣으면 상자를 찾아 줌

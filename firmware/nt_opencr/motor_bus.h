@@ -32,6 +32,7 @@ bool bus_torque_is_on();
 // 토크 켜기/끄기가 실패한 이유 (TORQUE_FAIL 상자) — 마지막 시도에서 처음 실패한 모터 · 단계 · 모터 오류 · 지금 위치 · 위치 한계.
 //   새 것이 있으면 true 로 꺼냄 (꺼내면 지움). 위치 한계는 CONFIG 때 EEPROM 에서 읽음 (위치 모드만)
 bool bus_torque_fail_take(ntp::TorqueFail &f);
+bool bus_torque_fail_peek(ntp::TorqueFail &f);   // 꺼내지 않고 보기 (보낼지 정할 때)
 // CONFIG 때 읽은 모터별 EEPROM 위치 한계 (POS_LIMITS 상자, ACK 바로 뒤 한 번). 위치 모드가 아니거나 못 읽으면 TF_NO_LIMIT
 void bus_pos_limits(ntp::PosLimits &l);
 // 모터 상태 되읽기 한 칸 (매 주기 1 모터씩 돌아가며: Hardware Error Status · 입력 전압(배터리) + 온도 · Torque Enable). 14 개면 0.14 s 에 한 바퀴

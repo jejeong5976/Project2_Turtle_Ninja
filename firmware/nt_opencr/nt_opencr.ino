@@ -131,10 +131,12 @@ static uint32_t tf_sent_ms = 0;
 static void send_torque_fail()
 {
   ntp::TorqueFail f;
-  if (!bus_torque_fail_take(f) || millis() - tf_sent_ms < 500) {return;}
-  tf_sent_ms = millis();
+  if (!bus_torque_fail_peek(f)) {return;}
+  // 0.5 s 안의 새 실패는 꺼내지 않고 둠 (다음에 가장 최근 것을 보냄). 켜 둔 토크가 꺼짐 (TF_LOST) 은 바로 — 같은 바퀴 STATE 가 HW_ERROR
+  if (f.step != ntp::TF_LOST && millis() - tf_sent_ms < 500) {return;}
+  bus_torque_fail_take(f);
   const uint16_t len = ntp::encode_torque_fail(f, tx, sizeof(tx));
-  if (len) {usb_send(tx, len);}
+  if (len && usb_send(tx, len)) {tf_sent_ms = millis();}   // 못 보냈으면 다음 실패 (10 ms 뒤 다시 시도) 를 바로 보냄
 }
 
 // CONFIG 직후: 모은 숫자를 버리고 새 구간 시작 (CONFIG 전 구간은 바로 앞에서 send_diag 로 따로 보냄)
@@ -217,13 +219,11 @@ void loop()
   bool write_ok = true;
   if (configured) {
     // 토크는 Jetson 이 켜라고 할 때만. 끊겨도 끄지는 않음 (팔이 떨어지지 않게) — 바퀴만 0
-    if (have_cmd) {
-      bus_set_torque((cmd.flags & ntp::FLAG_TORQUE) != 0);
-      send_torque_fail();
-    }
+    if (have_cmd) {bus_set_torque((cmd.flags & ntp::FLAG_TORQUE) != 0);}
     write_ok = bus_write_targets(cmd, host_ok);
     state.comm_err = bus_read_states(state);
     bus_health_step();   // 1 모터씩 돌아가며 Hardware Error · Torque Enable 되읽기 (R5)
+    send_torque_fail();  // 이 바퀴 STATE 보다 먼저 (과부하로 토크가 꺼지면 HW_ERROR STATE 를 받는 순간 플러그인이 어느 모터 · 왜를 앎)
     // 고장 잠금(쓰기 실패 → 바퀴 정지) 중에는 bus_write_targets 가 계속 false → ST_WRITE_FAIL 도 계속 켜짐
   }
 

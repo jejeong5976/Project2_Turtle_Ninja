@@ -332,7 +332,11 @@ std::string torque_fail_text(const std::vector<JointSpec> & joints, const ntp::T
   if (f.dxl_err) {
     static const char * names[] = {"", "Result Fail", "Instruction", "CRC", "Data Range", "Data Length", "Data Limit", "Access"};
     const int e = f.dxl_err & 0x7F;
-    std::snprintf(err, sizeof(err), " · 모터 오류 0x%02X (%s%s)", f.dxl_err, e < 8 ? names[e] : "?", (f.dxl_err & 0x80) ? " · Alert" : "");
+    if (e == 0) {   // Alert 비트만 = 모터 하드웨어 오류 (과부하 · 과열 · 전압 …)
+      std::snprintf(err, sizeof(err), " · 모터 Alert (하드웨어 오류)");
+    } else {
+      std::snprintf(err, sizeof(err), " · 모터 오류 0x%02X (%s%s)", f.dxl_err, e < 8 ? names[e] : "?", (f.dxl_err & 0x80) ? " · Alert" : "");
+    }
   } else if (f.lib_err) {
     std::snprintf(err, sizeof(err), " · 통신 오류 %d (대답 없음 · 시간 초과)", f.lib_err);
   }
@@ -348,6 +352,20 @@ std::string torque_fail_text(const std::vector<JointSpec> & joints, const ntp::T
       break;
     case ntp::TF_GOAL:
       std::snprintf(buf, sizeof(buf), "%s 목표 쓰기 실패 (지금 %d 눈금)%s", who, f.pos, err);
+      break;
+    case ntp::TF_LOST: {
+      // Hardware Error Status 비트 (XM430): 0 입력 전압 · 2 과열 · 3 엔코더 · 4 전기 충격 · 5 과부하
+      std::string hw;
+      static const std::pair<int, const char *> bits[] = {{0, "입력 전압"}, {2, "과열"}, {3, "엔코더"}, {4, "전기 충격"}, {5, "과부하"}};
+      for (const auto & [b, nm] : bits) {
+        if (f.pos & (1 << b)) {hw += (hw.empty() ? "" : " · ") + std::string(nm);}
+      }
+      std::snprintf(buf, sizeof(buf), "%s 켜 둔 토크가 꺼짐 (모터가 스스로 끔, Hardware Error 0x%02X%s%s)%s → 원인 확인 뒤 다시 켤 것", who,
+        static_cast<unsigned>(f.pos & 0xFF), hw.empty() ? "" : " = ", hw.c_str(), err);
+      break;
+    }
+    case ntp::TF_BUDGET:
+      std::snprintf(buf, sizeof(buf), "%s 에서 켜기 시도 시간 초과 (버스가 느림 · 대답 늦은 모터)%s", who, err);
       break;
     default:
       std::snprintf(buf, sizeof(buf), "%s Torque Enable 쓰기 실패%s", who, err);
