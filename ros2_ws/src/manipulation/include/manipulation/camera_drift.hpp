@@ -24,4 +24,10 @@ struct CameraDrift
 bool camera_drift(const std::vector<Eigen::Vector2d> & u_ref, const std::vector<Eigen::Vector2d> & u_now,
   double fx, double fy, double cx, double cy, CameraDrift & out);
 
+// 기준 사진을 새로 찍어도 보정이 끊기지 않게 잇기 (11-08 실물: 받침을 바꾸자 옛 기준과 점이 17 개만 맞아 측정이 멈추고,
+//   그사이 카메라가 0.56° 더 돌아 퍽을 약 3 mm 밀려 잡음).
+//   base = 새 기준을 찍을 때 쓰던 보정 (새 기준 카메라 = 명목 · base), meas = 새 기준 대비 측정 (지금 = 새 기준 · meas)
+//   → 명목 대비 = base · meas. 집기 · 놓기 보정값들은 명목 (손눈 보정 URDF) 기준으로 맞춰 둔 것이라 그대로 씀
+Eigen::Quaterniond chain_drift(const Eigen::Quaterniond & base, const Eigen::Quaterniond & meas);
+
 }  // namespace manipulation

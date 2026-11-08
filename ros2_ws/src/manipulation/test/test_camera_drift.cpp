@@ -46,3 +46,31 @@ TEST(CameraDrift, NoMoveIsIdentityAndTooFewPointsFail)
   EXPECT_LT(d.deg, 1e-6);
   EXPECT_FALSE(manipulation::camera_drift({a[0], a[1]}, {a[0], a[1]}, fx, fy, cx, cy, d));
 }
+
+TEST(CameraDrift, NewReferenceKeepsEarlierDrift)
+{
+  // 11-08 실물: 기준 사진을 새로 찍을 때 카메라는 이미 명목에서 B (약 1.45°) 돌아 있음.
+  //   새 기준 대비 측정 M 만으로는 명목 대비가 아님 → chain_drift(B, M) 로 이어야 퍽이 맞는 자리
+  const Eigen::Matrix3d B = (Eigen::AngleAxisd(-0.0222, Eigen::Vector3d::UnitX()) * Eigen::AngleAxisd(-0.0070, Eigen::Vector3d::UnitY()) *
+    Eigen::AngleAxisd(-0.0101, Eigen::Vector3d::UnitZ())).toRotationMatrix();
+  const Eigen::Matrix3d M = (Eigen::AngleAxisd(0.010, Eigen::Vector3d::UnitX()) *
+    Eigen::AngleAxisd(-0.004, Eigen::Vector3d::UnitY())).toRotationMatrix();   // 새 기준 뒤 더 돈 만큼
+  std::mt19937 g(7);
+  std::uniform_real_distribution<double> ux(-0.12, 0.12), uz(0.08, 0.25);
+  std::vector<Eigen::Vector2d> a, b;
+  for (int i = 0; i < 150; ++i) {
+    const Eigen::Vector3d body(ux(g), ux(g) * 0.8 + 0.05, uz(g));   // 몸통 점 (명목 카메라 좌표)
+    a.push_back(px(B.transpose() * body));                          // 새 기준 사진 = 명목 · B 카메라
+    b.push_back(px((B * M).transpose() * body));                    // 지금 카메라 = 명목 · B · M
+  }
+  CameraDrift d;
+  ASSERT_TRUE(manipulation::camera_drift(a, b, fx, fy, cx, cy, d));
+  EXPECT_LT((d.R - M).norm(), 1e-9);   // 새 기준 대비 측정은 M 만
+  const Eigen::Quaterniond q = manipulation::chain_drift(Eigen::Quaterniond(B), Eigen::Quaterniond(d.R));
+  const Eigen::Vector3d P(0.025, -0.044, 0.334);         // 11-08 LOOK 에서 본 퍽 (카메라 좌표)
+  const Eigen::Vector3d seen = (B * M).transpose() * P;  // 지금 카메라가 본 퍽
+  EXPECT_LT((q * seen - P).norm(), 1e-9);                // 이어 쓰면 맞는 자리
+  EXPECT_GT((d.R * seen - P).norm(), 0.006);             // 0 에서 다시 (예전) 면 B 만큼 틀림 — LOOK 거리에서 6 mm 넘게
+  // base 가 단위면 측정 그대로 (기준 사진만 있고 ref_base.txt 가 없는 예전 상태)
+  EXPECT_TRUE(manipulation::chain_drift(Eigen::Quaterniond::Identity(), Eigen::Quaterniond(d.R)).isApprox(Eigen::Quaterniond(d.R), 1e-12));
+}

@@ -33,4 +33,9 @@ bool camera_drift(const std::vector<Eigen::Vector2d> & u_ref, const std::vector<
   return true;
 }
 
+Eigen::Quaterniond chain_drift(const Eigen::Quaterniond & base, const Eigen::Quaterniond & meas)
+{
+  return (base.normalized() * meas.normalized()).normalized();
+}
+
 }  // namespace manipulation
