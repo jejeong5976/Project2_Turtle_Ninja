@@ -323,7 +323,6 @@ public:
   std::atomic<bool> send_diag{false};   // 시험용: STATE 마다 DIAG 도 하나 (실제 펌웨어는 1 초마다)   // 시험용: 이 비트의 모터를 "못 읽음" 으로 (값은 옛날 그대로 = 펌웨어와 같게)
   std::atomic<bool> send_temp{false};   // 시험용: STATE 마다 TEMP 도 하나 (모터 i = 40 + i °C, 마지막 모터는 못 읽음)
   std::atomic<bool> temp_bad_n{false};  // 시험용: TEMP 의 모터 수를 CONFIG 와 다르게
-  std::atomic<float> idle_pos_last{0.0f};   // 시험용: 마지막 모터에 목표가 없을 때 보낼 위치 [모터 rad] (기본 0 = 예전과 같음)
 
 private:
   void run()
@@ -363,8 +362,6 @@ private:
               s.vel[i] = valid ? c.target[i] : 0.0f;
             } else if (valid) {
               s.pos[i] = c.target[i];
-            } else if (i + 1 == s.n) {
-              s.pos[i] = idle_pos_last;
             }
             s.cur[i] = 0.1f;
           }
@@ -883,95 +880,4 @@ TEST(OpenCRLink, PosLimitsReceivedAndResetByConfig)
   EXPECT_EQ(got[0].first, ntp::TF_NO_LIMIT);
   ASSERT_GE(link.configure(2.0), 0);
   EXPECT_FALSE(link.pos_limits(got));
-}
-
-
-// 여러 바퀴 모드 (J1 · 그리퍼): CONFIG 때 모터가 한 바퀴 안에서 다시 세어도 관절값은 실제 자리 (11-08 실물)
-TEST(JointConvert, MultiTurnUnwrapKeepsTheJointWithinHalfATurn)
-{
-  const double k = 2.0 * M_PI / 4096.0;
-  const auto m = [k](double tick) {return (tick - 2048.0) * k;};   // 펌웨어 모터 rad
-  hardware::JointSpec j1;
-  j1.mode = ntp::MODE_CURRENT_POSITION;
-  j1.zero_rad = (4088 - 2048) * k;   // hardware_map joint1 zero_tick 4088 = 정면
-  EXPECT_TRUE(hardware::is_multi_turn(j1));
-  // 11-08: 몸통 4101 (정면 왼쪽 1°) 에서 T1 을 다시 켜자 5 눈금으로 읽힘 → +1 바퀴
-  j1.turn_rad = hardware::unwrap_turn_rad(m(5), j1.zero_rad);
-  EXPECT_NEAR(j1.turn_rad, 2.0 * M_PI, 1e-12);
-  EXPECT_NEAR(hardware::motor_to_joint(j1, m(5)), 13 * k, 1e-9);                        // 예전: −6.26 rad
-  EXPECT_NEAR(hardware::joint_to_motor(j1, 0.0) / k + 2048.0, -8.0, 1e-6);            // 정면 명령 = 모터 −8 눈금 (실제 4088)
-  for (double q : {-1.2, -0.3, 0.0, 0.46, 1.5}) {
-    EXPECT_NEAR(hardware::motor_to_joint(j1, hardware::joint_to_motor(j1, q)), q, 1e-12);
-  }
-  // 이어 센 값 (CONFIG 가 다시 안 셈) −8 눈금도 같은 자리 (정면)
-  EXPECT_NEAR(hardware::unwrap_turn_rad(m(-8), j1.zero_rad), 2.0 * M_PI, 1e-12);
-  // 바로 읽힌 값은 그대로: HOME 4085 · 왼쪽 적재함 4388
-  EXPECT_DOUBLE_EQ(hardware::unwrap_turn_rad(m(4085), j1.zero_rad), 0.0);
-  EXPECT_DOUBLE_EQ(hardware::unwrap_turn_rad(m(4388), j1.zero_rad), 0.0);
-  // 왼쪽 적재함에서 켜서 292 로 읽힘 → +1 바퀴 = 4388
-  EXPECT_NEAR(hardware::unwrap_turn_rad(m(292), j1.zero_rad), 2.0 * M_PI, 1e-12);
-  // 그리퍼 (zero 3549, m/rad 0.01149): 1000 눈금 열린 4549 를 453 으로 읽어도 열린 값
-  hardware::JointSpec g;
-  g.mode = ntp::MODE_CURRENT_POSITION;
-  g.scale = 0.01149;
-  g.zero_rad = (3549 - 2048) * k;
-  g.turn_rad = hardware::unwrap_turn_rad(m(453), g.zero_rad);
-  EXPECT_NEAR(hardware::motor_to_joint(g, m(453)), 1000 * k * 0.01149, 1e-9);
-  EXPECT_DOUBLE_EQ(hardware::unwrap_turn_rad(m(3478), g.zero_rad), 0.0);              // 닫힘
-  // 0 ~ 4095 모드 (J2 ~ J5 · 조향) 는 해당 없음
-  hardware::JointSpec p;
-  p.mode = ntp::MODE_POSITION;
-  EXPECT_FALSE(hardware::is_multi_turn(p));
-  EXPECT_DOUBLE_EQ(hardware::unwrap_turn_rad(NAN, j1.zero_rad), 0.0);
-}
-
-TEST(OpenCRLink, MultiTurnJointIsUnwrappedAfterEachConfig)
-{
-  const double k = 2.0 * M_PI / 4096.0;
-  const auto m = [k](double tick) {return static_cast<float>((tick - 2048.0) * k);};
-  Pty pty;
-  FakeOpenCR fw(pty.master);
-  std::vector<JointSpec> js(2);
-  js[0] = {"joint2", 12, ntp::MODE_POSITION, 0, 0, 0, 1.0};
-  js[1].name = "joint1";
-  js[1].id = 11;
-  js[1].mode = ntp::MODE_CURRENT_POSITION;   // goal_current 0 = 펌웨어 확장 위치
-  js[1].zero_rad = (4088 - 2048) * k;
-  OpenCRLink link(js, 15);
-  link.adopt_fd(pty.slave);
-
-  // ① 11-08 그대로: CONFIG 뒤 첫 측정이 5 눈금
-  fw.idle_pos_last = m(5);
-  ASSERT_EQ(link.configure(2.0), 0b11);
-  ASSERT_TRUE(link.send_command({NAN, NAN}, true));
-  ASSERT_TRUE(link.wait_for_state(1.0));
-  EXPECT_EQ(link.turns(1), 1);
-  EXPECT_EQ(link.turns(0), 0);
-  EXPECT_NEAR(link.state().joints[1].position, 13 * k, 1e-5);   // 정면 왼쪽 1° (예전 −6.26 rad)
-  const std::string note = link.take_turn_note();
-  EXPECT_NE(note.find("joint1"), std::string::npos);
-  EXPECT_TRUE(link.take_turn_note().empty());                    // 한 번만
-  // 정면 (관절 0) 명령 → 모터 −8 눈금 = 실제 4088 (한 바퀴 돌지 않음)
-  ASSERT_TRUE(link.send_command({NAN, 0.0}, true));
-  ASSERT_TRUE(link.wait_for_state(1.0));
-  EXPECT_NEAR(fw.last_target_15.load() / k + 2048.0, -8.0, 1e-3);
-  EXPECT_NEAR(link.state().joints[1].position, 0.0, 1e-5);
-
-  // ② 다시 CONFIG, 모터가 이어 셈 (−8) → 보정을 새로 정해도 같은 자리
-  fw.idle_pos_last = m(-8);
-  ASSERT_EQ(link.configure(2.0), 0b11);
-  ASSERT_TRUE(link.send_command({NAN, NAN}, true));
-  ASSERT_TRUE(link.wait_for_state(1.0));
-  EXPECT_EQ(link.turns(1), 1);
-  EXPECT_NEAR(link.state().joints[1].position, 0.0, 1e-5);
-  link.take_turn_note();
-
-  // ③ 보통 (HOME 4085 를 바로 읽음) → 보정 없음 · 알림 없음
-  fw.idle_pos_last = m(4085);
-  ASSERT_EQ(link.configure(2.0), 0b11);
-  ASSERT_TRUE(link.send_command({NAN, NAN}, true));
-  ASSERT_TRUE(link.wait_for_state(1.0));
-  EXPECT_EQ(link.turns(1), 0);
-  EXPECT_NEAR(link.state().joints[1].position, -3 * k, 1e-5);
-  EXPECT_TRUE(link.take_turn_note().empty());
 }

@@ -120,8 +120,6 @@ OpenCRLink::OpenCRLink(std::vector<JointSpec> joints, uint8_t bus_watchdog)
   state_.joints.resize(joints_.size());
   position_rates_.resize(joints_.size());
   temps_.assign(joints_.size(), -1);
-  turn_set_.assign(joints_.size(), 0);
-  turn_k_.assign(joints_.size(), 0);
 }
 
 bool OpenCRLink::open(const std::string & port, int baud, std::string & err)
@@ -176,11 +174,6 @@ int OpenCRLink::configure(double timeout_s)
   position_rates_.assign(joints_.size(), PositionRate{});
   for (auto & j : state_.joints) {j.position_velocity = NAN;}
   temps_.assign(joints_.size(), -1);   // CONFIG 전 온도를 새 설정의 값처럼 보이지 않게
-  // 여러 바퀴 모드는 CONFIG 때 모터가 위치를 한 바퀴 안에서 다시 셀 수 있음 → 바퀴 보정은 이 뒤 첫 측정에서 새로 정함
-  //   (CONFIG 전에 받은 STATE 는 옛 세는 법이라 쓰지 않음 — 위 PositionRate 와 같은 까닭)
-  for (std::size_t i = 0; i < joints_.size(); ++i) {joints_[i].turn_rad = 0.0;}
-  turn_set_.assign(joints_.size(), 0);
-  turn_k_.assign(joints_.size(), 0);
   return ack_mask_;
 }
 
@@ -227,23 +220,6 @@ int OpenCRLink::poll()
         if (state_.joints_valid) {
           for (std::size_t i = 0; i < joints_.size(); ++i) {
             const double k_scale = joints_[i].scale;
-            // 여러 바퀴 모드: 이번 CONFIG 뒤 처음 읽은 값으로 바퀴 보정을 정함 (못 읽은 모터 = 옛 값이라 기다림)
-            if (is_multi_turn(joints_[i]) && !turn_set_[i] && !(s.comm_err & (1u << i)) && std::isfinite(s.pos[i])) {
-              const double t = unwrap_turn_rad(s.pos[i], joints_[i].zero_rad);
-              joints_[i].turn_rad = t;
-              turn_set_[i] = 1;
-              turn_k_[i] = static_cast<int>(std::lround(t / (2.0 * M_PI)));
-              if (turn_k_[i] != 0) {
-                const double tick_now = s.pos[i] * 4096.0 / (2.0 * M_PI) + 2048.0;
-                const double q = motor_to_joint(joints_[i], s.pos[i]);
-                const bool rad = std::fabs(joints_[i].scale - 1.0) < 1e-9;   // 그리퍼는 관절 단위가 m
-                char b[260];
-                std::snprintf(b, sizeof(b), "%s%s: 켤 때 한 바퀴 넘어간 값 (모터 눈금 %.0f) → %+d 바퀴 (%+d 눈금) 더해 관절 %+.4f %s 로 봄",
-                  turn_note_.empty() ? "" : " · ", joints_[i].name.c_str(), tick_now, turn_k_[i], 4096 * turn_k_[i],
-                  rad ? q * 180.0 / M_PI : q, rad ? "°" : "(관절 단위)");
-                turn_note_ += b;
-              }
-            }
             state_.joints[i].position = motor_to_joint(joints_[i], s.pos[i]);
             state_.joints[i].velocity = s.vel[i] * k_scale;
             state_.joints[i].current = s.cur[i];
