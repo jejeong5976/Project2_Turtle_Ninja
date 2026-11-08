@@ -15,7 +15,10 @@
   - 양 모서리가 다 보이면 (조각 ≥ 한 변 − 3 cm) 옆 위치도 고치고, 아니면 옆은 이전 추정 유지
   - 목표 freeze_dist (0.10 m) 안에서는 고정 (면이 몸 상자 안으로 들어가 안 보임)
 안전 (매 주기, 라이다 원래 점 = scan_merger 몸 상자 (±0.17 × ±0.19) 에 안 지워진 점):
-  - 가까운 점 = 몸 사각형 (±half_x · ±half_y) 바깥 띠 안, 박스 (+box_excl) 아닌 점. 몸 안쪽 (±self_in, 바퀴 · 기둥) 은 안 셈
+  - 가까운 점 = 몸 사각형 (±half_x · ±half_y) 바깥 띠 안, 박스 앞면 띠 (면 앞 box_excl ~ 면 뒤 face_depth, 옆 ±(한 변/2 + box_excl)) 아닌 점.
+    몸 안쪽 (±self_in, 바퀴 · 기둥) 은 안 셈. 박스 옆면 · 뒤쪽은 막는 점으로 두고, 로봇 중심이 박스 앞면 정면 (옆 ±몸 반폭 0.16) 밖이면
+    앞면 띠도 막는 점 (11-08 리뷰 · 시뮬: 박스 옆에서 넘어오면 예전 규칙은 몸이 박스 모서리를 7–10 cm 쓸고 감)
+  - 틈은 원래 스캔 나이 (step 의 raw_age) 만큼 더 일찍: margin + 다가가는 속도 × (t_react + raw_age)
   - 명령대로 움직이면 가까운 점 쪽으로 다가가는 몸 부분 (가장 가까운 몸 점의 속도 · 회전 포함) 이 있고, 그 점까지 틈이
     margin + 다가가는 속도 × t_react 보다 작으면 그 명령은 안 씀 (빠를수록 일찍 멈춤: 0.15 m/s 면 2 + 3.75 cm)
     돌기가 막힘 → 그 점에서 v_esc 로 떨어진 뒤 다시 돌기 · 다가가기가 막힘 → 회전 빼고, 그래도 막히면 그 점 쪽 성분 빼고 미끄러지듯
@@ -37,11 +40,12 @@ class DockCore:
                  k_v=1.0, w_max=0.3, w_min=0.06, w_fine=0.1, k_w=1.0, align_deg=6.0, tol_pos=0.005, tol_yaw_deg=2.0,
                  tol_ok=0.015, tol_yaw_ok_deg=3.0, stall_s=1.5,
                  half_x=0.16, half_y=0.16, margin=0.02, self_in=0.165, box_excl=0.03, min_hits=3, v_esc=0.02,
-                 toward_eps=0.002, t_react=0.25, search=0.25):
+                 toward_eps=0.002, t_react=0.25, search=0.25, face_depth=0.05):
         self.g_xy, self.g_yaw = np.asarray(goal_xy, float), float(goal_yaw)
         self.box_dist = box_dist
         self.tr = FaceTrack(goal_xy, goal_yaw, box_dist, box_half, search) if box_track else None
-        self.box_half, self.box_excl = box_half, box_excl
+        self.box_half, self.box_excl, self.face_depth = box_half, box_excl, face_depth
+        self.age = 0.0      # 이번 주기 원래 스캔 나이 [s] (step 이 받음)
         self.v_max, self.v_min, self.k_v = v_max, v_min, k_v
         self.w_max, self.w_min, self.w_fine, self.k_w = w_max, w_min, w_fine, k_w
         self.align = math.radians(align_deg)
@@ -50,8 +54,8 @@ class DockCore:
         self.best, self.t_best = float('inf'), 0.0
         self.hx, self.hy, self.m, self.self_in = half_x, half_y, margin, self_in
         self.min_hits, self.v_esc, self.eps, self.t_react = min_hits, v_esc, toward_eps, t_react
-        # 띠 너비: 가장 빠른 몸 점 (병진 + 회전 × 모서리 반지름) 이 t_react 동안 가는 거리까지
-        self.band = margin + t_react * (v_max + w_max * math.hypot(half_x, half_y))
+        # 띠 너비: 가장 빠른 몸 점 (병진 + 회전 × 모서리 반지름) 이 t_react + 스캔 나이 (node 가 0.3 s 까지 받음) 동안 가는 거리까지
+        self.band = margin + (t_react + 0.3) * (v_max + w_max * math.hypot(half_x, half_y))
         self.aligned = False
         self.mode = ''      # 지난 주기 명령 종류 (로그)
         self.why = ''
@@ -75,14 +79,14 @@ class DockCore:
 
 
     # ---------------------------------------------------------------- 안전
-    def near_points(self, raw_body, pose):
-        """몸 둘레 band 띠 안 · 박스 아닌 점 (몸 좌표)"""
+    def near_points(self, raw_body, pose, keep_box=False):
+        """몸 둘레 band 띠 안 · 박스 아닌 점 (몸 좌표). keep_box = 박스 점도 다 막는 점 (제자리 회전: 몸 모서리가 박스 면을 쓸고 감)"""
         P = np.asarray(raw_body, float).reshape(-1, 2)
         if len(P) == 0:
             return P
         P = P[~((np.abs(P[:, 0]) < self.self_in) & (np.abs(P[:, 1]) < self.self_in))]
         P = P[(np.abs(P[:, 0]) < self.hx + self.band) & (np.abs(P[:, 1]) < self.hy + self.band)]
-        if len(P) == 0:
+        if len(P) == 0 or keep_box:
             return P
         c, byaw = self.box_pose()
         x, y, yaw = pose
@@ -91,7 +95,11 @@ class DockCore:
         a = byaw - yaw
         q = (P - cb) @ np.array([[math.cos(a), -math.sin(a)], [math.sin(a), math.cos(a)]])   # 박스 좌표
         lim = self.box_half + self.box_excl
-        return P[~((np.abs(q[:, 0]) < lim) & (np.abs(q[:, 1]) < lim))]
+        r = -cb @ np.array([[math.cos(a), -math.sin(a)], [math.sin(a), math.cos(a)]])   # 로봇 중심 (박스 좌표)
+        if not (r[0] < -self.box_half and abs(r[1]) < self.hy):
+            return P   # 로봇이 박스 앞면 정면이 아님 (옆 · 대각, 몸 반폭 밖) → 박스 점도 막는 점 (모서리를 쓸고 가지 않게)
+        face = (q[:, 0] > -lim) & (q[:, 0] < -self.box_half + self.face_depth) & (np.abs(q[:, 1]) < lim)   # 로봇 쪽 면 앞뒤 띠만
+        return P[~face]
 
     def blockers(self, near, cmd):
         """cmd 로 움직이면 다가가는 가까운 점들: 몸에서 가장 가까운 점의 속도 · 점 쪽 방향 내적 (다가가는 속도) > eps 이고
@@ -105,7 +113,7 @@ class DockCore:
         d = d / np.maximum(n, 1e-6)[:, None]
         vb = np.c_[vx - w * b[:, 1], vy + w * b[:, 0]]
         closing = (vb * d).sum(1)
-        return near[(closing > self.eps) & (n < self.m + closing * self.t_react)]
+        return near[(closing > self.eps) & (n < self.m + closing * (self.t_react + self.age))]
 
     def describe(self, P):
         p = P[np.argmin(np.maximum(np.abs(P[:, 0]) - self.hx, np.abs(P[:, 1]) - self.hy))]
@@ -117,8 +125,9 @@ class DockCore:
         return len(self.blockers(near, cmd)) < self.min_hits
 
     # ---------------------------------------------------------------- 제어
-    def step(self, pose, raw_body, t=0.0):
-        """pose (x, y, yaw) odom, t 시작부터 [s]. 돌려주는 것: (cmd (vx, vy, wz), 상태) 상태 = 'run' · 'done' · 'fail'"""
+    def step(self, pose, raw_body, t=0.0, raw_age=0.0):
+        """pose (x, y, yaw) odom, t 시작부터 [s], raw_age 원래 스캔 나이 [s]. 돌려주는 것: (cmd (vx, vy, wz), 상태) 상태 = 'run' · 'done' · 'fail'"""
+        self.age = max(0.0, float(raw_age))
         x, y, yaw = pose
         gxy, gyaw = self.target()
         e = gxy - np.array([x, y])
@@ -135,7 +144,8 @@ class DockCore:
             self.why = f'도착 (더 안 줄어듦 {self.stall_s:.1f} s, 남은 {dist * 100:.1f} cm · {math.degrees(dpsi):+.1f}°)'
             return (0.0, 0.0, 0.0), 'done'
         near = self.near_points(raw_body, pose)
-        if not self.aligned and abs(dpsi) > self.align:   # 1. 제자리 회전
+        if not self.aligned and abs(dpsi) > self.align:   # 1. 제자리 회전 (박스 면도 막는 점 — 박스 앞 2 cm 에서 30° 돌면 모서리가 2 cm 파고듦)
+            near = self.near_points(raw_body, pose, keep_box=True)
             w = math.copysign(max(self.w_min, min(self.w_max, self.k_w * abs(dpsi))), dpsi)
             cmd = (0.0, 0.0, w)
             if self.safe(near, cmd):
@@ -245,7 +255,7 @@ class FaceTrack:
             if len(s) < 8:
                 continue
             gaps = np.nonzero(np.diff(s) > 0.03)[0]          # 표본 두 점을 품은 연속 조각 (3 cm 넘게 비면 끊김)
-            k = np.searchsorted(gaps, np.searchsorted(s, 0.0) - 1, side='left')
+            k = np.searchsorted(gaps, np.searchsorted(s, 0.0) - 1, side='right')   # 표본이 조각 첫 점이어도 그 조각 (11-08)
             lo = s[gaps[k - 1] + 1] if k > 0 else s[0]
             hi = s[gaps[k]] if k < len(gaps) else s[-1]
             if not lo <= L <= hi:
