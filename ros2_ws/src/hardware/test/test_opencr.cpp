@@ -771,6 +771,38 @@ TEST(TorqueFail, TextNamesJointRangeAndError)
   f.dxl_err = 0;
   f.lib_err = 3;
   EXPECT_NE(hardware::torque_fail_text(js, f).find("읽기 실패 · 통신 오류 3"), std::string::npos);
+  // 켜 둔 토크가 꺼짐: pos = Hardware Error Status (0x20 과부하), 오류 칸 Alert 비트만
+  f.step = ntp::TF_LOST;
+  f.lib_err = 0;
+  f.dxl_err = 0x80;
+  f.pos = 0x20;
+  const std::string lost = hardware::torque_fail_text(js, f);
+  EXPECT_NE(lost.find("토크가 꺼짐"), std::string::npos) << lost;
+  EXPECT_NE(lost.find("0x20 = 과부하"), std::string::npos) << lost;
+  EXPECT_NE(lost.find("모터 Alert (하드웨어 오류)"), std::string::npos) << lost;
+  EXPECT_EQ(lost.find("( · Alert)"), std::string::npos) << lost;
+}
+
+// 새 이유 (TF_LOST · TF_BUDGET) 도 상자로 오가고, 모르는 단계는 버림
+TEST(TorqueFail, NewStepsRoundTrip)
+{
+  for (uint8_t st : {ntp::TF_LOST, ntp::TF_BUDGET}) {
+    ntp::TorqueFail sent{};
+    sent.idx = 2;
+    sent.id = 13;
+    sent.step = st;
+    sent.pos = 0x24;
+    sent.min_lim = sent.max_lim = ntp::TF_NO_LIMIT;
+    uint8_t buf[ntp::MAX_FRAME];
+    const uint16_t len = ntp::encode_torque_fail(sent, buf, sizeof(buf));
+    ASSERT_GT(len, 0);
+    ntp::Parser ps;
+    ASSERT_EQ(feed_all(ps, buf, len), 1);
+    ntp::TorqueFail f{};
+    ASSERT_TRUE(ntp::decode_torque_fail(ps.data(), ps.len(), f));
+    EXPECT_EQ(f.step, st);
+    EXPECT_EQ(f.pos, 0x24);
+  }
 }
 
 // 링크가 TORQUE_FAIL 을 받아 두고 (STATE 처리는 그대로), 받은 뒤 지난 시간을 알려 줌

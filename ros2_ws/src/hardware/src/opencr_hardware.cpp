@@ -303,8 +303,10 @@ CallbackReturn OpenCRHardware::on_configure(const rclcpp_lifecycle::State &)
   //   (11-07 팀장님: 꺼진 동안 손 · 충돌로 조향이 한계 밖으로 돌면 "토크를 못 켬" — 한계가 실제 돌 수 있는 범위와 맞는지 확인)
   std::vector<std::pair<int32_t, int32_t>> lim;
   if (link_->pos_limits(lim)) {
-    std::vector<double> q;
-    for (const auto & j : link_->state().joints) {q.push_back(j.position);}
+    std::vector<double> q;   // 첫 STATE 에서 못 읽은 모터는 펌웨어 초깃값 0 → 모름 (NaN)
+    for (std::size_t i = 0; i < link_->state().joints.size(); ++i) {
+      q.push_back(link_->joint_measured(i, 1.0) ? link_->state().joints[i].position : NaN);
+    }
     std::string bad;
     const std::string line = pos_limits_text(link_->joints(), lim, q, bad);
     if (!line.empty()) {RCLCPP_INFO(get_logger(), "모터 위치 한계 (EEPROM): %s", line.c_str());}
@@ -437,8 +439,11 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
   report_temps();   // 모터 온도 (TEMP 가 새로 왔을 때만, 1 초마다)
   // (R5) 모터가 스스로 멈춤 (과부하 · 과열 · 전압 → Hardware Error, 토크 꺼짐) → 바로 ERROR (D20 전체 멈춤)
   if (s.status & ntp::ST_HW_ERROR) {
+    ntp::TorqueFail f;   // 새 펌웨어는 토크가 꺼진 모터 · Hardware Error 비트를 이 STATE 앞에 보냄 (TF_LOST)
+    double age = 1e9;
+    const bool lost = link_->last_torque_fail(f, age) && age < 1.5 && f.step == ntp::TF_LOST;
     RCLCPP_ERROR(get_logger(), "모터 Hardware Error (과부하 · 과열 · 전압) → 전체 멈춤. 모터 재부팅 · 원인 확인 후 다시 켤 것 "
-      "(마지막 온도 °C: %s)", temps_text().c_str());
+      "(마지막 온도 °C: %s)%s%s", temps_text().c_str(), lost ? " · " : "", lost ? torque_fail_text(link_->joints(), f).c_str() : "");
     return return_type::ERROR;
   }
   // (R5) 목표 쓰기(Sync Write) 전송이 motor_fail_timeout_s 넘게 계속 실패 → ERROR
@@ -470,8 +475,11 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
       ntp::TorqueFail f;
       double age = 1e9;
       const bool why = link_->last_torque_fail(f, age) && age < 1.5;
+      std::vector<std::pair<int32_t, int32_t>> lim;
+      const bool new_fw = link_->pos_limits(lim);   // 위치 한계 상자를 보내는 펌웨어 = 이유 상자도 보냄
       RCLCPP_ERROR(get_logger(), "토크를 못 켬: %s → 멈춤",
-        why ? torque_fail_text(link_->joints(), f).c_str() : "펌웨어가 모터 쓰기 실패를 알려 옴 (이유 없음 = 옛 펌웨어)");
+        why ? torque_fail_text(link_->joints(), f).c_str() :
+        (new_fw ? "펌웨어가 모터 쓰기 실패를 알려 옴 (이유 상자를 못 받음 — USB 가 바쁨)" : "펌웨어가 모터 쓰기 실패를 알려 옴 (이유 없음 = 옛 펌웨어)"));
       return return_type::ERROR;
     }
   } else {

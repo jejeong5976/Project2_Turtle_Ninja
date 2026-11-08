@@ -200,6 +200,7 @@ uint16_t bus_configure(const ntp::Config &c)
     ids_[i] = c.j[i].id;
     modes_[i] = c.j[i].mode;
     ext_pos_[i] = (c.j[i].mode == ntp::MODE_CURRENT_POSITION && c.j[i].goal_current == 0);
+    min_lim_[i] = max_lim_[i] = ntp::TF_NO_LIMIT;   // ping 안 되는 모터도 "모름" (앞 CONFIG 값 · 0 을 한계로 보내지 않게)
     if (!dxl.ping(ids_[i])) {continue;}
     // ping 만이 아니라 아래 설정이 **전부** 써져야 ok. 하나라도 실패하면 그 모터는 안 쓰는 것으로
     bool good = dxl.torqueOff(ids_[i]);                                       // 모드는 토크가 꺼져 있어야 바뀜
@@ -227,11 +228,10 @@ uint16_t bus_configure(const ntp::Config &c)
     good = dxl.writeControlTableItem(BUS_WATCHDOG, ids_[i], 0) && good;        // 걸려 있던 것 풀기
     good = dxl.writeControlTableItem(BUS_WATCHDOG, ids_[i], c.bus_watchdog) && good;
     // 위치 한계 (EEPROM, 위치 모드만 — 확장 위치 · 전류 기반 위치 · 속도는 한계를 안 씀). 못 읽으면 검사 안 함
-    min_lim_[i] = max_lim_[i] = ntp::TF_NO_LIMIT;
     if (modes_[i] == ntp::MODE_POSITION) {
-      const int32_t lo = dxl.readControlTableItem(MIN_POSITION_LIMIT, ids_[i]);
+      const int32_t lo = dxl.readControlTableItem(MIN_POSITION_LIMIT, ids_[i], IO_TIMEOUT_MS);
       const bool lo_ok = last_ok();
-      const int32_t hi = dxl.readControlTableItem(MAX_POSITION_LIMIT, ids_[i]);
+      const int32_t hi = dxl.readControlTableItem(MAX_POSITION_LIMIT, ids_[i], IO_TIMEOUT_MS);
       if (lo_ok && last_ok() && lo <= hi) {min_lim_[i] = lo; max_lim_[i] = hi;}
     }
     if (good) {ok |= static_cast<uint16_t>(1u << i);}
@@ -272,8 +272,8 @@ void bus_set_torque(bool on)
       tf_.idx = i;
       tf_.id = ids_[i];
       tf_.step = step;
-      tf_.dxl_err = dxl.getLastStatusPacketError();
       tf_.lib_err = static_cast<uint8_t>(dxl.getLastLibErrCode());
+      tf_.dxl_err = tf_.lib_err ? 0 : dxl.getLastStatusPacketError();   // 대답이 없으면 라이브러리가 앞 모터의 오류 칸을 그대로 둠
       tf_.pos = pos;
       tf_.min_lim = min_lim_[i];
       tf_.max_lim = max_lim_[i];
@@ -281,7 +281,12 @@ void bus_set_torque(bool on)
     };
   for (uint8_t i = 0; i < n_; ++i) {
     if (!(ok_ & (1u << i))) {continue;}
-    if (millis() - t0 > TORQUE_BUDGET_MS) {all = false; break;}   // 남은 모터는 다음 바퀴에
+    if (millis() - t0 > TORQUE_BUDGET_MS) {   // 남은 모터는 다음 바퀴에
+      note(i, ntp::TF_BUDGET, 0);
+      if (tf_.step == ntp::TF_BUDGET && tf_.idx == i) {tf_.dxl_err = tf_.lib_err = 0;}   // 마지막 통신은 앞 모터 것 → 오류 칸을 안 붙임
+      all = false;
+      break;
+    }
     if (on && modes_[i] != ntp::MODE_VELOCITY) {
       // 목표 = 지금 위치 → 토크가 켜지는 순간 제자리
       const int32_t now_pos = static_cast<int32_t>(timed_read(PRESENT_POSITION, ids_[i]));
@@ -299,9 +304,10 @@ void bus_set_torque(bool on)
         all = false;
         continue;
       }
-      if (!timed_write(GOAL_POSITION, ids_[i], now_pos)) {note(i, ntp::TF_GOAL, now_pos); all = false;}
+      // 목표를 못 썼으면 모터엔 예전 목표가 남아 있음 → 토크를 켜면 그리로 튐. 읽기 실패와 같이 이번엔 안 켬 (11-08)
+      if (!timed_write(GOAL_POSITION, ids_[i], now_pos)) {note(i, ntp::TF_GOAL, now_pos); all = false; continue;}
     }
-    if (on && modes_[i] == ntp::MODE_VELOCITY && !timed_write(GOAL_VELOCITY, ids_[i], 0)) {note(i, ntp::TF_GOAL, 0); all = false;}
+    if (on && modes_[i] == ntp::MODE_VELOCITY && !timed_write(GOAL_VELOCITY, ids_[i], 0)) {note(i, ntp::TF_GOAL, 0); all = false; continue;}
     if (!timed_write(TORQUE_ENABLE, ids_[i], on ? 1 : 0)) {note(i, ntp::TF_TORQUE, 0); all = false;}
   }
   if (all) {torque_ = on;}
@@ -314,6 +320,13 @@ void bus_pos_limits(ntp::PosLimits &l)
     l.lo[i] = min_lim_[i];
     l.hi[i] = max_lim_[i];
   }
+}
+
+bool bus_torque_fail_peek(ntp::TorqueFail &f)
+{
+  if (!tf_new_) {return false;}
+  f = tf_;
+  return true;
 }
 
 bool bus_torque_fail_take(ntp::TorqueFail &f)
@@ -368,6 +381,17 @@ void bus_health_step()
   if (torque_) {
     const int32_t te = timed_read(TORQUE_ENABLE, ids_[i]);
     if (last_ok()) {
+      if (te == 0 && !(torque_lost_ & bit)) {   // 처음 꺼진 걸 봤을 때 이유 상자 하나 (다시 켜지는 않음 — 과부하면 사람이 원인 확인)
+        tf_.idx = i;
+        tf_.id = ids_[i];
+        tf_.step = ntp::TF_LOST;
+        tf_.dxl_err = dxl.getLastStatusPacketError();
+        tf_.lib_err = 0;
+        tf_.pos = he;
+        tf_.min_lim = min_lim_[i];
+        tf_.max_lim = max_lim_[i];
+        tf_new_ = true;
+      }
       if (te == 0) {torque_lost_ |= bit;} else {torque_lost_ &= static_cast<uint16_t>(~bit);}
     }
   } else {
