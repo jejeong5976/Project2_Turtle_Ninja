@@ -17,6 +17,7 @@
 #pragma once
 
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -100,13 +101,25 @@ struct JointSpec
   uint16_t goal_current = 0;
   double scale = 1.0;                  // 관절값 = (모터값 − zero_rad) × scale. 그리퍼 = 0.01149 m/rad, 조향 = −1 (방향이 URDF 와 반대일 때)
   double zero_rad = 0.0;               // 관절 0 일 때의 모터값 [모터 rad] = (zero_tick − 2048) × 2π/4096. 위치 모드만 (바퀴는 0)
+  double turn_rad = 0.0;               // 여러 바퀴 모드의 켤 때 바퀴 보정 [모터 rad, 2π 의 배수] (OpenCRLink 가 CONFIG 뒤 첫 측정에서 정함)
 };
 
 // 모터값 ↔ 관절값 (조향 영점 · 방향). 모터값 = 펌웨어 rad (위치 모드: (눈금 − 2048) × 2π/4096)
-//   관절 = (모터 − zero_rad) × scale,  모터 = 관절 / scale + zero_rad.  속도는 scale 만 (영점은 상관없음)
+//   관절 = (모터 + turn_rad − zero_rad) × scale,  모터 = 관절 / scale + zero_rad − turn_rad.  속도는 scale 만 (영점은 상관없음)
 //   예) 조향 영점 3596 눈금 · 모터 + = 위에서 시계 / URDF 축 +z (+ = 반시계) → scale = −1, zero_tick = 3596
-inline double motor_to_joint(const JointSpec & j, double m) {return (m - j.zero_rad) * j.scale;}
-inline double joint_to_motor(const JointSpec & j, double q) {return q / j.scale + j.zero_rad;}
+inline double motor_to_joint(const JointSpec & j, double m) {return (m + j.turn_rad - j.zero_rad) * j.scale;}
+inline double joint_to_motor(const JointSpec & j, double q) {return q / j.scale + j.zero_rad - j.turn_rad;}
+
+// 여러 바퀴 모드 (전류 기반 위치 = 펌웨어 확장 위치: J1 · 그리퍼) 는 CONFIG 때 모터가 위치를 한 바퀴 (0 ~ 4095 눈금) 안에서 다시 셈.
+//   11-08 실물: HOME J1 = 4085 눈금이 경계 4096 에서 11 눈금 (1°) — 몸통이 정면보다 1° 왼쪽 (4101) 일 때 T1 을 다시 켜자
+//   5 눈금 (관절 −6.26 rad) 으로 읽혀 arm_controller 가 한계 밖으로 꺼짐 (그대로 HOME 이면 몸통이 한 바퀴 돎).
+//   → 첫 측정에서 모터값에 2π 의 배수를 더해 관절 0 에서 반 바퀴 (±π) 안으로. J1 (URDF ±π) · 그리퍼 (닫힘 ~ 열림 1000 눈금) 범위에선 답이 하나
+inline bool is_multi_turn(const JointSpec & j) {return j.mode == ntp::MODE_CURRENT_POSITION;}
+inline double unwrap_turn_rad(double motor_rad, double zero_rad)
+{
+  if (!std::isfinite(motor_rad) || !std::isfinite(zero_rad)) {return 0.0;}
+  return 2.0 * M_PI * std::round((zero_rad - motor_rad) / (2.0 * M_PI));
+}
 
 struct JointReading
 {
@@ -258,6 +271,10 @@ public:
   uint32_t frames_received() const {return frames_;}
   std::size_t size() const {return joints_.size();}
   const std::vector<JointSpec> & joints() const {return joints_;}
+  // 여러 바퀴 모드 관절의 켤 때 바퀴 보정 (i 번째 관절, 4096 눈금 단위. 0 = 그대로 · 아직 안 정함)
+  int turns(std::size_t i) const {return i < turn_k_.size() ? turn_k_[i] : 0;}
+  // 바퀴를 보정한 관절이 새로 생겼으면 그 설명 (한 번만 돌려주고 비움) — 플러그인이 경고로 찍음
+  std::string take_turn_note() {std::string s; s.swap(turn_note_); return s;}
 
   // ok_mask 에서 빠진 모터 이름들 ("joint3(ID 13), ...") — 로그용
   std::string missing_joints(int ok_mask) const;
@@ -288,6 +305,10 @@ private:
   bool pos_limits_ok_ = false;
   uint32_t torque_fail_count_ = 0;
   Clock::time_point torque_fail_time_{};
+  // 여러 바퀴 모드 관절: CONFIG 뒤 첫 측정에서 바퀴 보정을 정했나 · 몇 바퀴 · 로그용 설명
+  std::vector<uint8_t> turn_set_;
+  std::vector<int> turn_k_;
+  std::string turn_note_;
 };
 
 }  // namespace hardware
