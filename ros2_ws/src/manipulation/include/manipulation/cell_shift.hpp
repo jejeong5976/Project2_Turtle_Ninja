@@ -34,4 +34,11 @@ bool shift_cell_path(
   const ArmModel & m, ArmPath & path, bool store, const Eigen::Vector2d & cell_xy, const Eigen::Vector2d & d,
   CellShiftReport & rep, std::string & why, double dz = 0.0);
 
+// RETRIEVE 로 꺼낸 퍽을 쥔 깊이 [mm] (퍽 윗면 ↔ 손끝). PLACE 가 이 깊이로 놓는 높이를 정함 (퍽 바닥이 면 위 place_bottom_clear_mm).
+//   cell_depth_mm > 0 = 그 칸에서 실물로 잰 깊이 (retrieve_grip_depth.<칸>), 아니면 기본 (retrieve_grip_depth_mm 25).
+//   11-08 실물: 모든 칸을 25 로 보고 놓아 칸에 따라 높이서 떨굼. retrieve_offset 높이값으로 추정하지 않는 까닭 — S1 · S2 는
+//   녹화 경로가 얕게 쥐던 것을 되돌린 값이라 (주석 "기록이 높음") 더하면 퍽을 면 아래로 누름. 그래서 칸마다 잰 값을 씀.
+//   결과는 0 ~ 퍽 높이 (60 mm) 안으로
+double retrieve_held_depth_mm(double base_depth_mm, double cell_depth_mm);
+
 }  // namespace manipulation

@@ -174,3 +174,17 @@ TEST(CellShift, ReleaseNearTheStartGetsTheFullShift)
   EXPECT_NEAR(moved.z(), -4.0, 0.2);
   for (int j = 0; j < 5; ++j) {EXPECT_DOUBLE_EQ(p.nodes[0].q[j], before.nodes[0].q[j]);}
 }
+
+TEST(CellShift, RetrieveHeldDepthUsesTheMeasuredCellDepth)
+{
+  // 11-08 실물: 모든 칸을 25 mm 로 보고 놓아 칸에 따라 높이서 떨굼 → 칸마다 잰 깊이 (retrieve_grip_depth.<칸>) 가 있으면 그 값
+  EXPECT_DOUBLE_EQ(manipulation::retrieve_held_depth_mm(25.0, 0.0), 25.0);    // 안 잰 칸 = 기본
+  EXPECT_DOUBLE_EQ(manipulation::retrieve_held_depth_mm(25.0, 31.0), 31.0);   // 잰 칸
+  EXPECT_DOUBLE_EQ(manipulation::retrieve_held_depth_mm(25.0, -5.0), 25.0);   // 0 이하 = 안 잼
+  EXPECT_DOUBLE_EQ(manipulation::retrieve_held_depth_mm(25.0, std::nan("")), 25.0);
+  EXPECT_DOUBLE_EQ(manipulation::retrieve_held_depth_mm(25.0, 75.0), 60.0);   // 퍽 높이 넘게는 아님
+  // PLACE 놓는 높이 (수직 손) = place_bottom_clear_mm − 쥔 깊이 → 퍽 바닥 = 면 + clear + (실제 깊이 − 쓴 깊이)
+  const double clear = 2.0, actual = 31.0;
+  EXPECT_NEAR(clear - manipulation::retrieve_held_depth_mm(25.0, 31.0) + actual, clear, 1e-12);   // 잰 값을 쓰면 2 mm
+  EXPECT_NEAR(clear - manipulation::retrieve_held_depth_mm(25.0, 0.0) + actual, 8.0, 1e-12);      // 25 로 보면 8 mm 에서 떨굼
+}
