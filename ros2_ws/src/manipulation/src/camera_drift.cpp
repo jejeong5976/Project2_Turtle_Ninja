@@ -3,6 +3,8 @@
 #include "manipulation/camera_drift.hpp"
 
 #include <cmath>
+#include <sstream>
+#include <string>
 
 namespace manipulation
 {
@@ -36,6 +38,28 @@ bool camera_drift(const std::vector<Eigen::Vector2d> & u_ref, const std::vector<
 Eigen::Quaterniond chain_drift(const Eigen::Quaterniond & base, const Eigen::Quaterniond & meas)
 {
   return (base.normalized() * meas.normalized()).normalized();
+}
+
+double drift_deg(const Eigen::Quaterniond & q)
+{
+  return Eigen::AngleAxisd(q.normalized()).angle() * 180.0 / M_PI;
+}
+
+std::string ref_base_tag(std::uintmax_t size, long long mtime_s)
+{
+  return "ref " + std::to_string(size) + " " + std::to_string(mtime_s);
+}
+
+bool ref_base_tag_matches(const std::string & stored, const std::string & now)
+{
+  std::istringstream a(stored), b(now);
+  std::string ka, kb;
+  unsigned long long sa = 0, sb = 0;
+  long long ma = 0, mb = 0;
+  if (!(a >> ka)) {return true;}   // 옛 형식 (사원수만, 짝 줄 없음) — 뒤 호환
+  if (ka != "ref" || !(a >> sa >> ma)) {return false;}
+  if (!(b >> kb >> sb >> mb) || kb != "ref") {return false;}
+  return sa == sb && ma == mb;
 }
 
 }  // namespace manipulation

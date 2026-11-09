@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -23,6 +24,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <sys/stat.h>
 
 #include <opencv2/calib3d.hpp>
 #include <opencv2/features2d.hpp>
@@ -63,7 +65,7 @@ public:
     declare_parameter<bool>("ref_keeps_drift", true);   // 새 기준을 찍을 때 그때 보정을 이어 씀 (false = 0 에서 다시). 서비스 부를 때 읽음
     ref_path_ = fs::exists(user_ref) ? user_ref.string() : ref_default;
     // 새 기준을 찍을 때 쓰던 보정 (ref_base.txt) — 우리가 찍은 기준 (ref.png) 에만 딸림. 파일이 없으면 단위 (예전과 같음)
-    if (ref_path_ == user_ref.string()) {base_ = load_quat(dir_ / "ref_base.txt");}
+    if (ref_path_ == user_ref.string()) {base_ = load_base(dir_ / "ref_base.txt", user_ref);}
     ref_ = ref_path_.empty() ? cv::Mat() : cv::imread(ref_path_, cv::IMREAD_GRAYSCALE);
     if (ref_.empty()) {
       RCLCPP_ERROR(get_logger(), "손목 카메라 기준 사진을 못 읽음 (%s) → 보정 안 함. 잘 될 때 홈에서 ros2 service call /camera_drift_node/save_reference "
@@ -82,7 +84,7 @@ public:
         done_this_visit_ = false;
         res->success = true;
         res->message = get_parameter("ref_keeps_drift").as_bool() ?
-          "다음 홈 자세 사진을 새 기준으로 저장, 지금 보정을 이어 씀 (팔이 홈에서 멈춰 있으면 곧)" :
+          "다음 홈 자세 사진을 새 기준으로 저장, 지금 보정을 이어 씀 (팔이 홈에서 멈춰 있으면 곧. 옛 기준 대비 측정을 이었는지 · 마지막 값 그대로인지는 그때 로그에)" :
           "다음 홈 자세 사진을 새 기준으로 저장하고 보정을 0 으로 (ref_keeps_drift false, 팔이 홈에서 멈춰 있으면 곧)";
       });
   }
@@ -121,28 +123,71 @@ private:
     }
     if (save_ref_) {
       save_ref_ = false;
+      // 새 사진으로 바꾸기 전에 같은 영상을 옛 기준과 한 번 재 봄 → 통과하면 이어 쓸 보정 = 그 측정을 이은 총 보정 (지금 낼 값과 같음).
+      //   못 재면 (받침이 바뀌어 점이 모자람 등) 마지막으로 낸 current_ 를 그대로 — 그사이 카메라가 더 돌았을 수 있음 (11-08 밤 검수)
+      manipulation::CameraDrift d;
+      std::string why;
+      bool measured = measure(gray, d, why);
+      if (measured && (d.resid_px > max_resid_ || d.deg > max_deg_)) {
+        measured = false;
+        char b[128];
+        std::snprintf(b, sizeof(b), "기준 대비 %.1f° · 남는 차 %.1f px — 너무 크거나 안 맞음", d.deg, d.resid_px);
+        why = b;
+      }
+      const Eigen::Quaterniond chained = measured ? manipulation::chain_drift(base_, Eigen::Quaterniond(d.R)) : current_;
       std::error_code ec;
       fs::create_directories(dir_, ec);
       const std::string p = (dir_ / "ref.png").string();
       if (!cv::imwrite(p, gray)) {RCLCPP_ERROR(get_logger(), "기준 사진 저장 실패: %s", p.c_str()); return;}
       ref_ = gray;
       ref_path_ = p;
-      // 이어 쓰기: 새 기준 카메라 = 명목 · (지금 쓰는 보정). 사진과 같이 저장 — 다음에 켜도 같은 기준이면 같은 base
+      // 이어 쓰기: 새 기준 카메라 = 명목 · (지금 쓰는 보정). 사진의 크기 · 수정 시각과 같이 저장 — 다음에 켜도 같은 사진이면 같은 base
       const bool keep = get_parameter("ref_keeps_drift").as_bool();
-      base_ = keep ? current_ : Eigen::Quaterniond::Identity();
-      if (!save_quat(dir_ / "ref_base.txt", base_)) {
+      base_ = keep ? chained : Eigen::Quaterniond::Identity();
+      if (!save_quat(dir_ / "ref_base.txt", base_, ref_tag(dir_ / "ref.png"))) {
         RCLCPP_ERROR(get_logger(), "손목 카메라: ref_base.txt 저장 실패 — 다시 켜면 이어 쓰는 보정이 빠짐 (%s)", dir_.c_str());
       }
+      if (keep && !measured) {
+        if (meas_t_) {
+          RCLCPP_WARN(get_logger(), "손목 카메라: 마지막 측정이 %.0f s 전 값 (기준 대비 측정 실패: %s) — 그대로 이어 씀", now().seconds() - *meas_t_, why.c_str());
+        } else {
+          RCLCPP_WARN(get_logger(), "손목 카메라: 이번에 켠 뒤 측정 없음 — 지난번 값 (last.txt) 을 그대로 이어 씀 (기준 대비 측정 실패: %s)", why.c_str());
+        }
+      }
+      if (measured) {meas_t_ = now().seconds();}
       publish(base_, "새 기준");
       save_quat(dir_ / "last.txt", base_);
       RCLCPP_INFO(get_logger(), "손목 카메라: 지금 홈 사진을 새 기준으로 저장 (%s) → 보정 %.2f° %s", p.c_str(), deg_of(base_),
-        keep ? "이어 씀 (ref_base.txt)" : "(0 에서 다시, ref_keeps_drift false)");
+        !keep ? "(0 에서 다시, ref_keeps_drift false)" :
+        measured ? "이어 씀 (옛 기준 대비 측정을 이음, ref_base.txt)" : "이어 씀 (마지막 값 그대로, ref_base.txt)");
       return;
     }
-    if (ref_.empty() || gray.size() != ref_.size()) {
-      RCLCPP_WARN(get_logger(), "손목 카메라: 기준 사진이 없거나 크기가 다름 → 보정 안 함");
+    manipulation::CameraDrift d;
+    std::string why;
+    if (!measure(gray, d, why)) {
+      RCLCPP_WARN(get_logger(), "손목 카메라: %s → 보정 안 함", why.c_str());
       return;
     }
+    const Eigen::Vector3d rv = Eigen::AngleAxisd(d.R).axis() * Eigen::AngleAxisd(d.R).angle() * 180.0 / M_PI;
+    const Eigen::Quaterniond q = manipulation::chain_drift(base_, Eigen::Quaterniond(d.R));   // 명목 대비 = 새 기준 때 보정 · 새 기준 대비
+    if (d.resid_px > max_resid_ || d.deg > max_deg_) {
+      RCLCPP_WARN(get_logger(), "손목 카메라: 기준 대비 %.1f° (x %+.2f · y %+.2f · z %+.2f) · 남는 차 %.1f px · 점 %d — 너무 크거나 안 맞음 (이어 쓰면 총 %.2f°) → 보정 안 함 "
+        "(카메라 경첩 · 나사 확인, 몸통이 가려졌는지 확인)", d.deg, rv.x(), rv.y(), rv.z(), d.resid_px, d.n, deg_of(q));
+      return;
+    }
+    meas_t_ = now().seconds();
+    publish(q, "홈 사진");
+    save_quat(dir_ / "last.txt", q);
+    char big[128] = "";
+    if (d.deg > 2.0) {std::snprintf(big, sizeof(big), " (2° 넘음 — 카메라 경첩이 돌았을 수 있음, 이어 쓴 총 %.2f°)", deg_of(q));}
+    RCLCPP_INFO(get_logger(), "손목 카메라: 기준 대비 %.2f° (x %+.2f · y %+.2f · z %+.2f) · 남는 차 %.1f px · 점 %d → 손목 검출 보정 %.2f° "
+      "(기준 사진 때 %.2f° 이어 씀)%s", d.deg, rv.x(), rv.y(), rv.z(), d.resid_px, d.n, deg_of(q), deg_of(base_), big);
+  }
+
+  // 지금 홈 사진을 기준 사진 ref_ 과 맞춰 회전 d 를 잼 (ORB → RANSAC → Kabsch). 못 재면 false + why (크기 · 남는 차 한도는 부르는 쪽)
+  bool measure(const cv::Mat & gray, manipulation::CameraDrift & d, std::string & why)
+  {
+    if (ref_.empty() || gray.size() != ref_.size()) {why = "기준 사진이 없거나 크기가 다름"; return false;}
     cv::Mat roi = cv::Mat::zeros(gray.size(), CV_8U);
     roi.rowRange(std::clamp(roi_y0_, 0, gray.rows - 1), gray.rows).setTo(255);
     auto orb = cv::ORB::create(4000);
@@ -150,7 +195,7 @@ private:
     cv::Mat da, db;
     orb->detectAndCompute(ref_, roi, ka, da);
     orb->detectAndCompute(gray, roi, kb, db);
-    if (da.empty() || db.empty()) {RCLCPP_WARN(get_logger(), "손목 카메라: 몸통 특징이 없음 (가려졌거나 어두움) → 보정 안 함"); return;}
+    if (da.empty() || db.empty()) {why = "몸통 특징이 없음 (가려졌거나 어두움)"; return false;}
     std::vector<cv::DMatch> ms;
     cv::BFMatcher(cv::NORM_HAMMING, true).match(da, db, ms);
     std::sort(ms.begin(), ms.end(), [](const cv::DMatch & a, const cv::DMatch & b) {return a.distance < b.distance;});
@@ -158,8 +203,8 @@ private:
     std::vector<cv::Point2f> pa, pb;
     for (const auto & x : ms) {pa.push_back(ka[x.queryIdx].pt); pb.push_back(kb[x.trainIdx].pt);}
     if (static_cast<int>(pa.size()) < min_points_) {
-      RCLCPP_WARN(get_logger(), "손목 카메라: 맞은 점 %zu 개 (%d 개 넘어야) → 보정 안 함", pa.size(), min_points_);
-      return;
+      why = "맞은 점 " + std::to_string(pa.size()) + " 개 (" + std::to_string(min_points_) + " 개 넘어야)";
+      return false;
     }
     std::vector<uchar> inl;
     cv::findHomography(pa, pb, cv::RANSAC, 3.0, inl);
@@ -167,25 +212,13 @@ private:
     for (size_t i = 0; i < inl.size(); ++i) {
       if (inl[i]) {ua.emplace_back(pa[i].x, pa[i].y); ub.emplace_back(pb[i].x, pb[i].y);}
     }
-    manipulation::CameraDrift d;
     if (static_cast<int>(ua.size()) < min_points_ || K_.size() != 4 ||
       !manipulation::camera_drift(ua, ub, K_[0], K_[1], K_[2], K_[3], d))
     {
-      RCLCPP_WARN(get_logger(), "손목 카메라: 맞은 점 %zu 개 (%d 개 넘어야) → 보정 안 함", ua.size(), min_points_);
-      return;
+      why = "맞은 점 " + std::to_string(ua.size()) + " 개 (" + std::to_string(min_points_) + " 개 넘어야)";
+      return false;
     }
-    const Eigen::Vector3d rv = Eigen::AngleAxisd(d.R).axis() * Eigen::AngleAxisd(d.R).angle() * 180.0 / M_PI;
-    if (d.resid_px > max_resid_ || d.deg > max_deg_) {
-      RCLCPP_WARN(get_logger(), "손목 카메라: 기준 대비 %.1f° (x %+.2f · y %+.2f · z %+.2f) · 남는 차 %.1f px · 점 %d — 너무 크거나 안 맞음 → 보정 안 함 "
-        "(카메라 경첩 · 나사 확인, 몸통이 가려졌는지 확인)", d.deg, rv.x(), rv.y(), rv.z(), d.resid_px, d.n);
-      return;
-    }
-    const Eigen::Quaterniond q = manipulation::chain_drift(base_, Eigen::Quaterniond(d.R));   // 명목 대비 = 새 기준 때 보정 · 새 기준 대비
-    publish(q, "홈 사진");
-    save_quat(dir_ / "last.txt", q);
-    RCLCPP_INFO(get_logger(), "손목 카메라: 기준 대비 %.2f° (x %+.2f · y %+.2f · z %+.2f) · 남는 차 %.1f px · 점 %d → 손목 검출 보정 %.2f° "
-      "(기준 사진 때 %.2f° 이어 씀)%s", d.deg, rv.x(), rv.y(), rv.z(), d.resid_px, d.n, deg_of(q), deg_of(base_),
-      d.deg > 2.0 ? " (2° 넘음 — 카메라 경첩이 돌았을 수 있음)" : "");
+    return true;
   }
 
   void publish(const Eigen::Quaterniond & q, const char * why)
@@ -202,7 +235,7 @@ private:
     RCLCPP_DEBUG(get_logger(), "보정 냄 (%s)", why);
   }
 
-  static double deg_of(const Eigen::Quaterniond & q) {return Eigen::AngleAxisd(q.normalized()).angle() * 180.0 / M_PI;}
+  static double deg_of(const Eigen::Quaterniond & q) {return manipulation::drift_deg(q);}
 
   // "x y z w" 한 줄 (last.txt · ref_base.txt). 없거나 이상하면 단위
   static Eigen::Quaterniond load_quat(const fs::path & p)
@@ -216,13 +249,40 @@ private:
     return Eigen::Quaterniond::Identity();
   }
 
-  bool save_quat(const fs::path & p, const Eigen::Quaterniond & q) const
+  // ref.png 의 크기 · 수정 시각 → ref_base.txt 둘째 줄 (기준 사진과 짝 확인). 못 보면 빈 줄
+  static std::string ref_tag(const fs::path & png)
+  {
+    std::error_code ec;
+    const auto size = fs::file_size(png, ec);
+    if (ec) {return "";}
+    // 수정 시각은 POSIX stat 의 Unix 초 — file_clock 은 기준 시각이 구현마다 달라 짝이 어긋날 수 있음 (11-09 검수)
+    struct stat st{};
+    if (::stat(png.c_str(), &st) != 0) {return "";}
+    return manipulation::ref_base_tag(size, st.st_mtime);
+  }
+
+  // ref_base.txt: 첫 줄 사원수, 둘째 줄 (11-08 부터) 기준 사진 짝. 사진만 바뀌어 짝이 안 맞으면 단위 (옛 보정을 이어 쓰지 않음). 옛 형식 (사원수만) 은 그대로
+  Eigen::Quaterniond load_base(const fs::path & p, const fs::path & png)
+  {
+    std::ifstream f(p);
+    std::string line, tag;
+    if (!std::getline(f, line)) {return Eigen::Quaterniond::Identity();}
+    std::getline(f, tag);
+    if (!manipulation::ref_base_tag_matches(tag, ref_tag(png))) {
+      RCLCPP_WARN(get_logger(), "손목 카메라: 기준 사진이 바뀜 (ref.png 이 ref_base.txt 의 짝과 다름) → ref_base.txt 안 씀 (보정 0 에서 다시)");
+      return Eigen::Quaterniond::Identity();
+    }
+    return load_quat(p);
+  }
+
+  bool save_quat(const fs::path & p, const Eigen::Quaterniond & q, const std::string & tag = "") const
   {
     std::error_code ec;
     fs::create_directories(dir_, ec);
     std::ofstream f(p);
     f.precision(9);
     f << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << "\n";
+    if (!tag.empty()) {f << tag << "\n";}   // ref_base.txt 만: 기준 사진 짝
     return static_cast<bool>(f);
   }
 
@@ -236,6 +296,7 @@ private:
   Eigen::Quaterniond base_{Eigen::Quaterniond::Identity()};      // 지금 기준 사진을 찍을 때 쓰던 보정 (ref_base.txt)
   Eigen::Quaterniond current_{Eigen::Quaterniond::Identity()};   // 마지막으로 낸 보정 (새 기준을 찍을 때 이어 씀)
   std::optional<double> home_since_;
+  std::optional<double> meas_t_;   // 마지막으로 기준 대비 측정에 성공한 시각 (새 기준 때 못 재면 "N s 전 값" 알림)
   bool done_this_visit_{false}, save_ref_{false};
   rclcpp::Publisher<geometry_msgs::msg::QuaternionStamped>::SharedPtr pub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr sub_js_;
