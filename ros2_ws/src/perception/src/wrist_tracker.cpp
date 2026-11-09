@@ -75,7 +75,7 @@ KindInfo parse_kind(const std::string & kind, const std::string & fallback_color
 
 std::string reject_reason(const PuckPose & p)
 {
-  if (p.truncated && !p.tag_centre) {return "truncated";}   // 태그로 중심을 잡았으면 마스크가 잘려도 씀 (박스 끝 퍽, 11-04)
+  if (p.truncated && !p.tag_centre) {return "truncated";}   // 태그로 중심을 잡았으면 마스크가 잘려도 씀 (박스 끝 퍽)
   if (p.n_points < MIN_POINTS) {return "points";}
   if (p.spread[0] > MAX_LONG_SPREAD || p.spread[1] > MAX_MID_SPREAD) {return "size";}
   return "";

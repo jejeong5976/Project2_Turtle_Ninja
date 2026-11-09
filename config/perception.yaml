@@ -19,7 +19,7 @@
 
 perception:
   ros__parameters:
-    wide:                                # 광각 Arducam UC-684, 아래 30° (11-07 새 브래킷, 예전 40°)
+    wide:                                # 광각 Arducam UC-684, 아래 30°
       image_topic: /wide_cam/image_raw
       image_qos: reliable                # reliable | best_effort. 큰 영상을 best_effort 로 받으면 프로세스 사이에서 유실
       frame_id: birdeye_camera_optical_frame   # 출력 header.frame_id = 배포판 URDF 이름. "" 면 드라이버 영상 header 그대로
@@ -37,7 +37,7 @@ perception:
       enabled: true
       class: traffic_light
       red: [0.36, 0.56]                  # [확인 필요] 상자 높이 대비 칸 위치, 위 → 아래. 위 흰 뚜껑(0–0.33) 은 뺌
-      yellow: [0.60, 0.75]               #   2026-11-03 실물 한 장 (책상 약 1.5 m, 초록 켬) 에서 잰 임시값, 관측 위치에서 다시 잴 것
+      yellow: [0.60, 0.75]               #    실물 한 장 (책상 약 1.5 m, 초록 켬) 에서 잰 임시값, 관측 위치에서 다시 잴 것
       green: [0.80, 0.98]
       white_min: 0.30                    # 1) 흰색: 흰 화소 비율이 가장 높은 칸이 이 이상이고
       white_margin: 0.20                 #    다른 칸보다 이만큼 높으면 켜짐 (실측 켜진 칸 0.71 · 꺼진 렌즈 0.03)
@@ -62,7 +62,7 @@ perception:
       reset_move_m: 0.01                 # 장 사이 카메라가 이보다 움직이면 묶음 지움
       reset_rot_deg: 2.0
       depth_scale: 0.001                 # 16UC1 깊이 단위 → m
-      min_rise_m: 0.0                    # 윗면이 둘레 낮은 면보다 이만큼도 안 솟은 분할은 퍽 아님 (11-07 실물: 상자 로고를 green 퍽으로). 0 = 안 봄.
+      min_rise_m: 0.0                    # 윗면이 둘레 낮은 면보다 이만큼도 안 솟은 분할은 퍽 아님 (실물: 상자 로고를 green 퍽으로). 0 = 안 봄.
                                          #   0.012 로 켜기 전에 퍽이 붙어 꽉 찬 박스에서 가운데 퍽이 안 빠지는지 확인 (둘레가 옆 퍽 윗면뿐이면 빠짐)
       publish_debug: false               # true 면 /perception/wrist_debug_image
       color_topic: /camera/camera/color/image_raw
@@ -75,7 +75,7 @@ perception:
     rack:                                # 적재함 컵 바닥 AprilTag (손목 컬러만, 깊이 안 씀) → /perception/rack/cells
       enabled: true                      # ~/rack/enable 로 켜고 끔
       frame: base_link                   # 출력 frame_id. 이 프레임 ← wrist.frame_id TF 로 바꿈 (z = 위)
-      # 칸 S1 … S12 의 컵 바닥 태그 ID (실물 2026-11-03 붙인 그대로, 위치 순서라 S 번호 순서와 다름)
+      # 칸 S1 … S12 의 컵 바닥 태그 ID (실물 붙인 그대로, 위치 순서라 S 번호 순서와 다름)
       #   S1 20 · S2 21 · S3 22 · S4 31 · S5 26 · S6 24 · S7 29 · S8 23 · S9 30 · S10 27 · S11 25 · S12 28
       #   태그를 다시 붙이면 여기만 고침. 퍽 0–11 · 장소 12–14 와 겹치면 안 됨
       cell_tag_ids: [20, 21, 22, 31, 26, 24, 29, 23, 30, 27, 25, 28]

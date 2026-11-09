@@ -96,7 +96,7 @@ std::vector<TagPose> detect_tags(const cv::Mat & gray, const Intrinsics & K, con
   std::vector<std::vector<cv::Point2f>> corners;
   std::vector<int> ids;
   detect_apriltags(gray, corners, ids);   // common.hpp (광각과 같은 검출기 · 설정)
-  // 퍽 태그를 하나도 못 읽으면 대비를 올려 (CLAHE) 한 번 더 — 11-07 실물: 누운 퍽 옆면 태그 (16 mm, 화면 약 25 px) 가 보였다 안 보였다.
+  // 퍽 태그를 하나도 못 읽으면 대비를 올려 (CLAHE) 한 번 더 — 실물: 누운 퍽 옆면 태그 (16 mm, 화면 약 25 px) 가 보였다 안 보였다.
   //   적재함 칸 태그도 같은 처리로 2/12 → 12/12 (manipulation rack_tag_node)
   if (std::none_of(ids.begin(), ids.end(), [](int id) {return is_puck_tag(id);})) {
     thread_local const auto clahe = cv::createCLAHE(3.0, cv::Size(8, 8));
@@ -451,7 +451,7 @@ std::optional<PuckPose> puck_pose(
     p.tag = t;
     break;
   }
-  if (up_cam != nullptr && min_rise_m > 0.0) {   // 납작한 무늬 (11-07 실물: 상자 로고를 퍽으로 잡음) — 둘레보다 안 솟았으면 퍽 아님
+  if (up_cam != nullptr && min_rise_m > 0.0) {   // 납작한 무늬 (실물: 상자 로고를 퍽으로 잡음) — 둘레보다 안 솟았으면 퍽 아님
     const Vec3 upn = up_cam->normalized();
     const auto low = ring_low_height(mask, depth_m, K, upn);
     if (low && top_height(dots(pts, upn)) - *low < min_rise_m) {return std::nullopt;}

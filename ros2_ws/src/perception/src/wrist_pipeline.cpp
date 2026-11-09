@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <utility>
 
-#include <cv_bridge/cv_bridge.hpp>
+#include "image_cv.hpp"
 #include <opencv2/imgproc.hpp>
 #include <sensor_msgs/image_encodings.hpp>
 #include <tf2/exceptions.hpp>
@@ -157,9 +157,9 @@ WristPipeline::WristPipeline(
           try {
             auto header = m->header;
             header.frame_id = frame_id_;
-            barcode_->process(cv_bridge::toCvShare(m, "bgr8")->image, header);
-          } catch (const cv_bridge::Exception & e) {
-            RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] 바코드 cv_bridge: %s", e.what());
+            barcode_->process(image_cv::to_bgr8(*m), header);
+          } catch (const std::exception & e) {
+            RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] 바코드 영상 변환: %s", e.what());
           }
         }));
   }
@@ -194,9 +194,9 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
   cv::Mat bgr;
   cv::Mat1f depth;
   try {
-    bgr = cv_bridge::toCvShare(color, "bgr8")->image;
-  } catch (const cv_bridge::Exception & e) {
-    RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] cv_bridge: %s", e.what());
+    bgr = image_cv::to_bgr8(*color);
+  } catch (const std::exception & e) {
+    RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] 영상 변환: %s", e.what());
     return;
   }
   if (!to_depth_m(depth_msg, depth)) {return;}
@@ -307,18 +307,18 @@ pw::Mat3 WristPipeline::camera_rot(const pw::Mat3 & R_tf) const
 bool WristPipeline::to_depth_m(const Image::ConstSharedPtr & depth_msg, cv::Mat1f & depth)
 {
   try {
-    const auto d = cv_bridge::toCvShare(depth_msg);
+    const cv::Mat d = image_cv::wrap(*depth_msg);
     if (depth_msg->encoding == sensor_msgs::image_encodings::TYPE_16UC1 || depth_msg->encoding == "mono16") {
-      d->image.convertTo(depth, CV_32F, depth_scale_);
+      d.convertTo(depth, CV_32F, depth_scale_);
     } else if (depth_msg->encoding == sensor_msgs::image_encodings::TYPE_32FC1) {
-      depth = d->image;
+      depth = d;
     } else {
       RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] 깊이 형식 %s 모름 (16UC1 · 32FC1)",
         depth_msg->encoding.c_str());
       return false;
     }
-  } catch (const cv_bridge::Exception & e) {
-    RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] 깊이 cv_bridge: %s", e.what());
+  } catch (const std::exception & e) {
+    RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] 깊이 영상 변환: %s", e.what());
     return false;
   }
   return true;
@@ -418,9 +418,9 @@ void WristPipeline::on_rack(const Image::ConstSharedPtr & color)
 
   cv::Mat gray;
   try {
-    gray = cv_bridge::toCvShare(color, "mono8")->image;
-  } catch (const cv_bridge::Exception & e) {
-    RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[rack] cv_bridge: %s", e.what());
+    gray = image_cv::to_mono8(*color);
+  } catch (const std::exception & e) {
+    RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[rack] 영상 변환: %s", e.what());
     return;
   }
   const pw::Intrinsics K{info_->k[0], info_->k[4], info_->k[2], info_->k[5]};
@@ -520,7 +520,7 @@ void WristPipeline::publish_rack_debug(
     cv::putText(vis, lines[i], cv::Point(8, 18 + 16 * static_cast<int>(i)), cv::FONT_HERSHEY_SIMPLEX, 0.45,
       {255, 255, 255}, 1);
   }
-  auto msg = cv_bridge::CvImage(color->header, "bgr8", vis).toImageMsg();
+  auto msg = image_cv::bgr8_msg(color->header, vis);
   msg->header.frame_id = frame_id_;
   rack_debug_pub_->publish(*msg);
 }
@@ -553,7 +553,7 @@ void WristPipeline::publish_debug(
       (d.upright ? (*d.upright ? " up" : " lying") : "") + (d.yaw_known ? " yaw" : "");
     cv::putText(vis, txt, cv::Point(b[0], b[3] + 14), cv::FONT_HERSHEY_SIMPLEX, 0.45, {255, 255, 255}, 1);
   }
-  auto msg = cv_bridge::CvImage(color->header, "bgr8", vis).toImageMsg();
+  auto msg = image_cv::bgr8_msg(color->header, vis);
   msg->header.frame_id = frame_id_;
   debug_pub_->publish(*msg);
 }

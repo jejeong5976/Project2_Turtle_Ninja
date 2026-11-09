@@ -128,20 +128,20 @@ std::pair<std::optional<Vec3>, std::array<double, 2>> lying_face(
 std::pair<std::optional<Vec3>, std::array<double, 2>> upright_face(const std::vector<Vec3> & top, const Vec3 & up);
 
 // 선 퍽 윗면에 태그가 보이면 (puck_pose 가 고른 p.tag): 태그 네 모서리 화소 광선을 윗면 높이 평면과 만나게 해
-//   윗면 중심 · 퍽 중심 · 면 방향 (태그 변) 을 다시 잡음. 깊이 점 평균은 비스듬히 볼 때 약 10 mm 치우침 (11-04 실물, 태그와 비교)
+//   윗면 중심 · 퍽 중심 · 면 방향 (태그 변) 을 다시 잡음. 깊이 점 평균은 비스듬히 볼 때 약 10 mm 치우침 (실물, 태그와 비교)
 //   태그 한 변이 kPuckTagSideM 에서 4 mm 넘게 다르거나 윗면 중심에서 25 mm 넘게 떨어지면 그대로 (다른 퍽 태그 · 높이 틀림)
 //   잡으면 p.tag_centre = true → 마스크가 화면 가장자리에 닿아도 (truncated) 거르지 않음 (reject_reason)
 bool tag_top_refine(PuckPose & p, const Intrinsics & K, const Vec3 & up);
 
 // 누운 네모 퍽의 윗면 (위를 향한 옆면) 에 태그가 보이면 (p.tag): 태그 네 모서리 광선을 윗면 높이 평면과 만나게 해 윗면 중심 · 퍽 중심 ·
 //   긴축 (태그 두 변 중 지금 긴축에 가까운 쪽) 을 다시 잡음. 깊이 점 평균은 비스듬히 볼 때 · 마스크 끝이 덜 잡힐 때 긴축 방향으로
-//   수 mm 흔들림 → 받침 세우기에서 쥐는 자리가 그만큼 틀어짐 (11-06 시뮬: 긴축 ±2 mm 면 다 섬, ±4 mm 면 거의 안 섬)
+//   수 mm 흔들림 → 받침 세우기에서 쥐는 자리가 그만큼 틀어짐 (시뮬: 긴축 ±2 mm 면 다 섬, ±4 mm 면 거의 안 섬)
 //   태그 한 변이 kPuckTagSideM 에서 4 mm 넘게 다르면 (윗면이 아닌 옆면 태그) · 윗면 중심에서 25 mm 넘게 떨어지면 그대로
 bool tag_lying_refine(PuckPose & p, const Intrinsics & K, const Vec3 & up);
 
 // 위쪽 알 때 선/누움 · 긴축 · 중심 · 면 방향 보정 (p 를 고침)
 //   support_h (놓인 면 높이, 위쪽 방향 내적) 가 있으면 선/누움 = 윗면이 놓인 면에서 SUPPORT_UPRIGHT_H 넘게 높은가 (누운 퍽 34.8 · 선 퍽 60 mm)
-//   없으면 예전 규칙 (점 높이 범위 · 발자국 길이). 11-05 실물: LOOK 에서 누운 퍽을 장마다 섰다 누웠다 함 (윗면 높이는 누운 퍽)
+//   없으면 점 높이 범위 · 발자국 길이로. 실물: LOOK 에서 누운 퍽을 장마다 섰다 누웠다 함 (윗면 높이는 누운 퍽)
 void gravity_refine(PuckPose & p, const std::vector<Vec3> & pts, const Vec3 & up, std::optional<double> support_h = std::nullopt);
 
 // 마스크 둘레 고리 (마스크에서 RING_IN ~ RING_OUT 화소) 깊이 점 → 놓인 면 높이 (위쪽 내적). 윗면 − 10 mm 보다 낮은 점의 중앙값

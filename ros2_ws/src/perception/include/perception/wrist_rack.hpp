@@ -37,7 +37,7 @@ namespace perception::wrist
 
 struct RackParams
 {
-  // S1 … S12 의 태그 ID (실물 2026-11-03 붙인 그대로). 표 안 ID 가 아니면 적재함 태그 아님
+  // S1 … S12 의 태그 ID (실물 붙인 그대로). 표 안 ID 가 아니면 적재함 태그 아님
   std::vector<int> cell_tag_ids{20, 21, 22, 31, 26, 24, 29, 23, 30, 27, 25, 28};
   double tag_side_m{0.026};    // 검은 테두리 한 변
   double max_view_deg{25.0};   // 태그 법선 ↔ 카메라 시선 각도 한계
