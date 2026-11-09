@@ -185,7 +185,7 @@ def test_leg_beside_does_not_stop_forward():
 
 @pytest.mark.parametrize('dx, dy, yaw_deg', [(0.10, 0.15, 5.0), (-0.12, -0.18, -8.0), (0.0, 0.22, 0.0)])
 def test_box_far_from_map_found_by_wide_search(dx, dy, yaw_deg):
-    """박스가 지도 자리에서 10–22 cm 옆 · 앞뒤로, 돌아가 있음 (11-07 실물 arena5: 8–25 cm) → 넓게 찾기로 실제 박스 앞에 섬"""
+    """박스가 지도 자리에서 10–22 cm 옆 · 앞뒤로, 돌아가 있음 (실물 arena5: 8–25 cm) → 넓게 찾기로 실제 박스 앞에 섬"""
     r = run((0.0, 0.0, 0.0), (0.58 + dx, dy), math.radians(yaw_deg), map_box_c=(0.58, 0.0), map_box_yaw=0.0)
     assert r['st'] == 'done', r['why']
     assert 0.004 < r['face_gap'] < 0.02 and abs(r['side']) < 0.015 and abs(r['dyaw']) < 3.0, r
