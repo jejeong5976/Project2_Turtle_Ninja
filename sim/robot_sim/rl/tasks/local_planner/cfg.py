@@ -62,12 +62,32 @@ class EnvCfg:
     box_shift_prob: float = 0.7
     box_shift_xy: float = 0.06
     box_shift_yaw_deg: float = 10.0
+    # 지도 ↔ 실제 어긋남 (nf7, 2026-11-09): map_boxes json {지도 이름: [[cx, cy, 회전], …]} 의 박스를 래스터에서 지우고 해석식으로.
+    #   mbox_shift_prob 확률 에피소드에서 박스마다 ±mbox_shift_xy · ±mbox_shift_yaw_deg 옮김 (경로 · 지도는 래스터 그대로 = 옛 자리).
+    #   출발 · 목표에서 mbox_exempt 안 박스는 안 옮김 (목표 박스는 정밀 접근이 재고 맞춤). 벽 · 출발 · 목표 외곽과 겹치면 그 env 는 안 옮김
+    #   실물: arena5 박스가 도면에서 8–19 cm (2026-11-09), 시연 중 사람이 밀 수 있음
+    map_boxes: str = ''
+    mbox_half: float = 0.1025
+    mbox_erase_margin: float = 0.035     # 래스터 박스 칸 지울 여유 (라이다 칸 번짐 1–2.5 cm)
+    mbox_shift_prob: float = 0.0
+    mbox_shift_xy: float = 0.12
+    mbox_shift_yaw_deg: float = 10.0
+    mbox_exempt: float = 0.5
+    # 추가 구간 (nf7): 다른 지도의 정차점 구간 (형식 = dice_legs, 지도 이름은 파일 안 names). extra_prob 확률로 이 구간, 그다음 dice_prob 로 dice 구간
+    extra_legs: str = ''
+    extra_prob: float = 0.0
     lidar_body_half: tuple = (0.17, 0.19)  # scan_merger body_half (ros2_ws/src/navigation/config/navigation.yaml) — 'real' 은 가림표 값 씀
     proj_back: float = 0.10
     proj_fwd: float = 0.50
     # 외곽: 충돌 판정 ±0.15 (실제 차체 + 1 cm 여유 정도), 여유 벌점은 Nav2 외곽 ±0.16 기준
     collide_half: float = 0.15
     footprint_half: float = 0.16
+    # 정지 구역 (nf5, 2026-11-07): 외곽 (footprint_half) 에서 stop_zone 안에 지도 장애물이 들어오면 충돌로 끝냄 (사람 뺌).
+    #   = 실물 collision_monitor PolygonStop ±0.18 (0.16 + 0.02): 들어가면 모든 명령 0 → 교착 (Isaac 11-07 nf4 B1 · L2).
+    #   목표 stop_zone_goal_exempt 안 (dock 넘김 0.40) · 출발 stop_zone_start_exempt 안 (도킹 자리 출발 = 노드가 영역 끔) 은 뺌. 0 = 끔
+    stop_zone: float = 0.0
+    stop_zone_goal_exempt: float = 0.40
+    stop_zone_start_exempt: float = 0.30
     footprint_per_side: int = 12
     # 에피소드
     init_pos_std: float = 0.01
@@ -114,6 +134,15 @@ class DRCfg:
     map_jump_prob: float = 0.3
     map_jump_pos: float = 0.01
     map_jump_yaw_deg: float = 0.5
+    # yaw 흐름 (nf7): 에피소드마다 ±yaw_drift_dps [°/s] 로 추정 yaw 가 흘러 ±yaw_drift_max_deg 까지 (실물 자이로 치우침 추정 −0.05 ↔ −0.21 °/s, 11-07)
+    yaw_drift_dps: float = 0.0
+    yaw_drift_max_deg: float = 3.0
+    # 큰 위치 튐 (nf7): 초당 big_jump_rate 확률로 추정 자세가 pos · yaw 만큼 튀고 big_jump_decay_s 로 줄어듦, 그때 yaw 흐름은 0 으로 (SLAM 보정)
+    #   실물 pose_guard 'SLAM 보정 9–13 cm · 1.5–8°' (11-07 2 번)
+    big_jump_rate: float = 0.0
+    big_jump_pos: tuple = (0.05, 0.10)
+    big_jump_yaw_deg: tuple = (2.0, 5.0)
+    big_jump_decay_s: float = 3.0
 
 
 @dataclass
@@ -156,6 +185,12 @@ class RewardCfg:
     # 도착 근처 명령 크기 벌점: −w × [목표 hold_dist 안] × ((병진 명령 / vmax)² + (wz 명령 / wmax)²). 0 = 끔
     hold_cmd: float = 0.0
     hold_dist: float = 0.03
+    # 헛회전 벌점: −w × max(|Δ몸 yaw| − (목표 방향 오차가 줄어든 양), 0) [rad] (참 자세, 정책 스텝마다). 0 = 끔.
+    #   목표 방향으로 도는 회전은 안 셈 → 필요한 만큼만 돌고 왕복 · 갔다 오는 회전만 벌줌 (odom yaw 오차 누적 대비, nf6)
+    rot_waste: float = 0.0
+    # 회전 방향 반전 벌점: −w × [wz 명령 부호가 바뀜, 앞 · 지금 둘 다 |wz| ≥ rot_reversal_min]. 0 = 끔
+    rot_reversal: float = 0.0
+    rot_reversal_min: float = 0.05
     success: float = 20.0
     collision: float = 20.0
     lost: float = 10.0

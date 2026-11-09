@@ -44,7 +44,7 @@ timeout 400 bash -c "until grep -qE '^\[bridge\] 경기장|Traceback' '$OUT/brid
 # 2. Nav2 일부 (활성화가 가끔 시간 초과로 실패 → 두 관리자 다 활성까지 최대 3 번)
 for try in 1 2 3; do
   setsid ros2 launch "$HERE/rl_nav.launch.py" params:="$REPO/config/nav2.yaml" map:="$MOVEIT_SIM/maps/maze_dice_map.yaml" \
-     urdf:="$MOVEIT_SIM/robot_description/team/robot.urdf" initial_pose:=-1.468,-2.202,180 extra_params:="${EXTRA_PARAMS:-}" > "$OUT/nav_$TAG.log" 2>&1 & NP=$!
+     urdf:="$MOVEIT_SIM/robot_description/team/robot.urdf" initial_pose:=-1.468,-2.202,180 ${EXTRA_PARAMS:+extra_params:="$EXTRA_PARAMS"} > "$OUT/nav_$TAG.log" 2>&1 & NP=$!
   if timeout 60 bash -c "until [ \$(grep -c 'Managed nodes are active' '$OUT/nav_$TAG.log') -ge 2 ]; do sleep 1; done"; then break; fi
   echo "NAV2 retry $try"; kill -INT -$NP; sleep 5; kill -9 -$NP 2>/dev/null; NP=
 done

@@ -69,6 +69,66 @@ class World:
         self.people_r = torch.zeros(num_envs, max_people, device=device)
         self.people_on = torch.zeros(num_envs, max_people, dtype=torch.bool, device=device)
         self.boxes = False
+        self.mboxes = False
+
+    # ------------------------------------------------------------------ 지도 ↔ 실제 어긋남: 여러 박스 (nf7)
+    def enable_multi_boxes(self, map_boxes: dict, half: float, erase_margin: float):
+        """지도마다 박스 목록 {지도 번호: [(cx, cy, 회전), …]} 을 래스터에서 지우고 해석식 (회전 사각형 sdf) 으로 바꿈.
+        env 마다 mb_pose (B,K,3) · mb_on (B,K) — 충돌 · 여유 · 라이다는 이 박스를 봄. 지도 · 경로 (map_dist · 경로 은행) 는 래스터 그대로
+        → 박스를 옮기면 '지도와 실제 배치가 다름' (실물 arena5: 도면 대비 8–19 cm, 시연 중 밀림)
+        박스 없는 지도는 래스터 그대로 (mb_on 전부 False)"""
+        M = len(self._pads)
+        K = max([len(v) for v in map_boxes.values()] + [1])
+        nom = np.zeros((M, K, 3), np.float32)
+        valid = np.zeros((M, K), bool)
+        nobox = self.dfield.cpu().numpy().copy()
+        ys, xs = np.mgrid[0:self.H, 0:self.W]
+        for m, boxes in map_boxes.items():
+            o = self.origin[m].cpu().numpy()
+            wx, wy = o[0] + (xs + 0.5) * self.res, o[1] + (ys + 0.5) * self.res
+            pad = self._pads[m].copy()
+            for j, (cx, cy, rot) in enumerate(boxes):
+                nom[m, j], valid[m, j] = (cx, cy, rot), True
+                c, s = math.cos(rot), math.sin(rot)
+                lx, ly = c * (wx - cx) + s * (wy - cy), -s * (wx - cx) + c * (wy - cy)
+                pad &= ~((np.abs(lx) <= half + erase_margin) & (np.abs(ly) <= half + erase_margin))
+            nobox[m] = ndimage.distance_transform_edt(~pad) * self.res - self.res / 2
+        self.dfield_nobox = torch.tensor(nobox, device=self.device)
+        self.mb_nom = torch.tensor(nom, device=self.device)
+        self.mb_valid = torch.tensor(valid, device=self.device)
+        self.mb_half = float(half)
+        self.mb_pose = torch.zeros(self.B, K, 3, device=self.device)
+        self.mb_on = torch.zeros(self.B, K, dtype=torch.bool, device=self.device)
+        self.mboxes = True
+
+    def ray_boxes(self, o, dirs, max_range: float):
+        """광선 o (B,R,2) · 방향 dirs (B,R,2) ↔ 켜진 해석식 박스 (env 전부) 교차 거리 (B,R), 안 맞으면 max_range (슬랩 방법, 한 번 계산)"""
+        pz, on = self.mb_pose, self.mb_on
+        c, s = pz[..., 2].cos()[:, None], pz[..., 2].sin()[:, None]                         # (B,1,K)
+        rel = o.unsqueeze(2) - pz[:, None, :, :2]                                            # (B,R,K,2)
+        ox, oy = c * rel[..., 0] + s * rel[..., 1], -s * rel[..., 0] + c * rel[..., 1]
+        dx = c * dirs[..., None, 0] + s * dirs[..., None, 1]
+        dy = -s * dirs[..., None, 0] + c * dirs[..., None, 1]
+        h, eps = self.mb_half, 1e-9
+        ix = 1.0 / torch.where(dx.abs() < eps, torch.full_like(dx, eps), dx)
+        iy = 1.0 / torch.where(dy.abs() < eps, torch.full_like(dy, eps), dy)
+        tx1, tx2 = (-h - ox) * ix, (h - ox) * ix
+        ty1, ty2 = (-h - oy) * iy, (h - oy) * iy
+        tmin = torch.maximum(torch.minimum(tx1, tx2), torch.minimum(ty1, ty2))
+        tmax = torch.minimum(torch.maximum(tx1, tx2), torch.maximum(ty1, ty2))
+        hit = (tmax >= tmin.clamp(min=0.0)) & on[:, None, :]
+        t = torch.where(hit, tmin.clamp(min=0.0), torch.full_like(tmin, max_range))
+        return t.min(-1).values.clamp(max=max_range)
+
+    def multi_box_sdf(self, xy, poses, on):
+        """xy (n,P,2) · poses (n,K,3) · on (n,K) → 켜진 박스 중 가장 가까운 회전 사각형 부호 거리 (n,P) (없으면 1e3)"""
+        rel = xy.unsqueeze(2) - poses[:, None, :, :2]                     # (n,P,K,2)
+        c, s = poses[:, None, :, 2].cos(), poses[:, None, :, 2].sin()
+        lx, ly = c * rel[..., 0] + s * rel[..., 1], -s * rel[..., 0] + c * rel[..., 1]
+        q = torch.stack([lx.abs(), ly.abs()], -1) - self.mb_half
+        d = q.clamp(min=0).norm(dim=-1) + q.max(-1).values.clamp(max=0)
+        d = torch.where(on.unsqueeze(1), d, torch.full_like(d, 1e3))
+        return d.min(-1).values
 
     # ------------------------------------------------------------------ 밀리는 박스 (local_dock)
     def enable_boxes(self, map_index: int, centers, half: float):
@@ -121,13 +181,21 @@ class World:
         d = self.dfield.view(-1)[flat]
         return torch.where(inside, d, torch.full_like(d, -self.res / 2))
 
-    def dist(self, xy, map_id=None, people: bool = True, ids=None):
-        """xy (n,K,2) → 거리. map_id 주면 그 지도 (정적, 사람 · 옮긴 박스 없음), 아니면 env 상태 (ids = env 일부, 기본 전부)"""
+    def dist(self, xy, map_id=None, people: bool = True, ids=None, mboxes: bool = True):
+        """xy (n,K,2) → 거리. map_id 주면 그 지도 (정적, 사람 · 옮긴 박스 없음), 아니면 env 상태 (ids = env 일부, 기본 전부).
+        mboxes=False = 해석식 박스 빼고 (라이다 구 추적용, 박스는 ray_boxes 로 따로)"""
         if map_id is not None:
             return self.map_dist(xy, map_id)
         mid = self.map_id if ids is None else self.map_id[ids]
-        d = self.map_dist(xy, mid)
-        if self.boxes:                                 # 옮긴 박스: 그 박스 칸 지운 거리장 · 옮긴 자리 해석식 중 작은 값
+        if self.mboxes:                                # 박스 지운 래스터 + 해석식 박스 (옮긴 자리), 박스 없는 지도는 래스터 그대로
+            d = self._lookup(self.dfield_nobox, mid, xy, self.origin[mid])
+            if mboxes:
+                on = self.mb_on if ids is None else self.mb_on[ids]
+                pz = self.mb_pose if ids is None else self.mb_pose[ids]
+                d = torch.minimum(d, self.multi_box_sdf(xy, pz, on))
+        else:
+            d = self.map_dist(xy, mid)
+        if self.boxes:                                # 옮긴 박스: 그 박스 칸 지운 거리장 · 옮긴 자리 해석식 중 작은 값
             bk = self.box_k if ids is None else self.box_k[ids]
             bp = self.box_pose if ids is None else self.box_pose[ids]
             dm = self._lookup(self.dfield_minus, bk.clamp(min=0), xy, self.origin[mid])
@@ -162,8 +230,10 @@ class World:
         dirs = torch.stack([ang.cos(), ang.sin()], -1)
         t = torch.zeros_like(ang)
         for _ in range(iters):
-            d = self.dist(o + dirs * t.unsqueeze(-1))
+            d = self.dist(o + dirs * t.unsqueeze(-1), mboxes=False)
             t = torch.where(d > 0.005, t + d.clamp(min=min_step), t).clamp(max=max_range)
+        if self.mboxes:                                # 해석식 박스는 광선 교차로 (구 추적 40 번마다 sdf 를 부르면 스텝 6 배 느림)
+            t = torch.minimum(t, self.ray_boxes(o, dirs, max_range))
         return t
 
     def lidar_real(self, pose, q, occ, n_bins: int, max_range: float, noise, drop):
@@ -198,6 +268,8 @@ class World:
         t = torch.zeros(B, n_rays, device=self.device)
         o = pose[:, None, :2]
         for _ in range(iters):
-            d = self.dist(o + dirs * t.unsqueeze(-1))
+            d = self.dist(o + dirs * t.unsqueeze(-1), mboxes=False)
             t = torch.where(d > 0.005, t + d.clamp(min=min_step), t).clamp(max=max_range)
+        if self.mboxes:
+            t = torch.minimum(t, self.ray_boxes(o.expand(B, n_rays, 2), dirs, max_range))
         return t

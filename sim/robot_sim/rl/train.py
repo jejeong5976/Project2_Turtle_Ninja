@@ -7,6 +7,7 @@
     env -u PYTHONPATH ~/pa-course/IsaacLab-6.2/.venv/bin/python rl/train.py --task swerve_track --run_name track   # 속도 추종 (명령 은행 필요)
     env -u PYTHONPATH ~/pa-course/IsaacLab-6.2/.venv/bin/python rl/train.py --task local_planner_nav2 --paths navfn --run_name nf1   # 실제 Nav2 경로
     env -u PYTHONPATH ~/pa-course/IsaacLab-6.2/.venv/bin/python rl/train.py --task local_dock --run_name dock1   # 정밀 접근 (rl/tasks/local_dock)
+    env -u PYTHONPATH ~/pa-course/IsaacLab-6.2/.venv/bin/python rl/train.py --task local_dock3 --run_name dock3  # 정밀 접근 성공 1 cm (rl/tasks/local_dock3)
 결과: rl/logs/<과제>/<시각>_<이름>/ (model_*.pt, TensorBoard, cfg.json)
 """
 import argparse
@@ -25,7 +26,7 @@ from rsl_rl.runners import OnPolicyRunner  # noqa: E402
 
 
 p = argparse.ArgumentParser()
-p.add_argument('--task', choices=['swerve_follow', 'swerve_track', 'local_planner', 'local_planner_nav2', 'local_dock'], default='swerve_follow')
+p.add_argument('--task', choices=['swerve_follow', 'swerve_track', 'local_planner', 'local_planner_nav2', 'local_dock', 'local_dock3', 'local_planner_nf4', 'local_planner_nf5', 'local_planner_nf6', 'local_planner_nf7'], default='swerve_follow')
 p.add_argument('--num_envs', type=int, default=None, help='기본 = 과제 cfg 값')
 p.add_argument('--max_iterations', type=int, default=None, help='기본 = 과제 cfg 값')
 p.add_argument('--device', default='cuda')
@@ -50,6 +51,21 @@ elif a.task == 'local_planner':
 elif a.task == 'local_dock':
     from local_dock.cfg import Cfg
     from local_planner.env import LocalPlannerEnv as Env      # 환경 같음, 구간 · 속도 · 보상만 다름
+elif a.task == 'local_dock3':
+    from local_dock3.cfg import Cfg                             # dock2 + 성공 1 cm (rl/tasks/local_dock3)
+    from local_planner.env import LocalPlannerEnv as Env
+elif a.task == 'local_planner_nf6':
+    from local_planner_nf6.cfg import Cfg                       # nf5 + 헛회전 · 회전 반전 벌점 (rl/tasks/local_planner_nf6)
+    from local_planner.env import LocalPlannerEnv as Env
+elif a.task == 'local_planner_nf7':
+    from local_planner_nf7.cfg import Cfg                       # nf6 + arena5 구간 · 박스 어긋남 · yaw 흐름 · 큰 튐 (rl/tasks/local_planner_nf7)
+    from local_planner.env import LocalPlannerEnv as Env
+elif a.task == 'local_planner_nf5':
+    from local_planner_nf5.cfg import Cfg                       # nf4 + PolygonStop 구역 학습 (rl/tasks/local_planner_nf5)
+    from local_planner.env import LocalPlannerEnv as Env
+elif a.task == 'local_planner_nf4':
+    from local_planner_nf4.cfg import Cfg                       # nf3 + 목표 앞 정지 고침 (rl/tasks/local_planner_nf4)
+    from local_planner.env import LocalPlannerEnv as Env
 elif a.task == 'local_planner_nav2':
     from local_planner_nav2.cfg import Cfg
     from local_planner.env import LocalPlannerEnv as Env      # 환경은 local_planner 그대로, 경로 은행만 다름
@@ -57,7 +73,7 @@ else:
     from swerve_follow.cfg import Cfg
     from swerve_follow.env import SwerveFollowEnv as Env
 
-cfg = Cfg(paths=a.paths) if a.task == 'local_planner_nav2' else Cfg()
+cfg = Cfg(paths=a.paths) if a.task in ('local_planner_nav2', 'local_planner_nf4', 'local_planner_nf5', 'local_planner_nf6', 'local_planner_nf7') else Cfg()
 if a.num_envs is not None:
     cfg.env.num_envs = a.num_envs
 cfg.env.device, cfg.env.seed = a.device, a.seed
