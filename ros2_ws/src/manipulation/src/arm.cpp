@@ -290,8 +290,8 @@ void FoldCheck::observe(double stamp_s, const std::vector<double> & positions)
 {
   if (!std::isfinite(stamp_s)) {reset(); return;}
   if (have_ && stamp_s <= last_stamp_) {return;}   // 시각이 앞으로 안 감 = 같은 옛날 측정
-  // (Codex 10/16 재검증) 측정이 끊겼다가 다시 오면, 끊긴 동안은 "범위 안에 머물렀다" 고 볼 수 없음
-  //   → 앞 측정과 max_age_s 넘게 벌어지면 유지 시간을 처음부터 (예전: 끊긴 시간까지 유지 시간으로 셈)
+  // 측정이 끊겼다가 다시 오면, 끊긴 동안은 "범위 안에 머물렀다" 고 볼 수 없음
+  //   → 앞 측정과 max_age_s 넘게 벌어지면 유지 시간을 처음부터 (끊긴 시간을 유지 시간으로 안 셈)
   const bool gap = have_ && stamp_s - last_stamp_ > max_age_s_;
   if (gap) {inside_since_ = -1.0;}
   have_ = true;

@@ -17,7 +17,6 @@
 // note
 //   - ROS 를 모르는 순수 C++
 //   - 좌표는 map 프레임 x · y m, yaw rad
-//   - STORE · RETRIEVE · LOOK · LOOK_BARCODE · LOOK_RACK 은 control_master 구현 전에는 거절됨
 
 #pragma once
 
@@ -96,12 +95,12 @@ struct Step
 constexpr uint8_t kArmHome = 0;
 constexpr uint8_t kArmPick = 1;
 constexpr uint8_t kArmPlace = 2;
-// 아래 셋은 interfaces ArmTask 에 2026-11-01 추가 (control_master 구현 전에는 거절됨)
+// 아래는 interfaces ArmTask 에 추가한 것 (발제 v5)
 constexpr uint8_t kArmStore = 3;
 constexpr uint8_t kArmRetrieve = 4;
 constexpr uint8_t kArmLook = 5;
-constexpr uint8_t kArmLookBarcode = 6;   // 바코드 정면 보기 (손목, 2026-11-01)
-constexpr uint8_t kArmLookRack = 8;      // 퍽 쥔 채 적재함 칸 관찰 → 다음 STORE 에 칸 측정값 (2026-11-03)
+constexpr uint8_t kArmLookBarcode = 6;   // 바코드 정면 보기 (손목)
+constexpr uint8_t kArmLookRack = 8;      // 퍽 쥔 채 적재함 칸 관찰 → 다음 STORE 에 칸 측정값
 
 // 손목 관찰 자세 (LOOK) 인지. 성공하면 팔이 펴진 채 남음
 inline bool is_look_task(uint8_t t) {return t == kArmLook;}

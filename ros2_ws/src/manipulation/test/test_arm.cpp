@@ -536,8 +536,8 @@ TEST(ArmRunner, SuccessNotFoldedStaysLocked)
 }
 
 // ============================================================================
-// 2026-10-16 R1 — "JTC 가 성공이라고 해도 팔이 실제로 안 접혔으면 바퀴를 풀지 않는다"
-// (Codex 재현: 가짜 보드에서 어깨(ID 12)를 고정 → joint2 = 0, home = −1.45 인데 HOME 성공 + DRIVE)
+// R1 — "JTC 가 성공이라고 해도 팔이 실제로 안 접혔으면 바퀴를 풀지 않는다"
+// (재현: 가짜 보드에서 어깨(ID 12)를 고정 → joint2 = 0, home = −1.45 인데 HOME 성공 + DRIVE)
 // ============================================================================
 
 // 어깨가 고정돼 HOME 에 못 감 → JTC 는 성공을 돌려줘도 실측 확인 실패 → ABORTED, STOP 유지
@@ -688,7 +688,7 @@ TEST(ArmFoldCheck, FoldCheckRules)
   EXPECT_FALSE(f.confirmed(2.3));
 }
 
-// (Codex 10/16 재검증) 측정이 끊겼다가 다시 오면 끊긴 시간을 유지 시간으로 세지 않음
+// 측정이 끊겼다가 다시 오면 끊긴 시간을 유지 시간으로 세지 않음
 //   예전: 1.0 s 에 범위 안 → 측정 끊김 → 1.5 s 에 다시 범위 안 한 번 = "0.5 s 유지" 로 바로 확인됨
 TEST(ArmFoldCheck, GapDoesNotCountAsHold)
 {
@@ -725,7 +725,7 @@ TEST(ArmFoldCheck, MeasurementGapDuringVerifyRestartsHold)
   EXPECT_EQ(m.finished.back().end, ArmEnd::SUCCEEDED);   // 다시 0.3 s 머문 뒤에는 정상 성공
 }
 
-// ───────────── 2026-10-16 재검증 R6: 하드웨어 이상 → HOME 확인 무효, 복구 뒤 HOME 이 다시 성공해야 DRIVE
+// ───────────── 재검증 R6: 하드웨어 이상 → HOME 확인 무효, 복구 뒤 HOME 이 다시 성공해야 DRIVE
 namespace
 {
 // HOME 을 끝까지 돌려 DRIVE 로 만든 FakeMaster
@@ -836,7 +836,7 @@ TEST(HardwareWatch, FaultDuringVerifyFails)
   EXPECT_EQ(m.arbiter.turn(), Turn::STOP);
 }
 
-// ───────────── 2026-10-16 보드 2장: 보드 상태를 직접 봄 — "주행 보드만 죽고 팔 측정은 멀쩡" 도 STOP
+// ───────────── 보드 2장: 보드 상태를 직접 봄 — "주행 보드만 죽고 팔 측정은 멀쩡" 도 STOP
 TEST(HardwareWatch, ComponentRules)
 {
   HardwareWatch w(0.3, 0.1, 1.0);
