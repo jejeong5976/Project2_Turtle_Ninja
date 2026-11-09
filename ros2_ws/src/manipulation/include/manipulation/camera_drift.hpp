@@ -5,6 +5,8 @@
 //   (몸통은 5 ~ 20 cm 라 카메라가 옮겨진 만큼은 회전으로 섞여 들어감 — 경첩 축이 렌즈 가까이라 작음)
 #pragma once
 
+#include <cstdint>
+#include <string>
 #include <vector>
 
 #include <Eigen/Dense>
@@ -29,5 +31,13 @@ bool camera_drift(const std::vector<Eigen::Vector2d> & u_ref, const std::vector<
 //   base = 새 기준을 찍을 때 쓰던 보정 (새 기준 카메라 = 명목 · base), meas = 새 기준 대비 측정 (지금 = 새 기준 · meas)
 //   → 명목 대비 = base · meas. 집기 · 놓기 보정값들은 명목 (손눈 보정 URDF) 기준으로 맞춰 둔 것이라 그대로 씀
 Eigen::Quaterniond chain_drift(const Eigen::Quaterniond & base, const Eigen::Quaterniond & meas);
+
+// 보정 사원수의 크기 [°] (로그용 — 이어 쓴 총 각 = drift_deg(chain_drift(base, meas)))
+double drift_deg(const Eigen::Quaterniond & q);
+
+// ref_base.txt 둘째 줄 = 기준 사진 (ref.png) 과의 짝 "ref <크기 B> <수정 시각 s>" (11-08 밤 검수: 사진만 바뀌면 옛 보정을 이어 쓰면 안 됨)
+std::string ref_base_tag(std::uintmax_t size, long long mtime_s);
+// 저장된 짝 줄이 지금 ref.png 의 짝과 같은가. 저장된 줄이 비었으면 (옛 형식, 사원수만) true (뒤 호환)
+bool ref_base_tag_matches(const std::string & stored, const std::string & now);
 
 }  // namespace manipulation

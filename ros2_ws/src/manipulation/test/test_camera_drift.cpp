@@ -74,3 +74,27 @@ TEST(CameraDrift, NewReferenceKeepsEarlierDrift)
   // base 가 단위면 측정 그대로 (기준 사진만 있고 ref_base.txt 가 없는 예전 상태)
   EXPECT_TRUE(manipulation::chain_drift(Eigen::Quaterniond::Identity(), Eigen::Quaterniond(d.R)).isApprox(Eigen::Quaterniond(d.R), 1e-12));
 }
+
+TEST(CameraDrift, RefBaseTagMatchesOnlyTheSameImage)
+{
+  // 11-08 밤 검수: ref.png 만 바뀌고 ref_base.txt 가 남으면 옛 보정을 잘못 이어 씀 → 크기 · 수정 시각 짝이 같을 때만
+  const std::string now = manipulation::ref_base_tag(307200, 1731079620);
+  EXPECT_EQ(now, "ref 307200 1731079620");
+  EXPECT_TRUE(manipulation::ref_base_tag_matches(now, now));
+  EXPECT_TRUE(manipulation::ref_base_tag_matches("", now)) << "옛 형식 (사원수만) 은 그대로 받아 씀";
+  EXPECT_TRUE(manipulation::ref_base_tag_matches("  \n", now));
+  EXPECT_FALSE(manipulation::ref_base_tag_matches(now, manipulation::ref_base_tag(307200, 1731080000))) << "같은 크기라도 다시 찍었으면 안 씀";
+  EXPECT_FALSE(manipulation::ref_base_tag_matches(now, manipulation::ref_base_tag(307201, 1731079620)));
+  EXPECT_FALSE(manipulation::ref_base_tag_matches(now, "")) << "지금 ref.png 를 못 봄";
+  EXPECT_FALSE(manipulation::ref_base_tag_matches("ref 307200", now)) << "줄이 깨짐";
+}
+
+TEST(CameraDrift, TotalDegIsOfTheChainedRotation)
+{
+  // 로그의 "이어 쓴 총 각" = 기준 때 보정 B 와 기준 대비 측정 M 을 이은 회전의 크기 (같은 축이면 합: 1.45° + 0.56°)
+  const Eigen::Quaterniond B(Eigen::AngleAxisd(0.0253, Eigen::Vector3d::UnitX()));
+  const Eigen::Quaterniond M(Eigen::AngleAxisd(0.0098, Eigen::Vector3d::UnitX()));
+  EXPECT_NEAR(manipulation::drift_deg(M), 0.0098 * 180.0 / M_PI, 1e-9);
+  EXPECT_NEAR(manipulation::drift_deg(manipulation::chain_drift(B, M)), 0.0351 * 180.0 / M_PI, 1e-9);
+  EXPECT_NEAR(manipulation::drift_deg(Eigen::Quaterniond::Identity()), 0.0, 1e-12);
+}
