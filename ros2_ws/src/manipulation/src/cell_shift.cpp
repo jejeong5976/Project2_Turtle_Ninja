@@ -134,4 +134,21 @@ bool shift_cell_path(
   return true;
 }
 
+int store_settle_index(const ArmModel & m, const ArmPath & path, double up_m)
+{
+  if (!std::isfinite(up_m)) {return -1;}
+  const int n = static_cast<int>(path.nodes.size());
+  int key = -1;   // 첫 놓는 점
+  for (int i = 0; i < n && key < 0; ++i) {
+    if (path.nodes[i].grip == "release") {key = i;}
+  }
+  if (key < 0 || path.nodes[key].q.size() != 5) {return -1;}
+  const double z_rel = grip_of_cmd(m, Eigen::Map<const V5>(path.nodes[key].q.data())).tip.z();
+  for (int i = key - 1; i >= 1; --i) {   // 뒤에서부터 = 놓는 점보다 up_m 이상 높은 마지막 점. 첫 점 (출발 자세) 은 뺌
+    if (path.nodes[i].q.size() != 5) {continue;}
+    if (grip_of_cmd(m, Eigen::Map<const V5>(path.nodes[i].q.data())).tip.z() - z_rel >= up_m) {return i;}
+  }
+  return -1;
+}
+
 }  // namespace manipulation

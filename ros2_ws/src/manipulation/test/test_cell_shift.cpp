@@ -60,6 +60,22 @@ Eigen::Vector3d tip(const manipulation::ArmModel & m, const std::vector<double> 
   }
   return manipulation::arm_grip(m, q).tip;
 }
+
+// 놓는 점 (kInCell) 에서 J2 또는 J3 만 dq 돌려 손끝이 가장 높아지는 점 (팔 모델로 고름) — 칸 위 점 대신
+std::vector<double> raised(const manipulation::ArmModel & m, double dq)
+{
+  std::vector<double> best = kInCell;
+  double z_best = tip(m, kInCell).z();
+  for (int j : {1, 2}) {
+    for (double s : {-dq, dq}) {
+      std::vector<double> q = kInCell;
+      q[j] += s;
+      const double z = tip(m, q).z();
+      if (z > z_best) {z_best = z; best = q;}
+    }
+  }
+  return best;
+}
 }  // namespace
 
 TEST(CellShift, MovesOnlyNearTheCell)
@@ -173,4 +189,26 @@ TEST(CellShift, ReleaseNearTheStartGetsTheFullShift)
   EXPECT_NEAR(moved.y(), -2.0, 0.2);
   EXPECT_NEAR(moved.z(), -4.0, 0.2);
   for (int j = 0; j < 5; ++j) {EXPECT_DOUBLE_EQ(p.nodes[0].q[j], before.nodes[0].q[j]);}
+}
+
+// 칸 위 멈춤 (store_settle_index): 놓는 점 앞에서 손끝이 놓는 점보다 up_m 이상 높은 마지막 점. release 없음 · 높은 점 없음이면 −1
+TEST(CellShift, StoreSettleIndexPicksLastPointHighEnough)
+{
+  const auto m = kin_data::model();
+  const std::vector<double> kHigh = raised(m, 0.5);
+  const double dz = tip(m, kHigh).z() - tip(m, kInCell).z();
+  ASSERT_GT(dz, 0.025) << "놓는 점 위로 25 mm 넘게 올린 점을 못 만듦";
+  // 들기 → 높음 → 낮음 (놓는 점과 같은 높이) → 높음 → 낮음 → 놓는 점 → P0_복귀
+  ArmPath p{"store_S9", {}, true};
+  p.nodes.push_back(node("lift_real", kLift));
+  p.nodes.push_back(node("r1", kHigh));
+  p.nodes.push_back(node("r2", kInCell));
+  p.nodes.push_back(node("r3", kHigh));
+  p.nodes.push_back(node("r4", kInCell));
+  p.nodes.push_back(node("in_cell", kInCell, false, "release"));
+  p.nodes.push_back(node("P0_복귀", kP0, true));
+  EXPECT_EQ(manipulation::store_settle_index(m, p, 0.020), 3);          // 20 mm 넘게 높은 마지막 점 (r4 · r2 는 놓는 점과 같은 높이)
+  EXPECT_EQ(manipulation::store_settle_index(m, p, dz + 0.010), -1);   // 그만큼 높은 점 없음 (첫 점은 출발 자세라 안 봄)
+  p.nodes[5].grip = "";   // 놓는 점 없음
+  EXPECT_EQ(manipulation::store_settle_index(m, p, 0.020), -1);
 }
