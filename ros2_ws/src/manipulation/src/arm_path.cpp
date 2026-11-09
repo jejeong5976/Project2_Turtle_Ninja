@@ -184,7 +184,9 @@ std::vector<ArmAction> path_actions(
     seg.push_back(n);
     seg_t += n.dt_s;
     const bool is_last = i + 1 == path.nodes.size();
-    if (!n.grip.empty() && (n.grip_on_way || n.grip_early) && !is_last && side_idx == -1) {   // 끊지 않고 그리퍼만 (stop 이면 그 시점에 열고 그 점에서 멈춤 — pick_settle_s)
+    // 끊지 않고 그리퍼만. stop 점은 settle (hold_s > 0: pick · place · store_settle_s) 로 멈춘 점만 그 시점에 열고 그 점에서 멈춤 —
+    //   hold 없는 stop + 가며 그리퍼 점 (park · standup 이 만들 수 있음) 은 옛 그대로 멈춤 → grip_settle_s → 차단 그리퍼 (11-09 검수 발견 1)
+    if (!n.grip.empty() && (n.grip_on_way || n.grip_early) && (!n.stop || n.hold_s > 0.0) && !is_last && side_idx == -1) {
       bool timed = true;
       for (const auto & sn : seg) {timed = timed && sn.dt_s > 0.0;}
       if (n.grip_early) {   // 이 점으로 출발할 때 = 앞 점 도착 (구간 첫 점이면 구간 처음)
