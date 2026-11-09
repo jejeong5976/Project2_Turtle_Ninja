@@ -46,15 +46,16 @@ TEST(Model, Stops)
   EXPECT_NEAR(s->pose.x, 0.0, 1e-9);
   EXPECT_NEAR(s->pose.y, 0.0, 1e-9);
   EXPECT_NEAR(s->pose.yaw, 0.0, 1e-9);
-  // B1 stop 경기장 (1.468, 0.6565, +90°) → 출발 (0.734, 0.950, 180°) 기준: (−0.734, +0.2935, −90°)
+  // B1 stop 경기장 (1.468, 0.6925, +90°) → 출발 (0.734, 0.950, 180°) 기준: (−0.734, +0.2575, −90°)
+  //   0.6925 = 박스 중심 y 0.950 − 정차 거리 0.2575 (dice_map.yaml 2026-11-06, 옛 0.2935) → 박스 중심에서 정차 거리만큼 떨어져 +Y 를 봄
   const NamedStop * b1 = find_stop(stops, "b1");
   ASSERT_NE(b1, nullptr);
   EXPECT_NEAR(b1->pose.x, -0.734, 1e-4);   // start yaw 3.1416 ≠ π 정확히
-  EXPECT_NEAR(b1->pose.y, 0.2935, 1e-4);
+  EXPECT_NEAR(b1->pose.y, 0.2575, 1e-4);
   EXPECT_NEAR(b1->pose.yaw, -M_PI / 2.0, 1e-4);
   EXPECT_EQ(find_stop(stops, "B9"), nullptr);
   double d = 0.0;
-  const NamedStop * n = nearest_stop(stops, -0.70, 0.30, &d);
+  const NamedStop * n = nearest_stop(stops, -0.70, 0.26, &d);   // B1 (−0.734, 0.2575) 근처
   ASSERT_NE(n, nullptr);
   EXPECT_EQ(n->name, "B1");
   EXPECT_LT(d, 0.05);

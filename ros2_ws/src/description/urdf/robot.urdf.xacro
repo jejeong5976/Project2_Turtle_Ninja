@@ -729,7 +729,8 @@
     <!-- 적재함 = 11-05 새 적재함 CAD (Onshape shak3) 메시 그대로: 8 칸 판 · 4 칸 판 (판 · 나사 구멍 · 옆 홈 포함, 홈은 와플 판 바깥쪽)
          rack_link = CAD 원점 (S2 칸 중심, 칸 바닥 위 5 mm). 판 밑면이 상판 (z 0.1305, 받침대와 같은 면) 위
          놓은 자리 = 옛 적재함 자리: 8 칸은 옛 8 칸, 4 칸은 옛 4 칸 자리 (CAD 칸 중심을 옛 config/rack_cells.yaml 12 칸에 평행 이동으로 맞춤)
-         config/rack_cells.yaml 은 팔이 가는 자리 (실물 성공 값) 라 그대로 — 칸 간격이 약 65 mm 로 CAD 60 mm 와 달라 칸마다 최대 약 10 mm (S7) 차이 -->
+         옛 칸 표 (11-01 실물 성공 값, backups/rack_cells_1106) 는 칸 간격이 약 65 mm 로 CAD 60 mm 와 달라 칸마다 최대 약 10 mm (S7) 차이 (아래 줄 끝 수치)
+         11-06 부터 config/rack_cells.yaml 칸 중심 = 이 칸 링크 (CAD) + 가운데 통로 보정 (왼쪽 8 칸 y +1 · 오른쪽 4 칸 y −1 mm, 자로 140 ↔ URDF 138) -->
     <link name="rack_link">
       <visual><geometry><mesh filename="${mesh}/rack/rack_8cell.obj"/></geometry><material name="rack_visual"><color rgba="0.55 0.74 0.90 1"/></material></visual>
       <visual><geometry><mesh filename="${mesh}/rack/rack_4cell.obj"/></geometry><material name="rack_visual"/></visual>
