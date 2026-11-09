@@ -19,7 +19,7 @@
 note
   - Fast DDS 전송 = FASTDDS_BUILTIN_TRANSPORTS (기본 LARGE_DATA, 큰 영상은 TCP). 이 launch 의 모든 노드에 적용.
     밖에서 보는 쪽 (개발 PC rqt · ros2 topic · 팀원) 도 같은 값을 export 해야 서로 보임 (한쪽만 다르면 그 노드가 안 보임)
-    기본 UDP 는 큰 영상 조각 하나만 빠져도 장 전체를 버림 → Wi-Fi 에서 압축 영상 1.5 Hz (2026-11-03 실측, LARGE_DATA 면 30 Hz)
+    기본 UDP 는 큰 영상 조각 하나만 빠져도 장 전체를 버림 → Wi-Fi 에서 압축 영상 1.5 Hz (실측, LARGE_DATA 면 30 Hz)
   - Wi-Fi 로는 raw 영상을 못 봄 (실측 처리량 약 3.4 MB/s ↔ 손목 raw 30 Hz 27.6 MB/s) → 개발 PC 는 /compressed 를 받아서 봄
   - 광각 장치는 /dev/video 번호 대신 by-id 경로를 실제 장치로 풀어 넘김 (usb_cam 은 by-id 링크의 상대 경로를 못 풂, 번호는 D435 연결 순서로 바뀜)
   - 광각 usb_cam: mjpeg2rgb + av_device_format YUV420P (없으면 첫 장 변환에서 segfault, 실측)
@@ -71,10 +71,12 @@ def make(context):
         out.append(LogInfo(msg=f"cv_bridge = {get_package_prefix('cv_bridge')} → 카메라 · republish 에서는 뺌"))
 
     # 손목 D435: 컬러 640×480 · 깊이 848×480, 30 Hz (장치 기본값), 깊이를 컬러에 맞춤
+    #   드라이버 TF 끔 (publish_tf false): 손목 카메라 TF 는 URDF (robot_state_publisher) 가 냄,
+    #   perception · control 은 frame_id 를 URDF 이름 (d435_color_optical_frame) 으로 바꿔 씀 (docs/integration/robot_interfaces.md)
     if on("wrist_cam"):
         rs = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(share("realsense2_camera", "launch", "rs_launch.py")),
-            launch_arguments={"align_depth.enable": "true"}.items())
+            launch_arguments={"align_depth.enable": "true", "publish_tf": "false"}.items())
         # rs_launch 안 노드에도 같은 LD_LIBRARY_PATH. scoped 라 perception 쪽 환경은 안 바뀜
         out.append(GroupAction(
             [SetEnvironmentVariable(k, v) for k, v in env.items()] + [rs], scoped=True, forwarding=True))
