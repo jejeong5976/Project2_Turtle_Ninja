@@ -144,6 +144,14 @@ public:
     timing_.dt_s = declare_parameter<double>("path_dt_s", 0.05);
     // 그리퍼를 여닫기 전 팔이 멈춰 따라오게 기다림 [s]. 실물: 그리퍼 동작 때 2 번 관절이 아직 2.3° 남아 (손끝 약 1 cm) 놓는 자리가 반반
     timing_.grip_settle_s = declare_parameter<double>("grip_settle_s", 0.0);
+    // 퍽 위 (내려가기 직전) 점에서 이만큼 멈춤 [s]. 11-09 실물: 손이 흔들린 채 above 에 도착해 바로 내려가 쥐어 위치 오차 → 0 = 지금 동작 그대로
+    //   실행 중: ros2 param set /control_master pick_settle_s 0.4 (다음 작업부터). PLACE 의 놓을 자리 위는 place_settle_s
+    declare_parameter<double>("pick_settle_s", 0.0);
+    declare_parameter<double>("place_settle_s", 0.0);
+    // STORE 칸 위 (놓는 점 위 store_settle_up_mm 이상 높은 마지막 점 = 마지막 내려가기 직전) 에서 이만큼 멈춤 [s]. 11-09 실물: 같은 칸이 보정을 바꿔도 매번 다른 쪽으로 어긋남
+    //   실행 중: ros2 param set /control_master store_settle_s 0.4 (다음 STORE 부터). 0 = 지금 동작 그대로 (store_settle)
+    declare_parameter<double>("store_settle_s", 0.0);
+    declare_parameter<double>("store_settle_up_mm", 20.0);
     if (!(timing_.speed_dps > 0.0) || !(timing_.stand_speed_dps > 0.0) || !(timing_.accel_dps2 > 0.0) ||
       !(timing_.dt_s >= 0.005 && timing_.dt_s <= 0.5))
     {
@@ -707,7 +715,9 @@ private:
         else if (released && n.grip == "close") {n.grip_on_way = true;}
       }
     }
-    // 실물 기록의 느린 구간 (칸 근처 15 °/s) 을 path_slow_min_dps 까지 올림 (적재가 너무 느림, 적당히 빠르게)
+    // 11-09 실물: 칸 위 (마지막 내려가기 직전) 에서 멈췄다 넣기 (store_settle_s, 0 = 그대로). rack_adjust 로 옮긴 뒤 · 속도 조정 전 (stop + hold 만 더함)
+    if (name.rfind("store_", 0) == 0) {store_settle(path, name.c_str());}
+    // 실물 기록의 느린 구간 (칸 근처 15 °/s) 을 path_slow_min_dps 까지 올림 (11-05 사용자: 적재가 너무 느림, 적당히 빠르게)
     for (auto & n : path.nodes) {
       if (n.speed_dps > 0.0 && n.speed_dps < path_slow_min_dps_) {n.speed_dps = path_slow_min_dps_;}
     }
@@ -931,6 +941,36 @@ private:
   PathNode model_node(const std::string & name, const Ticks & enc, double speed, const std::string & grip = "") const
   {
     return {name, ticks_to_command(model_, enc), false, speed, grip, false};
+  }
+
+  // 퍽 위 (내려가기 직전) 점에서 멈춰 흔들림을 가라앉힘 (pick_settle_s · place_settle_s): stop + hold_s. 0 = 그대로 (점 · 속도 · grip 그대로)
+  //   가며 여는 그리퍼 (grip_early · grip_on_way) 는 path_actions 가 그 시점 그대로 열고 그 점에서 멈춤
+  void settle_at(PathNode & n, const char * param) const
+  {
+    const double s = get_parameter(param).as_double();
+    if (!std::isfinite(s) || s < 1e-3) {return;}   // 1 ms 미만은 없는 것으로 (11-09 검수 발견 4)
+    n.stop = true;
+    n.hold_s = std::max(n.hold_s, s);
+  }
+
+  // STORE 칸 위 멈춤 (store_settle_s): 첫 놓는 점 (release) 앞에서 손끝이 놓는 점보다 store_settle_up_mm 이상 높은 마지막 점 (= 마지막 내려가기 직전) 에
+  //   settle_at 과 같은 방식 (stop + hold_s). 11-09 실물: 같은 칸이 보정을 바꿔도 매번 다른 쪽으로 어긋남 = 흔들린 채 칸 위에 와서 그대로 내려감
+  //   0 = 그대로 (점 · 속도 · grip · stop 그대로). 그런 점 · 놓는 점 · 팔 모델이 없으면 그대로 + INFO 한 줄
+  void store_settle(ArmPath & path, const char * what) const
+  {
+    const double s = get_parameter("store_settle_s").as_double();
+    if (!std::isfinite(s) || s < 1e-3) {return;}   // settle_at 과 같은 규칙
+    const double up_mm = get_parameter("store_settle_up_mm").as_double();
+    const int k = model_ok_ && std::isfinite(up_mm) ? store_settle_index(model_, path, up_mm / 1000.0) : -1;
+    if (k < 0) {
+      RCLCPP_INFO(get_logger(), "%s: 칸 위 멈춤 (store_settle_s) 없이 그대로 — %s", what,
+        !model_ok_ ? "팔 모델 없음" : "놓는 점 (release) 이 없거나 그보다 store_settle_up_mm 이상 높은 점이 없음");
+      return;
+    }
+    int rel = k + 1;   // 첫 놓는 점 (로그 "몇 점 앞")
+    while (rel < static_cast<int>(path.nodes.size()) && path.nodes[rel].grip != "release") {++rel;}
+    settle_at(path.nodes[k], "store_settle_s");
+    RCLCPP_INFO(get_logger(), "%s: 칸 위 (놓는 점 위 %.0f mm · %d 점 앞) 에서 %.1f s 멈춤 (store_settle_s)", what, up_mm, rel - k, s);
   }
 
   // 손목 인지 결과 → odom 기준 퍽 목록 (촬영 시각 TF, 안 되면 최신 TF). 쓸 때 base_link 로 (그 사이 차체가 움직여도 맞게)
@@ -1646,6 +1686,8 @@ private:
           model_node("re_place_clear", Pp[0].enc, slow_dps_), model_node("re_above", Pr[0].enc, slow_dps_, "open"),
           model_node("re_down", Pr[1].enc, slow_dps_), model_node("re_grasp", Pr[2].enc, slow_dps_, "close"),
           model_node("re_up", Pr[1].enc, slow_dps_), model_node("re_lift", Pr[0].enc, slow_dps_)};
+        settle_at(out[0], "place_settle_s");   // 내려놓을 자리 위에서 멈춤 (0 = 그대로)
+        settle_at(out[5], "pick_settle_s");    // 다시 쥘 퍽 위에서 멈춤
         sx = x;
         sy = y;
         return true;
@@ -1992,6 +2034,7 @@ private:
     }
     if (P.size() != 3) {why = "세우기: 선 퍽을 다시 쥘 자세가 없음 (" + w + ")"; return {};}
     path.nodes.push_back(model_node("re_above", P[0].enc, slow_dps_, "open"));
+    settle_at(path.nodes.back(), "pick_settle_s");   // 선 퍽 다시 쥐기 위에서 멈춤 (0 = 그대로)
     path.nodes.push_back(model_node("re_down", P[1].enc, slow_dps_));
     path.nodes.push_back(model_node("re_grasp", P[2].enc, slow_dps_, "close"));
     path.nodes.push_back(model_node("re_up", P[1].enc, slow_dps_));
@@ -2143,6 +2186,7 @@ private:
     path.ends_home = false;
     path.nodes.push_back(model_node("above", P[0].enc, 0.0, open_kw));
     path.nodes.back().grip_early = side_grip_;   // 퍽 위로 가며 미리 엶 (손이 비어 있음) — 그리퍼 기다림 하나를 뺌
+    settle_at(path.nodes.back(), "pick_settle_s");   // 11-09 실물: 흔들린 채 도착해 바로 내려감 → 퍽 위에서 멈췄다 내려감 (가며 열기는 그대로, 0 = 그대로)
     path.nodes.push_back(model_node("down", P[1].enc, slow_dps_));
     path.nodes.push_back(model_node("grasp", P[2].enc, slow_dps_, "close"));
     path.nodes.push_back(model_node("up", P[1].enc, slow_dps_));
@@ -2256,6 +2300,7 @@ private:
     path.ends_home = true;
     path.nodes.push_back({"staging", staging_, false, 0.0, "", false});
     path.nodes.push_back(model_node("above", P[0].enc, slow_dps_));
+    settle_at(path.nodes.back(), "place_settle_s");   // 놓을 자리 위에서 멈춤 (0 = 그대로)
     join_from_pick_end(path, "PLACE");
     path.nodes.push_back(model_node("down", P[1].enc, slow_dps_));
     path.nodes.push_back(model_node("drop", P[2].enc, slow_dps_, open_kw));
@@ -2339,6 +2384,8 @@ private:
             model_node("far_re_down", Pr[1].enc, slow_dps_), model_node("far_re_grasp", Pr[2].enc, slow_dps_, "close"),
             model_node("far_re_up", Pr[1].enc, slow_dps_), model_node("far_re_lift", Pr[0].enc, slow_dps_)};
           mid[5].grip_early = get_parameter("place_far_open_on_way").as_bool();   // 내려놓은 뒤 빈손 → 다시 쥘 자리 위로 가며 엶 (그리퍼 기다림 하나를 뺌)
+          settle_at(mid[0], "place_settle_s");   // 내려놓을 자리 위 · 다시 쥘 퍽 위에서 멈춤 (0 = 그대로)
+          settle_at(mid[5], "pick_settle_s");
           sx = q.x();
           sy = q.y();
           put_tilt = Pp.back().tilt_deg;
@@ -2357,6 +2404,7 @@ private:
     path.nodes.insert(path.nodes.end(), mid.begin(), mid.end());
     join_from_pick_end(path, "PLACE");
     path.nodes.push_back(model_node("above", Pt[0].enc, slow_dps_));
+    settle_at(path.nodes.back(), "place_settle_s");   // 놓을 자리 위에서 멈춤 (0 = 그대로)
     path.nodes.push_back(model_node("down", Pt[1].enc, slow_dps_));
     path.nodes.push_back(model_node("drop", Pt[2].enc, slow_dps_, kw_t));
     path.nodes.push_back(model_node("up", Pt[1].enc, slow_dps_));

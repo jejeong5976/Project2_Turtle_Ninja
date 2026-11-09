@@ -184,7 +184,9 @@ std::vector<ArmAction> path_actions(
     seg.push_back(n);
     seg_t += n.dt_s;
     const bool is_last = i + 1 == path.nodes.size();
-    if (!n.grip.empty() && (n.grip_on_way || n.grip_early) && !n.stop && !is_last && side_idx == -1) {   // 끊지 않고 그리퍼만
+    // 끊지 않고 그리퍼만. stop 점은 settle (hold_s > 0: pick · place · store_settle_s) 로 멈춘 점만 그 시점에 열고 그 점에서 멈춤 —
+    //   hold 없는 stop + 가며 그리퍼 점 (park · standup 이 만들 수 있음) 은 옛 그대로 멈춤 → grip_settle_s → 차단 그리퍼 (11-09 검수 발견 1)
+    if (!n.grip.empty() && (n.grip_on_way || n.grip_early) && (!n.stop || n.hold_s > 0.0) && !is_last && side_idx == -1) {
       bool timed = true;
       for (const auto & sn : seg) {timed = timed && sn.dt_s > 0.0;}
       if (n.grip_early) {   // 이 점으로 출발할 때 = 앞 점 도착 (구간 첫 점이면 구간 처음)
@@ -196,13 +198,14 @@ std::vector<ArmAction> path_actions(
       }
       side_g = n.grip == "open" ? grip.open : (n.grip == "release" ? grip.release : (n.grip == "loose" ? grip.loose : grip.close));
       seg.back().grip.clear();
-      continue;
+      if (!n.stop) {continue;}
     }
     if (n.stop || !n.grip.empty() || is_last) {
-      flush(n, is_last);
-      if (!n.grip.empty()) {
-        const double g = n.grip == "open" ? grip.open : (n.grip == "release" ? grip.release : (n.grip == "loose" ? grip.loose : grip.close));
-        out.push_back({n.grip == "close" ? "grasp" : "release", true, "", g});
+      const PathNode last = seg.back();   // 가며 하는 그리퍼는 지워져 있음 → 멈춤 · hold 만, 그리퍼 동작은 안 만듦
+      flush(last, is_last);
+      if (!last.grip.empty()) {
+        const double g = last.grip == "open" ? grip.open : (last.grip == "release" ? grip.release : (last.grip == "loose" ? grip.loose : grip.close));
+        out.push_back({last.grip == "close" ? "grasp" : "release", true, "", g});
       }
     }
   }

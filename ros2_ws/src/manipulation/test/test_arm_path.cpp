@@ -130,6 +130,44 @@ TEST(PathActions, GripEarlyOpensWhileMoving)
   EXPECT_LT(b2[0].side_grip_t, b2[0].duration_s);
 }
 
+// PICK 퍽 위 멈춤 (pick_settle_s → above 에 stop + hold_s): 0 이면 예전 그대로, > 0 이면 above 에서 끊고 그 자세로 기다림,
+//   미리 열기 (grip_early) 는 그대로 출발 때 · 그리퍼 동작은 안 생김 · 쥐기 (close) 순서 그대로
+TEST(PathActions, SettleAtAboveKeepsEarlyOpen)
+{
+  ArmPath p;
+  p.nodes = {node("s", {0, 0, 0, 0, 0}), node("above", {20, 0, 0, 0, 0}, false, "open"), node("down", {25, 0, 0, 0, 0}),
+    node("grasp", {30, 0, 0, 0, 0}, false, "close"), node("lift", {20, 0, 0, 0, 0})};
+  p.nodes[1].grip_early = true;
+  const auto plain = manipulation::path_actions(p, PathTiming{}, manipulation::GripperValues{});
+  ASSERT_EQ(plain.size(), 3u);   // 0: 예전과 같음
+  EXPECT_NEAR(plain[0].side_grip_t, 0.0, 1e-12);
+  p.nodes[1].stop = true;
+  p.nodes[1].hold_s = 0.4;
+  const auto acts = manipulation::path_actions(p, PathTiming{}, manipulation::GripperValues{});
+  ASSERT_EQ(acts.size(), 4u);   // s → above (출발 때 열기, 0.4 s 기다림) · above → down → grasp · [닫기] · lift
+  EXPECT_FALSE(acts[0].is_gripper);
+  EXPECT_NEAR(acts[0].side_grip_t, 0.0, 1e-12);
+  EXPECT_NEAR(acts[0].side_grip, manipulation::GripperValues{}.open, 1e-12);
+  ASSERT_GE(acts[0].points.size(), 2u);
+  const auto & last = acts[0].points.back();
+  const auto & before = acts[0].points[acts[0].points.size() - 2];
+  EXPECT_NEAR(last.t - before.t, 0.4, 1e-9);
+  EXPECT_EQ(last.q, before.q);
+  EXPECT_NEAR(last.q[0], 20 * kDeg, 1e-9);
+  EXPECT_FALSE(acts[1].is_gripper);
+  EXPECT_LT(acts[1].side_grip_t, 0.0);   // 두 번째 동작엔 그리퍼 없음 (열기가 두 번 안 됨)
+  EXPECT_NEAR(acts[1].points.back().q[0], 30 * kDeg, 1e-9);
+  EXPECT_TRUE(acts[2].is_gripper);
+  EXPECT_NEAR(acts[2].gripper, manipulation::GripperValues{}.close, 1e-9);
+  // 도착해서 여는 (grip_on_way) 점도 같음: 도착 시각에 열고 그 점에서 멈춤
+  p.nodes[1].grip_early = false;
+  p.nodes[1].grip_on_way = true;
+  const auto b2 = manipulation::path_actions(p, PathTiming{}, manipulation::GripperValues{});
+  ASSERT_EQ(b2.size(), 4u);
+  EXPECT_GT(b2[0].side_grip_t, 0.0);
+  EXPECT_FALSE(b2[1].is_gripper);
+}
+
 TEST(TimePath, ZeroLength)
 {
   const std::vector<double> s(5, 0.1);
