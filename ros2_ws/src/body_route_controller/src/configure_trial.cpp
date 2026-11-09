@@ -10,11 +10,14 @@ int main(int argc,char ** argv)
 {
   try {
     std::map<std::string,std::string> args;
-    const std::set<std::string> keys{"--unknown-policy","--unknown-penalty","--observation-ttl","--mode","--speed","--yaw-rate","--linear-accel","--angular-accel","--correction-speed","--output","--common-config","--original-config"};
+    const std::set<std::string> keys{"--prepare-passages","--passage-position-allowance","--passage-yaw-allowance","--passage-response-delay","--heading-policy","--heading-preview-time","--drive-style","--max-travel-angle-deg","--unknown-policy","--unknown-penalty","--observation-ttl","--mode","--speed","--yaw-rate","--linear-accel","--angular-accel","--correction-speed","--output","--common-config","--original-config"};
     for(int i=1;i<argc;++i) {
       const std::string key=argv[i];
       if(key=="--help") {
         std::cout<<"configure_trial --output NEW_DIRECTORY [--mode custom|original] [--speed 0.025] [--yaw-rate 0.1]\n"
+          "  [--drive-style axis-stop|continuous] [--max-travel-angle-deg 45] (custom only)\n"
+          "  [--heading-policy reactive|preview] [--heading-preview-time 5.0] (preview: custom continuous only)\n"
+          "  [--prepare-passages true|false] [--passage-position-allowance .05] [--passage-yaw-allowance .08726646259971647] [--passage-response-delay .5]\n"
           "  [--linear-accel 0.05] [--angular-accel 0.2] [--correction-speed 0.6*speed]\n"
           "  [--unknown-policy blocked|observe-before-enter] [--unknown-penalty 2.0] [--observation-ttl 4.0]\n"
           "  [--common-config YAML] [--original-config YAML]\n"
@@ -34,6 +37,18 @@ int main(int argc,char ** argv)
     if(args.count("--mode")) {s.mode=args["--mode"];}
     if(args.count("--unknown-policy"))s.unknown_policy=args["--unknown-policy"];
     s.unknown_penalty=number("--unknown-penalty",s.unknown_penalty);s.observation_ttl=number("--observation-ttl",s.observation_ttl);
+    if(args.count("--drive-style"))s.drive_style=args["--drive-style"];
+    if(args.count("--heading-policy"))s.heading_policy=args["--heading-policy"];
+    if(args.count("--prepare-passages")) {
+      const auto value=args["--prepare-passages"];
+      if(value!="true"&&value!="false")throw std::invalid_argument("--prepare-passages requires true or false");
+      s.prepare_passages=value=="true";
+    }
+    s.passage_position_allowance=number("--passage-position-allowance",s.passage_position_allowance);
+    s.passage_yaw_allowance=number("--passage-yaw-allowance",s.passage_yaw_allowance);
+    s.passage_response_delay=number("--passage-response-delay",s.passage_response_delay);
+    s.heading_preview_time=number("--heading-preview-time",s.heading_preview_time);
+    s.max_travel_angle_deg=number("--max-travel-angle-deg",s.max_travel_angle_deg);
     s.speed=number("--speed",s.speed);s.yaw_rate=number("--yaw-rate",s.yaw_rate);
     s.linear_accel=number("--linear-accel",s.linear_accel);s.angular_accel=number("--angular-accel",s.angular_accel);
     s.correction_speed=number("--correction-speed",std::min(s.speed,std::max(.004,.6*s.speed)));s.validate();

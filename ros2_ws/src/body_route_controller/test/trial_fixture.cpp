@@ -49,9 +49,15 @@ int main(int argc,char**argv) {
   for(const auto & key:{"ax_min","ay_min"})controller->declare_parameter(std::string("FollowPath.")+key,-.05);
   controller->declare_parameter("FollowPath.az_max",.2);
  }else{
+  controller->declare_parameter("FollowPath.prepare_passages",false);
+  controller->declare_parameter("FollowPath.drive_style","axis-stop");
+  controller->declare_parameter("FollowPath.heading_policy","reactive");
+  controller->declare_parameter("FollowPath.heading_preview_time",5.0);
+  controller->declare_parameter("FollowPath.max_travel_angle",std::acos(-1.0)/4);
   controller->declare_parameter("FollowPath.max_speed",speed);controller->declare_parameter("FollowPath.correction_speed",.015);
   controller->declare_parameter("FollowPath.max_yaw_rate",.1);controller->declare_parameter("FollowPath.linear_accel",.05);controller->declare_parameter("FollowPath.angular_accel",.2);
  }
+ wheel->declare_parameter("blend_steer_drive",false);wheel->declare_parameter("blend_stall_s",1.0);wheel->declare_parameter("blend_margin",.7);
  wheel->declare_parameter("max_linear",scenario=="profile_mismatch"?.09:speed);
  wheel->declare_parameter("max_angular",.1);wheel->declare_parameter("max_linear_accel",.05);wheel->declare_parameter("max_angular_accel",.2);wheel->declare_parameter("heading_hold_kp",0.0);
  int plans=0,navs=0,cancels=0,holds=0;bool held=true,released=false,held_after=false,sent_interrupt=false;

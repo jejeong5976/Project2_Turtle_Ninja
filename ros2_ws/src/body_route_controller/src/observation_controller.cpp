@@ -1,3 +1,4 @@
+#include "body_route_controller/controller.hpp"
 #include "body_route_controller/observation_layer.hpp"
 #include <nav2_core/controller.hpp>
 #include <nav2_core/controller_exceptions.hpp>
@@ -56,7 +57,13 @@ public:
           {out.twist.linear.x,out.twist.linear.y,out.twist.angular.z},now.seconds());
       }
     }
-    if(!reason.empty()){out.twist=geometry_msgs::msg::Twist{};delegate_->reset();}
+    if(!reason.empty()){
+      out.twist=geometry_msgs::msg::Twist{};
+      // A wait is not task cancellation. Keep only geometric intent in the
+      // body controller; fresh evidence/route/clearance gates precede resuming.
+      if(auto *body=dynamic_cast<BodyRouteController *>(delegate_.get())) body->pauseMotion();
+      else delegate_->reset();
+    }
     std_msgs::msg::String status;status.data=reason.empty()?"clear":"waiting reason="+reason;status_->publish(status);
     if(status.data!=last_){RCLCPP_INFO(n->get_logger(),"Observation gate: %s",status.data.c_str());last_=status.data;}
     return out;

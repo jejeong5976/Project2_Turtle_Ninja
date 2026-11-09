@@ -29,7 +29,7 @@ target_include_directories(body_route_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_compile_options(body_route_core PRIVATE -Wall -Wextra -Wpedantic -Werror)
 
-add_library(body_route_plugin SHARED src/controller.cpp src/collision.cpp src/maze_planner.cpp src/observation.cpp src/observation_layer.cpp src/observation_controller.cpp)
+add_library(body_route_plugin SHARED src/passage.cpp src/controller.cpp src/collision.cpp src/maze_planner.cpp src/observation.cpp src/observation_layer.cpp src/observation_controller.cpp)
 target_compile_features(body_route_plugin PUBLIC cxx_std_17)
 target_compile_options(body_route_plugin PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(body_route_plugin PUBLIC body_route_core
@@ -75,7 +75,7 @@ pluginlib_export_plugin_description_file(nav2_costmap_2d observation_layers.xml)
 install(TARGETS body_route_core body_route_plugin ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch behavior_trees DESTINATION share/${PROJECT_NAME})
-install(FILES README.md WALL_LAYOUT.md UNKNOWN_SPACE.md START_LOCALIZATION.md FULL_MAP_LOCALIZATION.md DESTINATION share/${PROJECT_NAME})
+install(FILES README.md PASSAGE.md WALL_LAYOUT.md UNKNOWN_SPACE.md START_LOCALIZATION.md FULL_MAP_LOCALIZATION.md DESTINATION share/${PROJECT_NAME})
 
 # Stationary rear-lidar localization: opt-in and separate from driving profiles.
 add_library(start_localization STATIC src/start_localization.cpp)
@@ -111,11 +111,19 @@ endforeach()
 install(TARGETS register_stationary full_map_startup front_localization_params DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
+  add_executable(passage_replay test/passage_replay.cpp)
+  target_link_libraries(passage_replay body_route_plugin yaml-cpp nlohmann_json::nlohmann_json)
+  target_compile_options(passage_replay PRIVATE -Wall -Wextra -Wpedantic -Werror)
   add_executable(replay_map test/replay_map.cpp)
   target_link_libraries(replay_map body_route_plugin)
   target_compile_options(replay_map PRIVATE -Wall -Wextra -Wpedantic -Werror)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_cmake_pytest REQUIRED)
+
+  ament_add_gtest(test_scan_diagnostics test/test_scan_diagnostics.cpp)
+  target_compile_features(test_scan_diagnostics PRIVATE cxx_std_17)
+  target_compile_options(test_scan_diagnostics PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  target_link_libraries(test_scan_diagnostics trial_profile)
 
   ament_add_gtest(test_full_map_files test/test_full_map_files.cpp)
   target_compile_features(test_full_map_files PRIVATE cxx_std_17)
@@ -161,7 +169,7 @@ if(BUILD_TESTING)
   target_compile_options(test_layout_capture PRIVATE -Wall -Wextra -Wpedantic -Werror)
   set_tests_properties(test_layout_capture PROPERTIES TIMEOUT 20 RUN_SERIAL TRUE ENVIRONMENT
     "ROS_DOMAIN_ID=59;ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST;ROS_LOG_DIR=/tmp/body-route-layout-capture-test-log")
-  ament_add_gtest(test_body_route test/test_observation.cpp test/test_maze_planner.cpp test/test_core.cpp test/test_collision.cpp test/test_plugin.cpp test/test_routes.cpp test/test_supervision.cpp test/test_profile.cpp)
+  ament_add_gtest(test_body_route test/test_passage.cpp test/test_observation.cpp test/test_maze_planner.cpp test/test_core.cpp test/test_collision.cpp test/test_plugin.cpp test/test_routes.cpp test/test_supervision.cpp test/test_profile.cpp)
   target_compile_definitions(test_body_route PRIVATE BODY_ROUTE_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/test/data")
   target_link_libraries(test_body_route body_route_plugin trial_profile)
   target_compile_options(test_body_route PRIVATE -Wall -Wextra -Wpedantic -Werror)

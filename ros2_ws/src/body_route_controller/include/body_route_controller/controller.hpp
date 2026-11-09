@@ -1,10 +1,12 @@
 #pragma once
 #include "body_route_controller/core.hpp"
+#include "body_route_controller/passage.hpp"
 #include <nav2_core/controller.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <mutex>
+#include <deque>
 
 namespace body_route_controller
 {
@@ -24,6 +26,7 @@ public:
   void setSpeedLimit(const double &, const bool &) override;
   bool cancel() override;
   void reset() override;
+  void pauseMotion();  // Observation wait: retain intent, require fresh revalidation.
 
 private:
   std::mutex mutex_;
@@ -33,7 +36,12 @@ private:
   nav2::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   nav2::Subscription<std_msgs::msg::Bool>::SharedPtr hold_sub_;
   nav2::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
-  Core core_;
+  void resetMotion(bool forget_passage = true);
+  PreparedPassage passage_;
+  Core core_, corridor_core_;
+  bool corridor_ = false;
+  Point corridor_start_;
+  std::deque<std::pair<double, Velocity>> pending_;
   double speed_limit_ = 0.025;
   double feedback_timeout_ = 0.3, hold_timeout_ = 2.5, horizon_ = 2.0;
   double odom_received_ = -1.0, odom_stamped_ = -1.0, hold_received_ = -1.0;

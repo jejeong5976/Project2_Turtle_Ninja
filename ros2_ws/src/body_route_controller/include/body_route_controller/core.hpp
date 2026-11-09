@@ -11,6 +11,12 @@ struct Velocity {double x = 0.0, y = 0.0, yaw = 0.0;};
 
 struct Settings
 {
+  std::string drive_style = "axis-stop";
+  std::string heading_policy = "reactive";
+  double heading_preview_time = 5.0; // seconds of final-approach heading preview
+  bool round_corners = true; // Internal clearance fallback follows exact route corners.
+  double max_travel_angle = 0.7853981633974483; // radians, body +X versus travel
+
   double max_speed = 0.025;
   double correction_speed = 0.015;
   double max_yaw_rate = 0.1;
@@ -23,6 +29,7 @@ struct Settings
   double align_enter = 0.12;
   double align_exit = 0.035;
   double lookahead = 0.12;
+  double arrival_lookahead = 0.4;
   double corner_tolerance = 0.02;
   double path_simplify_tolerance = 0.01;
   double cross_track_enter = 0.025;
@@ -44,6 +51,7 @@ struct RouteTarget
   double heading = 0.0;
   double distance_to_path = 0.0;
   double remaining = 0.0;
+  bool final_segment = false;
 };
 struct RouteProgress
 {
@@ -59,6 +67,7 @@ struct Result
   double heading_error = 0.0;
 };
 
+std::vector<Point> routeCorners(const std::vector<Point> &, double tolerance);
 double wrap(double angle);
 bool fresh(double now, double received, double stamped, double max_age);
 RouteTarget routeTarget(const std::vector<Point> & path, const Pose & pose, const Settings & cfg,
@@ -74,6 +83,9 @@ public:
   const Settings & settings() const {return cfg_;}
 
 private:
+  Result continuous(const Pose &, const Velocity &, const RouteTarget &, const Pose & goal, double dt, double speed_limit);
+  bool heading_latched_ = false;
+  double held_heading_ = 0.0, previous_yaw_ = 0.0;
   Settings cfg_;
   RouteProgress progress_;
   bool aligning_ = true;

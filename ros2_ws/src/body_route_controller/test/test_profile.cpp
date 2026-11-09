@@ -102,3 +102,66 @@ TEST(Profile, ObservationPolicyUsesIdenticalGateAndGoalCheckForBothModes)
   TrialSettings s;s.unknown_policy="free";EXPECT_THROW(s.validate(),std::invalid_argument);
   s={};s.unknown_penalty=0;EXPECT_THROW(s.validate(),std::invalid_argument);
 }
+
+TEST(Profile, ContinuousStyleIsExplicitAndDoesNotRelaxSafety)
+{
+  TrialSettings s;const auto legacy=makeProfile(common(),original(),s);
+  s.drive_style="continuous";s.max_travel_angle_deg=45;const auto p=makeProfile(common(),original(),s);
+  const auto f=p.navigation["controller_server"]["ros__parameters"]["FollowPath"];
+  EXPECT_EQ(f["drive_style"].as<std::string>(),"continuous");
+  EXPECT_NEAR(f["max_travel_angle"].as<double>(),std::acos(-1.0)/4,1e-12);
+  EXPECT_TRUE(p.drive["blend_steer_drive"].as<bool>());
+  EXPECT_FALSE(legacy.drive["blend_steer_drive"].as<bool>());
+  for(auto name:{"local_costmap","global_costmap","planner_server","collision_monitor"}){
+    EXPECT_EQ(YAML::Dump(p.navigation[name]),YAML::Dump(legacy.navigation[name]));
+  }
+  EXPECT_EQ(p.drive["max_linear"].as<double>(),legacy.drive["max_linear"].as<double>());
+  s.mode="original";EXPECT_THROW(s.validate(),std::invalid_argument);
+  s.mode="custom";s.max_travel_angle_deg=91;EXPECT_THROW(s.validate(),std::invalid_argument);
+}
+
+TEST(Profile, PreviewIsExplicitVerifiedAndPreservesCollisionAndDriveLimits)
+{
+  TrialSettings s;s.drive_style="continuous";
+  const auto baseline=makeProfile(common(),original(),s);
+  s.heading_policy="preview";s.heading_preview_time=4.;
+  const auto preview=makeProfile(common(),original(),s);
+  const auto f=preview.navigation["controller_server"]["ros__parameters"]["FollowPath"];
+  EXPECT_EQ(f["heading_policy"].as<std::string>(),"preview");
+  EXPECT_DOUBLE_EQ(f["heading_preview_time"].as<double>(),4.);
+  EXPECT_EQ(preview.trial["body_route_trial"]["ros__parameters"]["heading_policy"].as<std::string>(),"preview");
+  EXPECT_NE(preview.manifest["profile_id"].as<std::string>(),baseline.manifest["profile_id"].as<std::string>());
+  EXPECT_EQ(YAML::Dump(preview.drive),YAML::Dump(baseline.drive));
+  for(auto name:{"local_costmap","global_costmap","planner_server","collision_monitor"}){
+    EXPECT_EQ(YAML::Dump(preview.navigation[name]),YAML::Dump(baseline.navigation[name]));
+  }
+  s.drive_style="axis-stop";EXPECT_THROW(s.validate(),std::invalid_argument);
+  s.drive_style="continuous";s.heading_policy="learned";EXPECT_THROW(s.validate(),std::invalid_argument);
+  s.heading_policy="preview";
+  for(double time:{0.,.49,10.01,static_cast<double>(NAN)}){s.heading_preview_time=time;EXPECT_THROW(s.validate(),std::invalid_argument);}
+}
+
+TEST(Profile, PreparedPassageAssumptionsAreOptInIdentifiedAndBounded)
+{
+  TrialSettings s;s.drive_style="continuous";s.speed=.08;
+  const auto baseline=makeProfile(common(),original(),s);
+  EXPECT_FALSE(baseline.navigation["controller_server"]["ros__parameters"]["FollowPath"]["prepare_passages"]);
+  s.prepare_passages=true;
+  const auto prepared=makeProfile(common(),original(),s);
+  for(const auto &node:{prepared.navigation["controller_server"]["ros__parameters"]["FollowPath"],
+    prepared.trial["body_route_trial"]["ros__parameters"],prepared.manifest}) {
+    EXPECT_TRUE(node["prepare_passages"].as<bool>());
+    EXPECT_DOUBLE_EQ(node["passage_position_allowance"].as<double>(),.05);
+    EXPECT_DOUBLE_EQ(node["passage_yaw_allowance"].as<double>(),s.passage_yaw_allowance);
+    EXPECT_DOUBLE_EQ(node["passage_response_delay"].as<double>(),.5);
+  }
+  EXPECT_NE(prepared.manifest["profile_id"].as<std::string>(),baseline.manifest["profile_id"].as<std::string>());
+  EXPECT_EQ(YAML::Dump(prepared.drive),YAML::Dump(baseline.drive));
+  for(auto name:{"local_costmap","global_costmap","planner_server","collision_monitor"})
+    EXPECT_EQ(YAML::Dump(prepared.navigation[name]),YAML::Dump(baseline.navigation[name]));
+  s.passage_position_allowance=.06;
+  EXPECT_NE(makeProfile(common(),original(),s).manifest["profile_id"].as<std::string>(),prepared.manifest["profile_id"].as<std::string>());
+  s.passage_response_delay=.49;EXPECT_THROW(s.validate(),std::invalid_argument);
+  s.passage_response_delay=.5;s.passage_yaw_allowance=NAN;EXPECT_THROW(s.validate(),std::invalid_argument);
+  s.passage_yaw_allowance=.08;s.drive_style="axis-stop";EXPECT_THROW(s.validate(),std::invalid_argument);
+}

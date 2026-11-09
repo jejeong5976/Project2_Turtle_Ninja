@@ -4,7 +4,7 @@ Nav2 controller for **body +X facing the route**, L2 crossing, multi-turn maze t
 and oriented arrival at a shelf. Development workspace:
 `/home/pa4/git/Project2_Turtle_Ninja-body-route`.
 
-## Motion contract
+## Default motion contract (`axis-stop`)
 
 - Stop translation using measured feedback before a large turn; rotate, settle,
   then move. Final goal yaw overrides the route tangent.
@@ -26,6 +26,68 @@ The live swept-footprint check still rejects an unsafe shortcut. This tolerance
 is a geometric path-processing bound, not a physical localization accuracy claim.
 Goal alignment also requires reaching the end of the remaining route, so a goal
 near the beginning of a loop does not immediately stop the controller.
+
+## Continuous diagonal driving (opt-in)
+
+`--mode custom --drive-style continuous --max-travel-angle-deg 45` enables
+simultaneous forward/sideways translation. Travel direction is the direction of
+body-frame velocity, `atan2(vy, vx)`, relative to body +X. It is **not** the error
+between body heading and the global route tangent. The allowed CLI range is
+10–60 degrees, default 45. The existing `axis-stop` behavior remains the default;
+`--mode original` retains MPPI and rejects the continuous style.
+
+The controller holds the heading captured at the start of a continuous segment.
+When pursuit direction approaches the bound, it moves the heading reference just
+enough to stay inside a smaller cone (15 degrees of margin at the 45-degree
+setting). It turns the body while moving, with the existing angular speed and
+acceleration limits. Linear velocity blends as a vector, with a total acceleration
+limit. In this style, `--speed` caps the total translation magnitude, not each
+axis separately; `--correction-speed` applies to legacy axis-stop corrections.
+Translating yaw is also capped at three times translation speed to avoid
+rotation-dominated steering during slow starts. Lookahead can cross a right-angle
+path corner; reversals brake first. A final sideways stub of at most 15 cm uses
+`arrival_lookahead` (default 0.4 m) to start a diagonal approach earlier, still
+subject to the same path-distance, footprint, and evidence guards.
+When a rounded sweep is blocked, the plugin follows the planned corner using
+measured stop/turn/settle phases and diagonal corrections within the same cone.
+It reduces speed if needed, without switching the pursuit target on every tick.
+After at least 0.4 m of progress and settled yaw it can resume rounding. If no
+checked command is clear, `clearance_wait` emits zero; the braking guard, path
+validation/replanning, and Nav2 progress timeout remain active.
+The global planner still produces its existing footprint-checked orthogonal path.
+Corner rounding is subject to local footprint and stopping checks, so planning a
+route does not guarantee every bend can be traversed continuously.
+
+Generated wheel profiles enable the existing measured-steering blend with margin
+0.7 and stall timeout 1.0 s. Steering alignment, branch feasibility, cosine scaling,
+wheel limits, and stale-command stops remain enabled. The navigation plugin checks
+both its existing motion sweeps and a conservative 32-sided envelope containing recent
+commands, actual motion, changing direction, rotation, 0.5 s latency, and braking.
+The observed-space guard uses the same envelope geometry; unknown evidence rules
+and occupied obstacle treatment are unchanged. Trial supervision also checks the
+**measured** travel angle and rejects a breach while moving above 0.008 m/s.
+
+This is not a promise of uninterrupted motion. Blocked/unknown clearance, abrupt
+reversals, steering faults, and final goal yaw alignment can still stop motion.
+`travel_limit_stop` can indicate a measured cone violation or a predictive stop
+to preserve the angular braking margin; unsafe geometry reports
+`continuous_stopping_envelope_blocked` or `footprint_or_stopping_sweep_blocked`.
+The fixed square footprint and mock steering model remain approximations. This
+mode requires simulation validation for the chosen route, speed, and map before
+any separate physical qualification. Wheel-only bringup remains `arm:=false`.
+
+Generate a configuration without starting hardware:
+
+```bash
+ros2 run body_route_controller configure_trial \
+  --mode custom --drive-style continuous --max-travel-angle-deg 45 \
+  --speed 0.08 --yaw-rate 0.30 --output /tmp/continuous-profile-01
+```
+
+Use all three matching generated profiles (navigation, wheel, trial); the trial
+checks the runtime style, angle, steering blend, and limits before releasing hold.
+Change profiles while stopped and restart. See `tools/scanned_map_sim/README.md`
+for the complete offline run command and measurements.
 
 ## Main and manipulator integration
 
@@ -94,6 +156,34 @@ This launches no hardware, sends no goal, and does not release hold. Supply the
 current independently measured initial pose in RViz. Historical coordinates
 must not be reused after teammates move the robot. Preserve the recorded slow
 hardware map, steering limits, filtered scans, and current USB topology.
+
+## Preview heading scheduler (offline comparison)
+
+The continuous style now accepts `--heading-policy reactive|preview` and
+`--heading-preview-time 5.0` (0.5–10 seconds). `reactive` is the existing default.
+`preview` requires `--mode custom --drive-style continuous`; original MPPI and
+axis-stop are unchanged. See `tools/scanned_map_sim/CONTINUOUS_TUNING.md` for
+repeatable mock comparisons and the evidence boundary.
+
+Preview schedules the final body-heading reference on the last route segment,
+without changing translation targets or cornering behavior. Within speed multiplied
+by preview time of the goal, it aligns to final yaw during translation only if
+that yaw admits the current travel inside the existing inner cone. Small diagonal
+changes otherwise retain the captured heading. It never anticipates a bend or a
+reversal; earlier bend anticipation was rejected after repeated L2 progress stalls.
+Final measured-stop and arrival checks still apply.
+
+Exact-corner fallback retains stop/turn/settle phases and does not use preview.
+Both heading policies include a common exact-corner arrival fix: stationary
+alignment now uses the same pursuit bearing as the following continuous motion.
+This prevents tangent/bearing oscillation when a small lateral position error
+remains near the goal. Goal tolerances and the travel-angle limit are unchanged.
+
+Every proposed preview command passes the same collision, stopping-envelope,
+observed-space, measured steering and travel-angle checks. No footprint, obstacle,
+speed, acceleration or braking limit is reduced. Profile verification checks the
+scheduler and preview time before releasing the trial hold. Restart while stopped
+to change profiles; this is not a runtime live-tuning interface.
 
 ## CLI speed and controller comparison
 
@@ -383,3 +473,9 @@ Use [FULL_MAP_LOCALIZATION.md](FULL_MAP_LOCALIZATION.md) for fresh stationary du
 full-map registration and front-lidar AMCL throughout stationary verification and driving.
 The rear fixed-wall fit/mask remains available only for historical comparison. This
 restoration has not been physically qualified and does not establish that drift is fixed.
+
+## Prepared B/C passage experiment
+
+An opt-in shared turn-preparation and persistent-crossing layer is documented in
+[PASSAGE.md](PASSAGE.md). It is disabled by default. The offline comparison and
+limitations must be reviewed before any physical trial.

@@ -5,8 +5,77 @@
 #include <rclcpp/executors/single_threaded_executor.hpp>
 #include <chrono>
 #include <thread>
+#include <future>
 
 using namespace std::chrono_literals;
+
+TEST(Adapter, PreparedPassageWaitPreservesIntentButHoldStalenessAndObstacleStop)
+{
+  rclcpp::init(0,nullptr);
+  auto parent=std::make_shared<nav2::LifecycleNode>("prepared_passage_adapter");
+  parent->declare_parameter("FollowPath.drive_style",std::string("continuous"));
+  parent->declare_parameter("FollowPath.max_speed",.08);
+  parent->declare_parameter("FollowPath.lookahead",.24);
+  parent->declare_parameter("FollowPath.prepare_passages",true);
+  auto feed=std::make_shared<rclcpp::Node>("prepared_passage_feedback");
+  rclcpp::NodeOptions options;
+  options.parameter_overrides({rclcpp::Parameter("plugins",std::vector<std::string>{}),
+    rclcpp::Parameter("global_frame","odom"),rclcpp::Parameter("robot_base_frame","base_footprint"),
+    rclcpp::Parameter("footprint","[[-0.205,-0.205],[0.205,-0.205],[0.205,0.205],[-0.205,0.205]]"),
+    rclcpp::Parameter("footprint_padding",0.)});
+  auto costmap=std::make_shared<nav2_costmap_2d::Costmap2DROS>(options);
+  ASSERT_EQ(costmap->on_configure(rclcpp_lifecycle::State()),nav2::CallbackReturn::SUCCESS);
+  auto *grid=costmap->getCostmap();grid->resizeMap(600,600,.01,-3,-3);grid->resetMap(0,0,600,600);
+  for(double x=.45;x<.9;x+=.005) for(double y:{-.33,.33}) {
+    unsigned mx,my;ASSERT_TRUE(grid->worldToMap(x,y,mx,my));grid->setCost(mx,my,254);
+  }
+  auto tf=std::make_shared<nav2::TransformBuffer>(parent->get_clock());
+  body_route_controller::BodyRouteController controller;controller.configure(parent,"FollowPath",tf,costmap);controller.activate();
+  auto odom=feed->create_publisher<nav_msgs::msg::Odometry>("/odom",rclcpp::SensorDataQoS());
+  auto hold=feed->create_publisher<std_msgs::msg::Bool>("/mission/hold",10);
+  std::string status;
+  auto sub=feed->create_subscription<std_msgs::msg::String>("/prepared_passage_adapter/body_route_status",10,
+    [&](std_msgs::msg::String::ConstSharedPtr m){status=m->data;});
+  rclcpp::executors::SingleThreadedExecutor executor;executor.add_node(parent->get_node_base_interface());executor.add_node(feed);
+  auto feedback=[&](bool held){for(int i=0;i<10;++i){
+    nav_msgs::msg::Odometry m;m.header.stamp=feed->now();odom->publish(m);
+    std_msgs::msg::Bool h;h.data=held;hold->publish(h);executor.spin_some();std::this_thread::sleep_for(10ms);
+  }};
+  geometry_msgs::msg::PoseStamped pose,goal;pose.header.frame_id=goal.header.frame_id="odom";
+  pose.pose.position.y=-.5;pose.pose.orientation.z=std::sin(std::acos(-1.)/4);pose.pose.orientation.w=std::cos(std::acos(-1.)/4);
+  goal.pose.position.x=1.2;goal.pose.orientation.w=1;
+  auto a=pose,b=goal;a.pose.position.y=-1;b.pose.position.x=0;
+  nav_msgs::msg::Path path;path.header.frame_id="odom";path.poses={a,b,goal};
+  auto compute=[&](){pose.header.stamp=parent->now();auto cmd=controller.computeVelocityCommands(pose,geometry_msgs::msg::Twist{},nullptr,path,goal);
+    for(int i=0;i<3;++i){executor.spin_some();std::this_thread::sleep_for(5ms);}return cmd;};
+  EXPECT_DOUBLE_EQ(compute().twist.linear.x,0.); // no release heartbeat
+  feedback(false);
+  std::promise<void> locked;
+  std::thread delayed_map([&](){
+    std::unique_lock<nav2_costmap_2d::Costmap2D::mutex_t> lock(*grid->getMutex());
+    locked.set_value();std::this_thread::sleep_for(70ms);
+  });
+  locked.get_future().wait();
+  const auto late=compute();delayed_map.join();
+  EXPECT_DOUBLE_EQ(late.twist.linear.x,0.);EXPECT_DOUBLE_EQ(late.twist.angular.z,0.);
+  EXPECT_NE(status.find("prepared_compute_deadline"),std::string::npos);
+  feedback(false);EXPECT_GT(compute().twist.linear.x,0.);
+  pose.pose.position.y=0;pose.pose.orientation.z=std::sin(.1);pose.pose.orientation.w=std::cos(.1);
+  feedback(false);EXPECT_LT(compute().twist.angular.z,0.);
+  controller.pauseMotion(); // same call used by the observation wrapper
+  feedback(true);EXPECT_DOUBLE_EQ(compute().twist.angular.z,0.);
+  for(auto &p:path.poses)p.pose.position.y+=.004;
+  feedback(false);EXPECT_LT(compute().twist.angular.z,0.);
+  EXPECT_NE(status.find("heading=0 error="),std::string::npos); // original tangent retained
+  unsigned mx,my;ASSERT_TRUE(grid->worldToMap(.7,0,mx,my));grid->setCost(mx,my,255);
+  feedback(false);auto stopped=compute();EXPECT_DOUBLE_EQ(stopped.twist.linear.x,0.);EXPECT_DOUBLE_EQ(stopped.twist.angular.z,0.);
+  EXPECT_NE(status.find("passage_obstacle_or_unknown_changed"),std::string::npos);
+  std::this_thread::sleep_for(350ms);EXPECT_THROW(compute(),nav2_core::NoValidControl);
+  controller.cancel();controller.deactivate();controller.cleanup();
+  executor.remove_node(parent->get_node_base_interface());executor.remove_node(feed);
+  sub.reset();costmap->on_cleanup(rclcpp_lifecycle::State());costmap.reset();tf.reset();parent.reset();feed.reset();
+  rclcpp::shutdown();
+}
 
 // In-process ROS graph with an empty synthetic costmap. No robot, hardware
 // driver or velocity publisher is created. CTest isolates this graph on domain 231.

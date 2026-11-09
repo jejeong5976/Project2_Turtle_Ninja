@@ -22,6 +22,18 @@ YAML::Node real(double value)
 }
 void TrialSettings::validate() const
 {
+  if(drive_style!="axis-stop"&&drive_style!="continuous")throw std::invalid_argument("drive-style must be axis-stop or continuous");
+  if(mode=="original"&&drive_style!="axis-stop")throw std::invalid_argument("continuous drive-style requires custom mode; original MPPI is unchanged");
+  if(!std::isfinite(max_travel_angle_deg)||max_travel_angle_deg<10||max_travel_angle_deg>60)throw std::invalid_argument("max-travel-angle-deg must be 10..60");
+  if(heading_policy!="reactive"&&heading_policy!="preview")throw std::invalid_argument("heading-policy must be reactive or preview");
+  if(heading_policy=="preview"&&(mode!="custom"||drive_style!="continuous"))throw std::invalid_argument("preview heading requires custom continuous driving");
+  if(!std::isfinite(heading_preview_time)||heading_preview_time<.5||heading_preview_time>10)throw std::invalid_argument("heading-preview-time must be .5..10 seconds");
+  if(prepare_passages&&(mode!="custom"||drive_style!="continuous"))
+    throw std::invalid_argument("prepared passages require custom continuous driving");
+  if(!std::isfinite(passage_position_allowance)||passage_position_allowance<0||passage_position_allowance>.2||
+    !std::isfinite(passage_yaw_allowance)||passage_yaw_allowance<0||passage_yaw_allowance>std::acos(-1.0)/6||
+    !std::isfinite(passage_response_delay)||passage_response_delay<.5||passage_response_delay>2.)
+    throw std::invalid_argument("invalid passage uncertainty/response allowance");
   if(unknown_policy!="blocked"&&unknown_policy!="observe-before-enter")throw std::invalid_argument("unknown-policy must be blocked or observe-before-enter");
   if(!std::isfinite(unknown_penalty)||unknown_penalty<=0||!std::isfinite(observation_ttl)||observation_ttl<.8)
     throw std::invalid_argument("unknown penalty must be positive; observation TTL must be >= .8 seconds");
@@ -86,6 +98,8 @@ TrialProfile makeProfile(const YAML::Node & common,const YAML::Node & original,c
     auto f=controller["FollowPath"];
     f["max_speed"]=real(s.speed);f["correction_speed"]=real(s.correction_speed);f["max_yaw_rate"]=real(s.yaw_rate);
     f["linear_accel"]=real(s.linear_accel);f["angular_accel"]=real(s.angular_accel);
+    f["heading_policy"]=s.heading_policy;f["heading_preview_time"]=real(s.heading_preview_time);
+    f["drive_style"]=s.drive_style;f["max_travel_angle"]=real(s.max_travel_angle_deg*std::acos(-1.0)/180);
     f["heading_hold_rate"]=real(std::min(.02,s.yaw_rate));
     // A fixed 12 cm target with kp=.5 caps speed at .06 m/s regardless of CLI.
     // Longer straight-leg lookahead reaches the requested cap; corners still
@@ -112,14 +126,32 @@ TrialProfile makeProfile(const YAML::Node & common,const YAML::Node & original,c
   p.drive["max_linear"]=real(s.speed);p.drive["max_angular"]=real(s.yaw_rate);
   p.drive["max_linear_accel"]=real(s.linear_accel);p.drive["max_angular_accel"]=real(s.angular_accel);
   p.drive["heading_hold_kp"]=real(0.0); // Same drivetrain, navigation owns yaw in both modes.
+  p.drive["blend_steer_drive"]=s.drive_style=="continuous";
+  p.drive["blend_stall_s"]=real(1.0);p.drive["blend_margin"]=real(.7);
   auto t=p.trial["body_route_trial"]["ros__parameters"];
   t["unknown_policy"]=s.unknown_policy;t["unknown_penalty"]=real(s.unknown_penalty);t["observation_ttl"]=real(s.observation_ttl);
+  t["heading_policy"]=s.heading_policy;t["heading_preview_time"]=real(s.heading_preview_time);
+  t["drive_style"]=s.drive_style;t["max_travel_angle_deg"]=real(s.max_travel_angle_deg);
   t["controller_mode"]=s.mode;t["speed"]=real(s.speed);t["yaw_rate"]=real(s.yaw_rate);
   t["linear_accel"]=real(s.linear_accel);t["angular_accel"]=real(s.angular_accel);
   t["correction_speed"]=real(s.correction_speed);
   t["execute"]=false;t["require_live_view"]=true;
+  // Preserve legacy profile bytes unless explicitly enabled. Enabled profiles
+  // carry all maneuver assumptions in navigation, trial verification and identity.
+  if(s.prepare_passages) {
+    auto f=controller["FollowPath"];
+    p.manifest=YAML::Node(YAML::NodeType::Map);
+    for(auto node:{f,t,p.manifest}) {
+      node["prepare_passages"]=true;
+      node["passage_position_allowance"]=real(s.passage_position_allowance);
+      node["passage_yaw_allowance"]=real(s.passage_yaw_allowance);
+      node["passage_response_delay"]=real(s.passage_response_delay);
+    }
+  }
   const auto id=fingerprint(YAML::Dump(p.navigation)+YAML::Dump(p.drive)+YAML::Dump(p.trial));
   t["profile_id"]=id;p.manifest["profile_id"]=id;
+  p.manifest["heading_policy"]=s.heading_policy;p.manifest["heading_preview_time"]=real(s.heading_preview_time);
+  p.manifest["drive_style"]=s.drive_style;p.manifest["max_travel_angle_deg"]=s.max_travel_angle_deg;
   p.manifest["controller_mode"]=s.mode;p.manifest["unknown_policy"]=s.unknown_policy;p.manifest["unknown_penalty"]=real(s.unknown_penalty);
   p.manifest["measured_speed_limit"]=s.measuredSpeed();p.manifest["measured_yaw_limit"]=s.measuredYawRate();
   p.manifest["common_input_id"]=fingerprint(YAML::Dump(common));

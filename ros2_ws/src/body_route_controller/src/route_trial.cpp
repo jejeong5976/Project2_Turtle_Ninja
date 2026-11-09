@@ -1,5 +1,6 @@
 #include "body_route_controller/supervision.hpp"
 #include "body_route_controller/profile.hpp"
+#include "body_route_controller/scan_diagnostics.hpp"
 #include <rclcpp/parameter_client.hpp>
 #include <nav2_msgs/action/follow_path.hpp>
 #include <functional>
@@ -21,6 +22,8 @@
 #include <sstream>
 #include <thread>
 #include <csignal>
+#include <memory>
+#include <optional>
 
 using namespace std::chrono_literals;
 using body_route_controller::Pose;
@@ -74,6 +77,11 @@ class Trial : public rclcpp::Node
 public:
   Trial() : Node("body_route_trial"), tf_(get_clock()), listener_(tf_)
   {
+    const auto scan_timing_path=declare_parameter<std::string>("scan_timing_log","");
+    if(!scan_timing_path.empty()) {
+      scan_timing_=std::make_unique<body_route_controller::ScanTimingLog>(
+        scan_timing_path,get_parameter("use_sim_time").as_bool());
+    }
     const auto goals_file=declare_parameter<std::string>("goals_file","");
     const auto path_file=declare_parameter<std::string>("path_file","");
     save_path_=declare_parameter<std::string>("save_path_file","");
@@ -86,6 +94,14 @@ public:
     } else {goals_=readGoals(goals_file);}
     input_id_=fingerprint(body_route_controller::readText(fixed_path_?path_file:goals_file));
     settings_.mode=declare_parameter<std::string>("controller_mode","custom");
+    settings_.drive_style=declare_parameter<std::string>("drive_style","axis-stop");
+    settings_.heading_policy=declare_parameter<std::string>("heading_policy","reactive");
+    settings_.heading_preview_time=declare_parameter<double>("heading_preview_time",5.0);
+    settings_.prepare_passages=declare_parameter<bool>("prepare_passages",false);
+    settings_.passage_position_allowance=declare_parameter<double>("passage_position_allowance",.05);
+    settings_.passage_yaw_allowance=declare_parameter<double>("passage_yaw_allowance",.08726646259971647);
+    settings_.passage_response_delay=declare_parameter<double>("passage_response_delay",.5);
+    settings_.max_travel_angle_deg=declare_parameter<double>("max_travel_angle_deg",45.0);
     settings_.speed=declare_parameter<double>("speed",.025);
     settings_.yaw_rate=declare_parameter<double>("yaw_rate",.1);
     settings_.linear_accel=declare_parameter<double>("linear_accel",.05);
@@ -101,6 +117,8 @@ public:
       });
     body_route_controller::TrackingLimits limits;
     limits.measured_speed=settings_.measuredSpeed();limits.measured_yaw_rate=settings_.measuredYawRate();
+    limits.continuous=settings_.drive_style=="continuous";
+    limits.max_travel_angle=settings_.max_travel_angle_deg*std::acos(-1.0)/180;
     limits.braking_deceleration=settings_.linear_accel;
     guard_=body_route_controller::TrackingGuard(limits);
     profile_id_=declare_parameter<std::string>("profile_id","manual");
@@ -155,9 +173,15 @@ public:
     results_file_=declare_parameter<std::string>("results_file","/tmp/route-trial-"+
       std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(stamp).count())+".yaml");
     YAML::Node header;header["kind"]="run";header["mode"]=settings_.mode;header["profile_id"]=profile_id_;
+    header["heading_policy"]=settings_.heading_policy;header["heading_preview_time"]=settings_.heading_preview_time;
+    header["drive_style"]=settings_.drive_style;header["max_travel_angle_deg"]=settings_.max_travel_angle_deg;
     header["input_id"]=input_id_;header["route_type"]=fixed_path_?"fixed_path":"replanning_goals";
     header["speed_mps"]=settings_.speed;header["yaw_rate_radps"]=settings_.yaw_rate;
     header["linear_accel"]=settings_.linear_accel;header["angular_accel"]=settings_.angular_accel;
+    header["prepare_passages"]=settings_.prepare_passages;
+    header["passage_position_allowance"]=settings_.passage_position_allowance;
+    header["passage_yaw_allowance"]=settings_.passage_yaw_allowance;
+    header["passage_response_delay"]=settings_.passage_response_delay;
     header["execute"]=execute_;
     body_route_controller::writeNew(results_file_,"---\n"+YAML::Dump(header)+"\n");
     results_.open(results_file_,std::ios::app);
@@ -185,6 +209,7 @@ public:
     closing_=true; holdNow();
     if(cancel_ && !terminal_) {try {cancel_();} catch(const std::exception &) {}}
     if(rclcpp::ok()) {pump(2.0);}
+    flushScanTiming();
   }
   bool run()
   {
@@ -285,8 +310,15 @@ public:
     }
     writeSummary("failure",reason);
     report("STOPPED: "+reason);
+    flushScanTiming();
   }
 private:
+  void flushScanTiming()
+  {
+    if(scan_timing_&&!scan_timing_->flush()) {
+      RCLCPP_ERROR(get_logger(),"Scan timing diagnostic write failed; timing evidence is incomplete");
+    }
+  }
   void record(const YAML::Node & node) {results_<<"---\n"<<YAML::Dump(node)<<'\n';results_.flush();}
   static YAML::Node poseNode(const Pose & p)
   {YAML::Node n;n.push_back(p.x);n.push_back(p.y);n.push_back(p.yaw);return n;}
@@ -331,6 +363,16 @@ private:
     std::vector<Parameter> nav{Parameter("FollowPath.plugin",settings_.mode=="custom"?
       "body_route_controller::BodyRouteController":"nav2_mppi_controller::MPPIController")};
     if(settings_.mode=="custom") {
+      nav.emplace_back("FollowPath.prepare_passages",settings_.prepare_passages);
+      if(settings_.prepare_passages) {
+        nav.emplace_back("FollowPath.passage_position_allowance",settings_.passage_position_allowance);
+        nav.emplace_back("FollowPath.passage_yaw_allowance",settings_.passage_yaw_allowance);
+        nav.emplace_back("FollowPath.passage_response_delay",settings_.passage_response_delay);
+      }
+      nav.emplace_back("FollowPath.drive_style",settings_.drive_style);
+      nav.emplace_back("FollowPath.heading_policy",settings_.heading_policy);
+      nav.emplace_back("FollowPath.heading_preview_time",settings_.heading_preview_time);
+      nav.emplace_back("FollowPath.max_travel_angle",settings_.max_travel_angle_deg*std::acos(-1.0)/180);
       nav.emplace_back("FollowPath.max_speed",settings_.speed);nav.emplace_back("FollowPath.correction_speed",settings_.correction_speed);
       nav.emplace_back("FollowPath.max_yaw_rate",settings_.yaw_rate);nav.emplace_back("FollowPath.linear_accel",settings_.linear_accel);
       nav.emplace_back("FollowPath.angular_accel",settings_.angular_accel);
@@ -351,7 +393,10 @@ private:
     }
     check("/controller_server",nav);
     check("/swerve_controller",{Parameter("max_linear",settings_.speed),Parameter("max_angular",settings_.yaw_rate),
-      Parameter("max_linear_accel",settings_.linear_accel),Parameter("max_angular_accel",settings_.angular_accel),Parameter("heading_hold_kp",0.0)});
+      Parameter("max_linear_accel",settings_.linear_accel),Parameter("max_angular_accel",settings_.angular_accel),Parameter("heading_hold_kp",0.0),
+      Parameter("blend_steer_drive",settings_.drive_style=="continuous")});
+    if(settings_.drive_style=="continuous")check("/swerve_controller",{
+      Parameter("blend_stall_s",1.0),Parameter("blend_margin",.7)});
     report("Verified runtime controller and wheel limits: "+settings_.mode);
   }
   template<typename Action> void drive(const typename rclcpp_action::Client<Action>::SharedPtr & client,
@@ -404,13 +449,36 @@ private:
   }
   void scan(std::size_t i,const sensor_msgs::msg::LaserScan & scan)
   {
+    std::optional<body_route_controller::ScanTraceRecord> trace;
+    if(scan_timing_) {
+      trace.emplace();
+      trace->sensor=static_cast<int>(i);
+      trace->callback_id=++scan_callback_count_[i];
+      trace->message_stamp_ns=static_cast<std::int64_t>(scan.header.stamp.sec)*1000000000+scan.header.stamp.nanosec;
+      trace->begin_ns=body_route_controller::monotonicNanoseconds();
+      trace->ros_now_s=now().seconds();
+    }
+    auto record_scan=[&](body_route_controller::ScanTraceKind kind,const std::string & detail=std::string{}) {
+      if(!trace) return;
+      trace->kind=kind;trace->detail=detail.substr(0,4096);
+      trace->end_ns=body_route_controller::monotonicNanoseconds();
+      trace->last_accepted_ns=scan_accepted_ns_[i];trace->last_accepted_stamp_s=scan_stamp_[i];
+      trace->valid_points=valid_[i];trace->stop_points=points_[i];trace->moving=moving_;
+      scan_timing_->append(std::move(*trace));
+    };
     valid_[i]=0;points_[i]=0;
     try {
-      if(scan.header.frame_id!=(i==0?"lidar_front_link":"lidar_rear_link")) {return;}
+      if(scan.header.frame_id!=(i==0?"lidar_front_link":"lidar_rear_link")) {
+        record_scan(body_route_controller::ScanTraceKind::InvalidFrame,scan.header.frame_id);return;
+      }
       if(!std::isfinite(scan.angle_min)||!std::isfinite(scan.angle_increment)||scan.angle_increment<=0||
-        !std::isfinite(scan.range_min)||!std::isfinite(scan.range_max)||scan.range_min<0||scan.range_max<=scan.range_min) {return;}
+        !std::isfinite(scan.range_min)||!std::isfinite(scan.range_max)||scan.range_min<0||scan.range_max<=scan.range_min) {
+        record_scan(body_route_controller::ScanTraceKind::InvalidMetadata);return;
+      }
       const auto t=tf_.lookupTransform("base_footprint",scan.header.frame_id,tf2::TimePointZero);
-      if(!std::isfinite(t.transform.translation.x)||!std::isfinite(t.transform.translation.y)) {return;}
+      if(!std::isfinite(t.transform.translation.x)||!std::isfinite(t.transform.translation.y)) {
+        record_scan(body_route_controller::ScanTraceKind::InvalidTransform);return;
+      }
       const double angle=yaw(t.transform.rotation);
       for(std::size_t j=0;j<scan.ranges.size();++j) {
         const double r=scan.ranges[j]; if(!std::isfinite(r)||r<scan.range_min||r>scan.range_max) {continue;}
@@ -419,7 +487,11 @@ private:
         if(std::abs(x)<.19&&std::abs(y)<.19) {++points_[i];}
       }
       scan_stamp_[i]=rclcpp::Time(scan.header.stamp).seconds();scan_received_[i]=Clock::now();
-    } catch(const tf2::TransformException &) {}
+      if(scan_timing_) scan_accepted_ns_[i]=body_route_controller::monotonicNanoseconds();
+      record_scan(body_route_controller::ScanTraceKind::Accepted);
+    } catch(const tf2::TransformException & error) {
+      record_scan(body_route_controller::ScanTraceKind::TransformException,error.what());
+    }
   }
   std::string health(bool stationary)
   {
@@ -429,7 +501,21 @@ private:
     if(!current(odom_received_,odom_stamp_)) {return "stale_odometry";}
     for(double n:{odom_.x,odom_.y,odom_.yaw,measured_.x,measured_.y,measured_.yaw}) {if(!std::isfinite(n)) {return "non_finite_odometry";}}
     for(std::size_t i=0;i<2;++i) {
-      if(!current(scan_received_[i],scan_stamp_[i])) {return "stale_scan_"+std::to_string(i);}
+      if(scan_timing_) {
+        body_route_controller::ScanTraceRecord trace;
+        trace.begin_ns=body_route_controller::monotonicNanoseconds();
+        const bool fresh=body_route_controller::traceScanFreshness(
+          [&](){return age(scan_received_[i]);},[&](){return now().seconds()-scan_stamp_[i];},trace.freshness);
+        if(!fresh) {
+          trace.kind=body_route_controller::ScanTraceKind::FreshnessFault;
+          trace.sensor=static_cast<int>(i);trace.callback_id=scan_callback_count_[i];
+          trace.end_ns=body_route_controller::monotonicNanoseconds();trace.ros_now_s=now().seconds();
+          trace.last_accepted_ns=scan_accepted_ns_[i];trace.last_accepted_stamp_s=scan_stamp_[i];
+          trace.valid_points=valid_[i];trace.stop_points=points_[i];trace.moving=moving_;
+          scan_timing_->append(std::move(trace));
+          return "stale_scan_"+std::to_string(i);
+        }
+      } else if(!current(scan_received_[i],scan_stamp_[i])) {return "stale_scan_"+std::to_string(i);}
       if(valid_[i]<50) {return "insufficient_scan_coverage";}
     }
     if(points_[0]+points_[1]>=2) {return "points_in_stop_polygon";}
@@ -455,6 +541,9 @@ private:
   std::array<double,2> scan_stamp_{};std::array<int,2> valid_{},points_{};
   Clock::time_point odom_received_{},view_received_{},controller_received_{};
   std::array<Clock::time_point,2> scan_received_{};
+  std::unique_ptr<body_route_controller::ScanTimingLog> scan_timing_;
+  std::array<std::uint64_t,2> scan_callback_count_{};
+  std::array<std::int64_t,2> scan_accepted_ns_{};
   bool observation_wait_=false;Clock::time_point observation_received_{};
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr observation_;
   std::string fault_,mode_;
