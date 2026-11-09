@@ -148,6 +148,10 @@ public:
     //   실행 중: ros2 param set /control_master pick_settle_s 0.4 (다음 작업부터). PLACE 의 놓을 자리 위는 place_settle_s
     declare_parameter<double>("pick_settle_s", 0.0);
     declare_parameter<double>("place_settle_s", 0.0);
+    // STORE 칸 위 (놓는 점 위 store_settle_up_mm 이상 높은 마지막 점 = 마지막 내려가기 직전) 에서 이만큼 멈춤 [s]. 11-09 실물: 같은 칸이 보정을 바꿔도 매번 다른 쪽으로 어긋남
+    //   실행 중: ros2 param set /control_master store_settle_s 0.4 (다음 STORE 부터). 0 = 지금 동작 그대로 (store_settle)
+    declare_parameter<double>("store_settle_s", 0.0);
+    declare_parameter<double>("store_settle_up_mm", 20.0);
     if (!(timing_.speed_dps > 0.0) || !(timing_.stand_speed_dps > 0.0) || !(timing_.accel_dps2 > 0.0) ||
       !(timing_.dt_s >= 0.005 && timing_.dt_s <= 0.5))
     {
@@ -710,6 +714,8 @@ private:
         else if (released && n.grip == "close") {n.grip_on_way = true;}
       }
     }
+    // 11-09 실물: 칸 위 (마지막 내려가기 직전) 에서 멈췄다 넣기 (store_settle_s, 0 = 그대로). rack_adjust 로 옮긴 뒤 · 속도 조정 전 (stop + hold 만 더함)
+    if (name.rfind("store_", 0) == 0) {store_settle(path, name.c_str());}
     // 실물 기록의 느린 구간 (칸 근처 15 °/s) 을 path_slow_min_dps 까지 올림 (11-05 사용자: 적재가 너무 느림, 적당히 빠르게)
     for (auto & n : path.nodes) {
       if (n.speed_dps > 0.0 && n.speed_dps < path_slow_min_dps_) {n.speed_dps = path_slow_min_dps_;}
@@ -941,9 +947,29 @@ private:
   void settle_at(PathNode & n, const char * param) const
   {
     const double s = get_parameter(param).as_double();
-    if (!std::isfinite(s) || s <= 0.0) {return;}
+    if (!std::isfinite(s) || s < 1e-3) {return;}   // 1 ms 미만은 없는 것으로 (11-09 검수 발견 4)
     n.stop = true;
     n.hold_s = std::max(n.hold_s, s);
+  }
+
+  // STORE 칸 위 멈춤 (store_settle_s): 첫 놓는 점 (release) 앞에서 손끝이 놓는 점보다 store_settle_up_mm 이상 높은 마지막 점 (= 마지막 내려가기 직전) 에
+  //   settle_at 과 같은 방식 (stop + hold_s). 11-09 실물: 같은 칸이 보정을 바꿔도 매번 다른 쪽으로 어긋남 = 흔들린 채 칸 위에 와서 그대로 내려감
+  //   0 = 그대로 (점 · 속도 · grip · stop 그대로). 그런 점 · 놓는 점 · 팔 모델이 없으면 그대로 + INFO 한 줄
+  void store_settle(ArmPath & path, const char * what) const
+  {
+    const double s = get_parameter("store_settle_s").as_double();
+    if (!std::isfinite(s) || s < 1e-3) {return;}   // settle_at 과 같은 규칙
+    const double up_mm = get_parameter("store_settle_up_mm").as_double();
+    const int k = model_ok_ && std::isfinite(up_mm) ? store_settle_index(model_, path, up_mm / 1000.0) : -1;
+    if (k < 0) {
+      RCLCPP_INFO(get_logger(), "%s: 칸 위 멈춤 (store_settle_s) 없이 그대로 — %s", what,
+        !model_ok_ ? "팔 모델 없음" : "놓는 점 (release) 이 없거나 그보다 store_settle_up_mm 이상 높은 점이 없음");
+      return;
+    }
+    int rel = k + 1;   // 첫 놓는 점 (로그 "몇 점 앞")
+    while (rel < static_cast<int>(path.nodes.size()) && path.nodes[rel].grip != "release") {++rel;}
+    settle_at(path.nodes[k], "store_settle_s");
+    RCLCPP_INFO(get_logger(), "%s: 칸 위 (놓는 점 위 %.0f mm · %d 점 앞) 에서 %.1f s 멈춤 (store_settle_s)", what, up_mm, rel - k, s);
   }
 
   // 손목 인지 결과 → odom 기준 퍽 목록 (촬영 시각 TF, 안 되면 최신 TF). 쓸 때 base_link 로 (그 사이 차체가 움직여도 맞게)

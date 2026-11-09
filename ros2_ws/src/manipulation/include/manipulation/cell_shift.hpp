@@ -34,4 +34,9 @@ bool shift_cell_path(
   const ArmModel & m, ArmPath & path, bool store, const Eigen::Vector2d & cell_xy, const Eigen::Vector2d & d,
   CellShiftReport & rep, std::string & why, double dz = 0.0);
 
+// store_* 경로의 칸 위 (마지막 내려가기 직전) 점: 첫 놓는 점 (grip release) 앞에서 손끝이 놓는 점보다 up_m [m] 이상 높은 마지막 점 번호
+//   (11-09 실물: 흔들린 채 칸 위에 와서 그대로 내려감 → 거기서 멈춤, control_master store_settle_s). 손끝 높이는 팀 명령 rad → 팔 모델
+//   첫 점 (출발 자세, path_actions 가 끊지 않는 점) 은 뺌. 놓는 점이 없거나 그런 점이 없으면 −1
+int store_settle_index(const ArmModel & m, const ArmPath & path, double up_m);
+
 }  // namespace manipulation

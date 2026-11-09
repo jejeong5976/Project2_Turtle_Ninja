@@ -54,6 +54,9 @@ control_master:
     # 11-09 실물: 손이 흔들리며 도착해 그대로 박음 → 퍽 위에서 이만큼 멈춤 (예 0.3~0.5). 실행 중: ros2 param set /control_master pick_settle_s 0.4
     pick_settle_s: 0.0             # PICK 퍽 위 (내려가기 직전) · 다시 쥐기 위. 0 = 지금 동작 그대로
     place_settle_s: 0.0            # PLACE 놓을 자리 위도 같게
+    # 11-09 실물: 같은 칸이 보정을 바꿔도 매번 다르게 어긋남 → 칸 위에서 멈췄다 넣기 (예 0.4). 실행 중: ros2 param set /control_master store_settle_s 0.4
+    store_settle_s: 0.0            # STORE 칸 위 (놓는 점 위 store_settle_up_mm 이상 높은 마지막 점 = 마지막 내려가기 직전). 0 = 지금 동작 그대로
+    store_settle_up_mm: 20.0       # 칸 위 점을 고르는 높이 [mm, 놓는 점 손끝 기준] (기록 경로: S1 15 · S5 11 · S7 12 · S12 10 점 앞, 놓는 점과 수평 2–4 mm)
     gripper_open: 0.0164           # [m] 실측 기준: 닫힘(약 3478 틱) + 1000 틱 = 간격 약 50 mm (scale 0.01149 · zero 3549)
     gripper_close: -0.0016         # [m] 실측 기준: 닫힘 − 20 틱 (퍽이 있으면 전류 한계로 그 전에 멈춤 = 쥠)
     # 나중에 접기: STORE · PLACE 를 P0 (받침 바로 위) 에서 끝냄 → 다음 팔 작업이 접기 · 펼치기 (약 10 s) 를 건너뜀. 주행 전 HOME 이 접음
