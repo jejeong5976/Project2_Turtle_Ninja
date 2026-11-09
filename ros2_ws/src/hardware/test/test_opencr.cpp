@@ -471,6 +471,9 @@ TEST(OpenCRLink, CommandAndStateRoundTripWithUnits)
   OpenCRLink link(small_robot(), 15);
   link.adopt_fd(pty.slave);
   ASSERT_EQ(link.configure(2.0), 0b111);
+  // 실물 순서: 첫 STATE 로 그리퍼 (여러 바퀴 모드) 바퀴 보정을 정한 뒤에야 목표가 나감 (11-09)
+  ASSERT_TRUE(link.send_command({NAN, NAN, NAN}, false));
+  ASSERT_TRUE(link.wait_for_state(1.0));
 
   // 바퀴 2 rad/s, 조향은 목표 없음(NaN), 그리퍼 0.010 m 벌리기
   ASSERT_TRUE(link.send_command({2.0, NAN, 0.010}, true));
@@ -1013,4 +1016,120 @@ TEST(OpenCRLink, MultiTurnJointIsUnwrappedAfterEachConfig)
   EXPECT_EQ(link.turns(1), 0);
   EXPECT_NEAR(link.state().joints[1].position, -3 * k, 1e-5);
   EXPECT_TRUE(link.take_turn_note().empty());
+}
+
+// 통신 끊김 (T1 켠 채 팔 전원이 0.2 s 안에 나갔다 돌아옴, ERROR 안 남) 뒤엔 모터가 0 ~ 4095 로 다시 셈 → 바퀴 보정도 다시 정함 (11-08 밤 검수)
+//   예전엔 CONFIG 에서만 지워 J1 이 한 바퀴 (+2π) 튀거나 그리퍼가 반 바퀴 돌려 했음
+TEST(OpenCRLink, MultiTurnJointIsUnwrappedAgainAfterCommErr)
+{
+  const double k = 2.0 * M_PI / 4096.0;
+  const auto m = [k](double tick) {return static_cast<float>((tick - 2048.0) * k);};
+  Pty pty;
+  FakeOpenCR fw(pty.master);
+  std::vector<JointSpec> js(2);
+  js[0] = {"joint2", 12, ntp::MODE_POSITION, 0, 0, 0, 1.0};
+  js[1].name = "joint1";
+  js[1].id = 11;
+  js[1].mode = ntp::MODE_CURRENT_POSITION;
+  js[1].zero_rad = (4088 - 2048) * k;
+  OpenCRLink link(js, 15);
+  link.adopt_fd(pty.slave);
+
+  // ① 켤 때 모터가 이어 센 −8 (정면) → +1 바퀴 보정, 관절 0
+  fw.idle_pos_last = m(-8);
+  ASSERT_EQ(link.configure(2.0), 0b11);
+  ASSERT_TRUE(link.send_command({NAN, NAN}, true));
+  ASSERT_TRUE(link.wait_for_state(1.0));
+  EXPECT_EQ(link.turns(1), 1);
+  EXPECT_NEAR(link.state().joints[1].position, 0.0, 1e-5);
+  link.take_turn_note();
+
+  // ② 팔 전원이 잠깐 나감: joint1 못 읽음 (값은 옛 그대로)
+  fw.comm_err = 0b10;
+  ASSERT_TRUE(link.send_command({NAN, NAN}, true));
+  ASSERT_TRUE(link.wait_for_state(1.0));
+  EXPECT_FALSE(link.joint_measured(1, 0.1));
+
+  // ③ 전원이 돌아와 모터가 0 ~ 4095 로 다시 셈: 같은 자리 (정면) 가 4088 → 보정을 다시 정해 관절 0 (지우지 않으면 +2π 로 튐)
+  fw.idle_pos_last = m(4088);
+  fw.comm_err = 0;
+  ASSERT_TRUE(link.send_command({NAN, NAN}, true));
+  ASSERT_TRUE(link.wait_for_state(1.0));
+  EXPECT_TRUE(link.joint_measured(1, 0.1));
+  EXPECT_EQ(link.turns(1), 0);
+  EXPECT_NEAR(link.state().joints[1].position, 0.0, 1e-5);
+  const std::string note = link.take_turn_note();
+  EXPECT_NE(note.find("joint1"), std::string::npos) << note;
+  EXPECT_NE(note.find("다시 센 값"), std::string::npos) << note;
+  // 정면 (관절 0) 명령 → 모터 4088 (한 바퀴 돌지 않음)
+  ASSERT_TRUE(link.send_command({NAN, 0.0}, true));
+  ASSERT_TRUE(link.wait_for_state(1.0));
+  EXPECT_NEAR(fw.last_target_15.load() / k + 2048.0, 4088.0, 1e-3);
+  EXPECT_NEAR(link.state().joints[1].position, 0.0, 1e-5);
+
+  // ④ 잠깐 못 읽었을 뿐 값이 이어지면 보정도 그대로 · 알림 없음
+  fw.comm_err = 0b10;
+  ASSERT_TRUE(link.send_command({NAN, NAN}, true));
+  ASSERT_TRUE(link.wait_for_state(1.0));
+  fw.comm_err = 0;
+  ASSERT_TRUE(link.send_command({NAN, NAN}, true));
+  ASSERT_TRUE(link.wait_for_state(1.0));
+  EXPECT_EQ(link.turns(1), 0);
+  EXPECT_NEAR(link.state().joints[1].position, 0.0, 1e-5);
+  EXPECT_TRUE(link.take_turn_note().empty());
+}
+
+// 11-09 검수 1: comm_err 로 바퀴 보정을 지운 뒤 다시 정하기 전엔 그 관절 목표를 안 보냄 (valid 비트 끔 → 펌웨어가 마지막 목표에서 버팀)
+//   옛 turn_rad 로 보내면 모터가 이미 다시 센 뒤라 한 바퀴 돌 수 있음. 켤 때 (첫 STATE 전) 도 같음
+TEST(OpenCRLink, MultiTurnTargetIsHeldUntilTurnIsSet)
+{
+  const double k = 2.0 * M_PI / 4096.0;
+  const auto m = [k](double tick) {return static_cast<float>((tick - 2048.0) * k);};
+  Pty pty;
+  FakeOpenCR fw(pty.master);
+  std::vector<JointSpec> js(2);
+  js[0] = {"joint2", 12, ntp::MODE_POSITION, 0, 0, 0, 1.0};
+  js[1].name = "joint1";
+  js[1].id = 11;
+  js[1].mode = ntp::MODE_CURRENT_POSITION;
+  js[1].zero_rad = (4088 - 2048) * k;
+  OpenCRLink link(js, 15);
+  link.adopt_fd(pty.slave);
+
+  // ① 켤 때: 첫 STATE 전엔 joint1 목표를 안 보냄 (joint2 는 NaN) → 첫 측정 (−8) 으로 +1 바퀴 정함
+  fw.idle_pos_last = m(-8);
+  ASSERT_EQ(link.configure(2.0), 0b11);
+  ASSERT_TRUE(link.send_command({NAN, 0.0}, true));
+  ASSERT_TRUE(link.wait_for_state(1.0));
+  EXPECT_EQ(fw.last_valid.load(), 0b00);
+  EXPECT_EQ(link.turns(1), 1);
+  link.take_turn_note();
+  // 정한 뒤엔 보냄: 정면 (관절 0) = 모터 −8
+  ASSERT_TRUE(link.send_command({NAN, 0.0}, true));
+  ASSERT_TRUE(link.wait_for_state(1.0));
+  EXPECT_EQ(fw.last_valid.load(), 0b10);
+  EXPECT_NEAR(fw.last_target_15.load() / k + 2048.0, -8.0, 1e-3);
+
+  // ② joint1 못 읽음 → 보정 지움 → 다음 명령부터 joint1 valid 비트 끔
+  fw.comm_err = 0b10;
+  ASSERT_TRUE(link.send_command({NAN, 0.0}, true));
+  ASSERT_TRUE(link.wait_for_state(1.0));
+  EXPECT_FALSE(link.joint_measured(1, 0.1));
+  fw.idle_pos_last = m(4088);   // 전원이 돌아오면 모터가 0 ~ 4095 로 다시 셈 (정면 = 4088)
+  ASSERT_TRUE(link.send_command({NAN, 0.0}, true));
+  ASSERT_TRUE(link.wait_for_state(1.0));
+  EXPECT_EQ(fw.last_valid.load(), 0b00) << "다시 정하기 전엔 옛 turn_rad 로 보내지 않음";
+
+  // ③ 다시 읽힘: 이 명령은 아직 안 보냄 (보낼 때는 못 정한 상태) → 그 STATE 로 다시 정함 → 그다음부터 보냄 (모터 4088, 한 바퀴 돌지 않음)
+  fw.comm_err = 0;
+  ASSERT_TRUE(link.send_command({NAN, 0.0}, true));
+  ASSERT_TRUE(link.wait_for_state(1.0));
+  EXPECT_EQ(fw.last_valid.load(), 0b00);
+  EXPECT_EQ(link.turns(1), 0);
+  EXPECT_NEAR(link.state().joints[1].position, 0.0, 1e-5);
+  ASSERT_TRUE(link.send_command({NAN, 0.0}, true));
+  ASSERT_TRUE(link.wait_for_state(1.0));
+  EXPECT_EQ(fw.last_valid.load(), 0b10);
+  EXPECT_NEAR(fw.last_target_15.load() / k + 2048.0, 4088.0, 1e-3);
+  EXPECT_NEAR(link.state().joints[1].position, 0.0, 1e-5);
 }
