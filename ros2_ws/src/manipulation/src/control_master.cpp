@@ -144,6 +144,10 @@ public:
     timing_.dt_s = declare_parameter<double>("path_dt_s", 0.05);
     // 그리퍼를 여닫기 전 팔이 멈춰 따라오게 기다림 [s]. 11-07 실물: 그리퍼 동작 때 2 번 관절이 아직 2.3° 남아 (손끝 약 1 cm) 놓는 자리가 반반
     timing_.grip_settle_s = declare_parameter<double>("grip_settle_s", 0.0);
+    // 퍽 위 (내려가기 직전) 점에서 이만큼 멈춤 [s]. 11-09 실물: 손이 흔들린 채 above 에 도착해 바로 내려가 쥐어 위치 오차 → 0 = 지금 동작 그대로
+    //   실행 중: ros2 param set /control_master pick_settle_s 0.4 (다음 작업부터). PLACE 의 놓을 자리 위는 place_settle_s
+    declare_parameter<double>("pick_settle_s", 0.0);
+    declare_parameter<double>("place_settle_s", 0.0);
     if (!(timing_.speed_dps > 0.0) || !(timing_.stand_speed_dps > 0.0) || !(timing_.accel_dps2 > 0.0) ||
       !(timing_.dt_s >= 0.005 && timing_.dt_s <= 0.5))
     {
@@ -932,6 +936,16 @@ private:
     return {name, ticks_to_command(model_, enc), false, speed, grip, false};
   }
 
+  // 퍽 위 (내려가기 직전) 점에서 멈춰 흔들림을 가라앉힘 (pick_settle_s · place_settle_s): stop + hold_s. 0 = 그대로 (점 · 속도 · grip 그대로)
+  //   가며 여는 그리퍼 (grip_early · grip_on_way) 는 path_actions 가 그 시점 그대로 열고 그 점에서 멈춤
+  void settle_at(PathNode & n, const char * param) const
+  {
+    const double s = get_parameter(param).as_double();
+    if (!std::isfinite(s) || s <= 0.0) {return;}
+    n.stop = true;
+    n.hold_s = std::max(n.hold_s, s);
+  }
+
   // 손목 인지 결과 → odom 기준 퍽 목록 (촬영 시각 TF, 안 되면 최신 TF). 쓸 때 base_link 로 (그 사이 차체가 움직여도 맞게)
   // ---- 적재함 태그 → 칸 경로 옮기기 ----
   // 스캔 (LOOK rack) 중에만: 멈춘 장 (confidence 1) 칸 태그 중심 [base_link]
@@ -1614,6 +1628,8 @@ private:
           model_node("re_place_clear", Pp[0].enc, slow_dps_), model_node("re_above", Pr[0].enc, slow_dps_, "open"),
           model_node("re_down", Pr[1].enc, slow_dps_), model_node("re_grasp", Pr[2].enc, slow_dps_, "close"),
           model_node("re_up", Pr[1].enc, slow_dps_), model_node("re_lift", Pr[0].enc, slow_dps_)};
+        settle_at(out[0], "place_settle_s");   // 내려놓을 자리 위에서 멈춤 (0 = 그대로)
+        settle_at(out[5], "pick_settle_s");    // 다시 쥘 퍽 위에서 멈춤
         sx = x;
         sy = y;
         return true;
@@ -1957,6 +1973,7 @@ private:
     }
     if (P.size() != 3) {why = "세우기: 선 퍽을 다시 쥘 자세가 없음 (" + w + ")"; return {};}
     path.nodes.push_back(model_node("re_above", P[0].enc, slow_dps_, "open"));
+    settle_at(path.nodes.back(), "pick_settle_s");   // 선 퍽 다시 쥐기 위에서 멈춤 (0 = 그대로)
     path.nodes.push_back(model_node("re_down", P[1].enc, slow_dps_));
     path.nodes.push_back(model_node("re_grasp", P[2].enc, slow_dps_, "close"));
     path.nodes.push_back(model_node("re_up", P[1].enc, slow_dps_));
@@ -2108,6 +2125,7 @@ private:
     path.ends_home = false;
     path.nodes.push_back(model_node("above", P[0].enc, 0.0, open_kw));
     path.nodes.back().grip_early = side_grip_;   // 퍽 위로 가며 미리 엶 (손이 비어 있음) — 그리퍼 기다림 하나를 뺌
+    settle_at(path.nodes.back(), "pick_settle_s");   // 11-09 실물: 흔들린 채 도착해 바로 내려감 → 퍽 위에서 멈췄다 내려감 (가며 열기는 그대로, 0 = 그대로)
     path.nodes.push_back(model_node("down", P[1].enc, slow_dps_));
     path.nodes.push_back(model_node("grasp", P[2].enc, slow_dps_, "close"));
     path.nodes.push_back(model_node("up", P[1].enc, slow_dps_));
@@ -2221,6 +2239,7 @@ private:
     path.ends_home = true;
     path.nodes.push_back({"staging", staging_, false, 0.0, "", false});
     path.nodes.push_back(model_node("above", P[0].enc, slow_dps_));
+    settle_at(path.nodes.back(), "place_settle_s");   // 놓을 자리 위에서 멈춤 (0 = 그대로)
     join_from_pick_end(path, "PLACE");
     path.nodes.push_back(model_node("down", P[1].enc, slow_dps_));
     path.nodes.push_back(model_node("drop", P[2].enc, slow_dps_, open_kw));
@@ -2304,6 +2323,8 @@ private:
             model_node("far_re_down", Pr[1].enc, slow_dps_), model_node("far_re_grasp", Pr[2].enc, slow_dps_, "close"),
             model_node("far_re_up", Pr[1].enc, slow_dps_), model_node("far_re_lift", Pr[0].enc, slow_dps_)};
           mid[5].grip_early = get_parameter("place_far_open_on_way").as_bool();   // 내려놓은 뒤 빈손 → 다시 쥘 자리 위로 가며 엶 (그리퍼 기다림 하나를 뺌)
+          settle_at(mid[0], "place_settle_s");   // 내려놓을 자리 위 · 다시 쥘 퍽 위에서 멈춤 (0 = 그대로)
+          settle_at(mid[5], "pick_settle_s");
           sx = q.x();
           sy = q.y();
           put_tilt = Pp.back().tilt_deg;
@@ -2322,6 +2343,7 @@ private:
     path.nodes.insert(path.nodes.end(), mid.begin(), mid.end());
     join_from_pick_end(path, "PLACE");
     path.nodes.push_back(model_node("above", Pt[0].enc, slow_dps_));
+    settle_at(path.nodes.back(), "place_settle_s");   // 놓을 자리 위에서 멈춤 (0 = 그대로)
     path.nodes.push_back(model_node("down", Pt[1].enc, slow_dps_));
     path.nodes.push_back(model_node("drop", Pt[2].enc, slow_dps_, kw_t));
     path.nodes.push_back(model_node("up", Pt[1].enc, slow_dps_));
