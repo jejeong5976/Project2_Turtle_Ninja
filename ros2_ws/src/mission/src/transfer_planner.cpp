@@ -204,7 +204,7 @@ std::optional<TransferPlan> plan_transfer(
     };
   std::vector<SolverStep> steps = sol->steps;
   for (std::size_t si = 0; si < steps.size(); ++si) {
-    // 같은 장소에서 꺼내기 · 놓기가 이어지면 (한 장소 = 한 색 묶음, 순서 무관) 칸 제약을 지키는 종류부터 (11-08: S1 ← S2 · S10 ← S5)
+    // 같은 장소에서 꺼내기 · 놓기가 이어지면 (한 장소 = 한 색 묶음, 순서 무관) 칸 제약을 지키는 종류부터 (S1 ← S2 · S10 ← S5)
     if (steps[si].act == SolverAct::Retrieve && si + 1 < steps.size() && steps[si + 1].act == SolverAct::Place) {
       bool ok = false;
       retrieve_slot(steps[si].kind, ok);
@@ -261,12 +261,12 @@ std::optional<TransferPlan> plan_transfer(
           break;
         }
       case SolverAct::Retrieve: {
-          // 지키는 칸이 없으면 뒤에서 첫 칸 (막지 않음, 11-08 전에는 제약을 안 봐서 S12 가 찬 채 S7 을 뺌)
+          // 지키는 칸이 없으면 뒤에서 첫 칸 (막지 않음)
           bool ok = false;
           const auto slot = retrieve_slot(st.kind, ok);
           if (!slot) {set_error(error, "펼치기 오류: 꺼낼 종류가 칸에 없음"); return std::nullopt;}
           // 그래도 제약에 걸리면 (막는 칸 퍽이 다른 장소로 감) 막는 퍽을 빈 칸으로 옮긴 뒤 뺌: RETRIEVE 막는 칸 → STORE 빈 칸
-          //   (RETRIEVE 끝 = STORE 시작 = 박스 위 기준점). 빈 칸이 없으면 그대로 (막지 않음). 11-08
+          //   (RETRIEVE 끝 = STORE 시작 = 박스 위 기준점). 빈 칸이 없으면 그대로 (막지 않음).
           for (int guard = 0; !ok && guard < 3; ++guard) {
             const auto blk = sim.retrieve_blocker(*slot);
             if (!blk) {break;}

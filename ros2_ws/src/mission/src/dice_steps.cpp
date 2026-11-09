@@ -139,7 +139,7 @@ std::vector<Step> transfer_steps(
   for (const auto & st : plan.stops) {
     if (st.move) {
       steps.push_back(nav_step(node_stop(arena, st.node), node_name(st.node), st.node));
-      set_box_approach(steps.back(), arena, st.node);   // (옛) 라이다 마지막 접근, box_approach_m 0 이면 안 씀 (정밀 접근 dock 이 대신)
+      set_box_approach(steps.back(), arena, st.node);   // 라이다 마지막 접근 (기본 꺼짐), box_approach_m 0 이면 안 씀 (정밀 접근 dock 이 대신)
     }
     auto arm = arm_steps(st.actions, rack_look, box_wait);
     steps.insert(steps.end(), arm.begin(), arm.end());

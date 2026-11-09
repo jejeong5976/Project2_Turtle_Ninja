@@ -209,7 +209,7 @@ TEST(Transfer, AllLoadedMatchesBestPlaceOrder)
 
 TEST(Transfer, GripperPuckStoredBeforeDriving)
 {
-  // 재계획 등으로 그리퍼에 퍽이 있는 채 계획하면 장소로 떠나기 전에 STORE (퍽 쥔 채 주행 안 함, 2026-11-04)
+  // 재계획 등으로 그리퍼에 퍽이 있는 채 계획하면 장소로 떠나기 전에 STORE (퍽 쥔 채 주행 안 함)
   const auto all = q1_pucks();
   Cargo cargo(slot_names(12));
   for (int i = 0; i < 11; ++i) {
@@ -590,11 +590,12 @@ TEST(DiceMap, LoadsRepoFileWithStartOrigin)
   // B1 중심 (1.468, 0.950) = 출발에서 +X 0.734 → 출발이 −X 를 보므로 map 에서는 뒤쪽 (−0.734, 0)
   EXPECT_NEAR(a.boxes[0].center[0], -0.734, 1e-3);
   EXPECT_NEAR(a.boxes[0].center[1], 0.0, 1e-3);
-  // L1 보는 방향: 경기장 +X → map −X
-  EXPECT_NEAR(a.places[0].view_dir[0], -1.0, 1e-3);
+  // L1 보는 방향 (남쪽 정차): 경기장 +Y → map −Y
+  EXPECT_NEAR(a.places[0].view_dir[0], 0.0, 1e-3);
+  EXPECT_NEAR(a.places[0].view_dir[1], -1.0, 1e-3);
   EXPECT_NEAR(a.places[0].top_z, 0.07, 1e-9);
   EXPECT_NEAR(a.box_radius, 0.15, 1e-9);
-  // L2 = 205 박스 (2026-11-04), 정차점이 격자 중심 북쪽 0.2575 m (2026-11-06) · 남쪽을 봄 (다른 박스와 같은 거리)
+  // L2 = 205 박스, 정차점이 격자 중심에서 0.2575 m (남쪽 정차 · 북쪽을 봄)
   EXPECT_NEAR(std::hypot(a.places[1].stop.x - a.places[1].center[0], a.places[1].stop.y - a.places[1].center[1]), 0.2575, 1e-3);
 }
 
@@ -658,7 +659,7 @@ TEST(DiceSteps, BoxStopsUseFinalApproach)
     if (s.type != StepType::Navigate) {continue;}
     ++boxes;
     EXPECT_DOUBLE_EQ(s.approach_m, a.box_approach_m) << s.name;
-    EXPECT_NEAR(s.approach_face_m, 0.2575 - 0.1025, 1e-6) << s.name;   // 정차 거리 0.2575 m (2026-11-06)
+    EXPECT_NEAR(s.approach_face_m, 0.2575 - 0.1025, 1e-6) << s.name;   // 정차 거리 0.2575 m
   }
   EXPECT_EQ(boxes, 6);
   a.box_approach_m = 0.0;   // 끄면 예전과 같음
@@ -1060,6 +1061,49 @@ TEST(PlaceBox, RotatedCellsAndVerifyCopy)
   EXPECT_DOUBLE_EQ(plan.places[0].pip_offsets[0][0], 0.06);   // 다른 장소는 그대로
 }
 
+// 박스 테두리: 기본 범위 102.5 − 21.2 − 10 = 71.3 mm → 눈 간격 60 mm 칸은 그대로, 넘는 칸만 안쪽으로
+TEST(PlaceBox, ClampCellInsideBoxEdge)
+{
+  const PlaceLimits lim;
+  const double r = lim.box_half - lim.puck_half - lim.margin;
+  for (const auto & o : dice_pip_offsets(6, 0.06)) {   // 6 = 귀 · 가장자리 칸 전부
+    auto c = o;
+    EXPECT_FALSE(clamp_offset_in_box(c, 0.0, lim));
+    EXPECT_EQ(c, o);
+  }
+  std::array<double, 2> o{0.09, -0.08};
+  EXPECT_TRUE(clamp_offset_in_box(o, 0.0, lim));
+  EXPECT_NEAR(o[0], r, 1e-12);
+  EXPECT_NEAR(o[1], -r, 1e-12);
+
+  // 박스가 지도에서 30° 돌아 있으면 박스 좌표로 자름: 박스 축 방향 0.09 → r, 옆 0.01 은 그대로
+  const double yaw = M_PI / 6;
+  std::array<double, 2> q{0.09 * std::cos(yaw) - 0.01 * std::sin(yaw), 0.09 * std::sin(yaw) + 0.01 * std::cos(yaw)};
+  EXPECT_TRUE(clamp_offset_in_box(q, yaw, lim));
+  EXPECT_NEAR(std::cos(yaw) * q[0] + std::sin(yaw) * q[1], r, 1e-12);
+  EXPECT_NEAR(-std::sin(yaw) * q[0] + std::cos(yaw) * q[1], 0.01, 1e-12);
+
+  // 측정 박스가 돌아도 (frame_point) 퍽 중심은 측정 박스 좌표 범위 안
+  PlaceFrame f;
+  f.x = 1.0;
+  f.y = 2.0;
+  f.dyaw = 0.3;
+  std::array<double, 2> w{0.12, 0.12};
+  clamp_offset_in_box(w, 0.0, lim);
+  const auto p = frame_point(f, w);
+  const double u = std::cos(f.dyaw) * (p[0] - f.x) + std::sin(f.dyaw) * (p[1] - f.y);
+  const double v = -std::sin(f.dyaw) * (p[0] - f.x) + std::cos(f.dyaw) * (p[1] - f.y);
+  EXPECT_LE(std::fabs(u), r + 1e-12);
+  EXPECT_LE(std::fabs(v), r + 1e-12);
+
+  // 퍽 + 여유가 박스보다 크면 가운데
+  PlaceLimits tiny;
+  tiny.box_half = 0.02;
+  std::array<double, 2> z{0.05, 0.0};
+  EXPECT_TRUE(clamp_offset_in_box(z, 0.0, tiny));
+  EXPECT_DOUBLE_EQ(z[0], 0.0);
+}
+
 // box_wait: 장소 LOOK 바로 뒤에만 kPlaceBox, 박스 LOOK 뒤에는 없음, 꺼 두면 지금과 같음
 TEST(PlaceBox, WaitStepAfterPlaceLook)
 {
@@ -1093,10 +1137,10 @@ TEST(PlaceBox, PlaceOffsetFollowsViewDirection)
     EXPECT_NEAR(d[1], 0.010 * std::sin(yaw) + 0.005 * std::cos(yaw), 1e-9) << "L" << p + 1;
     EXPECT_NEAR(std::hypot(d[0], d[1]), std::hypot(0.010, 0.005), 1e-12);
   }
-  // L1: 경기장 +X 를 봄 = map −X (출발이 map 원점) → 앞 +10 = map x −0.010, 왼쪽 +5 = map y −0.005
+  // L1: 남쪽 정차에서 경기장 +Y 를 봄 = map −Y (출발이 map 원점, 서쪽 → 남쪽) → 앞 +10 = map y −0.010, 왼쪽 +5 = map x +0.005
   const auto d1 = place_offset_map(a.places[0].view_dir, {10.0, 5.0});
-  EXPECT_NEAR(d1[0], -0.010, 1e-4);
-  EXPECT_NEAR(d1[1], -0.005, 1e-4);
+  EXPECT_NEAR(d1[0], 0.005, 1e-4);
+  EXPECT_NEAR(d1[1], -0.010, 1e-4);
   const auto z = place_offset_map({0.0, 0.0}, {10.0, 5.0});   // 방향 없음 → 0
   EXPECT_DOUBLE_EQ(z[0], 0.0);
   EXPECT_DOUBLE_EQ(z[1], 0.0);
