@@ -3,6 +3,7 @@
 //   - 팔 성공 결과가 온 뒤 step() 전에 stop() → 재고에 한 번만 반영
 //   - 팔 시간 초과 뒤 최종 결과가 끝내 안 옴 (server_wait_s · 서버 없어짐) → 재시도 대신 FAULT
 //   - 취소 결과 기다리는 중 서버가 없어졌다 다시 뜸 → 더 안 기다림 (resume 안 막힘)
+//   - 손목 카메라 drift: 재검증용 원시 관측만 되돌린 위치, 기록부는 명목 TF. 다른 프레임 drift 는 무시
 //   실행: colcon test --packages-select planning (ROS_DOMAIN_ID · ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST 권장)
 //   액션 · 발행 이름은 시험마다 고유 이름공간으로 바꿈 → 같은 도메인의 실물 /arm_task · Nav2 에 안 닿음
 
@@ -19,9 +20,12 @@
 
 #include <unistd.h>
 
+#include "geometry_msgs/msg/quaternion_stamped.hpp"
 #include "planning/executor.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
+#include "tf2/LinearMath/Quaternion.hpp"
+#include "tf2_ros/static_transform_broadcaster.hpp"
 
 using namespace planning;
 using Nav = nav2_msgs::action::NavigateToPose;
@@ -99,7 +103,8 @@ protected:
     rclcpp::NodeOptions o;
     o.use_global_arguments(false);
     o.arguments({"--ros-args", "-r", "/arm_task:=" + ns_ + "/arm_task",
-      "-r", "/mission/cargo:=" + ns_ + "/cargo", "-r", "/planning/markers:=" + ns_ + "/markers"});
+      "-r", "/mission/cargo:=" + ns_ + "/cargo", "-r", "/planning/markers:=" + ns_ + "/markers",
+      "-r", "/wrist_cam/drift:=" + ns_ + "/drift", "-r", "/perception/wrist/detections:=" + ns_ + "/detections"});
     o.parameter_overrides({
       {"require_scan", false}, {"require_detections", false}, {"require_localization", false},
       {"require_motion_mode", false}, {"lifecycle_services", std::vector<std::string>{}},
@@ -359,6 +364,75 @@ TEST_F(ExecutorActions, NavCancelForgottenWhenServerGone)
   nav_srv_ = std::make_unique<FakeServer<Nav>>(server_, ns_ + "/navigate_to_pose");
   ASSERT_TRUE(spin_until([&] {return !not_ready("NAV2_SERVER");}));
   EXPECT_TRUE(exec_->cancel_pending_reason().empty());
+}
+
+// drift 3° (카메라 y 축 둘레) + 카메라 정면 0.30 m 검출 → 재검증 관측 x = 0.30 · sin 3°, 기록부 x = 0 (map → odom → 카메라 고정 단위 TF)
+TEST_F(ExecutorActions, DriftAppliedToVerifyObservationsOnly)
+{
+  start();
+  const std::string cam = "exec_test_cam_" + std::to_string(::getpid());
+  tf2_ros::StaticTransformBroadcaster stb(server_);
+  geometry_msgs::msg::TransformStamped t;   // map → odom → 카메라, 모두 단위 (카메라 좌표 = map 좌표)
+  t.header.frame_id = "map";
+  t.child_frame_id = "odom";
+  t.transform.rotation.w = 1.0;
+  auto t2 = t;
+  t2.header.frame_id = "odom";
+  t2.child_frame_id = cam;
+  stb.sendTransform(std::vector<geometry_msgs::msg::TransformStamped>{t, t2});
+  auto drift_pub = server_->create_publisher<geometry_msgs::msg::QuaternionStamped>(
+    ns_ + "/drift", rclcpp::QoS(1).reliable().transient_local());
+  auto det_pub = server_->create_publisher<interfaces::msg::DetectionArray>(ns_ + "/detections", 10);
+  auto send_drift = [&](const std::string & frame) {
+      tf2::Quaternion q;
+      q.setRPY(0.0, 3.0 * M_PI / 180.0, 0.0);
+      geometry_msgs::msg::QuaternionStamped m;
+      m.header.frame_id = frame;
+      m.quaternion.x = q.x();
+      m.quaternion.y = q.y();
+      m.quaternion.z = q.z();
+      m.quaternion.w = q.w();
+      drift_pub->publish(m);
+    };
+  auto send_det = [&](const std::string & id) {
+      interfaces::msg::DetectionArray m;
+      m.header.frame_id = cam;
+      m.header.stamp = client_->now();
+      interfaces::msg::Detection d;
+      d.header = m.header;
+      d.kind = "puck";
+      d.id = id;
+      d.label = "red";
+      d.confidence = 0.9;
+      d.pose.position.z = 0.30;
+      m.detections.push_back(d);
+      det_pub->publish(m);
+    };
+  auto obs_of = [&](const std::string & id) -> const ObsRecord * {
+      const auto & o = exec_->recent_obs();
+      for (auto it = o.rbegin(); it != o.rend(); ++it) {if (it->id == id) {return &*it;}}
+      return nullptr;
+    };
+  // 다른 프레임 drift → 무시 (재검증 관측도 명목)
+  send_drift("other_camera_frame");
+  ASSERT_TRUE(spin_until([&] {send_det("1"); return obs_of("1") != nullptr;}));
+  EXPECT_NEAR(obs_of("1")->x, 0.0, 1e-6);
+  // 같은 프레임 drift → 재검증 관측만 되돌림
+  send_drift(cam);
+  ASSERT_TRUE(spin_until([&] {
+      send_det("2");
+      const auto * o = obs_of("2");
+      return o && std::fabs(o->x) > 1e-4;
+    }));
+  EXPECT_NEAR(obs_of("2")->x, 0.30 * std::sin(3.0 * M_PI / 180.0), 1e-4);
+  bool found = false;
+  for (const auto & r : exec_->registry().records()) {
+    if (r.id == "2") {
+      found = true;
+      EXPECT_NEAR(r.x, 0.0, 1e-6);   // 기록부 (PICK 목표 · 수집 계획) 는 명목 TF 그대로
+    }
+  }
+  EXPECT_TRUE(found);
 }
 
 int main(int argc, char ** argv)

@@ -128,7 +128,7 @@ Executor::Executor(rclcpp::Node & node)
   // ---- 재고: 칸 이름 (팔이 닿는 칸만), 기록 파일 (빈 문자열 = 저장 안 함)
   cargo_ = Cargo(node_.declare_parameter<std::vector<std::string>>("cargo_slots",
     {"S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12"}));
-  {   // 칸 제약 "칸:비어야 할 칸" (config/rack_cells.yaml rack_constraints, 11-02 최악 검사 + 실물 S7 ← S12 −13 mm)
+  {   // 칸 제약 "칸:비어야 할 칸" (config/rack_cells.yaml rack_constraints, 최악 검사 + 실물 S7 ← S12 −13 mm)
     auto rules = [&](const char * name, const std::vector<std::string> & def) {
         Cargo::SlotRules out;
         for (const auto & r : node_.declare_parameter<std::vector<std::string>>(name, def)) {
@@ -165,6 +165,17 @@ Executor::Executor(rclcpp::Node & node)
   for (const auto & t : det_topics) {
     sub_det_.push_back(node_.create_subscription<DetectionArray>(
       t, 10, [this](DetectionArray::ConstSharedPtr m) {on_detections(*m);}));
+  }
+  // 손목 카메라 돌아감 (camera_drift_node, transient_local 1 개 · HOME 마다 갱신). "" = 안 씀 (재검증도 명목 TF)
+  const auto drift_topic = node_.declare_parameter<std::string>("drift_topic", "/wrist_cam/drift");
+  if (!drift_topic.empty()) {
+    sub_drift_ = node_.create_subscription<geometry_msgs::msg::QuaternionStamped>(
+      drift_topic, rclcpp::QoS(1).reliable().transient_local(),
+      [this](geometry_msgs::msg::QuaternionStamped::ConstSharedPtr m) {
+        const auto & q = m->quaternion;
+        if (!valid_quaternion(q.x, q.y, q.z, q.w) || m->header.frame_id.empty()) {return;}
+        drift_ = *m;
+      });
   }
   sub_rack_ = node_.create_subscription<DetectionArray>(
     node_.declare_parameter<std::string>("rack_topic", "/perception/rack/cells"), 10,
@@ -240,7 +251,7 @@ Executor::Executor(rclcpp::Node & node)
   // AMCL 은 위치를 갱신할 때만 발행 (정지 중엔 안 옴) → 마지막 유효 공분산을 유지
   //   /initialpose 는 따로 받지 않음: AMCL 이 초기 위치를 반영한 /amcl_pose 를 스스로 다시 내므로 마지막 값만 믿음
   //   (예전엔 /initialpose 를 받으면 지웠는데, 그 뒤 AMCL 이 다시 안 내면 정지 중엔 LOCALIZATION_COV 로 계속 막힘
-  //    — Isaac 시험 2026-11-02 에서 두 번 발생)
+  //    — Isaac 시험 두 번 발생)
   if (loc_from_amcl_) {
     sub_amcl_ = node_.create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
       "/amcl_pose", rclcpp::QoS(1).reliable().transient_local(),
@@ -315,7 +326,18 @@ void Executor::on_detections(const DetectionArray & msg)
     r.z = out.z;
     r.last_seen = now;
     registry_.update(r);   // id 가 "" 이면 후보로 들어감
-    raw_obs_.push_back(ObsRecord{rclcpp::Time(h.stamp).seconds(), d.id, d.label, d.shape, out.x, out.y});
+    // 재검증용 원시 관측: 그 카메라가 돈 만큼 되돌린 위치 (카메라 좌표 p → R · p 뒤 명목 TF, control_master 와 같은 식)
+    geometry_msgs::msg::Point obs = out;
+    if (drift_ && drift_->header.frame_id == h.frame_id) {
+      const auto & dq = drift_->quaternion;
+      const tf2::Vector3 pr = tf2::quatRotate(tf2::Quaternion(dq.x, dq.y, dq.z, dq.w).normalized(), tf2::Vector3(p.x, p.y, p.z));
+      geometry_msgs::msg::Point pc;
+      pc.x = pr.x();
+      pc.y = pr.y();
+      pc.z = pr.z();
+      tf2::doTransform(pc, obs, *tm);
+    }
+    raw_obs_.push_back(ObsRecord{rclcpp::Time(h.stamp).seconds(), d.id, d.label, d.shape, obs.x, obs.y});
     while (!raw_obs_.empty() && raw_obs_.front().stamp < now - 30.0) {raw_obs_.pop_front();}
 
     if (d.id.empty()) {continue;}
@@ -435,7 +457,7 @@ ExecEvent Executor::step(double now)
   // 대기 원인으로 막힌 단계는 시작 · 진행 안 함
   const Step & cur = steps_[step_i_];
   const bool drive_step = cur.type == StepType::Navigate;
-  // 퍽 쥔 채 이동 단계 = 계획 오류 (2026-11-04: 쥔 채 주행 안 함, control 도 쥔 채 HOME 거절) → 이동 안 하고 FAULT
+  // 퍽 쥔 채 이동 단계 = 계획 오류 (쥔 채 주행 안 함, control 도 쥔 채 HOME 거절) → 이동 안 하고 FAULT
   if (drive_step && !step_running_ && cargo_.holding()) {
     ev.kind = ExecEvent::Kind::Fault;
     ev.code = "CARRY_DRIVE";
@@ -629,8 +651,8 @@ void Executor::insert_after_current(std::vector<Step> more)
   pending_after_.insert(pending_after_.end(), more.begin(), more.end());
 }
 
-// 넘김 통로 (팀장님 11-07 2 차): 로봇이 정차점 뒤 (−0.02 ~ handoff m) · 옆 lat m 안 · 방향 yaw° 안일 때만 Nav2 를 끊고 정밀 접근으로.
-//   반지름만 보면 박스 옆을 스치며 다가올 때 넘겨져 정밀 접근이 박스 옆에서 출발함 (11-08 리뷰)
+// 넘김 통로: 로봇이 정차점 뒤 (−0.02 ~ handoff m) · 옆 lat m 안 · 방향 yaw° 안일 때만 Nav2 를 끊고 정밀 접근으로.
+//   반지름만 보면 박스 옆을 스치며 다가올 때 넘겨져 정밀 접근이 박스 옆에서 출발함 (리뷰)
 static bool in_dock_handoff(const Pose2D & r, const Pose2D & stop, double handoff_m, double lat_m, double yaw_deg)
 {
   const double dx = stop.x - r.x, dy = stop.y - r.y;
@@ -923,7 +945,7 @@ StepResult Executor::run_navigate(const Step & s, double now)
         const StepResult r = poll_nav(now, s.timeout_s > 0.0 ? s.timeout_s : nav_timeout_s_);
         if (r != StepResult::Success) {return r;}
         if (!two_stage) {
-          if (s.approach_m > 0.0) {   // (옛) 라이다 마지막 접근 — dice_map box_approach_m 0 이면 안 씀 (정밀 접근 dock 이 대신)
+          if (s.approach_m > 0.0) {   // 라이다 마지막 접근 (기본 꺼짐) — dice_map box_approach_m 0 이면 안 씀 (정밀 접근 dock 이 대신)
             approach_ = ApproachRun{};
             approach_.active = true;
             approach_.start_s = now;   // 시작점은 run_approach 가 신선한 odom 으로 잡음
@@ -1098,6 +1120,7 @@ StepResult Executor::run_arm(const Step & s, double now)
     ArmTask::Goal goal;
     goal.task = s.arm_task;
     goal.slot = s.slot;   // STORE · RETRIEVE
+    if (s.arm_task == kArmPick) {goal.puck_id = s.puck_id;}   // control 이 이 ID 의 손목 검출을 목표로 잡음 (위치만 보면 옆 퍽을 집을 수 있음)
     if (!arm_target(s, goal.target, now)) {return StepResult::Fail;}
     // control_master 가 새 팔 작업을 못 받는 동안 (하드웨어 이상 · 재생기 준비 전) 기다림 → 거절 반복 안 함
     if (require_motion_mode_ && !(have_mode_ && mode_ready_)) {

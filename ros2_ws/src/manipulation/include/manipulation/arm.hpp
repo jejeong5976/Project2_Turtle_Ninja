@@ -5,8 +5,8 @@
 //   ① make_arm_plan  : HOME · PICK · PLACE → 동작 순서표 (팔 자세 / 그리퍼 한 동작씩)
 //   ② MotionArbiter  : "지금 누구 차례" DRIVE · STOPPING · ARM · STOP  (D15 한 번에 한 무리)
 //   ③ ArmRunner      : 팔 작업 하나를 보내고 · 기다리고 · 취소하고 · 끝내는 상태 기계 (언제 바퀴를 풀어도 되나를 정함)
-//   ④ FoldCheck      : "팔이 정말 접혔나" 를 /joint_states 실측으로 확인 (2026-10-16 R1)
-//   ⑤ HardwareWatch  : 하드웨어 측정이 살아 있나 (끊김 · NaN 지속 → HOME 확인 무효, STOP) (2026-10-16 재검증 R6)
+//   ④ FoldCheck: "팔이 정말 접혔나" 를 /joint_states 실측으로 확인 (R1)
+//   ⑤ HardwareWatch: 하드웨어 측정이 살아 있나 (끊김 · NaN 지속 → HOME 확인 무효, STOP) (재검증 R6)
 
 #pragma once
 
@@ -129,7 +129,7 @@ private:
 //        FINISH        : 상위(ArmTask)에 결과를 답하고, drive_ok 로 차례를 정함
 //
 // ★ 차례 규칙: FINISH 의 drive_ok 는 **끝까지 성공 + 마지막 동작이 접기(home) + 실측으로 접힘 확인** 일 때만 true.
-//   (2026-10-16 R1) "재생기(JTC)가 성공이라고 함" 만으로는 부족 — 어깨가 걸려 0 rad 에 있어도 JTC 는 성공을 돌려줬음
+//   (R1) "재생기(JTC)가 성공이라고 함" 만으로는 부족 — 어깨가 걸려 0 rad 에 있어도 JTC 는 성공을 돌려줬음
 //   (목표 오차 검사가 꺼져 있었음). 그래서 마지막 home 동작이 끝나면 VERIFY 단계로 들어가
 //   신선한 관절 측정값이 home 범위 안에 hold_s 동안 머무는지(FoldCheck) 본 뒤에만 DRIVE.
 //   verify_timeout_s 안에 확인 못 하면 실패(ABORTED) → STOP.
@@ -221,7 +221,7 @@ private:
 };
 
 // ============================================================================
-// ④ 접힘 실측 확인 (FoldCheck) — 2026-10-16 R1
+// ④ 접힘 실측 확인 (FoldCheck) — R1
 // "팔이 HOME 에 있다" 를 재생기의 성공 답이 아니라 **관절 측정값**으로 확인한다.
 //   - 측정 묶음마다 observe(측정 시각, 관절값들). 관절이 빠졌거나 NaN 이면 그 묶음은 "모름" → 처음부터 다시
 //     (하드웨어는 못 읽은 모터를 NaN 으로 내보냄 — opencr_hardware.cpp, R3)
@@ -253,11 +253,11 @@ private:
 };
 
 // ============================================================================
-// ⑤ 하드웨어 측정 살아 있나 (HardwareWatch) — 2026-10-16 재검증 R6
+// ⑤ 하드웨어 측정 살아 있나 (HardwareWatch) — 재검증 R6
 // 고장(하드웨어 ERROR · 펌웨어 잠금 · 상태 끊김) 뒤에는 "예전에 HOME 이 확인됐다" 가 더는 사실이 아님
 //   (CONFIG 가 토크를 껐다 켜면서 팔이 처졌을 수도, 고장 중 팔이 다른 자세에서 멈췄을 수도 있음)
 //   → control_master 가 이걸로 이상을 보면 STOP + 진행 중 팔 작업 실패 + 새 팔 작업 거절. 복구 뒤 HOME 이 다시 성공해야 DRIVE
-// 판단 — 둘 중 하나라도 이상이면 이상 (2026-10-16 보드 2장: 주행 보드만 죽고 팔은 멀쩡한 경우도 잡으려고)
+// 판단 — 둘 중 하나라도 이상이면 이상 (보드 2장: 주행 보드만 죽고 팔은 멀쩡한 경우도 잡으려고)
 //   ① 보드 상태 직접 (component_timeout_s > 0 일 때): controller_manager 가 알려 준 하드웨어(보드)가 전부 active 인가
 //      답이 component_timeout_s 넘게 없으면 "모름" = 이상 (controller_manager 가 멈춤 · 끊김)
 //   ② 관절 측정 (/joint_states, 감시할 관절 = control.yaml hw_watch_joints, 기본 14 개 전부):

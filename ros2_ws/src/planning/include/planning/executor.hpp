@@ -8,6 +8,8 @@
 //   - ArmTask target 계산: PICK = 퍽 집기 점 · 방향, Custom 목표 = 미션이 준 점 → base_link
 // 입력
 //   - detection_topics     interfaces/DetectionArray  퍽, 촬영 시각 TF 로 map · odom 변환. 기본 /perception/wrist/detections
+//   - drift_topic          geometry_msgs/QuaternionStamped  손목 카메라가 돈 만큼 (camera_drift_node, 기본 /wrist_cam/drift).
+//                          재검증용 원시 관측 (recent_obs) 에만 되돌려 곱함. 기록부 · PICK 목표는 명목 TF 그대로 (control 이 따로 되돌림)
 //   - rack_topic           interfaces/DetectionArray  적재함 칸 (kind rack_cell, label = 칸 이름, base_link). 기본 /perception/rack/cells
 //   - /control/motion_mode interfaces/MotionMode      주행은 DRIVE 일 때만, 팔 작업은 ready 일 때만
 //   - /odom                nav_msgs/Odometry          제어 생존 확인
@@ -52,14 +54,14 @@
 //   - FAULT 등으로 취소한 팔 작업이 결국 성공하면 update() 가 재고에 반영 (한 번만). 취소한 팔 작업은 HOME 필요로 봄
 //       사람이 정합한 뒤 온 늦은 결과는 반영 안 함 (사람 확인이 기준)
 //   - 미션 판단으로 단계 목록을 바꿀 때는 arm_busy() 가 false 일 때만, 팔 결과 처리 전 교체 방지
-//   - 정밀 접근 (Step.dock, 박스 · 장소 정차 2026-11-06): 정차점이 박스 면 1 cm (0.2575 m) 라 Nav2 외곽 · collision_monitor 와 겹침
+//   - 정밀 접근 (Step.dock, 박스 · 장소 정차): 정차점이 박스 면 1 cm (0.2575 m) 라 Nav2 외곽 · collision_monitor 와 겹침
 //       → 1 단계 Nav2 목표 = 정차점 뒤 dock_nav_back_m (박스 면 2 cm = nf 학습 구간 끝과 같음, planner 가 경로 냄)
 //         정차점 뒤 통로 (뒤 dock_handoff_m · 옆 dock_handoff_lat_m · 방향 dock_handoff_yaw_deg) 안에 들어오면 Nav2 취소
-//         → 취소 결과 뒤 바로 2 단계 dock_action 으로 정차점 (서지 않고 넘김, 11-08: 반지름만 보던 것을 팀장님 통로로)
+//         → 취소 결과 뒤 바로 2 단계 dock_action 으로 정차점 (서지 않고 넘김)
 //         Nav2 목표가 넘김 자리보다 멀어서 MPPI · nf 가 넘김 전에 감속 안 함. 넘김이 안 걸리면 Nav2 도착 뒤 2 단계
 //       두 단계가 한 이동 단계 (재시도 = 1 단계부터)
-//       dock_action "" 이면 정차점으로 Nav2 바로 (가짜 세계 · 옛 흐름). 접근 노드가 collision_monitor 영역을 끄고 켬
-//   - 그리퍼 기록에 퍽이 있는데 이동 단계가 오면 이동 안 하고 Fault CARRY_DRIVE (퍽 쥔 채 주행 안 함, 2026-11-04)
+//       dock_action "" 이면 정차점으로 Nav2 바로 (가짜 세계). 접근 노드가 collision_monitor 영역을 끄고 켬
+//   - 그리퍼 기록에 퍽이 있는데 이동 단계가 오면 이동 안 하고 Fault CARRY_DRIVE (퍽 쥔 채 주행 안 함)
 //   - 팔이 LOOK · LOOK_BARCODE 로 펴진 채 이동 단계가 오면 HOME 을 먼저 끼움 (control 은 접힘 실측 뒤에만 DRIVE → 기다리면 drive_wait_s 손해)
 //   - LOOK_RACK: 성공 뒤 그 칸 측정을 rack_wait_s 동안 기다림 (팔 결과 뒤 촬영분만) → 다음 STORE target 에 넣음
 //       못 받거나 LOOK_RACK 이 거절되면 단계는 성공으로 넘기고 STORE target 은 빈 프레임 (= 녹화 경로 그대로)
@@ -67,6 +69,7 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <deque>
 #include <map>
 #include <functional>
@@ -79,6 +82,7 @@
 #include "diagnostic_msgs/msg/diagnostic_status.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
+#include "geometry_msgs/msg/quaternion_stamped.hpp"
 #include "interfaces/action/arm_task.hpp"
 #include "interfaces/msg/cargo_state.hpp"
 #include "interfaces/msg/detection_array.hpp"
@@ -320,7 +324,7 @@ private:
   double action_retry_s_, action_retry_max_s_, server_wait_s_, nav_timeout_s_, arm_timeout_s_, drive_wait_s_;
   std::string dock_action_;                  // "" = 정밀 접근 안 씀
   double dock_nav_back_m_ = 0.025, dock_timeout_s_ = 40.0, dock_handoff_m_ = 0.40;
-  double dock_handoff_lat_m_ = 0.15, dock_handoff_yaw_deg_ = 60.0;   // 넘김 통로 옆 · 방향 (팀장님 11-07)
+  double dock_handoff_lat_m_ = 0.15, dock_handoff_yaw_deg_ = 60.0;   // 넘김 통로 옆 · 방향
   bool nav_docking_ = false;                 // 지금 이동 단계가 2 단계 (정밀 접근) 중
   bool nav_handoff_ = false;                 // 1 단계 끝 (도착 또는 넘김 취소) → 2 단계 보낼 차례
   double puck_standoff_m_, pick_fresh_s_, puck_half_height_m_, grasp_offset_m_;
@@ -435,6 +439,8 @@ private:
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   std::vector<rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr> sub_det_;
+  rclcpp::Subscription<geometry_msgs::msg::QuaternionStamped>::SharedPtr sub_drift_;
+  std::optional<geometry_msgs::msg::QuaternionStamped> drift_;   // 마지막 손목 카메라 돌아감 (frame = 그 카메라 광학 프레임)
   rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr sub_rack_;
   rclcpp::Subscription<interfaces::msg::MotionMode>::SharedPtr sub_mode_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_odom_;

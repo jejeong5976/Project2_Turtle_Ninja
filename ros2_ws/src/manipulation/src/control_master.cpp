@@ -19,12 +19,12 @@
 //      예전 번호의 답 · 멈춰 있기만 한 것으로는 팔을 시작하지 않음 (멈춰 있어도 잠기지 않았으면 언제든 움직일 수 있으니까)
 //   ④ 팔 작업이 끝까지 성공하고 접기(home)로 끝났을 때만 DRIVE. 실패 · 취소 · 시간 초과 → 언제나 STOP 유지
 //      왜: "이번 작업에서 팔을 아직 안 움직였다" 는 "팔이 접혀 있다" 는 뜻이 아님 (켤 때 · 재시작 직후엔 팔 자세를 모름)
-//   ⑤ (2026-10-16 R1) "접기로 끝났다" 는 JTC 의 성공 답이 아니라 **/joint_states 실측**으로 확인
+//   ⑤ (R1) "접기로 끝났다" 는 JTC 의 성공 답이 아니라 **/joint_states 실측**으로 확인
 //      마지막 home 동작 뒤 VERIFY: 측정 시각이 새로운 관절값 5개가 home ± fold_tolerance 안에 fold_hold_s 동안 → DRIVE
 //      verify_timeout_s 안에 안 되면 실패 → STOP. 측정이 없거나 NaN(하드웨어가 못 읽은 모터) · 오래됨도 실패
-//      (Codex 재현: 어깨를 고정해도 JTC 목표 오차 검사가 꺼져 있어서 HOME 성공 → DRIVE 였음.
+//      (재현: 어깨를 고정해도 JTC 목표 오차 검사가 꺼져 있으면 HOME 성공 → DRIVE.
 //       JTC 쪽에도 goal 허용 오차를 켰지만(controllers.yaml), 바퀴를 푸는 판단은 이 노드가 실측으로 한 번 더)
-//   ⑥ (2026-10-16 재검증 R6 · 보드 2장) 하드웨어 이상이면 HOME 확인 무효 — arm.cpp HardwareWatch
+//   ⑥ (재검증 R6 · 보드 2장) 하드웨어 이상이면 HOME 확인 무효 — arm.cpp HardwareWatch
 //      ① 보드 상태 직접: controller_manager 의 list_hardware_components 를 hw_component_hz 로 물어 하나라도 active 가 아니면
 //         (주행 보드만 죽고 팔은 멀쩡해도 잡힘). 답이 hw_component_timeout_s 넘게 없어도 이상
 //      ② 관절 측정: hw_watch_joints(기본 14 개 전부)가 hw_state_timeout_s 넘게 끊기거나 NaN · 빠짐이 hw_bad_hold_s 넘게
@@ -134,7 +134,7 @@ public:
     grip_.open = gripper_open_;
     grip_.close = gripper_close_;
     grip_.release = declare_parameter<double>("gripper_release", 0.0093);
-    // 받침에 넣을 때 손가락을 살짝 풀어 퍽이 돌며 들어가게 (11-07 사용자: 박스 세우기 때처럼 돌 수 있는 폭으로). 퍽에 닿은 자리 약 0.0046
+    // 받침에 넣을 때 손가락을 살짝 풀어 퍽이 돌며 들어가게 (박스 세우기 때처럼 돌 수 있는 폭으로). 퍽에 닿은 자리 약 0.0046
     grip_.loose = declare_parameter<double>("park_loose_grip_m", 0.0060);
     gripper_time_s_ = declare_parameter<double>("gripper_time_s", 1.2);
     // ---- 실물 경로 (config/arm_paths.yaml) ----
@@ -142,7 +142,7 @@ public:
     timing_.stand_speed_dps = declare_parameter<double>("path_stand_speed_dps", 20.0);
     timing_.accel_dps2 = declare_parameter<double>("path_accel_dps2", 150.0);
     timing_.dt_s = declare_parameter<double>("path_dt_s", 0.05);
-    // 그리퍼를 여닫기 전 팔이 멈춰 따라오게 기다림 [s]. 11-07 실물: 그리퍼 동작 때 2 번 관절이 아직 2.3° 남아 (손끝 약 1 cm) 놓는 자리가 반반
+    // 그리퍼를 여닫기 전 팔이 멈춰 따라오게 기다림 [s]. 실물: 그리퍼 동작 때 2 번 관절이 아직 2.3° 남아 (손끝 약 1 cm) 놓는 자리가 반반
     timing_.grip_settle_s = declare_parameter<double>("grip_settle_s", 0.0);
     if (!(timing_.speed_dps > 0.0) || !(timing_.stand_speed_dps > 0.0) || !(timing_.accel_dps2 > 0.0) ||
       !(timing_.dt_s >= 0.005 && timing_.dt_s <= 0.5))
@@ -154,7 +154,7 @@ public:
     }
     path_start_tol_ = declare_parameter<double>("path_start_tolerance", 0.15);   // ≥ arm_controller 목표 허용(0.12): 앞 작업 성공 자세에서 다음 작업이 거절되지 않게
     lazy_fold_ = declare_parameter<bool>("lazy_fold", false);   // 나중에 접기 (아래 '작업 → 동작 목록')
-    // P0 에서 끝난 뒤 이만큼 다음 팔 작업이 없으면 스스로 접음 (11-03 실물: P0 에서 약 15 s 버티면 팔 모터 과열 Hardware Error)
+    // P0 에서 끝난 뒤 이만큼 다음 팔 작업이 없으면 스스로 접음 (실물: P0 에서 약 15 s 버티면 팔 모터 과열 Hardware Error)
     auto_fold_s_ = declare_parameter<double>("lazy_fold_idle_s", 5.0);
     load_paths();
     {
@@ -174,12 +174,12 @@ public:
     }
     // ---- 집기 · 놓기 (실물 집기 계산기와 같은 기구학, config/arm_kinematics.yaml) ----
     staging_ = declare_parameter<std::vector<double>>("staging_pose", std::vector<double>{});
-    // 쥐기 −40 mm = 11-01 실물 넣기 시험 때 쥔 깊이. 칸 경로(arm_paths)가 이 깊이로 쥔 퍽 기준 — 얕게 쥐면 쥔 퍽이 그만큼 낮게 지나가
-    //   옆 칸 퍽을 긁음 (−30 이면 10 mm 낮음: 11-03 물리 시뮬 넣기 41/56 → −40 에서 53/56, 실제 채우는 순서 24/24)
+    // 쥐기 −40 mm = 실물 넣기 시험 때 쥔 깊이. 칸 경로(arm_paths)가 이 깊이로 쥔 퍽 기준 — 얕게 쥐면 쥔 퍽이 그만큼 낮게 지나가
+    //   옆 칸 퍽을 긁음 (−30 이면 10 mm 낮음: 물리 시뮬 넣기 41/56 → −40 에서 53/56, 실제 채우는 순서 24/24)
     pick_heights_ = declare_parameter<std::vector<double>>("pick_heights_mm", {40.0, 10.0, -40.0});
     place_heights_ = declare_parameter<std::vector<double>>("place_heights_mm", {40.0, 10.0, -23.0});   // 마지막 = 쥔 깊이 모를 때만
     place_clear_mm_ = declare_parameter<double>("place_bottom_clear_mm", 2.0);      // 놓을 때 퍽 바닥 ↔ 놓을 면
-    retrieve_depth_mm_ = declare_parameter<double>("retrieve_grip_depth_mm", 25.0); // 칸에서 꺼낸 퍽을 쥔 깊이 (11-01 실물 빼기 때 쓴 깊이, unload_cell.py)
+    retrieve_depth_mm_ = declare_parameter<double>("retrieve_grip_depth_mm", 25.0); // 칸에서 꺼낸 퍽을 쥔 깊이 (실물 빼기 때 쓴 깊이, unload_cell.py)
     tilted_depth_mm_ = declare_parameter<double>("pick_tilted_depth_mm", 30.0);     // 손을 10° 넘게 기울인 PICK 의 쥐는 깊이 (퍽 무게중심)
     // 선 퍽 PICK: 손목 인지가 낸 윗면을 이만큼 높게 봄 [mm] → 쥐는 손끝이 그만큼 얕아짐. pick_heights_mm (= STORE 칸 높이 맞춤 기준) 은 그대로
     declare_parameter<double>("pick_top_bias_mm", 0.0);
@@ -200,6 +200,7 @@ public:
     nb_radius_ = declare_parameter<double>("neighbor_radius", 0.12);
     nb_min_clear_ = declare_parameter<double>("grasp_min_clear", 0.002);
     nb_target_clear_ = declare_parameter<double>("grasp_target_clear", 0.003);
+    id_max_offset_m_ = declare_parameter<double>("pick_id_max_offset_m", 0.06);   // goal.puck_id 퍽이 목표점에서 이보다 멀면 거절
     odom_frame_ = declare_parameter<std::string>("odom_frame", "odom");
     // 수직 손이 안 닿는 먼 퍽 · 자리: 손을 10° 씩 바깥으로 기울여 봄 (20° ≈ 31 cm). 0 = 수직 손만
     //   기울여 집은 퍽은 손 안에서 그만큼 기울어 있음 → STORE 는 10° 까지, PLACE 는 쥘 때 기울임과 20° 안으로 놓음 (넘어지지 않게)
@@ -208,7 +209,7 @@ public:
     //   윗면 태그가 보인 퍽 (검출 id 있음) 은 인지가 태그로 중심을 잡으므로 옮기지 않음
     //   실행 중 바로 바꿈: ros2 param set /control_master pick_offset_x_mm -5.0 (다음 PICK 부터)
     declare_parameter<double>("pick_offset_x_mm", 0.0);
-    // 다시 잡기: 수직 손이 안 닿아 기울여 쥔 퍽은 손 안에서 그만큼 기울어 STORE 때 칸 테두리에 걸림 (11-04 실물, 10° 에서 매번)
+    // 다시 잡기: 수직 손이 안 닿아 기울여 쥔 퍽은 손 안에서 그만큼 기울어 STORE 때 칸 테두리에 걸림 (실물, 10° 에서 매번)
     //   → 같은 PICK 안에서 박스 위 차체 쪽 넉넉한 빈 자리 (손목 인지로 확인, 집어 든 퍽 자리는 빈 것으로) 에 세워 내려놓고
     //   수직 손으로 다시 쥠 (regrasp_nodes). 없으면 PICK 거절
     //   regrasp_min_x: 내려놓는 퍽 중심 x 하한 [m] — 박스 앞면이 0.191 m (정차 3 cm) 여도 퍽 (반폭 17.4 mm) 이 박스 위
@@ -221,16 +222,16 @@ public:
     // 누운 퍽을 위 옆면 태그로 잰 중심: 아직 실물로 못 잼 → 처음엔 선 퍽 태그 값과 같게 (config). 받침 세우기는 긴축 ±2 mm 안이 필요
     declare_parameter<double>("pick_offset_lying_tagged_x_mm", 0.0);
     declare_parameter<double>("pick_offset_lying_tagged_y_mm", 0.0);
-    // 태그가 안 보인 누운 퍽 (깊이 점 중심): 선 퍽 pick_offset_x/y 와 따로 (11-06 실물: 태그 보이면 맞는데 안 보이면 선 퍽 값이라 어긋남)
+    // 태그가 안 보인 누운 퍽 (깊이 점 중심): 선 퍽 pick_offset_x/y 와 따로 (실물: 태그 보이면 맞는데 안 보이면 선 퍽 값이라 어긋남)
     declare_parameter<double>("pick_offset_lying_x_mm", 0.0);
     declare_parameter<double>("pick_offset_lying_y_mm", 0.0);
     // 손목을 돌려 쥘 때 보정 [mm]: 손가락 가운데가 J5 축에서 12 mm 떨어져 있어, 팔 모델의 그 거리가 조금 틀리면 쥐는 점 오차가 손목 방향에 따라 달라짐.
-    //   값 = 손목을 기본 (닫힘축 ≈ 접선) 에서 90° 돌려 쥘 때 (실물 11-04: 닫힘축이 반지름 방향) 더할 보정 [앞 · 왼쪽], 팔 바로 앞 퍽 기준.
+    //   값 = 손목을 기본 (닫힘축 ≈ 접선) 에서 90° 돌려 쥘 때 (실물: 닫힘축이 반지름 방향) 더할 보정 [앞 · 왼쪽], 팔 바로 앞 퍽 기준.
     //   다른 각도 · 자리는 같은 오차 (손 좌표의 손끝 어긋남) 로 계산: (R(돌린 각) − I) · h. 기본 방향 (돌림 0) 은 0 → 다른 보정 그대로
     //   실행 중: ros2 param set /control_master pick_offset_rot_mm "[3.0, 0.0]"
     declare_parameter<std::vector<double>>("pick_offset_rot_mm", std::vector<double>{0.0, 0.0});
     // 손목을 돌려 쥘 때 (기본에서 45° 넘게, 어느 쪽이든) 그대로 더하는 보정 [앞 · 왼쪽 mm, base_link = 로봇 기준]. 위 모델 보정 위에 더함
-    //   (11-07 실물: 모델 값을 바꾸니 돌린 각 · 자리에 따라 엉뚱한 쪽으로 감 → 사용자 말 그대로 로봇 기준으로)
+    //   (실물: 모델 값을 바꾸니 돌린 각 · 자리에 따라 엉뚱한 쪽으로 감 → 로봇 기준으로)
     declare_parameter<std::vector<double>>("pick_offset_rot_robot_mm", std::vector<double>{0.0, 0.0});
     // STORE 때 칸 근처 경로를 더 옮김 [mm, base_link, 넣는 점 맞추기와 합해 20 까지] — 쥔 퍽이 칸에서 늘 한쪽으로 걸리면. 적재함 태그 보정 · 칸별 store_offset.<칸> 과 더해짐
     //   실행 중 바로 바꿈: ros2 param set /control_master store_offset_y_mm 3.0 (다음 STORE 부터, x+ = 앞 · y+ = 왼쪽)
@@ -278,7 +279,7 @@ public:
         for (const auto & c : rack_xy_) {rack_pivot_ += c / static_cast<double>(rack_xy_.size());}
         // 칸마다 STORE 보정 [x, y] mm (store_offset_x · y_mm 와 더함): ros2 param set /control_master store_offset.S7 "[0.0, 5.0]"
         for (const auto & n : rack_names_) {declare_parameter<std::vector<double>>("store_offset." + n, std::vector<double>{0.0, 0.0});}
-        // 칸마다 RETRIEVE 보정 [x, y] 또는 [x, y, 높이] mm (11-07: STORE 보정은 빼기에 안 들어감 → 따로): ros2 param set /control_master retrieve_offset.S12 "[-10.0, -5.0]"
+        // 칸마다 RETRIEVE 보정 [x, y] 또는 [x, y, 높이] mm (STORE 보정은 빼기에 안 들어감 → 따로): ros2 param set /control_master retrieve_offset.S12 "[-10.0, -5.0]"
         for (const auto & n : rack_names_) {declare_parameter<std::vector<double>>("retrieve_offset." + n, std::vector<double>{0.0, 0.0});}
       }
     }
@@ -305,7 +306,7 @@ public:
       [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>, std::shared_ptr<std_srvs::srv::Trigger::Response> res) {
         res->success = save_rack_reference(res->message);
       });
-    // 누운 퍽 쥐기 깊이 한도: 손끝이 놓인 면 위 이만큼 (모델). 실물은 명령보다 약 10 mm 얕게 쥠 (11-05 누운 퍽 · 11-04 선 퍽 −40 → 30) → config 0
+    // 누운 퍽 쥐기 깊이 한도: 손끝이 놓인 면 위 이만큼 (모델). 실물은 명령보다 약 10 mm 얕게 쥠 (누운 퍽 · 선 퍽 −40 → 30) → config 0
     declare_parameter<double>("pick_lying_tip_clear_mm", 10.0);
     // 세우기 경로 전체를 위아래로 옮김 [mm, − = 아래]: 실물이 명령보다 얕게 쥐어 시뮬 (−20 mm 쥐기) 과 같게 하려면 −10
     declare_parameter<double>("standup_dz_mm", 0.0);
@@ -314,9 +315,9 @@ public:
     declare_parameter<double>("standup_time_scale", 1.0);     // 세우기 경로 점 사이 시간 = 녹화 0.1 s × 이 배 (1 = 시뮬과 같은 속도)
     declare_parameter<double>("standup_open_time_s", 0.5);   // 팔 안 멈추고 하는 그리퍼 동작 시간 [s] (세우기 여는 점 · PICK 미리 열기 · 놓은 뒤 닫기. 시뮬 정책: 스텝마다 2 mm → 약 0.5 s)
     declare_parameter<bool>("gripper_on_the_way", true);      // 빈손일 때 그리퍼를 팔 멈추지 않고 (PICK 퍽 위로 가며 열기 · STORE · PLACE 놓은 뒤 닫기)
-    // 누운 네모 퍽을 PICK 하면서 세움 (false = 누운 채 쥐고 기준점으로, 예전대로). 실행 중: ros2 param set /control_master stand_lying true
+    // 누운 네모 퍽을 PICK 하면서 세움 (false = 누운 채 쥐고 기준점으로). 실행 중: ros2 param set /control_master stand_lying true
     declare_parameter<bool>("stand_lying", false);
-    // 세우는 방법: park = 그리퍼 받침에 기울여 넣고 손가락으로 밀어 세운 뒤 다시 쥠 (11-06 시뮬 12 중 10), table = 강화학습 표 재생 (박스 위)
+    // 세우는 방법: park = 그리퍼 받침에 기울여 넣고 손가락으로 밀어 세운 뒤 다시 쥠 (시뮬 12 중 10), table = 강화학습 표 재생 (박스 위)
     declare_parameter<std::string>("stand_lying_mode", "park");
     declare_parameter<std::vector<double>>("park_center", {0.1008, 0.00115});   // 그리퍼 받침 중심 [m, base_link] (URDF gripper_park_stand_mount)
     declare_parameter<double>("park_floor_z", 0.1365);          // 받침 바닥 윗면 [m, base_link] (받침 판 0.1305 + 바닥 6 mm)
@@ -337,13 +338,13 @@ public:
     declare_parameter<double>("park_push_extra_mm", 0.0);        // 밀어 세우기 끝점을 몸 (J1) 쪽으로 이만큼 더 (선 퍽 바깥 면 + 4 mm 앞에서 멈추던 것)
     declare_parameter<double>("park_push_scoop_deg", 0.0);       // > 0: 굴삭기처럼 밀기 — 손끝을 몸 쪽으로 이만큼 기울여 낮게 시작, 밀면서 손을 세우며 올라감
     declare_parameter<double>("park_push_low_mm", 0.0);          // 굴삭기처럼 밀기 시작 높이를 park_push_h_mm 보다 이만큼 낮게 (받침 바깥 벽 22.5 mm 위를 지나야 함)
-    declare_parameter<double>("park_push_j3_deg", 0.0);         // 밀어 세우는 동안 J3 를 이만큼 더 [°, + = 손끝 위], 밀기 가운데서 전부 · 시작 · 끝점 0 (11-07 사용자: J3 를 더 굽혀, 끝에선 펴기)
-    declare_parameter<double>("park_push_j2_deg", 0.0);         // 밀어 세우는 동안 J2 를 이만큼 더 올림 [°, + = 손끝 위], J3 와 같은 모양 → 퍽 뒷면 아래 모서리를 긁어 올려 세움 (11-07 사용자)
-    declare_parameter<bool>("park_press_mode", false);          // true = 밀기 대신 꽂아 누르기: 놓은 손을 올려 빼고 수직으로 · 닫고 받침 뒤 (J1 쪽) 에 곧게 내려 꽂아 걸린 퍽을 세움 (11-07 사용자)
+    declare_parameter<double>("park_push_j3_deg", 0.0);         // 밀어 세우는 동안 J3 를 이만큼 더 [°, + = 손끝 위], 밀기 가운데서 전부 · 시작 · 끝점 0 (J3 를 더 굽혀, 끝에선 펴기)
+    declare_parameter<double>("park_push_j2_deg", 0.0);         // 밀어 세우는 동안 J2 를 이만큼 더 올림 [°, + = 손끝 위], J3 와 같은 모양 → 퍽 뒷면 아래 모서리를 긁어 올려 세움
+    declare_parameter<bool>("park_press_mode", false);          // true = 밀기 대신 꽂아 누르기: 놓은 손을 올려 빼고 수직으로 · 닫고 받침 뒤 (J1 쪽) 에 곧게 내려 꽂아 걸린 퍽을 세움
     declare_parameter<double>("park_press_r_mm", -16.0);        // 꽂는 손끝 자리 = 받침 중심에서 반지름 방향 (− = 뒤 · J1 쪽, 뒤 벽 안쪽 면 −23.5)
     declare_parameter<double>("park_press_top_mm", 66.0);       // 올리는 · 넘어가는 손끝 높이 = 바닥 위 (수직 손이 닿는 끝 66)
     declare_parameter<double>("park_press_h_mm", 10.0);         // 꽂는 가장 낮은 손끝 높이 = 바닥 위
-    declare_parameter<double>("park_press_speed_dps", 0.0);     // 꽂아 내리기 (park_press1–4 · up) 속도, 0 = park_speed_dps (11-07 실물에서 이 속도로 섬)
+    declare_parameter<double>("park_press_speed_dps", 0.0);     // 꽂아 내리기 (park_press1–4 · up) 속도, 0 = park_speed_dps (실물에서 이 속도로 섬)
     declare_parameter<double>("park_release_up_mm", 0.0);        // 넣는 끝점을 손등 (손목 카메라) 쪽으로 이만큼 (넣으면서 같이, 손 축에 수직)
     declare_parameter<int>("park_release_pull_steps", 3);       // 당기는 점 수
     declare_parameter<double>("park_speed_dps", 20.0);          // 받침에서 넣기 · 다시 쥐기 속도
@@ -394,7 +395,7 @@ public:
       });
     slow_dps_ = declare_parameter<double>("near_puck_speed_dps", 15.0);
     path_slow_min_dps_ = declare_parameter<double>("path_slow_min_dps", 0.0);   // 실물 경로 느린 구간의 최소 속도 (0 = 기록 그대로 15)
-    // 경로별 속도 비율 "경로 이름=비율" (11-07 사용자: S2 로 갈 때 10 % 느리게 → "store_S2=0.9"). 실행 중 바꾸면 다음 작업부터
+    // 경로별 속도 비율 "경로 이름=비율" (S2 로 갈 때 10 % 느리게 → "store_S2=0.9"). 실행 중 바꾸면 다음 작업부터
     declare_parameter<std::vector<std::string>>("path_speed_scale", std::vector<std::string>{});
     model_ok_ = load_model();
     for (const char * p : {"home", "pick_above", "pick_down", "place_above", "place_down"}) {
@@ -513,7 +514,7 @@ private:
       return rclcpp_action::GoalResponse::REJECT;
     }
     // 계획 (IK 여러 번, 다시 잡기면 젯슨에서 0.5 s 넘음) 동안 이 노드는 관절 측정을 못 받음 → 끝난 뒤 밀린 측정을 받을 때까지
-    //   하드웨어 감시가 '측정 끊김' 으로 오판하지 않게 잠깐 이전 판정을 유지 (11-04 실물: 0.59 s 로 PICK 중단)
+    //   하드웨어 감시가 '측정 끊김' 으로 오판하지 않게 잠깐 이전 판정을 유지 (실물: 0.59 s 로 PICK 중단)
     const auto t_plan = std::chrono::steady_clock::now();
     pending_step_ = false;
     pending_plan_ = build_plan(goal, why);
@@ -596,7 +597,7 @@ private:
   //     칸 바닥 태그로 칸 위치를 잼 (manipulation rack_tag_node). 퍽 쥐면 거절. 칸에 퍽이 있어도 경로는 퍽 위로 지나감 (그 칸은 못 잼)
   //   HOME: 접혀 있으면 home 한 점, 아니면 지금 자세에서 출발하는 검사된 복귀 경로(home_from_*), 없으면 home 한 점
   //   PICK: 받침 → 펼치기 → 퍽 위 40 열기 → 10 → 쥐기 −40 닫기 → 10 → 40 → 박스 위 기준점 (퍽 쥠, 바퀴 잠금 유지 — 이어서 STORE)
-  //     손을 10° 넘게 기울여야 하면 (적재함에 못 넣는 먼 퍽) pick_tilted_depth_mm (30) = 퍽 무게중심을 쥠 — 더 깊으면 원기둥이 손가락 사이에서 굴러 넘어짐 (11-03 시뮬)
+  //     손을 10° 넘게 기울여야 하면 (적재함에 못 넣는 먼 퍽) pick_tilted_depth_mm (30) = 퍽 무게중심을 쥠 — 더 깊으면 원기둥이 손가락 사이에서 굴러 넘어짐 (시뮬)
   //     LOOK 자세에서 받으면 그 자세에서 바로 퍽 위로. LOOK_BARCODE 자세면 검사된 복귀 경로(home_from_*)로 P0 까지 와서 퍽으로
   //     누운 네모 퍽: 수직 손만, 닫힘축 = 긴축에 수직 (손가락이 긴 옆면 두 개), 누운 윗면 위 40 · 10 · 쥐기 −20 (pick_lying_heights_mm).
   //       손목 검출로 누운 네모 (윗면이 위) 를 확인해야 함 — 누운 원기둥 · 기울여야 닿는 자리는 거절. 쥔 뒤 held_lying (STORE 거절)
@@ -706,7 +707,7 @@ private:
         else if (released && n.grip == "close") {n.grip_on_way = true;}
       }
     }
-    // 실물 기록의 느린 구간 (칸 근처 15 °/s) 을 path_slow_min_dps 까지 올림 (11-05 사용자: 적재가 너무 느림, 적당히 빠르게)
+    // 실물 기록의 느린 구간 (칸 근처 15 °/s) 을 path_slow_min_dps 까지 올림 (적재가 너무 느림, 적당히 빠르게)
     for (auto & n : path.nodes) {
       if (n.speed_dps > 0.0 && n.speed_dps < path_slow_min_dps_) {n.speed_dps = path_slow_min_dps_;}
     }
@@ -1213,7 +1214,7 @@ private:
         if (c.size() == 3 && std::isfinite(c[2])) {dz = c[2] / 1000.0;}
       }
       // 쥔 깊이가 박스 PICK (pick_heights_mm 마지막, 칸 보정을 맞춘 깊이) 과 다르면 칸 근처 높이를 그 차만큼 → 퍽 바닥이 같은 높이로
-      //   (11-07 실물: 받침에서 세워 30 mm 로 다시 쥔 퍽이 박스 PICK 50 mm 보다 20 mm 아래 매달려 S2 에 긁혀 안 들어감)
+      //   (실물: 받침에서 세워 30 mm 로 다시 쥔 퍽이 박스 PICK 50 mm 보다 20 mm 아래 매달려 S2 에 긁혀 안 들어감)
       if (get_parameter("store_match_grip_depth").as_bool() && depth_from_pick_ && held_depth_mm_ > 0.0 && !pick_heights_.empty()) {
         const double ref = -pick_heights_.back();
         const double ddz = (ref - held_depth_mm_) / 1000.0;
@@ -1276,14 +1277,14 @@ private:
     if (!model_ok_) {why = "팔 모델 없음 → 칸 경로를 못 옮김"; return false;}
     CellShiftReport rep;
     std::string err;
-    // 다 옮기면 관절 범위 밖이면 (11-06 mock: S11 넣는 점 맞추기 10.7 mm → J4 범위 밖) 줄여 되는 만큼만, 그래도 안 되면 기록 그대로
+    // 다 옮기면 관절 범위 밖이면 (mock: S11 넣는 점 맞추기 10.7 mm → J4 범위 밖) 줄여 되는 만큼만, 그래도 안 되면 기록 그대로
     //   (기록 경로는 실물에서 들어간 경로 — 거절하지 않음)
-    //   11-08: 수평 · 높이를 따로 줄임 — 수평은 다 두고 높이부터 100 → 5 % (5 % 씩) · 0, 그래도 안 되면 높이 0 에 수평 0.75 · 0.5 · 0.25
-    //   (11-07 실물: 세운 퍽 +20 mm 가 수평까지 같이 줄여 S4 · S5 · S6 · S8 · S10 · S11 칸 보정이 통째로 빠짐)
+    //   수평 · 높이를 따로 줄임 — 수평은 다 두고 높이부터 100 → 5 % (5 % 씩) · 0, 그래도 안 되면 높이 0 에 수평 0.75 · 0.5 · 0.25
+    //   (실물: 세운 퍽 +20 mm 가 수평까지 같이 줄여 S4 · S5 · S6 · S8 · S10 · S11 칸 보정이 통째로 빠짐)
     double used = 0.0, used_z = 0.0;
     std::vector<std::pair<double, double>> tries;
     const bool has_z = std::fabs(dz) > 1e-6, has_xy = d.norm() > 1e-6;
-    if (has_z) {   // 높이는 5 % 씩 (11-08: 25 % 씩이면 세운 퍽 높이가 S8 · S11 등에서 0 으로 떨어짐)
+    if (has_z) {   // 높이는 5 % 씩 (25 % 씩이면 세운 퍽 높이가 S8 · S11 등에서 0 으로 떨어짐)
       for (int q = 20; q >= 1; --q) {tries.emplace_back(1.0, q / 20.0);}
     }
     if (has_xy) {
@@ -1369,7 +1370,7 @@ private:
       const double axis = std::atan2(2.0 * (q.y * q.z - q.w * q.x), 2.0 * (q.x * q.z + q.w * q.y));   // 긴축(z) 의 수평 방향
       out.push_back({Eigen::Vector3d(o.pose.position.x, o.pose.position.y, o.pose.position.z), square,
         square && d.yaw_known && q_known, yaw, !q_known || std::fabs(zz) < 0.7, t, d.center_from_tag,
-        q_known && std::fabs(zz) < std::sqrt(0.5), axis, p_nom});
+        q_known && std::fabs(zz) < std::sqrt(0.5), axis, p_nom, d.id});
     }
     seen_ = out;
     seen_t_ = t;   // 빈 배열도 "카메라는 살아 있고 아무것도 없음"
@@ -1377,11 +1378,14 @@ private:
 
   // 목표 (x, y, 퍽 중심 높이 zc, base_link) 주변 이웃 퍽. 목표 자신 = 25 mm 안 (선 퍽 두 개는 30 mm 이상 떨어짐)
   //   같은 면 위 퍽만 (높이 ±40 mm). 목표로 보이는 검출이 있으면 그 모양 · 면 방향 · 누움 · 긴축 방향 (lying_axis, base_link)
+  //   want_id_ (goal.puck_id) 가 있으면: 같은 높이 검출에 그 ID 가 있으면 그 검출만 목표 (목표점에서 id_max_offset 안, 넘으면 id_why).
+  //     그 ID 가 안 보이면 위치로 맞추되, 25 mm 안 검출이 다른 ID 로 읽혔으면 목표로 안 잡고 id_why (옆 퍽을 집지 않게). ID 못 읽은 검출은 위치로
   std::vector<NeighborPuck> neighbors_near(double x, double y, double zc, bool & found, TargetPuck & tgt, Eigen::Vector2d & tc,
-    bool & stale, bool & tagged, bool & lying, double & lying_axis) const
+    bool & stale, bool & tagged, bool & lying, double & lying_axis, std::string & id_why) const
   {
     std::vector<NeighborPuck> nb;
     found = false;
+    id_why.clear();
     stale = !std::isfinite(seen_t_) || now().seconds() - seen_t_ > nb_age_s_;
     if (stale || seen_.empty()) {return nb;}
     geometry_msgs::msg::TransformStamped tf;
@@ -1398,12 +1402,26 @@ private:
     const double dyaw = std::atan2(2.0 * (r.w * r.z + r.x * r.y), 1.0 - 2.0 * (r.y * r.y + r.z * r.z));
     double best = 1e9;   // 목표로 맞춘 검출의 거리 — 둘 이상 25 mm 안이면 가장 가까운 것 (명목 위치 우선, 목표가 명목 TF 로 나옴)
     std::optional<NeighborPuck> held_back;   // 지금까지 목표였다가 더 가까운 것에 밀린 검출 → 이웃으로 (nb_radius 안일 때)
+    auto skip = [&](const Eigen::Vector3d & b, const Eigen::Vector3d & bn) {
+        if (exclude_ && std::hypot(b.x() - exclude_->x(), b.y() - exclude_->y()) < 0.025) {return true;}   // 다시 잡기: 집어 든 퍽
+        return std::fabs(b.z() - zc) > 0.04 && std::fabs(bn.z() - zc) > 0.04;   // 다른 높이 (쥔 퍽 · 박스 밖 바닥 등)
+      };
+    // 목표 ID 가 이번 장에 보이나 (보이면 그 검출만 목표 후보)
+    bool id_seen = false;
+    if (!want_id_.empty()) {
+      for (const auto & p : seen_) {
+        const Eigen::Vector3d b = Q * p.p + T, bn = Q * p.p_nom + T;
+        if (p.id == want_id_ && !skip(b, bn)) {id_seen = true; break;}
+      }
+    }
+    std::string other_id;   // 위치로는 맞지만 다른 ID 로 읽힌 검출 (ID 가 안 보일 때)
     for (const auto & p : seen_) {
       const Eigen::Vector3d b = Q * p.p + T, bn = Q * p.p_nom + T;
-      if (exclude_ && std::hypot(b.x() - exclude_->x(), b.y() - exclude_->y()) < 0.025) {continue;}   // 다시 잡기: 집어 든 퍽
-      if (std::fabs(b.z() - zc) > 0.04 && std::fabs(bn.z() - zc) > 0.04) {continue;}   // 다른 높이 (쥔 퍽 · 박스 밖 바닥 등)
+      if (skip(b, bn)) {continue;}
       const double d = std::hypot(b.x() - x, b.y() - y);
       const double dn = std::hypot(bn.x() - x, bn.y() - y);
+      const bool is_id = !want_id_.empty() && p.id == want_id_;
+      const bool wrong_id = !want_id_.empty() && !p.id.empty() && p.id != want_id_;
       NeighborPuck n;
       n.c = b.head<2>();
       n.square = p.square;
@@ -1412,7 +1430,15 @@ private:
       n.radius = p.round_r30 ? 0.03 : 0.0;   // 누운 · 방향 모름 = 긴축 반 (30 mm) 원
       // 목표 = 되돌린 위치 또는 되돌리기 전 위치가 25 mm 안 (pick det · planning 은 명목 TF 로 목표를 냄 — 카메라가 3° 돌면 둘이 ~18 mm 차이)
       const double score = std::min(dn, d + 0.001);
-      if (std::min(d, dn) < 0.025 && score < best) {
+      // 목표 후보: ID 가 보이면 그 ID 검출만 (거리 id_max_offset 안), 안 보이면 25 mm 안 · 다른 ID 아님
+      bool cand = id_seen ? is_id : (std::min(d, dn) < 0.025 && !wrong_id);
+      if (id_seen && is_id && std::min(d, dn) > id_max_offset_m_) {
+        id_why = ": 퍽 " + want_id_ + " 이 목표점에서 " + std::to_string(std::lround(std::min(d, dn) * 1000.0)) + " mm (한계 " +
+          std::to_string(std::lround(id_max_offset_m_ * 1000.0)) + ") → 다시 LOOK";
+        cand = false;
+      }
+      if (!id_seen && wrong_id && std::min(d, dn) < 0.025 && other_id.empty()) {other_id = p.id;}
+      if (cand && score < best) {
         if (held_back) {nb.push_back(*held_back);}
         best = score;
         found = true;
@@ -1426,6 +1452,9 @@ private:
       }
       if (d > nb_radius_) {continue;}
       nb.push_back(n);
+    }
+    if (!found && id_why.empty() && !other_id.empty()) {
+      id_why = ": 목표점 25 mm 안 퍽은 " + other_id + " (요청 " + want_id_ + ") → 옆 퍽을 집지 않음, 다시 LOOK";
     }
     return nb;
   }
@@ -1448,15 +1477,18 @@ private:
     TargetPuck tgt;
     Eigen::Vector2d tc(x, y);
     target_tagged_ = false;
-    const auto nb = neighbors_near(x, y, zc, found, tgt, tc, stale, target_tagged_, seen_lying, seen_axis);
+    std::string id_why;
+    const auto nb = neighbors_near(x, y, zc, found, tgt, tc, stale, target_tagged_, seen_lying, seen_axis, id_why);
     last_nb_ = nb;
+    if (!place && !id_why.empty()) {why = std::string(what) + id_why; return false;}
+    if (!place && found && !want_id_.empty()) {RCLCPP_INFO(get_logger(), "%s: 퍽 %s 검출로 맞춤", what, want_id_.c_str());}
     if (place && found) {why = std::string(what) + ": 놓을 자리에 이미 퍽이 보임"; return false;}
     if (found && !place && seen_lying != lying) {
       why = std::string(what) + (lying ? ": 목표는 누운 퍽인데 손목 검출은 선 퍽 → 다시 LOOK" :
         ": 목표는 선 퍽인데 손목 검출은 누운 퍽 → 검출 방향으로 다시 (pick det)");
       return false;
     }
-    // 박스 안은 소프트웨어로 막지 않음 (11-05 사용자: "박스 안에는 다 풀어") — 모르는 것은 알리고 가장 그럴듯한 값으로 쥠. 못 닿는 자세만 IK 가 거절
+    // 박스 안은 소프트웨어로 막지 않음 ("박스 안에는 다 풀어") — 모르는 것은 알리고 가장 그럴듯한 값으로 쥠. 못 닿는 자세만 IK 가 거절
     if (lying && !place) {
       if (found) {
         if (!tgt.square) {RCLCPP_INFO(get_logger(), "%s: 누운 원기둥 — 긴축에 수직으로 둥근 옆면을 쥠", what);}
@@ -1471,7 +1503,7 @@ private:
       lying_axis_deg_ = yaw_deg;
       lying_cylinder_ = found && !tgt.square;
     }
-    if (found && !place && tgt.square && !tgt.yaw_known) {   // 면 방향 모르는 네모: 대각선으로 쥘 수 있음 (11-04) — 막지 않고 알림
+    if (found && !place && tgt.square && !tgt.yaw_known) {   // 면 방향 모르는 네모: 대각선으로 쥘 수 있음 — 막지 않고 알림
       RCLCPP_WARN(get_logger(), "%s: 네모 퍽 면 방향을 못 잡음 — 기본 방향으로 쥠 (대각선으로 쥘 수 있음, STORE 전에 확인)", what);
     }
     if (found && !place) {
@@ -1645,8 +1677,8 @@ private:
     double x, y, top, yaw;
     bool lying = false;
     if (!target_in_model(goal, false, x, y, top, yaw, lying, why)) {return {};}
-    // 선 퍽 윗면 높이 보정 (pick_top_bias_mm). 11-08 저녁 실물: 명령 −50 (예전엔 인지가 윗면을 약 1 cm 높게 봐 실제 40) 이 실제로
-    //   너무 깊게 쥠 → 윗면을 10 mm 높게 봐 예전과 같은 실제 깊이로. 쥔 깊이 기록 (pending_depth_) 은 명령값 그대로라
+    // 선 퍽 윗면 높이 보정 (pick_top_bias_mm). 실물: 명령 −50 이 실제로
+    //   너무 깊게 쥠 → 윗면을 10 mm 높게 봐 실제 깊이 약 40 mm 로. 쥔 깊이 기록 (pending_depth_) 은 명령값 그대로라
     //   STORE 칸 높이 맞춤 (store_match_grip_depth: 박스 PICK 50 − 받침 다시 쥐기 30 = +20) 이 바뀌지 않음. 누운 퍽은 안 건드림
     if (!lying) {
       const double bias = get_parameter("pick_top_bias_mm").as_double();
@@ -1659,8 +1691,11 @@ private:
     std::vector<std::pair<double, std::string>> cands;
     std::string open_kw;
     const double zc = top - model_.team_base_z_floor + model_.base_z_floor - (lying ? lying_h_ : puck_h_) / 2.0;   // 퍽 중심 (base_link)
-    if (!grasp_for(x, y, zc, yaw, false, cands, why, "PICK", lying)) {return {};}
-    // 태그로 잰 중심 (perception center_from_tag): 선 퍽 = 윗면 태그, 누운 퍽 = 위를 향한 옆면 태그 (11-06) — 보정값이 따로
+    want_id_ = goal.puck_id;   // 이 grasp_for 만 ID 로 맞춤 (다시 잡기 · PLACE 는 위치)
+    const bool grasp_ok = grasp_for(x, y, zc, yaw, false, cands, why, "PICK", lying);
+    want_id_.clear();
+    if (!grasp_ok) {return {};}
+    // 태그로 잰 중심 (perception center_from_tag): 선 퍽 = 윗면 태그, 누운 퍽 = 위를 향한 옆면 태그 — 보정값이 따로
     const bool tag_centre = target_tagged_;
     {
       const char * px = tag_centre ? (lying ? "pick_offset_lying_tagged_x_mm" : "pick_offset_tagged_x_mm") :
@@ -1756,7 +1791,7 @@ private:
     return pick_path(unfold->second, P, open_kw, again, why, x, y, yaw, false);
   }
 
-  // 세우기: 쥐기 뒤 실측 확인 — 손끝이 쥐는 자리에 내려갔나 (11-05 실물: 손가락이 퍽 위에 얹혀 17 mm 높게 멈춘 채 세우기가 돌아감),
+  // 세우기: 쥐기 뒤 실측 확인 — 손끝이 쥐는 자리에 내려갔나 (실물: 손가락이 퍽 위에 얹혀 17 mm 높게 멈춘 채 세우기가 돌아감),
   //   그리퍼가 빈손으로 끝까지 닫히지 않았나. 아니면 false (bad)
   bool standup_grasp_ok(std::string & bad) const
   {
@@ -1807,7 +1842,7 @@ private:
     const double kg = 0.017;   // 누운 퍽 (세울 때 쥔 무게)
     const double dz = get_parameter("standup_dz_mm").as_double() / 1000.0;
     // 경로 전체 (위 · 쥐기 포함) 를 표 칸 퍽에서 실제 퍽으로 옮김 — 넣기 폭이 퍽 양쪽 1 mm 뿐이라 칸 차이 그대로면 손가락이 퍽에 얹힘
-    //   박스 윗면 (누운 퍽 아래면) + standup_tip_clear_mm 아래를 가리키는 점은 그 높이까지 올림 (11-05 실물: 표가 박스 윗면 아래 10 mm 를 가리켜
+    //   박스 윗면 (누운 퍽 아래면) + standup_tip_clear_mm 아래를 가리키는 점은 그 높이까지 올림 (실물: 표가 박스 윗면 아래 10 mm 를 가리켜
     //   시뮬은 팔이 물러 막히지만 실물 모터는 거기까지 가려고 눌러 긁음). 쥔 뒤 점은 쥐는 손끝에서 수평 거리를 standup_reach_scale 배로 (덜 뻗기)
     StandupRetarget rt;
     rt.from = Eigen::Vector2d(e.x, e.y);
@@ -1860,8 +1895,8 @@ private:
     }
     // 확인은 보낸 명령 (처짐 앞먹임 포함) 의 손끝과 실측 (엔코더) 손끝을 비교 — 앞먹임이 손끝을 약 18 mm 올려 보이게 함
     standup_check_ = StandupCheck{"", arm_grip(model_, ticks_to_q(model_, enc)).tip};   // 구간 이름은 경로 점을 다 만든 뒤
-    // 경로 점이 IK 로 안 풀리면 그 점만 건너뜀 (11-05 사용자: 막지 말 것). 여는 점이 빠지면 다음 점에서 엶
-    //   점 사이 시간 = 표 녹화 간격 (0.1 s) × standup_time_scale — 속도 상한으로 다시 짜면 시뮬 재생 84 → 47 % (11-06, 15 °/s · 여는 점 멈춤)
+    // 경로 점이 IK 로 안 풀리면 그 점만 건너뜀 (막지 말 것). 여는 점이 빠지면 다음 점에서 엶
+    //   점 사이 시간 = 표 녹화 간격 (0.1 s) × standup_time_scale — 속도 상한으로 다시 짜면 시뮬 재생 84 → 47 % (15 °/s · 여는 점 멈춤)
     const double dt = kStandupDt * get_parameter("standup_time_scale").as_double();
     int skipped = 0, gap = 1;   // gap: 건너뛴 점만큼 다음 점까지 시간을 늘림
     bool opened = false, any = false;
@@ -1878,7 +1913,7 @@ private:
       any = true;
       PathNode n = model_node("stand" + std::to_string(i), enc, standup_speed_dps_, open_here ? "open" : "");
       n.dt_s = dt * gap;
-      n.grip_on_way = open_here;   // 팔을 멈추지 않고 열기 (여는 점에서 0.2 s 만 멈춰도 시뮬 재생 84 → 36 %, 11-06)
+      n.grip_on_way = open_here;   // 팔을 멈추지 않고 열기 (여는 점에서 0.2 s 만 멈춰도 시뮬 재생 84 → 36 %)
       gap = 1;
       path.nodes.push_back(n);
     }
@@ -2049,7 +2084,7 @@ private:
     std::vector<ParkNode> pn;
     double elev = 0.0;
     // 쥐기 후보마다: 이웃 퍽 ↔ 손가락 (위에서 본 발자국, 기울인 손은 손가락이 기운 만큼 넓게) · 그 쥐기로 받침 자세까지 되는지
-    //   (11-06 실물: 첫 후보만 받침 자세를 풀어 park_over IK 안 됨 → 거절. 다른 끝 · 닫힘 부호 후보는 됨)
+    //   (실물: 첫 후보만 받침 자세를 풀어 park_over IK 안 됨 → 거절. 다른 끝 · 닫힘 부호 후보는 됨)
     auto fingers_clear = [&](const LyingGrasp & g, std::string & w) {
         if (last_nb_.empty() || g.tilt_deg <= 0.0) {return true;}
         FingerTip f;
@@ -2077,8 +2112,8 @@ private:
     }
     std::vector<PathNode> nodes;
     for (const auto & n : pn) {
-      // 미는 구간 (park_push_down · 1–4 · back) 만 park_push_speed_dps (11-06 시뮬: 50 °/s 면 기대는 각 49° 아래에서 넘어짐, 20 °/s 면 ±2–4 mm 오차에도 섬)
-      //   꽂아 누르기 (park_press1–4) 는 park_press_speed_dps (0 = park_speed_dps, 11-07 실물 그대로)
+      // 미는 구간 (park_push_down · 1–4 · back) 만 park_push_speed_dps (시뮬: 50 °/s 면 기대는 각 49° 아래에서 넘어짐, 20 °/s 면 ±2–4 mm 오차에도 섬)
+      //   꽂아 누르기 (park_press1–4) 는 park_press_speed_dps (0 = park_speed_dps, 실물 그대로)
       const double sp = !n.slow ? 0.0 : (n.name.rfind("park_push", 0) == 0 || n.name.rfind("park_pull", 0) == 0 ? v_push :
         (v_press > 0.0 && n.name.rfind("park_press", 0) == 0 && n.name != "park_press_lift" && n.name != "park_press_turn" &&
         n.name != "park_press_over" ? v_press : v));
@@ -2113,7 +2148,7 @@ private:
     path.nodes.push_back(model_node("up", P[1].enc, slow_dps_));
     path.nodes.push_back(model_node("lift", P[0].enc, slow_dps_));
     path.nodes.insert(path.nodes.end(), again.begin(), again.end());
-    // 박스 위 기준점: 11-06 사용자 — 집은 뒤 왼쪽 (기준점 y +38 mm) 으로 갈 이유 없음 → 기본은 안 감 (pick_end_at_staging false).
+    // 박스 위 기준점: 집은 뒤 왼쪽 (기준점 y +38 mm) 으로 갈 이유 없음 → 기본은 안 감 (pick_end_at_staging false).
     //   STORE · PLACE 가 집은 자리에서 바로 이어 감 (STORE = 칸 경로의 실제 시작점 lift_real 로, store_join_from_pick)
     if (get_parameter("pick_end_at_staging").as_bool()) {
       path.nodes.push_back({"staging", staging_, false, 0.0, "", false});   // 퍽을 40 mm 띄운 뒤는 빈 공간 → 보통 속도 (STORE 경로도 쥔 채 그 속도)
@@ -2153,7 +2188,7 @@ private:
     // 누운 퍽: 수직 손 그대로 (쥘 때 수직), 놓기 높이는 누운 높이 기준 (drop_height_mm) → 퍽 아랫면이 놓을 면 위 place_bottom_clear_mm
     auto P = poses_for(x, y, top, yaw, heights, cands, open_kw, why, held_tilt_, 20.0);   // 놓는 퍽 기울임 ≤ 20° (누운 퍽도, 쥘 때 기울임 근처)
     if (P.size() != 3 && held_lying_) {
-      // 누운 퍽은 수직 손으로만 놓음 → 그 자리가 수직 손 끝자리면 (11-05 실물: (0.250, −0.028) 위 40 mm IK 안 됨, 같은 자리 PICK 은 됨)
+      // 누운 퍽은 수직 손으로만 놓음 → 그 자리가 수직 손 끝자리면 (실물: (0.250, −0.028) 위 40 mm IK 안 됨, 같은 자리 PICK 은 됨)
       //   J1 쪽으로 5 mm 씩 25 mm 까지 당겨 닿는 가장 가까운 자리에 놓음 (빈 자리 · 손가락 여유는 grasp_for 로 다시)
       const Eigen::Vector2d j1 = model_.j1_xy, p0(x, y);
       const Eigen::Vector2d dir = (p0 - j1).normalized();
@@ -2236,7 +2271,7 @@ private:
     return path_actions(path, timing_, grip_, joint_buf_);
   }
 
-  // 먼 자리 PLACE (11-06 사용자: 먼 줄은 박스에 한 번 내려놨다가 쥐는 방식을 바꿔서, 멀리 있는 퍽 집듯이): 쥘 때 기울임 ± 20° 로 안 닿으면
+  // 먼 자리 PLACE (먼 줄은 박스에 한 번 내려놨다가 쥐는 방식을 바꿔서, 멀리 있는 퍽 집듯이): 쥘 때 기울임 ± 20° 로 안 닿으면
   //   ① 목표 쪽 빈 자리 S 에 지금 쥔 그대로 내려놓음 (손 기울임은 쥘 때 ± 20° 안 = 놓기 규칙, 퍽이 기울면 놓기 높이도 그만큼)
   //   ② S 에서 손을 t° 기울여 pick_tilted_depth_mm 로 다시 쥠 (닫힘축 = S 의 접선 = 내려놓을 때 손 방향 → 퍽 면과 맞음, 퍽은 수직)
   //   ③ 목표에 t° 손 그대로 놓음 (퍽 수직, 바닥이 면 위 place_bottom_clear_mm) → P0 · 접기
@@ -2755,8 +2790,10 @@ private:
   // 손목 인지 퍽 (base_link): 집기 · 놓기 때 이웃
   // p · yaw · axis = odom 기준, tagged = 윗면 태그로 잰 중심, lying = 긴축이 수평에서 45° 안 (planning 과 같은 기준), axis = 긴축 수평 방향
   struct SeenPuck {Eigen::Vector3d p; bool square; bool yaw_known; double yaw; bool round_r30; double t; bool tagged; bool lying; double axis;
-    Eigen::Vector3d p_nom;};   // p = 카메라 돌아감 되돌린 위치, p_nom = 되돌리기 전 (목표 맞추기용)
+    Eigen::Vector3d p_nom; std::string id;};   // p = 카메라 돌아감 되돌린 위치, p_nom = 되돌리기 전 (목표 맞추기용), id = AprilTag ID ("" = 못 읽음)
   std::vector<SeenPuck> seen_;
+  std::string want_id_;           // 지금 맞출 PICK 목표 퍽 ID (goal.puck_id, "" = 위치로만). pick_plan 동안만
+  double id_max_offset_m_{0.06};  // ID 로 찾은 검출 ↔ planning 목표점 거리 한계 (넘으면 거절)
   bool target_tagged_{false};     // 마지막 grasp_for 가 맞춘 목표 검출이 윗면 태그로 잰 퍽
   bool regrasp_{true};            // 기울여 쥔 퍽을 세워 내려놓고 수직으로 다시 쥠
   double regrasp_min_x_{0.212};   // 다시 잡기 자리 x 하한 [m]

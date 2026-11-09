@@ -21,7 +21,7 @@
 //   - 칸 이름은 control 과 같은 이름을 씀, 팔이 닿는 칸만 등록. 기본 S1–S12 = URDF rack_cell_S*, 팔에서 먼 칸부터
 //   - 빈 칸은 목록 순서대로 채움 (free_slot) → S1 = 가장 먼 칸부터
 //   - 꺼낼 칸은 운반 계획 (transfer_planner) 이 정함: 목록 뒤 = 가까운 칸부터
-//   - 칸 제약 (set_rules, 11-08): 넣기 · 빼기 전에 비어 있어야 하는 칸 (config/rack_cells.yaml rack_constraints, 팔 경로가 옆 칸 퍽에 닿음)
+//   - 칸 제약 (set_rules): 넣기 · 빼기 전에 비어 있어야 하는 칸 (config/rack_cells.yaml rack_constraints, 팔 경로가 옆 칸 퍽에 닿음)
 //       free_slot 은 제약을 지키는 첫 빈 칸, 그런 칸이 없으면 첫 빈 칸 (막지 않음). 빼기는 retrieve_ok 로 고름
 
 #pragma once
@@ -65,7 +65,7 @@ public:
   const std::optional<CargoItem> & gripper() const {return gripper_;}
   std::optional<std::string> free_slot() const;                      // 첫 빈 칸 (칸 제약을 지키는 칸 먼저)
   // 이 퍽을 넣을 칸: free_slot 과 같되, 빼기 제약 짝 칸 (S7 · S12 등) 의 짝에 다른 색 퍽이 있으면 그 칸은 미룸
-  //   (같은 색 = 보통 같은 장소 → 배달 때 같은 장소 안에서 순서만 바꿔 제약을 지킴, 11-08). 다른 칸이 없으면 그 칸
+  //   (같은 색 = 보통 같은 장소 → 배달 때 같은 장소 안에서 순서만 바꿔 제약을 지킴). 다른 칸이 없으면 그 칸
   std::optional<std::string> free_slot_for(const CargoItem & item) const;
   std::size_t stored_count() const;                                  // 칸에 실린 수 (그리퍼 제외)
   std::size_t capacity() const {return slots_.size();}

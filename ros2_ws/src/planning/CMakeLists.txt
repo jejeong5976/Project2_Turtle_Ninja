@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.10)
 project(planning)
 
 # planning = 실행 층 (미션을 모름): 단계 실행기 · 퍽 기록부 · 적재함 · 감시 · grasp 계산

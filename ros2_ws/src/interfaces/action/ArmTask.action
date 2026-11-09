@@ -15,7 +15,7 @@
 #   - 퍽을 쥔 채 · 작업이 도중에 멈춘 뒤의 HOME 은 거절 (사람 복구)
 #   - 주행은 받침에 접혀 끝나는 작업 뒤에만 (HOME, lazy_fold 를 끈 STORE · PLACE). PICK · RETRIEVE · LOOK, lazy_fold 의 STORE · PLACE (P0 에서 끝) 뒤에는 바퀴 잠금 유지 → 주행 전 HOME
 #   - 전체 표: docs/integration/robot_interfaces.md '팔 작업'
-#   - STORE 부터 LOOK_RACK 까지는 발제 v5 용으로 planning 이 추가함. control_master 구현 전에는 거절됨
+#   - STORE 부터 LOOK_RACK 까지는 발제 v5 용으로 planning 이 추가함 (control_master 구현됨, 2026-11 팔 브랜치)
 #   - LOOK_RACK 을 거절하면 planning 은 칸 측정 없이 STORE 를 보냄 (target.header.frame_id 빈 값)
 
 uint8 HOME     = 0            # 주행용 접은 자세
@@ -25,13 +25,15 @@ uint8 STORE    = 3            # 기준점(쥔 퍽) → 적재함 slot 칸에 넣
 uint8 RETRIEVE = 4            # 받침 · P0 · LOOK 자세 → 적재함 slot 칸의 퍽 꺼내기 → 기준점에서 쥔 채 멈춤
 uint8 LOOK     = 5            # 손목 카메라 관찰 자세: 앞 박스 · 장소 위를 내려다봄, 끝나면 그 자세 유지
 uint8 LOOK_BARCODE = 6        # 손목 카메라로 출발 구역 벽 바코드를 정면으로 봄, 끝나면 그 자세 유지
-# 7 = 비움 (옛 LOOK_FAR, L2 받침대가 205 박스로 바뀌어 2026-11-04 삭제, 번호 재사용 안 함)
+# 7 = 비움 (번호 재사용 안 함)
 uint8 LOOK_RACK = 8           # 퍽 쥔 채 적재함 slot 칸을 손목 카메라로 내려다봄 (칸마다 관찰 자세 다름, control 표), 끝나면 그 자세 유지 → 다음은 STORE
 uint8 task
 geometry_msgs/PoseStamped target   # PICK · PLACE: frame_id = base_link, 그리퍼 중심이 갈 점 (planning_interfaces.md 6 절: 퍽 중심 + 쥘 끝 × 0.015), z 축 = 쥘 끝 · x 축 = 퍽 면
                                    # STORE: LOOK_RACK 으로 잰 slot 칸 바닥 중심 + yaw (base_link, /perception/rack/cells 그대로)
                                    #        frame_id 빈 값 = 측정 없음 → 녹화 경로 그대로
 string slot                        # STORE · RETRIEVE · LOOK_RACK 때 씀, 적재함 칸 S1 ~ S12 (config/rack_cells.yaml)
+string puck_id                     # PICK: planning 이 고른 퍽 AprilTag ID (Detection.id). control 은 손목 검출에서 이 ID 의 퍽을 목표로 잡음
+                                   #   "" = 모름 → target 위치 25 mm 안 검출로만 맞춤
 ---
 # 결과
 bool success
