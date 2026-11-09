@@ -2,10 +2,10 @@
 """SLAM 지도 ↔ 도면 맞추기 → dice_map 의 map_from_arena (+ 확인 그림 · 고친 dice_map 사본)
 
 왜: dice_map.yaml 의 map_from_arena: start 는 '지도를 그릴 때 로봇이 도면 출발 자세 (출발 구역 가운데, −X) 에 정확히 있었다' 는 가정.
-    11-07 arena5: 로봇이 출발 구역 오른쪽 끝에 6° 틀어져 있었음 → 먼 박스 정차점이 25–40 cm 어긋나 벽 · 장애물 위에 찍힘.
+    arena5: 로봇이 출발 구역 오른쪽 끝에 6° 틀어져 있었음 → 먼 박스 정차점이 25–40 cm 어긋나 벽 · 장애물 위에 찍힘.
 방법: 도면 벽 · 박스 = sim/robot_sim/maps/maze_dice_map (tools/layout_to_occupancy.py 가 dice_layout.json 에서 만든 지도, 경기장 원점 = 그 지도의
       [-2.202, -3.152]) 의 점유 칸을 SLAM 지도의 점유 칸 거리 지도에 맞춤 (회전 ±15° · 이동 ±0.8 m 격자 → 0.25° · 1.25 cm → 0.05° · 4 mm).
-      시작 추정 = map_from_arena: start. 점수 = 도면 점 중 SLAM 벽 3 cm 안 비율 (가우시안), 11-07 arena5 = 0.61
+      시작 추정 = map_from_arena: start. 점수 = 도면 점 중 SLAM 벽 3 cm 안 비율 (가우시안), arena5 = 0.61
 받는 것: /map (SLAM, transient local) — 로봇 (도메인 17) 이 켜져 있어야 함. 아니면 --pgm <지도.yaml>
 주는 것: map_from_arena [x, y, yaw] 출력, --out_map 에 dice_map 사본 (map_from_arena 만 바꿈), --png 확인 그림 (검정 = SLAM, 빨강 = 도면)
 

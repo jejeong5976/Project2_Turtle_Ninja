@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""손눈 보정 — 바닥 깊이 평면으로 손목 D435 의 실제 장착 위치 · 각도 구하기 (2026-10-30, 계산만 · 포트 안 씀).
+"""손눈 보정 — 바닥 깊이 평면으로 손목 D435 의 실제 장착 위치 · 각도 구하기 (계산만 · 포트 안 씀).
 
-  $NT_PY handeye_floor.py p1_Depth.raw p2_Depth.raw …      # 자세마다 깊이 스냅샷 1 장
-  $NT_PY handeye_floor.py --selftest                       # 가짜 자료로 풀이 확인
+  $ARM_PY handeye_floor.py p1_Depth.raw p2_Depth.raw …      # 자세마다 깊이 스냅샷 1 장
+  $ARM_PY handeye_floor.py --selftest                       # 가짜 자료로 풀이 확인
 
 원리: 자세마다 깊이에서 바닥 평면을 뽑으면 (카메라 기준 바닥 법선 2 자유도 + 바닥까지 거리 1) = 3 개 식.
   같은 순간의 팔 관절값(run_pose_read 의 02_track, 0.29 s 간격) → FK 로 link5 자세를 알므로, 손목 자세가 서로 다른 5~6 장이면
   "link5 → 깊이 카메라" 6 자유도(회전 3 · 위치 3)가 풀림. 태그 · 박스 필요 없음 (바닥만 평평하면 됨).
-가정: 바닥 = base_link 아래 0.072 m 평면 (차체가 바닥에 수평), 깊이 단위 0.001 m, 팔 관절 읽기 정상 (10-30 받침 자세 그리퍼 37° 실측 = FK 37°).
+가정: 바닥 = base_link 아래 0.072 m 평면 (차체가 바닥에 수평), 깊이 단위 0.001 m, 팔 관절 읽기 정상 (받침 자세 그리퍼 37° 실측 = FK 37°).
 시각 맞춤: 깊이 메타데이터 Timestamp(ms, 호스트 시각) ↔ 02_track started_at_utc. 그 앞뒤 1 s 관절이 흔들리면 그 장은 뺌.
 결과: link5 기준 깊이 · 컬러 카메라 자세, 팀원 PR URDF(−12° 추정) 와의 차이, URDF `d435_cad_front_fixed` 에 넣을 origin.
 """
@@ -27,14 +27,14 @@ from scipy.spatial.transform import Rotation as Rot
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, os.environ.get('NT_REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
-sys.path.insert(0, os.environ.get('NT_PLACE_SPOTS', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'place_spots')))
+sys.path.insert(0, os.environ.get('REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
+sys.path.insert(0, os.environ.get('PLACE_SPOTS', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'place_spots')))
 import arm_pose_fk as fk  # noqa: E402
 import camera_angle_ref as car  # noqa: E402
 import place_ik as pk  # noqa: E402
 from reach_model import Model  # noqa: E402
 
-POSE_GLOB = os.path.join(os.environ.get('NT_POSE_MEASURE', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'arm_workspace_measure_20261024')), 'runs', 'POSE_*', '**', '*.json')
+POSE_GLOB = os.path.join(os.environ.get('POSE_MEASURE', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'arm_workspace_measure_20261024')), 'runs', 'POSE_*', '**', '*.json')
 KS = ('11', '12', '13', '14', '15', '16')
 BASE_Z = 0.072
 # 공장 extrinsic (S/N 261722072635, rs_calib_261722072635.txt): p_color = R p_depth + t

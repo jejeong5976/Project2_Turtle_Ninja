@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""손목 D435 경첩 각도별 기준 그림 · 실물 화면 겹쳐 보기 (2026-10-30, 계산만).
+"""손목 D435 경첩 각도별 기준 그림 · 실물 화면 겹쳐 보기 (계산만).
 
-  $NT_PY camera_angle_ref.py                         # 기준 그림 + 표 → camera_ref/
-  $NT_PY camera_angle_ref.py --overlay 화면.png --hinge -30   # 실물 화면 위에 예상 윤곽
+  $ARM_PY camera_angle_ref.py                         # 기준 그림 + 표 → camera_ref/
+  $ARM_PY camera_angle_ref.py --overlay 화면.png --hinge -30   # 실물 화면 위에 예상 윤곽
 
 경첩 각도 = 팀원 표기 (배포 URDF = 0°, 팀원 PR URDF = −12°, 음수 = 손 쪽으로 숙임).
 경첩 회전축은 배포 URDF(0°) 와 PR URDF(−12°) 의 카메라 자세 차이에서 역산 (축 방향 · 축이 지나는 점) → 다른 각도는 그 축으로 돌림.
@@ -19,17 +19,17 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-sys.path.insert(0, os.environ.get('NT_REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
-sys.path.insert(0, os.environ.get('NT_PLACE_SPOTS', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'place_spots')))
+sys.path.insert(0, os.environ.get('REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
+sys.path.insert(0, os.environ.get('PLACE_SPOTS', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'place_spots')))
 import place_ik as pk  # noqa: E402
 from reach_lib import gap_to_q  # noqa: E402
 from reach_model import HOLD_GAP_MM, OPEN_GAP_MM, Model  # noqa: E402
 
-REL_URDF = os.path.join(os.environ.get('NT_URDF_RELEASE', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'nt_urdf_release_20261027_layout')), 'urdf', 'robot.urdf')
+REL_URDF = os.path.join(os.environ.get('URDF_RELEASE', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'nt_urdf_release_20261027_layout')), 'urdf', 'robot.urdf')
 PR_URDF = os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..'), 'sim', 'robot_sim', 'robot_description', 'robot.urdf')
 PR_HINGE = -12.0
 K = np.array([[606.43, 0, 325.19], [0, 606.16, 256.77], [0, 0, 1.0]])   # 실측 (S/N …635, 640 × 480)
-COLOR_DX = -0.0325   # 컬러 렌즈 = 케이스 가운데(proxy)에서 광학 −x 32.5 mm (PR URDF d435_color_optical_frame, 10-30 실물 손가락 위치로 확인)
+COLOR_DX = -0.0325   # 컬러 렌즈 = 케이스 가운데(proxy)에서 광학 −x 32.5 mm (PR URDF d435_color_optical_frame, 실물 손가락 위치로 확인)
 W, H = 640, 480
 OUT = Path(__file__).with_name('camera_ref')
 FONT = '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'

@@ -1,7 +1,7 @@
 # Arducam 광각 (상단) 내부 파라미터 — ROS camera_info 형식
 # 가이드: docs/perception/yolo26_isaac_sim_guide.md 11.3
 #
-# 측정: 2026-10-20, 개발 노트북, MJPG 1280x720
+# 측정:, 개발 노트북, MJPG 1280x720
 # 모델: OpenCV fisheye (ROS distortion_model "equidistant", D = k1..k4)
 # 보드: 9x6 내부 코너, 칸 25mm (모니터 표시)
 # 사진: 41장 (1차 19 + 2차 22), 재투영 오차 RMS 0.45px

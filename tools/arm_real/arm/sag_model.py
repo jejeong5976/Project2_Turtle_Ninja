@@ -1,4 +1,4 @@
-"""팔 처짐 모델 (2026-10-30 손눈 보정에서 구함, handeye_sag.py): 실제 관절 = 엔코더 + c·τ_j (j = J2 · J3 · J4, τ = 중력 토크 N·m).
+"""팔 처짐 모델 (손눈 보정에서 구함, handeye_sag.py): 실제 관절 = 엔코더 + c·τ_j (j = J2 · J3 · J4, τ = 중력 토크 N·m).
 c = camera_calib.json 의 sag_c_deg_per_Nm (3.07 °/N·m). 질량 어림: 링크2 구간 0.12 · 링크3 0.12 · 링크4 0.10 · 손목+그리퍼+카메라 0.40 kg.
 held_kg: 쥔 물체 (손끝에) — 퍽 쥐면 그만큼 처짐 늘어남 (추정)."""
 import json
@@ -41,13 +41,13 @@ def encoder_goal_q(M, q_true, fq, held_kg=0.0, c=None):
 
 
 # 모터 위치 오차 (엔코더에 보임 — 위 처짐과 별개): 팀 ROS 경로는 위치 P 게인만(기본 800, I 0) → 중력을 버티려면 그만큼 목표에서 밀려남.
-# 10-30 실물 멈춤 20 장(runner_20261030T165901 · 172009, chatgpt_runs_review/fit_pgap.py) 맞춤: 오차(실측 − 명령) = a_j · τ_j 틱, 잔차 σ 3~7 틱.
+# 실물 멈춤 20 장(runner_20261030T165901 · 172009, chatgpt_runs_review/fit_pgap.py) 맞춤: 오차(실측 − 명령) = a_j · τ_j 틱, 잔차 σ 3~7 틱.
 #   (ChatGPT 팔 엔진은 J2 · J3 · J4 위치 I 게인 100 → 같은 하중에서 버틸 때 오차 중앙 0~2 틱, chatgpt_runs_review/static_err.py)
 PGAP_P_ONLY = {2: 21.6, 3: -23.7, 4: 22.5}
-# 10-30 20:35: 팔 보드 펌웨어 fw_ext (./arm_fw.sh ext) 가 J2 · J3 · J4 위치 I 게인 100 → 모터가 이 오차를 스스로 없앰 → 앞먹임 0 (안 끄면 I 가 반대로 밀어 앞먹임만큼 틀림).
-#   게인 없는 펌웨어(nt · ext0) 로 되돌리면 환경 변수 NT_ARM_PONLY=1 로 pose_safety 를 돌려 checked.json 을 다시 만들 것.
+# 팔 보드 펌웨어 fw_ext (./arm_fw.sh ext) 가 J2 · J3 · J4 위치 I 게인 100 → 모터가 이 오차를 스스로 없앰 → 앞먹임 0 (안 끄면 I 가 반대로 밀어 앞먹임만큼 틀림).
+#   게인 없는 펌웨어(nt · ext0) 로 되돌리면 환경 변수 ARM_PONLY=1 로 pose_safety 를 돌려 checked.json 을 다시 만들 것.
 import os  # noqa: E402
-PGAP_TICK_PER_NM = PGAP_P_ONLY if os.environ.get('NT_ARM_PONLY') == '1' else {2: 0.0, 3: 0.0, 4: 0.0}
+PGAP_TICK_PER_NM = PGAP_P_ONLY if os.environ.get('ARM_PONLY') == '1' else {2: 0.0, 3: 0.0, 4: 0.0}
 PGAP_MAX = 60
 
 

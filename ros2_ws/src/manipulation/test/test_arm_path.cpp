@@ -240,7 +240,7 @@ TEST(TimePath, KeepsEveryWaypoint)
 }
 
 // 9b) 끝 바로 앞 경유점 (마지막 구간이 아주 짧음): 이웃 시각이 1 ms 넘게 떨어짐 — JTC 는 나노초로 바꿔 같은 시각이면 거절
-//     (11-04 실물: "Time between points 19 and 20 is not strictly increasing, 0.999407 and 0.999407")
+//     (실물: "Time between points 19 and 20 is not strictly increasing, 0.999407 and 0.999407")
 TEST(TimePath, NoNearDuplicateTimes)
 {
   const std::vector<double> s{0, 0, 0, 0, 0};
@@ -316,7 +316,7 @@ TEST(LazyFold, KeepsGripOrStopNodes)
 }
 
 // 실제 config/arm_paths.yaml: 받침에서 시작하는 빼기 · LOOK 경로는 앞이 unfold 와 같아야 P0 에서 바로 시작 (lazy_fold).
-//   11-07: 빼기 경로에서 upJ3a 를 지우자 P0 잇기가 조용히 안 됨 (Fable 검수) → 경로를 고칠 때 깨지지 않게
+//   빼기 경로에서 upJ3a 를 지우자 P0 잇기가 조용히 안 됨 (Fable 검수) → 경로를 고칠 때 깨지지 않게
 #ifdef ARM_PATHS_YAML
 namespace
 {

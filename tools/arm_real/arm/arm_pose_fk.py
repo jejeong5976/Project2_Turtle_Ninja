@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""손으로 잡은 팔 자세(run_pose_read.sh 의 POSE_<시각>/04_pose_summary.json) → 손끝 위치 · 방향 (2026-10-30, 포트 안 씀).
+"""손으로 잡은 팔 자세(run_pose_read.sh 의 POSE_<시각>/04_pose_summary.json) → 손끝 위치 · 방향 (포트 안 씀).
 
-  $NT_PY arm_pose_fk.py <POSE 폴더> [<POSE 폴더> …]
+  $ARM_PY arm_pose_fk.py <POSE 폴더> [<POSE 폴더> …]
 
 틱 → 관절: 배포본 config/joint_map.json 식 (q = q_deg_at_ref + sign × (틱 − ref_tick) × 360/4096). 그리퍼 간격 = 표 보간.
 손끝 · 접근축 · 닫힘축 = bin12_reach 메시 모델 (배포 URDF, base_link 바닥 위 0.072 m).
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, os.environ.get('NT_REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
+sys.path.insert(0, os.environ.get('REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
 from reach_lib import REL  # noqa: E402
 from reach_model import Model  # noqa: E402
 

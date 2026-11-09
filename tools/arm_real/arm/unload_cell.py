@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""적재함 칸에서 퍽 꺼내 박스에 내려놓기 (2026-11-01, 계산만) — unload_cycle.sh 가 부름. 넣기(rack_load.plan_rack)의 길을 거꾸로.
+"""적재함 칸에서 퍽 꺼내 박스에 내려놓기 (계산만) — unload_cycle.sh 가 부름. 넣기(rack_load.plan_rack)의 길을 거꾸로.
 
-  1 단계  $NT_PY unload_cell.py L2 --stage hover          → lc_unhover.checked.json
+  1 단계  $ARM_PY unload_cell.py L2 --stage hover          → lc_unhover.checked.json
           받침 → 박스 위(들기) → 칸 위(over_cell, 그리퍼 '놓기' 간격으로 열고 멈춤)  · 끝 = 칸 위 (end_here)
   2 단계  ... unload_cell.py L2 --stage pick --run runs/runner_<1 단계> [--jog lc_jog_out.json]  → lc_unpick.checked.json
           (미리: --stage pick --planned lc_unhover.json --out lc_unpick0 — 1 단계 계획의 칸 위 자세에서)
@@ -26,13 +26,13 @@ import pose_safety as ps          # noqa: E402
 import rack_load                  # noqa: E402
 import sag_model                  # noqa: E402
 
-PY = os.environ.get('NT_PY', sys.executable)
-PICK_DEPTHS = (25, 20, 15)        # [mm] 칸 안 쥐기 깊이 후보: 손끝 = 퍽 윗면 아래 (모델. 11-01 나사 조인 뒤 실제 팔은 약 5 mm 높아 실제는 5 mm 얕음)
+PY = os.environ.get('ARM_PY', sys.executable)
+PICK_DEPTHS = (25, 20, 15)        # [mm] 칸 안 쥐기 깊이 후보: 손끝 = 퍽 윗면 아래 (모델. 나사 조인 뒤 실제 팔은 약 5 mm 높아 실제는 5 mm 얕음)
 DROP_DEPTH = 23                   # [mm] 박스에 내려놓기: 같은 쥔 자리면 퍽 바닥이 박스 윗면 약 2 mm 위
-HOVER_UP = (0.015, 0.010, 0.006)  # [m] 빈손 칸 위 멈춤 = 넣기 칸 위보다 이만큼 위 (닿는 것 중 가장 높게) (손끝이 꺼낼 퍽 윗면 약 30 mm 위 — 11-01 L2: 넣기 높이면 [J3−2] 손가락 ↔ 퍽 1 mm)
+HOVER_UP = (0.015, 0.010, 0.006)  # [m] 빈손 칸 위 멈춤 = 넣기 칸 위보다 이만큼 위 (닿는 것 중 가장 높게) (손끝이 꺼낼 퍽 윗면 약 30 mm 위 — L2: 넣기 높이면 [J3−2] 손가락 ↔ 퍽 1 mm)
 DROP_DEFAULT = '210.2,38.0,-4.0'
-# 칸 위로 다가가는 앞 점 [m] (칸 위 높이, 칸 가운데 기준) — 차례로 시험. 11-01 L2: 박스 쪽 · 안쪽 비스듬히만 통과
-APPROACH = ((0.02, -0.02, 0), (0.02, 0.02, 0), (0.04, -0.04, 0), (0.04, 0.04, 0), (-0.02, -0.02, 0), (-0.02, 0.02, 0), (0.03, 0, 0), (-0.03, 0, 0), (0, 0.03, 0), (0, -0.03, 0))  # 11-01 L2 적재 때 퍽 자리 (puck_locate runner_20261101T064426)
+# 칸 위로 다가가는 앞 점 [m] (칸 위 높이, 칸 가운데 기준) — 차례로 시험. L2: 박스 쪽 · 안쪽 비스듬히만 통과
+APPROACH = ((0.02, -0.02, 0), (0.02, 0.02, 0), (0.04, -0.04, 0), (0.04, 0.04, 0), (-0.02, -0.02, 0), (-0.02, 0.02, 0), (0.03, 0, 0), (-0.03, 0, 0), (0, 0.03, 0), (0, -0.03, 0))  #  L2 적재 때 퍽 자리 (puck_locate runner_20261101T064426)
 
 
 def enc(C, t, kg):
@@ -65,7 +65,7 @@ def main():
     cell = a.cell.upper()
     a.out = a.out or ('lc_unhover' if a.stage == 'hover' else 'lc_unpick')
     C = ps.Checker()
-    # 꺼낼 때는 놓지 않으므로 칸 위 높이를 넣기 놓는 높이(PLACE_GAP 10 mm) 에 묶지 않음 — 10 이면 칸 위가 4 mm 높아져 L5 · L6 길이 막힘 (11-01)
+    # 꺼낼 때는 놓지 않으므로 칸 위 높이를 넣기 놓는 높이(PLACE_GAP 10 mm) 에 묶지 않음 — 10 이면 칸 위가 4 mm 높아져 L5 · L6 길이 막힘
     rack_load.PLACE_GAP = 0.006
     rc = rack_load.load_cells()
     if not rc['cells'][cell]['state'].startswith('full'):
@@ -74,7 +74,7 @@ def main():
     lift = up['ticks']
     rce = json.loads(json.dumps(rc))
     rce['cells'][cell]['state'] = 'empty'                              # 계획 · 장애물에서 꺼낼 퍽은 뺌 (손가락이 감쌈)
-    # 박스 ↔ 칸 위 길은 1 단계와 같은 보정(키보드 전)으로 — 키보드로 옮긴 자리로 길을 새로 찾으면 다른 길이 나오거나 막힘 (11-01 B: +4 mm 로 A 컵에 1 mm)
+    # 박스 ↔ 칸 위 길은 1 단계와 같은 보정(키보드 전)으로 — 키보드로 옮긴 자리로 길을 새로 찾으면 다른 길이 나오거나 막힘 (B: +4 mm 로 A 컵에 1 mm)
     rp, desc = rack_load.plan_rack(C, cell, lift, rce)
     k = next(i for i, p in enumerate(rp) if p['name'] == 'over_cell')
     vias = [p['ticks'] for p in rp[:k]]
@@ -85,7 +85,7 @@ def main():
             sys.exit(f"키보드 맞추기 결과가 칸 {jog['cell']} 것 — {cell} 아님")
         off = rce['cells'][cell].get('place_offset', [0.0, 0.0])
         rce['cells'][cell]['place_offset'] = [off[0] + jog['shift'][0] / 1000, off[1] + jog['shift'][1] / 1000]
-        if jog.get('yaw'):                                                # 키보드로 손목을 돌린 만큼 (11-01)
+        if jog.get('yaw'):                                                # 키보드로 손목을 돌린 만큼
             rce['cells'][cell]['yaw_deg'] = rack_load.cell_yaw(rce, rce['cells'][cell]) + jog['yaw']
     sl = dict(speed=15.0)
     held = dict(held_kg=0.017)
@@ -105,19 +105,19 @@ def main():
     th = next((t for t in (near_ik(z_above + dz, ta) for dz in HOVER_UP) if t), ta)
     if a.stage == 'hover':
         poses = [dict(name='lift', ticks=lift, enc=enc(C, lift, 0.0), stop=False)]
-        # 마지막 경유점 → 칸 위: 관절 직선이면 꺼낼 퍽 위에서 손가락이 처짐 가설로 1 mm 까지 내려감 (11-01 L2) →
+        # 마지막 경유점 → 칸 위: 관절 직선이면 꺼낼 퍽 위에서 손가락이 처짐 가설로 1 mm 까지 내려감 (L2) →
         #   칸 위 높이의 비스듬한 앞 점을 거쳐 손끝 곧은 선 (1 cm 마다 IK). 꺼낼 퍽까지 장애물로 넣고 통과하는 첫 방향
         last = vias[-1] if vias else lift
         ps.set_obstacles(box_obs + rack_load.cup_obstacles(rc, cell))
         tip = np.asarray(C.M.grip(C._qf(th)[0])[0])
         clear = lambda ch: not any(C.path(u, v, grip=ps.GRIP_JM['closed'], rack_zone=False) for u, v in zip(ch, ch[1:]))
         line = [th] if clear([last, th]) else None
-        for dz in (0.03, 0.05, 0.07) if line is None else ():           # 칸 바로 위 높은 곳 → 수직으로 내려옴 (팔 가까운 칸, 11-01 A: 곧장 오면 손가락이 A 퍽 위 0 mm)
+        for dz in (0.03, 0.05, 0.07) if line is None else ():           # 칸 바로 위 높은 곳 → 수직으로 내려옴 (팔 가까운 칸, A: 곧장 오면 손가락이 A 퍽 위 0 mm)
             tu = near_ik(z_above + dz, th)
             if tu and clear([last, tu, th]):
                 line = [tu, th]; break
         for off in APPROACH if line is None else ():
-            # 옆 앞 점까지는 관절 직선(그 점의 IK), 거기서 칸 위까지만 손끝 곧은 선 — 박스에서부터 곧은 선은 IK 가 안 이어짐 (11-01 A)
+            # 옆 앞 점까지는 관절 직선(그 점의 IK), 거기서 칸 위까지만 손끝 곧은 선 — 박스에서부터 곧은 선은 IK 가 안 이어짐 (A)
             pre = [t_ for t_, _ in rack_load.ik_vertical(C, tip + np.array(off), yaw)]
             pre = min(pre, key=lambda t_: np.abs(np.array(t_) - np.array(th)).max()) if pre else None
             if pre is None or not clear([last, pre]):
@@ -140,7 +140,7 @@ def main():
         else:
             sys.exit('--stage pick 은 --run (1 단계 실행) 또는 --planned 필요')
         t0 = jog['ticks'] if jog else t0
-        # 쥐는 깊이: 깊게부터 — 바깥 칸(L2 · L6 · B) 은 팔이 덜 닿고 손가락이 컵 테두리에 붙어 얕게 (11-01 L2: 25 mm 면 테두리 2~5 mm)
+        # 쥐는 깊이: 깊게부터 — 바깥 칸(L2 · L6 · B) 은 팔이 덜 닿고 손가락이 컵 테두리에 붙어 얕게 (L2: 25 mm 면 테두리 2~5 mm)
         ps.set_obstacles(box_obs + rack_load.cup_obstacles(rce, cell))
         tp = dm = None
         for dm in PICK_DEPTHS:
@@ -161,7 +161,7 @@ def main():
             if h:
                 sys.exit(f'칸 {cell}: 쥔 퍽을 칸 위 원래 자리로 옮기는 길 ✗ {h} (팔은 칸 위 그대로 — --return 으로 받침)')
             poses.append(dict(name='over_back', ticks=ta0, enc=enc(C, ta0, 0.017), stop=False, rack=True, **held, speed=10.0))
-        # 빠져나오기 (11-01 A: 칸 위에서 박스로 곧장 가다 쥔 퍽이 자기 컵 박스 쪽 모서리를 긁음 — 계획기는 목표 컵을 장애물에서 뺌):
+        # 빠져나오기 (A: 칸 위에서 박스로 곧장 가다 쥔 퍽이 자기 컵 박스 쪽 모서리를 긁음 — 계획기는 목표 컵을 장애물에서 뺌):
         #   같은 높이로 다음 경유점(없으면 박스) 쪽 수평 직선 3 · 5 cm 를 먼저, 그 칸 컵까지 넣고 쥔 퍽 검사
         obs_all = rack_load.obstacles(rce, None)
         nxt = (list(reversed(vias)) + [lift])[0]

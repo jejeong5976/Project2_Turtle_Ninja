@@ -453,7 +453,7 @@ std::vector<ModuleState> SwerveDrive::update(
       //   이번 주기는 보정 안 함. 같은 분기 안의 작은 각도 변화(< 30°)만 허용
       //   이동 중 가지 유지(keep_branch_max_wz)가 켜져 있으면 이 검사 대신 아래 ①-1b 가 갈아타지 않는 데까지만 줄임
       const bool keep_branch = cfg_.keep_branch_max_wz > 0.0 && translating_ &&
-        std::fabs(corrected.wz) <= cfg_.keep_branch_max_wz;   // ①-1b 가 맡는 경우만 (아니면 예전 검사)
+        std::fabs(corrected.wz) <= cfg_.keep_branch_max_wz;   // ①-1b 가 맡는 경우만 (아니면 기본 검사)
       bool same_branch = measured.size() == kin_.size();
       if (!keep_branch && same_branch && kin_.has_module_ranges()) {
         bool fa = true, fb = true;

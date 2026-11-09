@@ -17,8 +17,8 @@ constexpr int kRamp = 12;
 // 칸 경로를 옮긴 점은 관절 범위 (tick_lo · hi) 를 이만큼까지 넘어도 됨 [틱, 1.3°]. 실물 경로가 범위 끝에 붙어 있음
 //   (store_S10 칸 위 J4 2416 ~ 2431 틱, 범위 2430 → 칸 보정 (-9, -8) mm 로 2443). 실물 J4 멈춤은 약 2485 틱이라 범위 끝 + 15 도 그 안
 constexpr double kEdgeSlackTick = 15.0;
-// J4 위쪽은 40 틱 (2430 → 2470 = pose_safety 가 실물 재생 구간에 허용한 j4_hi, 기계 멈춤 ~2485 · 2495 에서 과부하, 11-01)
-//   11-08: 세운 퍽 (+20 mm) 은 J4 가 2445 에 막혀 S4 · S5 · S8 · S10 · S11 칸 근처를 못 올림
+// J4 위쪽은 40 틱 (2430 → 2470 = pose_safety 가 실물 재생 구간에 허용한 j4_hi, 기계 멈춤 ~2485 · 2495 에서 과부하)
+//   세운 퍽 (+20 mm) 은 J4 가 2445 에 막혀 S4 · S5 · S8 · S10 · S11 칸 근처를 못 올림
 constexpr double kJ4HiSlackTick = 40.0;
 constexpr double kDeg = 180.0 / M_PI;
 constexpr double kT2R = 2.0 * M_PI / 4096.0;
@@ -88,7 +88,7 @@ bool shift_cell_path(
   if (k < 0) {why = path.name + ": 경유점 " + (store ? "P0_복귀" : "P0") + " 없음"; return false;}
   const int lo = store ? 1 : k, hi = store ? k : n - 1;
   // 놓는 점 (STORE release) · 쥐는 점 (RETRIEVE close) 은 다 옮겨야 함 → 그 점이 끝에서 12 점보다 가까우면 그 사이에서 0 → 1
-  //   (11-08: store_look_S1 은 놓는 점이 둘째 점에서 9 점째라 75 % 만 옮기고 로그엔 100 % 로 나옴)
+  //   (store_look_S1 은 놓는 점이 둘째 점에서 9 점째라 75 % 만 옮기고 로그엔 100 % 로 나옴)
   int key = -1;
   for (int i = lo; i <= hi && key < 0; ++i) {
     if (path.nodes[i].grip == (store ? "release" : "close")) {key = i;}
@@ -121,7 +121,7 @@ bool shift_cell_path(
     }
     ++rep.moved;
   }
-  // 접근축: 관절 5 개라 손끝을 옮기면 손이 조금 기움. 11-06 실물: 오른쪽 칸 2 cm 보정에 1.0–1.7° → 1° 한도로 50–75 % 만 옮겨
+  // 접근축: 관절 5 개라 손끝을 옮기면 손이 조금 기움. 실물: 오른쪽 칸 2 cm 보정에 1.0–1.7° → 1° 한도로 50–75 % 만 옮겨
   //   칸마다 들어가는 자리가 매번 달라짐. 5° 기울어도 퍽 바닥 (손끝 아래 60 mm) 은 5 mm 안
   if (rep.worst_pos_mm > 0.2 || rep.worst_app_deg > 5.0) {
     char buf[200];

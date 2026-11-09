@@ -6,7 +6,7 @@
   RETRIEVE <칸>: 받침 → 칸 위 → 쥐기 → 기준점(퍽 쥠) (end_here)
 칸 상태: STORE S_k = S1..S_k-1 찬 칸 (채우는 순서). RETRIEVE S_k = 다른 칸 전부 찬 칸 (꺼내는 순서 자유), 안 되면 S_k+1.. 빈 칸.
 
-  $NT_PY gen_paths.py [store|retrieve|all] [칸 ...]
+  $ARM_PY gen_paths.py [store|retrieve|all] [칸 ...]
 """
 import os  # NT_* 경로 환경변수 (tools/arm_real/README_KO.md)
 import json
@@ -16,8 +16,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, os.environ.get('NT_REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
-PY = os.environ.get('NT_PY', sys.executable)
+sys.path.insert(0, os.environ.get('REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
+PY = os.environ.get('ARM_PY', sys.executable)
 OUT = HERE / 'out'
 OUT.mkdir(exist_ok=True)
 

@@ -11,7 +11,7 @@
 //   send_command(): 100 Hz. 관절 단위 목표 → CMD 상자 (NaN = "목표 없음")
 //   poll()      : 100 Hz. 들어온 바이트에서 STATE 상자 꺼내서 관절 단위로 바꿔 둠 (+ 1 초마다 DIAG · TEMP)
 //
-// 단위: 펌웨어는 모터 축 기준 rad · rad/s · A 로 말함 (nt_packet.h).
+// 단위: 펌웨어는 모터 축 기준 rad · rad/s · A 로 말함 (opencr_packet.h).
 //       관절이 rad 가 아닌 것(그리퍼 = 손가락 이동 m)만 scale 로 바꿈:  관절값 = 모터값 × scale
 
 #pragma once
@@ -25,7 +25,7 @@
 #include <utility>
 #include <vector>
 
-#include "nt_packet.h"   // firmware/nt_opencr/nt_packet.h — 펌웨어와 같은 파일 (CMakeLists 참고)
+#include "opencr_packet.h"   // firmware/opencr/opencr_packet.h — 펌웨어와 같은 파일 (CMakeLists 참고)
 #include "hardware/position_rate.hpp"
 
 namespace hardware
@@ -95,7 +95,7 @@ struct JointSpec
 {
   std::string name;
   uint8_t id = 0;
-  uint8_t mode = ntp::MODE_POSITION;   // ntp::MODE_VELOCITY / MODE_POSITION / MODE_CURRENT_POSITION
+  uint8_t mode = pkt::MODE_POSITION;   // pkt::MODE_VELOCITY / MODE_POSITION / MODE_CURRENT_POSITION
   uint16_t profile_vel = 0;
   uint16_t profile_acc = 0;
   uint16_t goal_current = 0;
@@ -111,10 +111,10 @@ inline double motor_to_joint(const JointSpec & j, double m) {return (m + j.turn_
 inline double joint_to_motor(const JointSpec & j, double q) {return q / j.scale + j.zero_rad - j.turn_rad;}
 
 // 여러 바퀴 모드 (전류 기반 위치 = 펌웨어 확장 위치: J1 · 그리퍼) 는 CONFIG 때 모터가 위치를 한 바퀴 (0 ~ 4095 눈금) 안에서 다시 셈.
-//   11-08 실물: HOME J1 = 4085 눈금이 경계 4096 에서 11 눈금 (1°) — 몸통이 정면보다 1° 왼쪽 (4101) 일 때 T1 을 다시 켜자
+//   실물: HOME J1 = 4085 눈금이 경계 4096 에서 11 눈금 (1°) — 몸통이 정면보다 1° 왼쪽 (4101) 일 때 T1 을 다시 켜자
 //   5 눈금 (관절 −6.26 rad) 으로 읽혀 arm_controller 가 한계 밖으로 꺼짐 (그대로 HOME 이면 몸통이 한 바퀴 돎).
 //   → 첫 측정에서 모터값에 2π 의 배수를 더해 관절 0 에서 반 바퀴 (±π) 안으로. J1 (URDF ±π) · 그리퍼 (닫힘 ~ 열림 1000 눈금) 범위에선 답이 하나
-inline bool is_multi_turn(const JointSpec & j) {return j.mode == ntp::MODE_CURRENT_POSITION;}
+inline bool is_multi_turn(const JointSpec & j) {return j.mode == pkt::MODE_CURRENT_POSITION;}
 inline double unwrap_turn_rad(double motor_rad, double zero_rad)
 {
   if (!std::isfinite(motor_rad) || !std::isfinite(zero_rad)) {return 0.0;}
@@ -133,9 +133,9 @@ struct LinkState
 {
   uint32_t ms = 0;            // OpenCR 시계
   uint8_t seq_echo = 0;
-  uint8_t status = 0;         // ntp::ST_* 비트
+  uint8_t status = 0;         // pkt::ST_* 비트
   uint16_t comm_err = 0;      // 비트 i = i 번째 모터 못 읽음
-  ntp::Imu imu{};
+  pkt::Imu imu{};
   std::vector<JointReading> joints;
   bool joints_valid = false;  // 펌웨어가 설정한 모터 수만큼 보내 줬나 (CONFIG 전에는 0 개)
 };
@@ -148,7 +148,7 @@ struct DiagSummary
     uint32_t n = 0, fail = 0;
     uint64_t sum_us = 0;   // 평균 × 횟수 합 (가중 평균용)
     uint32_t max_us = 0;
-    void add(const ntp::TimeStat & t)
+    void add(const pkt::TimeStat & t)
     {
       n += t.n;
       fail += t.fail;
@@ -169,9 +169,9 @@ struct DiagSummary
   uint8_t fault_flags = 0;      // 가장 최근 값 (비트 0 잠금, 1 침묵)
   uint8_t volt_min_dv = 0;      // 배터리 전압 최저 [0.1 V] (모은 구간 전체, 0 = 못 읽음)
   uint8_t volt_mean_dv = 0;     // 가장 최근 구간 평균 [0.1 V]
-  void add(const ntp::Diag & g)
+  void add(const pkt::Diag & g)
   {
-    if (g.fault_flags & ntp::DIAG_FLAG_BEFORE_CONFIG) {
+    if (g.fault_flags & pkt::DIAG_FLAG_BEFORE_CONFIG) {
       ++before_config_packets;
       before_loop.add(g.loop);
       before_usb_tx.add(g.usb_tx);
@@ -216,7 +216,7 @@ struct TempReport
 };
 TempReport temp_report(const std::vector<JointSpec> & joints, const std::vector<int> & c, int warn_c, int crit_c);
 // 토크 켜기 실패 이유 → 사람 말 (예: "steer_fl_joint (모터 11) 지금 3120 눈금 (+94°) 이 위치 한계 1024–3072 밖 → 손으로 한계 안으로 돌려 놓고 다시 켤 것")
-std::string torque_fail_text(const std::vector<JointSpec> & joints, const ntp::TorqueFail & f);
+std::string torque_fail_text(const std::vector<JointSpec> & joints, const pkt::TorqueFail & f);
 // 위치 한계 → 켤 때 찍을 한 줄 (위치 모드 관절마다 "steer_fl_joint −90°~+90° (지금 +3°)").
 //   지금 위치 (관절 단위, NaN = 모름) 가 한계 밖인 관절은 out_of_range 에 사람 말로 (없으면 빈 문자열)
 std::string pos_limits_text(
@@ -259,15 +259,15 @@ public:
   // 지금까지 모은 DIAG 를 꺼내고 0 부터 다시 (packets == 0 이면 DIAG 를 안 보내는 옛 펌웨어거나 아직 1 초 전)
   DiagSummary take_diag() {DiagSummary d = diag_; diag_ = DiagSummary{}; return d;}
   // 가장 최근 DIAG 하나와 받은 개수 (개수가 바뀌면 새 것 — 배터리 판단은 1 초마다 바로)
-  const ntp::Diag & last_diag() const {return last_diag_;}
+  const pkt::Diag & last_diag() const {return last_diag_;}
   uint32_t diag_count() const {return diag_count_;}
   // 모터 온도 [°C] (관절 순서, -1 = 모름) — 가장 최근 TEMP. temp_count() 가 바뀌면 새 것 (0 = TEMP 를 안 보내는 옛 펌웨어거나 아직 1 초 전)
   const std::vector<int> & temperatures() const {return temps_;}
   uint32_t temp_count() const {return temp_count_;}
   // 토크 켜기 실패 이유 (TORQUE_FAIL, 새 펌웨어만) — 가장 최근 것과 받은 뒤 지난 시간 [s]. 받은 적 없으면 false
-  bool last_torque_fail(ntp::TorqueFail & f, double & age_s) const;
+  bool last_torque_fail(pkt::TorqueFail & f, double & age_s) const;
   uint32_t torque_fail_count() const {return torque_fail_count_;}
-  // 모터별 EEPROM 위치 한계 [눈금] (POS_LIMITS, CONFIG 바로 뒤 한 번, 새 펌웨어만). 위치 모드가 아니면 ntp::TF_NO_LIMIT. 아직 못 받았으면 false
+  // 모터별 EEPROM 위치 한계 [눈금] (POS_LIMITS, CONFIG 바로 뒤 한 번, 새 펌웨어만). 위치 모드가 아니면 pkt::TF_NO_LIMIT. 아직 못 받았으면 false
   bool pos_limits(std::vector<std::pair<int32_t, int32_t>> & out) const;
   uint32_t frames_received() const {return frames_;}
   std::size_t size() const {return joints_.size();}
@@ -286,7 +286,7 @@ private:
   std::vector<JointSpec> joints_;
   uint8_t bus_watchdog_;
   SerialPort port_;
-  ntp::Parser parser_;
+  pkt::Parser parser_;
   LinkState state_;
   std::vector<PositionRate> position_rates_;
   bool got_state_ = false;
@@ -297,11 +297,11 @@ private:
   bool waiting_ack_ = false;
   int ack_mask_ = -1;
   DiagSummary diag_;
-  ntp::Diag last_diag_{};
+  pkt::Diag last_diag_{};
   uint32_t diag_count_ = 0;
   std::vector<int> temps_;
   uint32_t temp_count_ = 0;
-  ntp::TorqueFail torque_fail_{};
+  pkt::TorqueFail torque_fail_{};
   std::vector<std::pair<int32_t, int32_t>> pos_limits_;
   bool pos_limits_ok_ = false;
   uint32_t torque_fail_count_ = 0;

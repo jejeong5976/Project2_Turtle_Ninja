@@ -5,7 +5,7 @@
 #   nt check           시작 전 점검 (끝 코드 0 통과 · 1 실패)
 #   nt h · nt g B1     팔 HOME · 접고 이동 (짧은 별칭 = nt help)
 # ROS_DOMAIN_ID: 안 정했으면 팀 로봇 17 (tools/jetson/run_robot.sh 와 같음), export 한 값이 우선. 설명: ros2_ws/src/robot_cli/README.md
-# FASTDDS_BUILTIN_TRANSPORTS: 이 창 값을 그대로 씀 (안 정했으면 기본). 로봇 노드와 같아야 보임 — 11-04 젯슨: CLI 만 LARGE_DATA 면
+# FASTDDS_BUILTIN_TRANSPORTS: 이 창 값을 그대로 씀 (안 정했으면 기본). 로봇 노드와 같아야 보임 — 젯슨: CLI 만 LARGE_DATA 면
 #   run_robot.sh (기본) 노드가 안 보였음. bringup.launch.py (LARGE_DATA) 와 같이 쓸 때는 모든 창에서 같은 값을 export
 set -eo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"   # 심볼릭 링크 (~/.local/bin/nt) 로 불러도 레포를 찾음

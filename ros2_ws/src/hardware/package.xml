@@ -3,7 +3,7 @@
 <package format="3">
   <name>hardware</name>
   <version>0.1.0</version>
-  <description>F팀 닌자터틀 — ros2_control 하드웨어 플러그인: OpenCR(nt_opencr 펌웨어) ↔ 다이나믹셀 14개 + IMU</description>
+  <description>F팀 닌자터틀 — ros2_control 하드웨어 플러그인: OpenCR(opencr 펌웨어) ↔ 다이나믹셀 14개 + IMU</description>
   <maintainer email="team@example.com">F팀 닌자터틀</maintainer>
   <license>Apache-2.0</license>
 

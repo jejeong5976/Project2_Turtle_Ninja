@@ -60,7 +60,7 @@ struct GripperValues
 };
 
 // start 에서 nodes 를 차례로 멈추지 않고 지나가는 시간표 (start 는 넣지 않음). 길이가 0 이면 마지막 점 하나를 0.3 s 에
-//   nodes 가 모두 dt_s > 0 이면 경유점마다 그 시간 간격 그대로 (녹화 재생 — 11-06 시뮬: 속도 상한으로 다시 짜면 세우기 84 → 47 %)
+//   nodes 가 모두 dt_s > 0 이면 경유점마다 그 시간 간격 그대로 (녹화 재생 — 시뮬: 속도 상한으로 다시 짜면 세우기 84 → 47 %)
 //   출력 = dt 간격 점 + 경유점마다 그 도착 시각의 점 (JTC 가 점 사이를 직선으로 이어도 검사한 꺾은선 그대로)
 std::vector<TrajPoint> time_path(
   const std::vector<double> & start, const std::vector<PathNode> & nodes, const PathTiming & timing);

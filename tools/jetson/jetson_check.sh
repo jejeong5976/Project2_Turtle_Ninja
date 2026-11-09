@@ -29,7 +29,7 @@ out=$(ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null); [ -n "$out" ] && echo "$out" | 
 for n in opencr_drive opencr_arm; do [ -e /dev/$n ] && ok "/dev/$n → $(readlink -f /dev/$n)" || no "/dev/$n 없음 (포트 고정 규칙 필요: tools/jetson/make_udev_rules.py)"; done
 echo "== SLAM · 지연"
 for p in slam_toolbox coin_d4_driver; do ros2 pkg prefix $p >/dev/null 2>&1 && ok "$p" || no "$p 없음 → sudo apt install ros-$ROS_DISTRO_WANT-${p//_/-}"; done
-ls -l /dev/serial/by-path/ 2>/dev/null | sed 's/^/  /'   # 앞 · 뒤 라이다 · 주행 보드 USB 자리 (run_robot.sh 의 NT_LIDAR_FRONT · NT_LIDAR_REAR · NT_DRIVE_PORT)
+ls -l /dev/serial/by-path/ 2>/dev/null | sed 's/^/  /'   # 앞 · 뒤 라이다 · 주행 보드 USB 자리 (run_robot.sh 의 LIDAR_FRONT · LIDAR_REAR · DRIVE_PORT)
 # ros2_control 100 Hz 루프의 실시간 우선순위: 0 이면 "Could not enable FIFO RT scheduling" 경고 + 주기 흔들림 가능 (control.ros.org 실시간 안내)
 r=$(ulimit -r); [ "$r" != 0 ] && ok "실시간 우선순위 한도 rtprio=$r" || no "rtprio 0 — 제어 루프가 보통 우선순위로 돎 (필요하면 /etc/security/limits.d 에 rtprio, 사람이 직접)"
 echo "== 다른 ROS 실행 중인지"

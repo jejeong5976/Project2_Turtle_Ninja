@@ -6,7 +6,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, os.environ.get('NT_REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
+sys.path.insert(0, os.environ.get('REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
 import pose_safety as ps  # noqa: E402
 
 # look: 박스 정차 (3 cm 띄움) 의 실물 박스 (215 mm, x 0.18~0.40 · y −0.12~+0.11 m) 먼 쪽 · 양옆 모서리에 놓인 퍽 윗면까지

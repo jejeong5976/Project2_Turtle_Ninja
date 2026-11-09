@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""놓기 자세 후보 (2026-10-29, 시뮬 팔 모델 · 포트 없음): 실물 집기 순간과 같은 잡힘으로 퍽을 세운 채 격자 점에 놓는 팔 관절값.
+"""놓기 자세 후보 (시뮬 팔 모델 · 포트 없음): 실물 집기 순간과 같은 잡힘으로 퍽을 세운 채 격자 점에 놓는 팔 관절값.
 
   python3 place_ik.py                    # L1 · L3 (205 박스) 9 점 + 최대 도달 표 → place_poses.json · 화면 표
   python3 place_ik.py --box_y 0.03       # 박스 중심을 차체 기준 왼쪽 3 cm 에 (로봇 서는 자리 바꿔 보기)
 
 방법
   1. 실물 집기 순간 (ARM_20261026T022813Z, 그리퍼가 닫히기 시작한 순간) 팔 관절값 → URDF 순기구학으로 손목(arm_link5_wrist_roll) 자세.
-     그때 퍽 = 세운 채, 중심 xy = 집기 자리(차체 기준 앞 0.342 · 왼 0.077, 10-27 시뮬 집기 8/8 확인), 바닥 = 70 mm 박스 위.
+     그때 퍽 = 세운 채, 중심 xy = 집기 자리(차체 기준 앞 0.342 · 왼 0.077, 시뮬 집기 8/8 확인), 바닥 = 70 mm 박스 위.
      → 손목 기준 퍽 자세(잡힘)를 고정.
   2. 놓기: 퍽 중심을 격자 점 위(바닥 = 박스 위 + clearance), 퍽 축 = 수직(세운 채) 이 되는 팔 5 관절을 최소제곱으로 풂
      (퍽 수직축 회전은 자유 — 원기둥. 직육면체 퍽 방향은 판정 대상 아님으로 가정). 시작값 = 집기 자세 (같은 팔꿈치 위 자세).
@@ -25,8 +25,8 @@ from pathlib import Path
 import numpy as np
 from scipy.optimize import least_squares
 
-SIM = Path(os.environ.get('NT_ROBOT_SIM', os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..'), 'sim', 'robot_sim')))
-REL = Path(os.environ.get('NT_URDF_RELEASE', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'nt_urdf_release_20261027_layout')))
+SIM = Path(os.environ.get('ROBOT_SIM', os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..'), 'sim', 'robot_sim')))
+REL = Path(os.environ.get('URDF_RELEASE', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'nt_urdf_release_20261027_layout')))
 sys.path.insert(0, str(SIM))
 from sim_core import arm_poses as ap   # noqa: E402
 

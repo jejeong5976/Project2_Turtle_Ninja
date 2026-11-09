@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-REL = Path(os.environ.get('NT_URDF_RELEASE', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'nt_urdf_release_20261027_layout')))
+REL = Path(os.environ.get('URDF_RELEASE', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'nt_urdf_release_20261027_layout')))
 URDF_PATH = REL / "urdf/robot.urdf"
 PKG = "package://nt_release_description/"
 ARM_JOINTS = ["arm_joint1", "arm_joint2", "arm_joint3", "arm_joint4", "arm_joint5"]

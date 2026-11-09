@@ -726,11 +726,11 @@
   <joint name="profile_joint" type="fixed"><parent link="profile_fixing_plate_link" /><child link="profile_link" /><origin xyz="0.110213045 0.09580939 -0.0885" rpy="0 0 0" /></joint>
   <joint name="profile_camera_bracket_link_mount" type="fixed"><parent link="profile_link" /><child link="profile_camera_bracket_link" /><origin xyz="-0.110213045 -0.09580939 0.53649997" rpy="0 0 0.274506446118" /></joint>
   <joint name="gripper_park_stand_mount" type="fixed"><parent link="base_link" /><child link="gripper_park_stand_link" /><origin xyz="0.1008 0.00115 0.1305" rpy="0 0 0" /></joint>
-    <!-- 적재함 = 11-05 새 적재함 CAD (Onshape shak3) 메시 그대로: 8 칸 판 · 4 칸 판 (판 · 나사 구멍 · 옆 홈 포함, 홈은 와플 판 바깥쪽)
+    <!-- 적재함 = 새 적재함 CAD (Onshape shak3) 메시 그대로: 8 칸 판 · 4 칸 판 (판 · 나사 구멍 · 옆 홈 포함, 홈은 와플 판 바깥쪽)
          rack_link = CAD 원점 (S2 칸 중심, 칸 바닥 위 5 mm). 판 밑면이 상판 (z 0.1305, 받침대와 같은 면) 위
-         놓은 자리 = 옛 적재함 자리: 8 칸은 옛 8 칸, 4 칸은 옛 4 칸 자리 (CAD 칸 중심을 옛 config/rack_cells.yaml 12 칸에 평행 이동으로 맞춤)
-         옛 칸 표 (11-01 실물 성공 값, backups/rack_cells_1106) 는 칸 간격이 약 65 mm 로 CAD 60 mm 와 달라 칸마다 최대 약 10 mm (S7) 차이 (아래 줄 끝 수치)
-         11-06 부터 config/rack_cells.yaml 칸 중심 = 이 칸 링크 (CAD) + 가운데 통로 보정 (왼쪽 8 칸 y +1 · 오른쪽 4 칸 y −1 mm, 자로 140 ↔ URDF 138) -->
+         놓은 자리 = CAD 칸 중심을 실측 칸 표 12 칸에 평행 이동으로 맞춤
+         실측 칸 표 (넣기 · 빼기 성공 값) 는 칸 간격이 약 65 mm 로 CAD 60 mm 와 달라 칸마다 최대 약 10 mm (S7) 차이 (아래 줄 끝 수치)
+         config/rack_cells.yaml 칸 중심 = 이 칸 링크 (CAD) + 가운데 통로 보정 (왼쪽 8 칸 y +1 · 오른쪽 4 칸 y −1 mm, 자로 140 ↔ URDF 138) -->
     <link name="rack_link">
       <visual><geometry><mesh filename="${mesh}/rack/rack_8cell.obj"/></geometry><material name="rack_visual"><color rgba="0.55 0.74 0.90 1"/></material></visual>
       <visual><geometry><mesh filename="${mesh}/rack/rack_4cell.obj"/></geometry><material name="rack_visual"/></visual>
@@ -1191,8 +1191,8 @@
   <joint name="camera_body_joint" type="fixed"><parent link="wrist_link" /><child link="camera_link" /><origin xyz="0.07285831910124538 -0.03358933820604513 -0.01335717514995661" rpy="-0.01555906262262852 1.249203250793414 -0.4626942145495506" /></joint>
   <link name="wrist_cam_color_optical_frame"/>
   <!-- 실측 손눈 보정 T_5c/T_5d (바닥 깊이) 에 적재함 칸 태그 스캔으로 맞춘 회전을 더함.
-       11-04: 옛 적재함 · 옛 칸 표로 경첩 (컬러 광학 x) −5.63°.
-       11-06: 카메라를 손목에 다시 붙인 뒤, 새 적재함 (CAD 칸 간격 · 가운데 140 mm 를 자로 확인) 12 칸 태그 110 장으로
+       경첩 (컬러 광학 x) −5.63° (이전 적재함 칸 표로 맞춤).
+       카메라를 손목에 다시 붙인 뒤, 새 적재함 (CAD 칸 간격 · 가운데 140 mm 를 자로 확인) 12 칸 태그 110 장으로
        컬러 광학 축 회전 (x −3.14°, y −1.11°, z −0.87°) 을 더 곱함 (칸 남는 오차 평균 1.1 · 최대 2.0 mm, 적재함 이동 (+0.5, +2.9) mm 같이 맞춤).
        광축 ↔ 손가락 (J5 축) 33.5°. 브래킷 배치를 맞추려고 바꾸지 않는다. -->
   <joint name="camera_joint" type="fixed"><parent link="wrist_link"/><child link="wrist_cam_color_optical_frame"/><origin xyz="0.086934 -0.004296 -0.013517" rpy="-2.973050 0.011127 -2.000066"/></joint>
@@ -1214,13 +1214,13 @@
     <collision name="birdeye_camera_link__collision__camera_connector"><geometry><mesh filename="${mesh}/camera/collision/birdeye_connector.obj" scale="1 1 1" /></geometry></collision>
   </link>
   <link name="birdeye_camera_optical_frame"/>
-  <!-- 11-07: 새 버드아이 브래킷 (cam_brkt - Part 3, 카메라 판 30°) → 아래 30° (예전 클램프 40°). 자리는 예전 그대로 (새 브래킷 자리는 아직 안 잼) -->
+  <!--새 버드아이 브래킷 (cam_brkt - Part 3, 카메라 판 30°) → 아래 30°. 자리는 옛 클램프 자리 그대로 (새 브래킷 자리는 아직 안 잼) -->
   <joint name="birdeye_camera_joint" type="fixed"><parent link="profile_camera_bracket_link" /><child link="birdeye_camera_link" /><origin xyz="0.0555354645249 0.0065 0.0195025360476" rpy="0 0.523598775598 0" /></joint>
   <joint name="birdeye_camera_optical_joint" type="fixed"><parent link="birdeye_camera_link" /><child link="birdeye_camera_optical_frame" /><origin xyz="0 0 0" rpy="-1.57079632679 0 -1.57079632679" /></joint>
   </xacro:if>
 
   <!-- ===================== 모터 연결 ===================== -->
-  <xacro:nt_buses buses="${hw['buses']}" hardware="$(arg hardware)"/>
+  <xacro:opencr_buses buses="${hw['buses']}" hardware="$(arg hardware)"/>
 
   <!-- 젯슨 Orin Nano · 배터리 · 하판: 보기용만 (질량은 base_link 에 포함) -->
   <link name="jetson_link">

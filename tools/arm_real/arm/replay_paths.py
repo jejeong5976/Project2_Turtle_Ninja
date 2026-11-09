@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""칸마다 11-01 실물에서 성공한 넣기 · 빼기 실행의 실제 관절 궤적(joint_states.csv)을 이어 붙여 경로를 만든다.
+"""칸마다 실물에서 성공한 넣기 · 빼기 실행의 실제 관절 궤적(joint_states.csv)을 이어 붙여 경로를 만든다.
 
   STORE <칸>   : 기준점(박스 위 들기, 퍽 쥠) → 그때 들기 자세 → [실물 궤적: 칸에 넣기 · 놓기 · 닫기 · 나오기] → P0 → 표준 접기 → 받침
   RETRIEVE <칸>: 받침 → 표준 펼치기 → P0 → [실물 궤적: 칸 위 · 열기 · 쥐기 · 꺼내기] → 박스 위 들기 (퍽 쥠)
 실측 관절값 → 처짐 앞먹임 명령값(sag_model, 실물 계획기와 같은 식), 경유점은 관절 변화 REDUCE 틱마다 · 그리퍼 동작 자리.
 칸 상태 = 그 실행 시각의 실제 상태 (rack_state 백업 + 성공 기록으로 복원) → 같은 상태에서 pose_safety 다시 검사.
 
-  $NT_PY replay_paths.py [store|retrieve|all] [칸 ...]
+  $ARM_PY replay_paths.py [store|retrieve|all] [칸 ...]
 """
 import csv
 import glob
@@ -20,15 +20,15 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, os.environ.get('NT_REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
+sys.path.insert(0, os.environ.get('REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
 import pose_safety as ps  # noqa: E402
 import rack_load  # noqa: E402
 import sag_model  # noqa: E402
 import grasp_test as gt  # noqa: E402
 from gen_paths import ORDER, S_TO_OLD, staging  # noqa: E402
 
-ARM = Path(os.environ.get('NT_ARM_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'arm')))
-RUNS = Path(os.environ.get('NT_RUNS_DIR', ARM / 'runs'))
+ARM = Path(os.environ.get('ARM_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'arm')))
+RUNS = Path(os.environ.get('RUNS_DIR', ARM / 'runs'))
 OUT = HERE / 'out'
 OLD_TO_S = {v: k for k, v in S_TO_OLD.items()}
 P0 = np.array(ps.STANDUP[-1][1])
@@ -69,7 +69,7 @@ def runs_all():
 # ------------------------------------------------------------------ 칸 상태 복원
 def snapshots():
     snaps = []
-    for f in sorted((ARM / 'rack_states').glob('1101_*.json')):   # 이름 = 11-01 로컬 시각 (그 시각에 바꾸기 전 칸 상태)
+    for f in sorted((ARM / 'rack_states').glob('1101_*.json')):   # 이름 = 로컬 시각 (그 시각에 바꾸기 전 칸 상태)
         ts = datetime.strptime('2026' + f.stem, '%Y%m%d_%H%M%S').timestamp()
         r = json.loads(f.read_text())
         snaps.append((ts, {k for k, v in r['cells'].items() if v['state'].startswith('full')}))

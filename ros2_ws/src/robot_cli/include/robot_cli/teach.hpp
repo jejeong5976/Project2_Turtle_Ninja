@@ -26,7 +26,7 @@ constexpr double kMarkMaxAgeS = 1.0;   // 관절 측정이 이보다 오래되�
 
 extern const char * const kTeachNote;  // teach 명령 글: 손으로 움직이기가 왜 없는지 · 무엇이 필요한지
 
-std::string wall_clock_text();   // 이 PC 지역 시각 "2026-11-03T15:42:10.123" (기록 칸 값)
+std::string wall_clock_text();   // 이 PC 지역 시각 "T15:42:10.123" (기록 칸 값)
 std::string csv_clean(const std::string & s);   // csv 칸 · yaml "…" 에 넣을 수 있게 (, → ; · " \ 빼기 · 줄바꿈 → 빈칸)
 
 std::string mark_csv_header();

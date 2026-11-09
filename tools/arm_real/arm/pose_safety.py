@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""팔 자세 · 경로 안전 검사 (2026-10-30, 계산만 · 포트 안 씀). 모터로 움직이는 도구(arm_pose_runner) 가 실행 전에 반드시 통과시켜야 함.
+"""팔 자세 · 경로 안전 검사 (계산만 · 포트 안 씀). 모터로 움직이는 도구(arm_pose_runner) 가 실행 전에 반드시 통과시켜야 함.
 
-  $NT_PY pose_safety.py poses.json            # 자세 · 자세 사이 경로 검사
-  $NT_PY pose_safety.py --calib out.json       # 손눈 보정용 자세 자동 생성 (검사 통과 + 정확도 최대)
+  $ARM_PY pose_safety.py poses.json            # 자세 · 자세 사이 경로 검사
+  $ARM_PY pose_safety.py --calib out.json       # 손눈 보정용 자세 자동 생성 (검사 통과 + 정확도 최대)
 
 자세 파일 (JSON): {"poses": [{"name": "p1", "ticks": [J1, J2, J3, J4, J5], "gripper": 3504(선택), "check": true}, …]}
   틱 순서 = ID 11 12 13 14 16 (J1 · 그리퍼는 확장 위치 모드: 받침 자세에서 전원 켠 기준).
@@ -24,7 +24,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, os.environ.get('NT_REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
+sys.path.insert(0, os.environ.get('REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
 import arm_pose_fk as fk  # noqa: E402
 from reach_lib import PLATE_TOP_Z, apply  # noqa: E402
 from reach_model import ADJACENT, Model  # noqa: E402
@@ -32,10 +32,10 @@ from reach_model import ADJACENT, Model  # noqa: E402
 BASE_Z = 0.072
 REST = [4084, 1102, 2668, 1971, 2063]
 # 받침 → P0 세우기 경유점 (ChatGPT 팔 엔진 run_task_calib_poses_demo1.sh 의 검증된 순서: J2 +512 · J3 −160 → J4 2034 → J2 −448 → J3 2380 → +77)
-# ChatGPT 팔 엔진 run_task_calib_poses_demo1.sh 의 실물 검증 순서 그대로 (2026-10-30 저녁 교체 — 첫 실물 실행에서 복귀 끝에 걸림)
+# ChatGPT 팔 엔진 run_task_calib_poses_demo1.sh 의 실물 검증 순서 그대로 (교체 — 첫 실물 실행에서 복귀 끝에 걸림)
 #   세우기: S:12:d+64/13:d-20 … 8 조각 (J2 +496 · J3 −206 동시) → 14:2034 → 12:d-128 ×3, d-64 → 13:2380 → 13:d+77
 #   복귀  : 11:d-32 → 12:d+128 ×3, d+64 → 11:d+32 → 14:d-62 → S:12:d-48/13:d+24 … 8 조각
-#   복귀 중 J2 올릴 때 J1 −32: 10-25 A9 실물에서 '왼쪽 돌출부 걸림' (ChatGPT CHANGES.md 67~70 행) 뒤 사용자 결정.
+#   복귀 중 J2 올릴 때 J1 −32: A9 실물에서 '왼쪽 돌출부 걸림' 뒤 정함.
 _UP_J2 = [64, 64, 64, 64, 64, 64, 64, 48]
 _UP_J3 = [-20, -22, -24, -28, -28, -30, -30, -24]
 
@@ -68,17 +68,17 @@ STANDUP = _standup()
 RETURN = _return(STANDUP[-1][1])
 STAND_MARGIN = 0.003                            # 받침 근처 세우기 구간: 받침대 · 차체와 원래 가까움 → 3 mm (실물에서 검증된 순서만)
 MARGIN = 0.015
-# 10-30 손눈 보정: 손목 굽힘 합(J2+J3+J4)이 모델보다 약 +5.3° → 어느 관절인지 모름 → 세 가설 + 원래 모델 모두에서 통과해야 함 (관절 번호 0 부터)
-#   J3−5.3 은 뺌: 그 가설이면 받침 자세(실물로 놓여 있음)에서 팔이 상판을 8 mm 뚫어야 함 → 불가능 (10-30 저녁 검사)
+# 손눈 보정: 손목 굽힘 합(J2+J3+J4)이 모델보다 약 +5.3° → 어느 관절인지 모름 → 세 가설 + 원래 모델 모두에서 통과해야 함 (관절 번호 0 부터)
+#   J3−5.3 은 뺌: 그 가설이면 받침 자세(실물로 놓여 있음)에서 팔이 상판을 8 mm 뚫어야 함 → 불가능 (검사)
 #   (17:40 교체) 처짐 모델 확정(sag_model.py, c 3.07 °/N·m, 실행기가 앞먹임) → 남는 오차 가설 = 어깨 · 팔꿈치 ±2° (처짐 3° 안팎 · 보정 덜 맞음 · 앞먹임 없는 옛 자세 파일 포함)
 HYPS = [('', {}), ('J2+2', {1: 2.0}), ('J2−2', {1: -2.0}), ('J3+2', {2: 2.0}), ('J3−2', {2: -2.0})]
 EXTRA_OBS = []          # 자세 파일 'obstacles' (박스 · 퍽 등, base_link 기준) → reach_lib.Analytic
-OBS_MARGIN = {'cup': 0.006, 'L_box': 0.005}   # 이름이 이것으로 시작하는 장애물은 이 여유 (10-30 저녁 적재: 수직 손 손가락 끝이 컵 윗면 위 10 mm) · 박스 윗면 5 mm (11-01 L8 · L7: 35 · 40 mm 깊게 쥐면 손끝이 박스 위 모델 20 · 15 mm, 실물은 약 5 mm 더 높음)
-PLACED_PUCK_MARGIN = float(os.environ.get('NT_PLACED_PUCK_MARGIN', '0.002'))   # 한 번만 낮출 때 NT_PLACED_PUCK_MARGIN=0.001 (눈으로 보며, 11-01)    · 찬 칸에서 컵 위로 나온 퍽('cup X puck') 여유 — 이웃 두 칸이 차면 6 mm 로는 어느 손목 방향도 안 됨 (10-31 실물 B: 최악 2~3 mm, 퍽 크기에 밀림 2 mm 포함) · 10-31 19:3x 3 → 2 mm: 스캔 C–D 간격 38.3 mm 로 컵(40 mm) 보다 좁게 잼 = 실제 ≥ 1.7 mm 숨은 여유, D 가 C 퍽과 [J3−2] 2 mm
+OBS_MARGIN = {'cup': 0.006, 'L_box': 0.005}   # 이름이 이것으로 시작하는 장애물은 이 여유 (적재: 수직 손 손가락 끝이 컵 윗면 위 10 mm) · 박스 윗면 5 mm (L8 · L7: 35 · 40 mm 깊게 쥐면 손끝이 박스 위 모델 20 · 15 mm, 실물은 약 5 mm 더 높음)
+PLACED_PUCK_MARGIN = float(os.environ.get('PLACED_PUCK_MARGIN', '0.002'))   # 한 번만 낮출 때 PLACED_PUCK_MARGIN=0.001 (눈으로 보며) · 찬 칸에서 컵 위로 나온 퍽('cup X puck') 여유 — 이웃 두 칸이 차면 6 mm 로는 어느 손목 방향도 안 됨 (실물 B: 최악 2~3 mm, 퍽 크기에 밀림 2 mm 포함) · 3 → 2 mm: 스캔 C–D 간격 38.3 mm 로 컵(40 mm) 보다 좁게 잼 = 실제 ≥ 1.7 mm 숨은 여유, D 가 C 퍽과 [J3−2] 2 mm
 FLOOR_MARGIN = 0.025
 RACK_TOP = PLATE_TOP_Z + 0.060 + 0.020          # 퍽 윗면(상판 + 홀더 30 + 퍽 노출 30) + 여유 20 mm
 RACK_LINKS = ('link2', 'link3', 'link4', 'link5', 'finger_a', 'finger_b')
-# 적재함 칸 무리 (10-30 위에서 찍은 사진으로 어림, ±10 mm → 가로세로 15 mm 여유 포함): (x_min, x_max, y_min, y_max) base_link 기준 m
+# 적재함 칸 무리 (위에서 찍은 사진으로 어림, ±10 mm → 가로세로 15 mm 여유 포함): (x_min, x_max, y_min, y_max) base_link 기준 m
 #   왼쪽 2 열 × 4 줄 (칸 가운데 y +67 / +107, x +95 / +32 / −29 / −93) · 오른쪽 2 열 × 2 줄 (y −64 / −104, x +96 / +36), 칸 37.8 mm
 RACK_ZONES = [(-0.112, 0.114, 0.048, 0.126), (0.017, 0.115, -0.123, -0.045)]          # 칸 바깥 모서리 (여유 없음)
 RACK_XY_MARGIN, RACK_XY_MARGIN_STAND = 0.015, 0.003
@@ -88,12 +88,12 @@ SELF_PAIRS = [('link5', 'link1'), ('finger_a', 'link1'), ('finger_b', 'link1'), 
 STATIC_OK_NEAR_REST = ('park_stand',)
 
 
-# ---------- 자세 검사 결과 저장 (11-01) ----------
+# ---------- 자세 검사 결과 저장 ----------
 # 같은 틱 · 그리퍼 · 장애물 · 여유 · 모델 파일이면 결과가 같음 → 디스크에 저장해 다시 씀 (받침 복귀 길처럼 매번 같은 구간이 대부분).
 #   키에 장애물 목록 전체(이름 · 위치 · 크기)와 여유 값, 모델 · 보정 파일 내용 해시를 넣으므로 하나라도 바뀌면 예전 결과를 안 씀.
-#   NT_POSE_CACHE=0 이면 끔.
+#   POSE_CACHE=0 이면 끔.
 import atexit, hashlib, pickle  # noqa: E401,E402
-_CACHE_ON = os.environ.get('NT_POSE_CACHE', '1') != '0'
+_CACHE_ON = os.environ.get('POSE_CACHE', '1') != '0'
 _CACHE = {}
 _CACHE_NEW = {}
 
@@ -158,10 +158,10 @@ class Checker:
             t = sorted([a['ref_tick'] + a['sign'] * (d - a['q_deg_at_ref']) * 4096 / 360 for d in (lo, hi)])
             self.tick_rng.append(t)
         j4 = list(self.tick_rng[3])                                      # CAD 모델 J4 한계 [틱] (아래에서 그대로 씀)
-        # J1: 예전엔 ±150° 로 따로 묶었음 → 11-01 사용자 '리밋을 적게 잡지 마' · 손으로 L7 에 넣을 때 J1 5781 틱(148.6°) — 아래 ROS 범위(±π, 끝 2° 여유) 만 씀
-        # 팀 ROS (nt_opencr) 로 움직일 때 추가 한계: 일반 위치 모드는 펌웨어가 목표를 0~4095 로 잘라냄,
+        # J1: 손으로 L7 에 넣을 때 J1 5781 틱(148.6°) — 아래 ROS 범위(±π, 끝 2° 여유) 만 씀
+        # 팀 ROS (opencr) 로 움직일 때 추가 한계: 일반 위치 모드는 펌웨어가 목표를 0~4095 로 잘라냄,
         # robot.urdf.xacro 한계 J1 ±π · J2 ±1.5 · J3 −1.5~1.4 · J4 −1.7~1.97 · J5 ±1.5708 rad (rad = (틱 − 2048)·2π/4096), 끝에서 2° 여유
-        #   (10-30 20:05) 영점은 ros/hardware_map_arm_only.yaml (arm_map) — J1 영점 4088 · 확장 모드면 4095 상한 없음 (arm_tests/fw_ext 펌웨어 필요)
+        #   영점은 ros/hardware_map_arm_only.yaml (arm_map) — J1 영점 4088 · 확장 모드면 4095 상한 없음 (arm_tests/fw_ext 펌웨어 필요)
         import arm_map
         zs, ext = arm_map.zeros(), arm_map.extended()
         pad = 2 * 4096 / 360
@@ -172,13 +172,13 @@ class Checker:
             if not ext[k]:                                               # 일반 위치 모드: 펌웨어가 목표를 0 ~ 4095 로 자름
                 a_, b_ = max(a_, 0 + pad), min(b_, 4095 - 10)
             self.ros_rng.append([a_, b_])
-        # 11-01 사용자: 손으로 L7 · L8 에 넣어 보니 선 · 기구에 지장 없음 → '더 크게 풀어 줘'. 관절 범위 = 팀 ROS · URDF 범위(끝 2° 여유) 만.
-        #   예전 CAD 모델 한계(J4 52° = 2430 틱 등) 는 IK 탐색 범위로만 넓힘 (충돌은 그대로 이 검사가 봄)
+        # 손으로 L7 · L8 에 넣어 보니 선 · 기구에 지장 없음 → 관절 범위 = 팀 ROS · URDF 범위(끝 2° 여유) 만.
+        #   CAD 모델 한계(J4 52° = 2430 틱 등) 는 IK 탐색 범위로만 넓힘 (충돌은 그대로 이 검사가 봄)
         self.tick_rng = [list(r) for r in self.ros_rng]
         for j in range(3):
             self.M.lo[j] -= math.radians(30)
             self.M.hi[j] += math.radians(30)
-        # J4 는 CAD 한계 그대로 (위 −5°, 2430 틱): 11-01 12:15 넓혔더니 L1 칸 위에서 J4 2495 틱 · 전류 1.06 A → 8 s 뒤 과부하 멈춤 (기구 끝에 닿음)
+        # J4 는 CAD 한계 그대로 (위 −5°, 2430 틱): 넓혔더니 L1 칸 위에서 J4 2495 틱 · 전류 1.06 A → 8 s 뒤 과부하 멈춤 (기구 끝에 닿음)
         self.tick_rng[3] = [max(self.ros_rng[3][0], j4[0]), min(self.ros_rng[3][1], j4[1])]
         rest_bad = self.M.clearance(*self._qf(REST), {}, [], self_pairs=SELF_PAIRS)
         self.rest_close = {k for k, d in rest_bad.items() if d < MARGIN}
@@ -220,7 +220,7 @@ class Checker:
         """문제 목록 (빈 목록 = 통과) 과 최소 여유"""
         bad = []
         for k, (lo, hi) in enumerate(self.tick_rng):
-            if k == 3 and j4_hi:                                          # 시연 재생 구간만 J4 상한을 올림 (11-01 L7 · L8 꺼내기 — 기구 끝 약 2485 틱)
+            if k == 3 and j4_hi:                                          # 시연 재생 구간만 J4 상한을 올림 (L7 · L8 꺼내기 — 기구 끝 약 2485 틱)
                 hi = j4_hi
             if not lo <= ticks[k] <= hi:
                 bad.append(f'J{k + 1} 틱 {ticks[k]} 범위 밖 ({lo:.0f}~{hi:.0f})')
@@ -239,7 +239,7 @@ class Checker:
                 bad.append(f'{a} 상판 아래 관통 {d * 1000:.0f} mm'); continue
             mg = PLACED_PUCK_MARGIN if str(b).startswith('cup') and str(b).endswith(' puck') else \
                 next((v for k_, v in OBS_MARGIN.items() if str(b).startswith(k_)), None)
-            if j4_hi and str(b).startswith('cup') and mg is not None:       # 사람 시연 재생 구간: 실물로 안 닿은 자세라 컵 여유 3 mm (11-01 L7 쥐기 · 꺼내기)
+            if j4_hi and str(b).startswith('cup') and mg is not None:       # 사람 시연 재생 구간: 실물로 안 닿은 자세라 컵 여유 3 mm (L7 쥐기 · 꺼내기)
                 mg = min(mg, 0.003)
             if d < (mg if mg is not None else (STAND_MARGIN if allow_stand else MARGIN)):
                 bad.append(f'{a} ↔ {b} {d * 1000:.0f} mm')
@@ -289,7 +289,7 @@ GRIP_JM = {'closed': 3504, 'open': 1755, 'held': 2245, 'release': 2098}   # 검�
 def full_sequence(poses, start_here=False, end_here=False):
     """실행기가 그대로 따라갈 전체 순서: 받침 → 세우기 경유점 → 자세들 → P0 → 세우기 역순 → 받침.
     (이름, 틱, 세우기 구간?, 멈춤?, enc, 덧붙임{grip · held_kg}) — 자세 파일의 'stop' (기본 true) · 'grip' (open | close, 도착 뒤) · 'held_kg' · 'speed' (그 자세로 가는 최고 °/s) 그대로"""
-    # start_here · end_here (10-31, 두 번에 나눈 적재 load_cycle.sh): 받침 세우기 없이 첫 자세(지금 자세 = 들기) 에서 시작 · 마지막 자세에서 끝 (복귀 없음)
+    # start_here · end_here (두 번에 나눈 적재 load_cycle.sh): 받침 세우기 없이 첫 자세(지금 자세 = 들기) 에서 시작 · 마지막 자세에서 끝 (복귀 없음)
     seq = [] if start_here else [('받침', REST, True, False, None, {})] + [(n, t, True, False, None, {}) for n, t in STANDUP]
     seq += [(p['name'], [int(x) for x in p['ticks']], False, p.get('stop', True), p.get('enc'),
              {k: p[k] for k in ('grip', 'held_kg', 'speed', 'rack', 'j4_hi') if k in p}) for p in poses]
@@ -306,7 +306,7 @@ def check_file(C, poses, stamp_path=None, start_here=False, end_here=False):
     seq = full_sequence(poses, start_here, end_here)
     print(f"{'자세':10s} {'틱 J1..J5':32s} 결과")
     g0 = 'held' if start_here and poses and poses[0].get('held_kg') else 'closed'   # 퍽을 쥔 채 시작 (넣기 실행)
-    # 경로 검사(가장 오래 걸림, 34 s)를 먼저 여러 스레드로 (11-01: 구간끼리 독립 · Open3D 거리 계산은 스레드 병렬. NT_SAFETY_THREADS=1 이면 예전처럼 차례로)
+    # 경로 검사(가장 오래 걸림, 34 s)를 먼저 여러 스레드로 (구간끼리 독립 · Open3D 거리 계산은 스레드 병렬. SAFETY_THREADS=1 이면 예전처럼 차례로)
     jobs, gq, pv = [], g0, None
     for name, t, std, stop, enc, ex in seq:
         if pv is not None:
@@ -315,7 +315,7 @@ def check_file(C, poses, stamp_path=None, start_here=False, end_here=False):
             gq = ex['grip'] if ex['grip'] in ('open', 'release') else ('held' if ex.get('held_kg') or name.startswith('grasp') else 'closed')
         pv = (name, t, std, gq, bool(ex.get('rack')), ex.get('j4_hi'))
     from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=max(1, int(os.environ.get('NT_SAFETY_THREADS', '6')))) as ex_:
+    with ThreadPoolExecutor(max_workers=max(1, int(os.environ.get('SAFETY_THREADS', '6')))) as ex_:
         path_res = list(ex_.map(lambda j: C.path(j[0], j[1], grip=j[2], allow_stand_ends=j[3], stand_a=j[4], stand_b=j[5], rack_zone=j[6], j4_hi=j[7]), jobs))
     prev = None
     g = g0
@@ -331,7 +331,7 @@ def check_file(C, poses, stamp_path=None, start_here=False, end_here=False):
             print(f"{name if gi == 0 else '':10s} {str(t):32s} {msg}{'  [멈춤]' if stop and gi == 0 else ''}{tag}")
             ok &= not bad
         if enc is not None:                                               # 처짐 앞먹임 명령 자세 (실제 팔은 t 근처) 도 검사
-            # 명령 자세 = 처짐이 없다고 본 자리 (실제 팔은 t 근처) → 처짐 가설(±2°) 없이 원래 모델만. t 자체는 위에서 가설까지 검사 (11-01: 둘 다 얹으면 이중으로 셈)
+            # 명령 자세 = 처짐이 없다고 본 자리 (실제 팔은 t 근처) → 처짐 가설(±2°) 없이 원래 모델만. t 자체는 위에서 가설까지 검사 (둘 다 얹으면 이중으로 셈)
             bad2, w2 = C.pose(enc, grip=GRIP_JM[g], allow_stand=std, rack_zone=not ex.get('rack'), hyps=False, j4_hi=ex.get('j4_hi'))
             print(f"{'  (명령)':10s} {str(enc):32s} {'통과 (여유 %.0f mm)' % (w2 * 1000) if not bad2 else '✗ ' + '; '.join(bad2)}")
             ok &= not bad2

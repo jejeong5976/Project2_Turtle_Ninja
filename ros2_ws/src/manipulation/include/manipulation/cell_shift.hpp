@@ -29,7 +29,7 @@ struct CellShiftReport
 
 // path (store_<칸> · retrieve_<칸>) 의 칸 근처 점을 base_link 수평 d [m] 만큼 옮김. 실패면 path 그대로 + why
 //   실패: 경유점 이름 (P0_복귀 · P0) 없음, 손끝을 0.2 mm 안으로 못 옮김, 접근축이 1° 넘게 바뀜, 관절 범위 밖
-// dz: 칸 근처를 위아래로도 옮김 [m] (− = 아래, 11-07: 퍽을 칸 위에서 떨어뜨리지 않고 더 내려 놓기)
+// dz: 칸 근처를 위아래로도 옮김 [m] (− = 아래,: 퍽을 칸 위에서 떨어뜨리지 않고 더 내려 놓기)
 bool shift_cell_path(
   const ArmModel & m, ArmPath & path, bool store, const Eigen::Vector2d & cell_xy, const Eigen::Vector2d & d,
   CellShiftReport & rep, std::string & why, double dz = 0.0);

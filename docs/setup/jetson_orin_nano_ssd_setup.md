@@ -2,7 +2,7 @@
 
 중고 NVMe SSD를 Jetson Orin Nano에 장착하고, SDK Manager로 JetPack 7.2.1을 SSD에 직접 플래시한 뒤 상태를 점검한 기록.
 
-- 작업일: 2026-10-16
+- 작업일:
 - 호스트 PC: Ubuntu 24.04.5 (x86_64), SDK Manager 26.1.0
 - 결과: SSD 부팅 성공, 구성 요소 30개 전부 설치, SSD 상태 정상 (거의 미사용)
 
@@ -46,7 +46,7 @@ Orin Nano 개발자 키트 뒷면에는 M.2 Key M 슬롯이 2개 있다.
 
 ## 2. 작업 전 상태와 문제
 
-전날(10/15) 상태를 SDK Manager 로그(`~/.nvsdkm/`)로 확인했다.
+전날 상태를 SDK Manager 로그(`~/.nvsdkm/`)로 확인했다.
 
 | 확인 | 결과 |
 |---|---|

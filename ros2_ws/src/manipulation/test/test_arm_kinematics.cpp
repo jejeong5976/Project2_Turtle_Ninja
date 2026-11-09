@@ -124,7 +124,7 @@ TEST(ArmKinematics, TiltPreferenceAndLimit)
   EXPECT_TRUE(manipulation::pick_poses(m, 0.30, 0.0, 0.058, std::nan(""), {40, 10, -23}, why, std::nan(""), 30.0, 0.0, 0.0).empty());
 }
 
-// 쥐기 −40 mm (control 기본, 11-01 실물 넣기 깊이): 박스 자리 · 옆 자리 · 먼 자리(기울인 손)에서 풀리고 −30 보다 손끝이 10 mm 낮음
+// 쥐기 −40 mm (control 기본, 실물 넣기 깊이): 박스 자리 · 옆 자리 · 먼 자리(기울인 손)에서 풀리고 −30 보다 손끝이 10 mm 낮음
 TEST(ArmKinematics, PickDepth40Reachable)
 {
   const auto m = kin_data::model();

@@ -40,7 +40,7 @@ def near_flags(seq):
     import pose_safety as ps
     import rack_load
     C = ps.Checker()
-    rc = json.loads(Path(os.path.join(os.environ.get('NT_ARM_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'arm')), 'rack_cells.json')).read_text())
+    rc = json.loads(Path(os.path.join(os.environ.get('ARM_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'arm')), 'rack_cells.json')).read_text())
     xs = [c['xy'][0] for c in rc['cells'].values()]
     ys = [c['xy'][1] for c in rc['cells'].values()]
     out = []
@@ -76,7 +76,7 @@ def warn_summary(n):
 def stand_paths():
     """표준 펼치기(받침 → P0) · 접기(P0 → 받침) — pose_safety 의 실물 검증 순서. 기준점(박스 위 들기) 자세"""
     sys.path.insert(0, str(HERE))
-    sys.path.insert(0, os.environ.get('NT_REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
+    sys.path.insert(0, os.environ.get('REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
     import pose_safety as ps
     mk = lambda items: [dict(name=n, ticks=list(t), stand=True, stop=False) for n, t in items]
     (OUT / 'unfold.checked.json').write_text(json.dumps(dict(sequence=mk([('받침', ps.REST)] + ps.STANDUP)), ensure_ascii=False))
