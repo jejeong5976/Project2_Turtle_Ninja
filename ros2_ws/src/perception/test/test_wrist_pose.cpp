@@ -283,7 +283,7 @@ TEST(Geometry, SupportHeightDecidesUpright)
 
 TEST(Geometry, FlatPrintIsNotAPuck)
 {
-  // 11-07 실물: 상자에 인쇄된 로고를 퍽으로 분할 → 둘레보다 안 솟았으면 퍽 아님 (min_rise_m)
+  // 실물: 상자에 인쇄된 로고를 퍽으로 분할 → 둘레보다 안 솟았으면 퍽 아님 (min_rise_m)
   const Intrinsics K{600.0, 600.0, 320.0, 240.0};
   const Vec3 up(0, 0, -1);
   cv::Mat1f depth(480, 640, 0.30f);

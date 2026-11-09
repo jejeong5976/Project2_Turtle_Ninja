@@ -18,7 +18,7 @@
 // 쥔 퍽: 퍽 윗면 태그가 카메라에서 held_max_dist_m 안 (손목 카메라는 J5 뒤 wrist_link 에 붙어 손과 같이 움직임) 이면 쥔 퍽으로 봄
 //   → 태그 크기 (puck_tag_size_m) 로 PnP 해서 태그 중심 · 면 방향 (z 축) 을 wrist_link 좌표로 /held_puck/tag
 //      (interfaces/DetectionArray, kind "held_tag", id = 태그 ID, frame wrist_link)
-//   control_master 가 PICK 뒤 박스 위 기준점에서 이것을 모아 손 안 퍽 위치를 잼 (기준점에서 보이는 것은 대개 퍽 옆면 태그, 11-04 화면)
+//   control_master 가 PICK 뒤 박스 위 기준점에서 이것을 모아 손 안 퍽 위치를 잼 (기준점에서 보이는 것은 대개 퍽 옆면 태그, 화면)
 
 #include <algorithm>
 #include <cmath>
@@ -52,7 +52,7 @@ extern "C" {
 }
 #endif
 
-#include "cv_bridge/cv_bridge.hpp"
+#include "image_cv.hpp"
 #include "interfaces/msg/detection_array.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
@@ -329,16 +329,16 @@ private:
       Eigen::AngleAxisd(prev_cam_.linear().transpose() * T.linear()).angle() < still_rad_;
     prev_cam_ = T;
 
-    cv_bridge::CvImageConstPtr gray;
+    cv::Mat gray;
     try {
-      gray = cv_bridge::toCvShare(msg, "mono8");
+      gray = image_cv::to_mono8(*msg);
     } catch (const std::exception & e) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, "영상 변환 실패 (%s): %s", msg->encoding.c_str(), e.what());
       return;
     }
     std::vector<std::vector<cv::Point2f>> corners;
     std::vector<int> ids;
-    detect(gray->image, corners, ids);
+    detect(gray, corners, ids);
 
     interfaces::msg::DetectionArray out;
     out.header.stamp = msg->header.stamp;
@@ -399,11 +399,11 @@ private:
     pub_->publish(out);
 #ifdef RACK_TAG_HAVE_APRILTAG
     // 쥔 퍽은 늘 화면 오른쪽 아래 끝에 걸쳐 보임 (손목 카메라가 손과 같이 움직임) → 흰 테두리가 잘리면 AprilTag 3 가 놓침
-    //   (11-04 화면 2 장 중 1 장) → OpenCV aruco 로 한 번 더 (퍽 태그만). 대비 올린 (CLAHE) 영상에서는 그 장도 못 찾아서 원본으로
+    //   (화면 2 장 중 1 장) → OpenCV aruco 로 한 번 더 (퍽 태그만). 대비 올린 (CLAHE) 영상에서는 그 장도 못 찾아서 원본으로
     if (!held_seen) {
       std::vector<std::vector<cv::Point2f>> c2;
       std::vector<int> i2;
-      detect_aruco(gray->image, c2, i2);
+      detect_aruco(gray, c2, i2);
       for (size_t k = 0; k < i2.size(); ++k) {
         std::vector<cv::Point2f> n;
         Eigen::Vector3d held;
@@ -420,7 +420,7 @@ private:
   }
 
   // 컵 벽 그림자로 태그 종이가 어둡게 찍힘 (자동 노출은 밝은 책상에 맞음) → 대비를 조각마다 올린 뒤 (CLAHE) 검출
-  //   실물 11-03 스캔 사진 73 장: 그대로 OpenCV 는 12 칸 중 2 칸, CLAHE + AprilTag 3 는 12 칸 다 (오류 비트 0)
+  //   실물 스캔 사진 73 장: 그대로 OpenCV 는 12 칸 중 2 칸, CLAHE + AprilTag 3 는 12 칸 다 (오류 비트 0)
   void detect(const cv::Mat & gray, std::vector<std::vector<cv::Point2f>> & corners, std::vector<int> & ids)
   {
     corners.clear();

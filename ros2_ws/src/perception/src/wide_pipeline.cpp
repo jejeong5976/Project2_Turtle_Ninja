@@ -6,7 +6,7 @@
 #include <tuple>
 #include <utility>
 
-#include <cv_bridge/cv_bridge.hpp>
+#include "image_cv.hpp"
 #include <opencv2/imgproc.hpp>
 
 #include "barcode.hpp"
@@ -132,9 +132,9 @@ void WidePipeline::on_image(const Image::ConstSharedPtr & msg)
 
   cv::Mat img;
   try {
-    img = cv_bridge::toCvShare(msg, "bgr8")->image;
+    img = image_cv::to_bgr8(*msg);
   } catch (const std::exception & e) {
-    RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wide] cv_bridge: %s", e.what());
+    RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wide] 영상 변환: %s", e.what());
     return;
   }
   auto header = msg->header;   // stamp = 촬영 시각 그대로, frame_id 만 URDF 이름으로
@@ -253,7 +253,7 @@ void WidePipeline::publish_debug(
       light_rule_.v_margin);
   cv::putText(vis, txt, cv::Point(10, 25), font, 0.7, {0, 0, 0}, 4);
   cv::putText(vis, txt, cv::Point(10, 25), font, 0.7, {255, 255, 255}, 1);
-  debug_pub_->publish(*cv_bridge::CvImage(header, "bgr8", vis).toImageMsg());
+  debug_pub_->publish(*image_cv::bgr8_msg(header, vis));
 }
 
 }  // namespace perception

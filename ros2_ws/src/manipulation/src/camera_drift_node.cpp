@@ -1,7 +1,7 @@
 // camera_drift_node — 팔이 홈 자세에 멈출 때마다 손목 카메라 사진을 기준 사진 (잘 될 때 홈 사진) 과 비교해
 //   카메라가 손목에서 돈 만큼을 /wrist_cam/drift (QuaternionStamped, 래치) 로 냄 → control_master 가 손목 검출을 그만큼 되돌려 씀
 // =====================================================================
-// 11-05 실물: 세우기 때 손이 박스를 누르며 카메라 경첩이 3.8° 돌아 어제 맞춘 집기 보정이 다 틀어짐 (팔 관절값은 그대로).
+// 실물: 세우기 때 손이 박스를 누르며 카메라 경첩이 3.8° 돌아 어제 맞춘 집기 보정이 다 틀어짐 (팔 관절값은 그대로).
 // 홈 자세는 늘 같은 관절이라 사진 속 로봇 몸통이 움직였으면 카메라가 돈 것 (camera_drift.hpp).
 //   - 홈 판정: /joint_states 의 joint1..5 가 home_q ± home_tol_rad 안에 still_s 동안 → 사진 한 장 (홈에 올 때마다 한 번)
 //   - 사진 아래쪽 (roi_y0 부터, 몸통) ORB 특징 → 기준과 맞춤 (RANSAC) → 회전. 점이 min_points 보다 적거나 남는 차가 max_resid_px 넘거나
@@ -10,8 +10,8 @@
 //   - ~/save_reference (std_srvs/Trigger): 다음 홈 사진을 새 기준으로 (~/.ros/camera_drift/ref.png) 저장.
 //     ref_keeps_drift true (기본) = 그때 쓰던 보정을 ref_base.txt 에 같이 저장하고 이어 씀 (보정 값이 안 끊김 — 받침 · 선처럼
 //     홈 사진 속 몸통이 바뀌었을 때). false = 보정 0 에서 다시 (손눈 보정을 새로 했을 때만). 기준 = 집기 · 적재가 잘 되는 상태에서만.
-//     없으면 reference_image (설치된 config/camera_home_ref.png, 11-04 저녁) · 이어 쓸 보정 없음
-//   - 11-08 실물: 11-07 17:40 받침을 바꾸자 옛 기준과 점이 17 개만 맞아 측정이 멈춤 → 옛 값 1.17° 를 계속 씀.
+//     없으면 reference_image (설치된 config/camera_home_ref.png) · 이어 쓸 보정 없음
+//   - 실물: 받침을 바꾸자 옛 기준과 점이 17 개만 맞아 측정이 멈춤 → 옛 값 1.17° 를 계속 씀.
 //     그사이 카메라는 1.45° (0.56° 차이) → 퍽을 약 3 mm 밀려 잡음. min_points 를 잠깐 낮춰 1.45° 를 잰 뒤 새 기준 + 이어 쓰기로 고침
 
 #include <algorithm>
@@ -30,7 +30,7 @@
 #include <opencv2/features2d.hpp>
 #include <opencv2/imgcodecs.hpp>
 
-#include "cv_bridge/cv_bridge.hpp"
+#include "image_cv.hpp"
 #include "geometry_msgs/msg/quaternion_stamped.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
@@ -64,7 +64,7 @@ public:
     const fs::path user_ref = dir_ / "ref.png";
     declare_parameter<bool>("ref_keeps_drift", true);   // 새 기준을 찍을 때 그때 보정을 이어 씀 (false = 0 에서 다시). 서비스 부를 때 읽음
     ref_path_ = fs::exists(user_ref) ? user_ref.string() : ref_default;
-    // 새 기준을 찍을 때 쓰던 보정 (ref_base.txt) — 우리가 찍은 기준 (ref.png) 에만 딸림. 파일이 없으면 단위 (예전과 같음)
+    // 새 기준을 찍을 때 쓰던 보정 (ref_base.txt) — 우리가 찍은 기준 (ref.png) 에만 딸림. 파일이 없으면 단위
     if (ref_path_ == user_ref.string()) {base_ = load_base(dir_ / "ref_base.txt", user_ref);}
     ref_ = ref_path_.empty() ? cv::Mat() : cv::imread(ref_path_, cv::IMREAD_GRAYSCALE);
     if (ref_.empty()) {
@@ -116,7 +116,7 @@ private:
     sub_img_.reset();   // 한 장만
     cv::Mat gray;
     try {
-      gray = cv_bridge::toCvCopy(im, "mono8")->image;
+      gray = image_cv::to_mono8(*im).clone();
     } catch (const std::exception & e) {
       RCLCPP_WARN(get_logger(), "손목 사진을 못 바꿈 (%s)", e.what());
       return;
@@ -124,7 +124,7 @@ private:
     if (save_ref_) {
       save_ref_ = false;
       // 새 사진으로 바꾸기 전에 같은 영상을 옛 기준과 한 번 재 봄 → 통과하면 이어 쓸 보정 = 그 측정을 이은 총 보정 (지금 낼 값과 같음).
-      //   못 재면 (받침이 바뀌어 점이 모자람 등) 마지막으로 낸 current_ 를 그대로 — 그사이 카메라가 더 돌았을 수 있음 (11-08 밤 검수)
+      //   못 재면 (받침이 바뀌어 점이 모자람 등) 마지막으로 낸 current_ 를 그대로 — 그사이 카메라가 더 돌았을 수 있음 (검수)
       manipulation::CameraDrift d;
       std::string why;
       bool measured = measure(gray, d, why);
@@ -255,13 +255,13 @@ private:
     std::error_code ec;
     const auto size = fs::file_size(png, ec);
     if (ec) {return "";}
-    // 수정 시각은 POSIX stat 의 Unix 초 — file_clock 은 기준 시각이 구현마다 달라 짝이 어긋날 수 있음 (11-09 검수)
+    // 수정 시각은 POSIX stat 의 Unix 초 — file_clock 은 기준 시각이 구현마다 달라 짝이 어긋날 수 있음 (검수)
     struct stat st{};
     if (::stat(png.c_str(), &st) != 0) {return "";}
     return manipulation::ref_base_tag(size, st.st_mtime);
   }
 
-  // ref_base.txt: 첫 줄 사원수, 둘째 줄 (11-08 부터) 기준 사진 짝. 사진만 바뀌어 짝이 안 맞으면 단위 (옛 보정을 이어 쓰지 않음). 옛 형식 (사원수만) 은 그대로
+  // ref_base.txt: 첫 줄 사원수, 둘째 줄 기준 사진 짝. 사진만 바뀌어 짝이 안 맞으면 단위 (옛 보정을 이어 쓰지 않음). 옛 형식 (사원수만) 은 그대로
   Eigen::Quaterniond load_base(const fs::path & p, const fs::path & png)
   {
     std::ifstream f(p);

@@ -1,5 +1,5 @@
 // test_wrist_box.cpp — 박스 윗면 중심 · 방향 시험: 광선 추적 깊이 (잡음 · 구멍) 로 오차 · 실패 판정
-//   카메라 = feat/moveit-config URDF 의 LOOK 자세 (mock control_master, 처짐 보정 TF, 2026-11-04) → 박스 앞쪽 절반만 보임
+//   카메라 = feat/moveit-config URDF 의 LOOK 자세 (mock control_master, 처짐 보정 TF) → 박스 앞쪽 절반만 보임
 //   실행: colcon build → ./build/perception/test_wrist_box
 
 #include <gtest/gtest.h>
@@ -28,7 +28,7 @@ Mat3 cam_R()
 }
 const Vec3 CAM_T(0.226527, 0.018615, 0.321958);
 
-// 새 LOOK 후보 (박스 전체가 보임, 2026-11-04 순기구학 탐색): 박스 중심 0.2575 m (차체 앞 0.145 와 틈 10 mm) 기준
+// 새 LOOK 후보 (박스 전체가 보임, 순기구학 탐색): 박스 중심 0.2575 m (차체 앞 0.145 와 틈 10 mm) 기준
 //   팀 관절 [0.0078, -0.0942, -0.731, 0.3447, -0.0386], 카메라 높이 0.373 m, 광축 수직에서 4.8°
 Mat3 new_R()
 {

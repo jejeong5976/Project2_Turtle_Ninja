@@ -11,7 +11,7 @@
 
 | 토픽 | 타입 | 내용 |
 |---|---|---|
-| `/perception/wide/detections` · `/perception/wrist/detections` | `interfaces/DetectionArray` | 퍽만. 카메라마다 토픽 따로 (2026-11-02, 예전 한 토픽 `/perception/detections`). 처리한 영상마다, 못 찾으면 빈 배열 (= 그 카메라에서 못 찾음). 광각은 위치 NaN, planning 은 손목만 받음 |
+| `/perception/wide/detections` · `/perception/wrist/detections` | `interfaces/DetectionArray` | 퍽만. 카메라마다 토픽 따로. 처리한 영상마다, 못 찾으면 빈 배열 (= 그 카메라에서 못 찾음). 광각은 위치 NaN, planning 은 손목만 받음 |
 | `/perception/rack/cells` | `interfaces/DetectionArray` | 적재함 칸. 컵 바닥 AprilTag ID 20–31 (36h11, 검은 테두리 26 mm), 칸 ↔ ID 는 `rack.cell_tag_ids` 표 (실물은 위치 순서로 붙여 S 번호 순서와 다름). `frame_id` = `base_link`, `kind` = `rack_cell`, `label` = 칸 이름, `id` = 태그 ID, pose = 칸 바닥 중심 + yaw (x = 로봇 앞, xacro `rack_cell_<칸>_link` 와 같은 축). 카메라가 멈춘 장만 셈, 칸마다 5 장 중 3 장이면 중앙값. `~/rack/enable` 로 켜고 끔 |
 | `/perception/traffic_light` | `interfaces/TrafficLight` | RED / YELLOW / GREEN / OFF / UNKNOWN + `visible`. 이번 영상에서 못 찾으면 UNKNOWN + `visible=false` |
 | `/perception/task_text` | `interfaces/TaskText` | 바코드 원문 `raw_text`. **기본 꺼짐**, planning 이 READ_BARCODE 단계에서 `~/barcode/enable` 로 켜고 나가면 끔. 켜져 있는 동안 최근 5 장 중 3 장 같고 이번 장도 그 값이면 보냄. 못 읽은 장도 다수결에 들어가 안 보이면 확정이 풀림 |

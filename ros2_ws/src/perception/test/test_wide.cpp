@@ -146,7 +146,7 @@ using perception::classify_traffic_light;
 const std::vector<TrafficLightTier> TIERS{{"red", 0.10, 0.40}, {"yellow", 0.40, 0.70}, {"green", 0.70, 1.00}};
 const TrafficLightRule RULE{};
 
-// 실측 (2026-11-03) 처럼 포화된 탑: 꺼진 렌즈도 V 255 · 색 진함, 켜진 칸만 흰색
+// 실측 처럼 포화된 탑: 꺼진 렌즈도 V 255 · 색 진함, 켜진 칸만 흰색
 cv::Mat saturated_tower(const std::string & lit)
 {
   const std::map<std::string, cv::Scalar> off{
