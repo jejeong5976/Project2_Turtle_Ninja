@@ -240,6 +240,7 @@ public:
 
   // 목표 보내기. targets 는 관절 순서 · 관절 단위, NaN(또는 inf) = 목표 없음
   //   → 펌웨어가 바퀴는 0, 위치 모터는 마지막 목표에서 버팀
+  //   여러 바퀴 관절은 바퀴 보정을 아직 안 정했으면 (CONFIG · 통신 끊김 뒤 첫 정상 측정 전) 목표 없음으로 보냄
   bool send_command(const std::vector<double> & targets, bool torque);
 
   // 들어온 바이트 처리. 돌려줌: 새로 받은 STATE 개수 (-1 = 포트 고장)
@@ -305,8 +306,9 @@ private:
   bool pos_limits_ok_ = false;
   uint32_t torque_fail_count_ = 0;
   Clock::time_point torque_fail_time_{};
-  // 여러 바퀴 모드 관절: CONFIG 뒤 첫 측정에서 바퀴 보정을 정했나 · 몇 바퀴 · 로그용 설명
+  // 여러 바퀴 모드 관절: CONFIG (또는 통신 끊김) 뒤 첫 측정에서 바퀴 보정을 정했나 · 몇 바퀴 · 로그용 설명
   std::vector<uint8_t> turn_set_;
+  std::vector<uint8_t> turn_lost_;   // comm_err 로 지웠음 → 다시 정할 때 바퀴가 바뀌었으면 알림
   std::vector<int> turn_k_;
   std::string turn_note_;
 };

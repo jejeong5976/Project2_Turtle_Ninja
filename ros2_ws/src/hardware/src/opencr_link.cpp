@@ -121,6 +121,7 @@ OpenCRLink::OpenCRLink(std::vector<JointSpec> joints, uint8_t bus_watchdog)
   position_rates_.resize(joints_.size());
   temps_.assign(joints_.size(), -1);
   turn_set_.assign(joints_.size(), 0);
+  turn_lost_.assign(joints_.size(), 0);
   turn_k_.assign(joints_.size(), 0);
 }
 
@@ -180,6 +181,7 @@ int OpenCRLink::configure(double timeout_s)
   //   (CONFIG 전에 받은 STATE 는 옛 세는 법이라 쓰지 않음 — 위 PositionRate 와 같은 까닭)
   for (std::size_t i = 0; i < joints_.size(); ++i) {joints_[i].turn_rad = 0.0;}
   turn_set_.assign(joints_.size(), 0);
+  turn_lost_.assign(joints_.size(), 0);
   turn_k_.assign(joints_.size(), 0);
   return ack_mask_;
 }
@@ -192,7 +194,10 @@ bool OpenCRLink::send_command(const std::vector<double> & targets, bool torque)
   c.n = static_cast<uint8_t>(joints_.size());
   for (std::size_t i = 0; i < joints_.size(); ++i) {
     const double t = i < targets.size() ? targets[i] : NAN;
-    if (std::isfinite(t)) {
+    // 여러 바퀴 관절은 바퀴 보정을 정하기 전 (CONFIG · 통신 끊김 뒤 첫 정상 측정 전) 엔 목표를 안 보냄 — 옛 turn_rad 로 보내면 모터가 이미 다시 센 뒤라 한 바퀴 돌 수 있음 (11-09 검수)
+    //   valid 비트가 꺼진 위치 모터는 펌웨어가 목표를 안 바꿈 = 마지막 목표에서 버팀 (motor_bus.cpp bus_write_targets)
+    const bool turn_ready = !is_multi_turn(joints_[i]) || turn_set_[i];
+    if (std::isfinite(t) && turn_ready) {
       c.valid = static_cast<uint16_t>(c.valid | (1u << i));
       c.target[i] = static_cast<float>(joint_to_motor(joints_[i], t));   // 관절 단위 → 모터 rad (영점 · 방향 포함)
     } else {
@@ -227,19 +232,35 @@ int OpenCRLink::poll()
         if (state_.joints_valid) {
           for (std::size_t i = 0; i < joints_.size(); ++i) {
             const double k_scale = joints_[i].scale;
-            // 여러 바퀴 모드: 이번 CONFIG 뒤 처음 읽은 값으로 바퀴 보정을 정함 (못 읽은 모터 = 옛 값이라 기다림)
+            // 통신 끊김 (T1 켠 채 팔 전원이 잠깐 나감 등) 뒤엔 모터가 0 ~ 4095 로 다시 셀 수 있음 → 바퀴 보정을 다음 정상 측정에서 다시 정함 (11-08 밤 검수)
+            //   J1 (영점 ± 2025 눈금) · 그리퍼는 영점 ± 반 바퀴 안이라 언제 다시 정해도 답이 하나 → 정상 때 동작은 그대로
+            if (is_multi_turn(joints_[i]) && turn_set_[i] && (s.comm_err & (1u << i))) {
+              turn_set_[i] = 0;
+              turn_lost_[i] = 1;
+            }
+            // 여러 바퀴 모드: 이번 CONFIG (또는 통신 끊김) 뒤 처음 읽은 값으로 바퀴 보정을 정함 (못 읽은 모터 = 옛 값이라 기다림)
             if (is_multi_turn(joints_[i]) && !turn_set_[i] && !(s.comm_err & (1u << i)) && std::isfinite(s.pos[i])) {
               const double t = unwrap_turn_rad(s.pos[i], joints_[i].zero_rad);
+              const int old_k = turn_k_[i];
+              const bool relost = turn_lost_[i] != 0;   // 통신 끊긴 뒤 다시 정함
               joints_[i].turn_rad = t;
               turn_set_[i] = 1;
+              turn_lost_[i] = 0;
               turn_k_[i] = static_cast<int>(std::lround(t / (2.0 * M_PI)));
-              if (turn_k_[i] != 0) {
+              // 알림: 켤 때 0 바퀴가 아니거나, 다시 정했는데 바퀴가 바뀌었으면
+              if (relost ? turn_k_[i] != old_k : turn_k_[i] != 0) {
                 const double tick_now = s.pos[i] * 4096.0 / (2.0 * M_PI) + 2048.0;
                 const double q = motor_to_joint(joints_[i], s.pos[i]);
                 const bool rad = std::fabs(joints_[i].scale - 1.0) < 1e-9;   // 그리퍼는 관절 단위가 m
-                char b[260];
-                std::snprintf(b, sizeof(b), "%s%s: 켤 때 한 바퀴 넘어간 값 (모터 눈금 %.0f) → %+d 바퀴 (%+d 눈금) 더해 관절 %+.4f %s 로 봄",
-                  turn_note_.empty() ? "" : " · ", joints_[i].name.c_str(), tick_now, turn_k_[i], 4096 * turn_k_[i],
+                char why[96];
+                if (relost) {
+                  std::snprintf(why, sizeof(why), "통신 끊긴 뒤 다시 센 값 (%+d 바퀴였음)", old_k);
+                } else {
+                  std::snprintf(why, sizeof(why), "켤 때 한 바퀴 넘어간 값");
+                }
+                char b[320];
+                std::snprintf(b, sizeof(b), "%s%s: %s (모터 눈금 %.0f) → %+d 바퀴 (%+d 눈금) 더해 관절 %+.4f %s 로 봄",
+                  turn_note_.empty() ? "" : " · ", joints_[i].name.c_str(), why, tick_now, turn_k_[i], 4096 * turn_k_[i],
                   rad ? q * 180.0 / M_PI : q, rad ? "°" : "(관절 단위)");
                 turn_note_ += b;
               }
