@@ -1,8 +1,8 @@
 # 적재함 12 칸 — 칸 ID S1~S12 (팔 J1 축에서 먼 칸부터). 채우는 순서는 config/planning.yaml cargo_slots (실물 시험 순서)
 #   같은 ID: URDF rack_cell_<ID>_link · config/planning.yaml cargo_slots · config/arm_paths.yaml store_<ID> · retrieve_<ID> · ArmTask.slot
-# xy (11-06 새 적재함): URDF rack_cell_<ID>_link (CAD 칸 바닥 중심) + 가운데 통로 2 mm (자로 잼: S5↔S6 60 · S6↔S11 45 · S11↔S12 · S10↔S9 140 mm,
+# xy (새 적재함): URDF rack_cell_<ID>_link (CAD 칸 바닥 중심) + 가운데 통로 2 mm (자로 잼: S5↔S6 60 · S6↔S11 45 · S11↔S12 · S10↔S9 140 mm,
 #   URDF 는 138 → 왼쪽 8 칸 y +1 · 오른쪽 4 칸 y −1 mm). 손목 카메라 스캔은 칸 간격을 66–72 · 47 mm 로 재서 (자와 6–12 mm 차) 안 씀
-#   옛 적재함 값 (11-01 넣기 · 빼기 12 칸 성공 때): backups/rack_cells_1106/rack_cells.yaml. yaw · place_offset 은 옛 값 그대로
+#   yaw · place_offset 은 넣기 · 빼기 12 칸 성공 때 값
 # base_link 기준 [m], 칸 방향 yaw [°]
 #   measured_name: 실물 시험 때 이름 (기록 · runs 를 찾을 때)
 #   place_offset: 칸에 넣을 때 팔을 옮긴 보정 [m] (실물에서 맞춘 값)
@@ -24,13 +24,13 @@ rack_cells:
     S12: {measured_name: C, xy: [0.018000, -0.071900], yaw_deg: -5.080, place_offset: [0.0030, -0.0017]}
 
 # 칸 바닥 AprilTag (tag36h11, 검은 사각 한 변 size_m) — 손목 카메라로 칸 위치 재기 (manipulation rack_tag_node)
-#   ids: 칸 → 그 칸 바닥에 붙인 태그 ID (실물 11-03 붙인 그대로, 위치 순서라 S 번호와 다름 — perception wrist_rack 과 같은 표)
+#   ids: 칸 → 그 칸 바닥에 붙인 태그 ID (실물 붙인 그대로, 위치 순서라 S 번호와 다름 — perception wrist_rack 과 같은 표)
 #   실제로 붙인 것과 다르면 노드가 '태그 ID n: S? 자리가 아니라 S? 자리' 경고 → 여기를 고침
 rack_tags:
   size_m: 0.026
   ids: {S1: 20, S2: 21, S3: 22, S4: 31, S5: 26, S6: 24, S7: 29, S8: 23, S9: 30, S10: 27, S11: 25, S12: 28}
 
-# 칸 제약 — 그 동작 때 비어 있어야 하는 칸 (11-02 pose_safety 최악 검사: 대상 칸 말고 11 칸이 다 찬 상태로 실물 재생 경로 검사)
+# 칸 제약 — 그 동작 때 비어 있어야 하는 칸 (pose_safety 최악 검사: 대상 칸 말고 11 칸이 다 찬 상태로 실물 재생 경로 검사)
 #   실제로 닿음: 빼기 S7 ← S12 퍽 (−13 mm), 넣기 · 빼기 S10 ← S5 퍽 (−8 · −9 mm)
 #   경계값 (관절 ±2° 오차를 넣었을 때 −1 ~ 2 mm, 실물로 확인하기 전까지 지킴): S1 ← S2 (넣기 · 빼기), 넣기 S9 ← S4 · S11 ← S6 · S12 ← S7
 #   config/planning.yaml cargo_slots 채우는 순서는 넣기 제약을 모두 만족. 빼기는 S12 → S7, S5 → S10, S2 → S1 순서로

@@ -1,6 +1,6 @@
 // opencr_hardware.cpp — ros2_control 하드웨어 플러그인 "hardware/OpenCRHardware"
 // =====================================================================
-// D3 A안 · D12: OpenCR 1장 + 펌웨어(firmware/nt_opencr) + 이 플러그인 (OpenCR 내장 IMU 까지 한 줄로 받으려고)
+// D3 A안 · D12: OpenCR 1장 + 펌웨어(firmware/opencr) + 이 플러그인 (OpenCR 내장 IMU 까지 한 줄로 받으려고)
 //
 //   컨트롤러들 ──명령(rad, rad/s, m)──▶ [이 플러그인] ──CMD 100 Hz──▶ OpenCR ──▶ 모터 14개
 //   joint_state_broadcaster ◀──상태──    write()/read()  ◀──STATE──      ◀── IMU
@@ -191,11 +191,11 @@ CallbackReturn OpenCRHardware::on_init(const hardware_interface::HardwareCompone
       s.id = static_cast<uint8_t>(std::stoi(param(p, "id", "0")));
       const std::string mode = param(p, "mode", "position");
       if (mode == "velocity") {
-        s.mode = ntp::MODE_VELOCITY;
+        s.mode = pkt::MODE_VELOCITY;
       } else if (mode == "gripper") {
-        s.mode = ntp::MODE_CURRENT_POSITION;
+        s.mode = pkt::MODE_CURRENT_POSITION;
       } else if (mode == "position") {
-        s.mode = ntp::MODE_POSITION;
+        s.mode = pkt::MODE_POSITION;
       } else {
         RCLCPP_ERROR(get_logger(), "%s: mode '%s' 는 모름 (velocity / position / gripper)", j.name.c_str(), mode.c_str());
         return CallbackReturn::ERROR;
@@ -208,17 +208,17 @@ CallbackReturn OpenCRHardware::on_init(const hardware_interface::HardwareCompone
         RCLCPP_ERROR(get_logger(), "%s: id 또는 scale 이 비었음 (ros2_control.xacro · hardware_map.yaml 확인)", j.name.c_str());
         return CallbackReturn::ERROR;
       }
-      // 영점 눈금: 관절 0 일 때 모터 눈금. 기본 2048 = 예전과 같음. 위치 모드 한 바퀴(0~4095) 안이어야 함.
+      // 영점 눈금: 관절 0 일 때 모터 눈금. 기본 2048. 위치 모드 한 바퀴(0~4095) 안이어야 함.
       //   바퀴(속도 모드)는 위치가 여러 바퀴 누적이라 영점이 의미 없음 → 2048 이 아니면 거부
       const int zero_tick = std::stoi(param(p, "zero_tick", "2048"));
-      if (zero_tick < 0 || zero_tick > 4095 || (s.mode == ntp::MODE_VELOCITY && zero_tick != 2048)) {
+      if (zero_tick < 0 || zero_tick > 4095 || (s.mode == pkt::MODE_VELOCITY && zero_tick != 2048)) {
         RCLCPP_ERROR(get_logger(), "%s: zero_tick %d 은 위치 모드에서 0~4095 만 (속도 모드는 쓰지 않음)", j.name.c_str(), zero_tick);
         return CallbackReturn::ERROR;
       }
       s.zero_rad = (zero_tick - 2048) * (2.0 * M_PI / 4096.0);
 
       // 명령 칸은 1개: 바퀴 = velocity, 나머지 = position
-      const std::string want = (s.mode == ntp::MODE_VELOCITY) ? hardware_interface::HW_IF_VELOCITY
+      const std::string want = (s.mode == pkt::MODE_VELOCITY) ? hardware_interface::HW_IF_VELOCITY
                                                               : hardware_interface::HW_IF_POSITION;
       if (j.command_interfaces.size() != 1 || j.command_interfaces[0].name != want) {
         RCLCPP_ERROR(get_logger(), "%s: 명령 칸은 '%s' 하나여야 함", j.name.c_str(), want.c_str());
@@ -237,8 +237,8 @@ CallbackReturn OpenCRHardware::on_init(const hardware_interface::HardwareCompone
     RCLCPP_ERROR(get_logger(), "param 숫자를 못 읽음: %s", e.what());
     return CallbackReturn::ERROR;
   }
-  if (specs.size() > ntp::MAX_JOINTS) {
-    RCLCPP_ERROR(get_logger(), "모터 %zu 개 — 보드 1장에 최대 %d 개", specs.size(), ntp::MAX_JOINTS);
+  if (specs.size() > pkt::MAX_JOINTS) {
+    RCLCPP_ERROR(get_logger(), "모터 %zu 개 — 보드 1장에 최대 %d 개", specs.size(), pkt::MAX_JOINTS);
     return CallbackReturn::ERROR;
   }
 
@@ -277,7 +277,7 @@ CallbackReturn OpenCRHardware::on_configure(const rclcpp_lifecycle::State &)
   const int mask = link_->configure(config_timeout_s_);
   if (mask < 0) {
     RCLCPP_ERROR(get_logger(),
-      "OpenCR 가 %.0f s 동안 대답 없음 — 펌웨어(firmware/nt_opencr)가 올라가 있나? 포트가 맞나?", config_timeout_s_);
+      "OpenCR 가 %.0f s 동안 대답 없음 — 펌웨어(firmware/opencr)가 올라가 있나? 포트가 맞나?", config_timeout_s_);
     link_->close();
     return CallbackReturn::ERROR;
   }
@@ -302,9 +302,9 @@ CallbackReturn OpenCRHardware::on_configure(const rclcpp_lifecycle::State &)
     if (!tn.empty()) {RCLCPP_WARN(get_logger(), "여러 바퀴 관절 바로잡음 — %s", tn.c_str());}
   }
   RCLCPP_INFO(get_logger(), "OpenCR 준비 끝 (IMU %s)",
-    (link_->state().status & ntp::ST_IMU_OK) ? "정상" : "없음 — odom 회전은 바퀴 계산으로");
+    (link_->state().status & pkt::ST_IMU_OK) ? "정상" : "없음 — odom 회전은 바퀴 계산으로");
   // 모터 EEPROM 위치 한계 (새 펌웨어가 CONFIG 바로 뒤 보냄) — 켤 때 찍고, 지금 위치가 밖이면 토크를 켜기 전에 알림
-  //   (11-07 팀장님: 꺼진 동안 손 · 충돌로 조향이 한계 밖으로 돌면 "토크를 못 켬" — 한계가 실제 돌 수 있는 범위와 맞는지 확인)
+  //   (꺼진 동안 손 · 충돌로 조향이 한계 밖으로 돌면 "토크를 못 켬" — 한계가 실제 돌 수 있는 범위와 맞는지 확인)
   std::vector<std::pair<int32_t, int32_t>> lim;
   if (link_->pos_limits(lim)) {
     std::vector<double> q;   // 첫 STATE 에서 못 읽은 모터는 펌웨어 초깃값 0 → 모름 (NaN)
@@ -318,7 +318,7 @@ CallbackReturn OpenCRHardware::on_configure(const rclcpp_lifecycle::State &)
       RCLCPP_WARN(get_logger(), "%s → 이대로 켜면 토크를 못 켬. 끈 채로 손으로 한계 안 (조향이면 똑바로) 으로 돌려 놓을 것", bad.c_str());
     }
   } else {
-    RCLCPP_INFO(get_logger(), "모터 위치 한계: 펌웨어가 안 보냄 (11-07 전 펌웨어)");
+    RCLCPP_INFO(get_logger(), "모터 위치 한계: 펌웨어가 안 보냄 (위치 한계를 안 보내는 옛 펌웨어)");
   }
   return CallbackReturn::SUCCESS;
 }
@@ -382,7 +382,7 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
     RCLCPP_ERROR(get_logger(), "시리얼 포트 고장 (USB 가 빠졌나?)");
     return return_type::ERROR;
   }
-  {   // 여러 바퀴 모드 (J1 · 그리퍼) 를 켤 때 바로잡았으면 한 번 알림 (11-08: 안 바로잡으면 J1 이 −6.26 rad 로 읽혀 팔 컨트롤러가 꺼짐)
+  {   // 여러 바퀴 모드 (J1 · 그리퍼) 를 켤 때 바로잡았으면 한 번 알림 (안 바로잡으면 J1 이 −6.26 rad 로 읽혀 팔 컨트롤러가 꺼짐)
     const std::string tn = link_->take_turn_note();
     if (!tn.empty()) {RCLCPP_WARN(get_logger(), "여러 바퀴 관절 바로잡음 — %s", tn.c_str());}
   }
@@ -401,7 +401,7 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
   // (재검증 R6) 펌웨어 고장 잠금: 목표 쓰기가 계속 실패해 펌웨어가 바퀴를 세우고 잠갔음 → 바로 ERROR
   //   (침묵 중이면 comm_err 가 전부 켜지는데, 아래 0.2 s 유예를 기다리지 않도록 그보다 먼저 봄)
   //   펌웨어는 통신이 돌아와도 스스로 풀지 않음 (CONFIG 로만). 여기서도 기다리지 않고 멈춤
-  if (s.status & ntp::ST_FAULT_LATCHED) {
+  if (s.status & pkt::ST_FAULT_LATCHED) {
     RCLCPP_ERROR(get_logger(), "펌웨어 고장 잠금 (모터 목표 쓰기 실패 → 바퀴 정지%s) → 전체 멈춤. "
       "버스 · 배선 확인 → 팔 받치기 → 하드웨어 재설정 → HOME", s.comm_err ? ", 버스 침묵 중" : "");
     return return_type::ERROR;
@@ -446,17 +446,17 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
   }
   report_temps();   // 모터 온도 (TEMP 가 새로 왔을 때만, 1 초마다)
   // (R5) 모터가 스스로 멈춤 (과부하 · 과열 · 전압 → Hardware Error, 토크 꺼짐) → 바로 ERROR (D20 전체 멈춤)
-  if (s.status & ntp::ST_HW_ERROR) {
-    ntp::TorqueFail f;   // 새 펌웨어는 토크가 꺼진 모터 · Hardware Error 비트를 이 STATE 앞에 보냄 (TF_LOST)
+  if (s.status & pkt::ST_HW_ERROR) {
+    pkt::TorqueFail f;   // 새 펌웨어는 토크가 꺼진 모터 · Hardware Error 비트를 이 STATE 앞에 보냄 (TF_LOST)
     double age = 1e9;
-    const bool lost = link_->last_torque_fail(f, age) && age < 1.5 && f.step == ntp::TF_LOST;
+    const bool lost = link_->last_torque_fail(f, age) && age < 1.5 && f.step == pkt::TF_LOST;
     RCLCPP_ERROR(get_logger(), "모터 Hardware Error (과부하 · 과열 · 전압) → 전체 멈춤. 모터 재부팅 · 원인 확인 후 다시 켤 것 "
       "(마지막 온도 °C: %s)%s%s", temps_text().c_str(), lost ? " · " : "", lost ? torque_fail_text(link_->joints(), f).c_str() : "");
     return return_type::ERROR;
   }
   // (R5) 목표 쓰기(Sync Write) 전송이 motor_fail_timeout_s 넘게 계속 실패 → ERROR
-  //   읽기만 성공하면 comm_err 가 0 이라 예전에는 몰랐음 (모터는 마지막 목표를 계속 따름)
-  if (s.status & ntp::ST_WRITE_FAIL) {
+  //   읽기만 성공하면 comm_err 가 0 이라 따로 봐야 함 (모터는 마지막 목표를 계속 따름)
+  if (s.status & pkt::ST_WRITE_FAIL) {
     const auto now = std::chrono::steady_clock::now();
     if (!write_failing_) {
       write_failing_ = true;
@@ -471,7 +471,7 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
   }
   // 토크를 켜라고 했는데 펌웨어가 0.5 s 넘게 "켜짐" 이라고 안 함 → 모터에 토크가 안 들어감
   //   (R5) "켜짐" 은 이제 되읽은 Torque Enable 까지 반영 → 운전 중 모터가 토크를 잃어도 0.5 s 안에 여기로 옴
-  const bool torque_ok = !torque_ || (s.status & ntp::ST_TORQUE);
+  const bool torque_ok = !torque_ || (s.status & pkt::ST_TORQUE);
   if (!torque_ok) {
     const auto now = std::chrono::steady_clock::now();
     if (!torque_waiting_) {
@@ -480,7 +480,7 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
     }
     if (std::chrono::duration<double>(now - torque_wait_since_).count() > 0.5) {
       // 새 펌웨어는 실패 이유 (TORQUE_FAIL) 를 0.5 s 마다 보냄 → 기다린 동안 받은 것이면 같이 찍음
-      ntp::TorqueFail f;
+      pkt::TorqueFail f;
       double age = 1e9;
       const bool why = link_->last_torque_fail(f, age) && age < 1.5;
       std::vector<std::pair<int32_t, int32_t>> lim;
@@ -494,7 +494,7 @@ return_type OpenCRHardware::read(const rclcpp::Time &, const rclcpp::Duration &)
     torque_waiting_ = false;
   }
   publish_states();
-  if ((s.status & ntp::ST_HOST_TIMEOUT) && !(last_status_ & ntp::ST_HOST_TIMEOUT)) {
+  if ((s.status & pkt::ST_HOST_TIMEOUT) && !(last_status_ & pkt::ST_HOST_TIMEOUT)) {
     RCLCPP_WARN(get_logger(), "펌웨어 경비견: 명령이 끊겨 바퀴를 세웠음 (Jetson 이 바빴나?)");
   }
   last_status_ = s.status;
@@ -620,8 +620,8 @@ void OpenCRHardware::publish_states()
   // (R3) "지금의 측정" 이 아닌 관절은 NaN 으로 내보냄
   //   - 이번 STATE 에서 그 모터를 못 읽음 (comm_err 비트) — 펌웨어는 옛 값을 그대로 실어 보냄
   //   - STATE 자체가 measure_max_age_s 넘게 안 옴
-  //   예전에는 comm_err 유예(motor_fail_timeout_s, 0.2 s) 동안 옛 값을 그대로 내보냈고, swerve_controller 가 그걸
-  //   지금 시각의 /odom 으로 포장했음 (Codex 재현: 응답 끊긴 뒤 0.21 s 동안 새 시각 odom 11개)
+  //   comm_err 유예(motor_fail_timeout_s, 0.2 s) 동안 옛 값을 그대로 내보내면 swerve_controller 가 그걸
+  //   지금 시각의 /odom 으로 포장함 (재현: 응답 끊긴 뒤 0.21 s 동안 새 시각 odom 11개)
   //   받는 쪽 약속: swerve_controller 는 NaN 이면 바퀴 0 + odom 안 냄, control_master 접힘 확인은 NaN 이면 "모름"
   //   ⚠ JTC 는 NaN 상태를 "오차 없음" 처럼 넘길 수 있음 → 바퀴를 푸는 판단은 JTC 결과만 믿지 않고 control_master 가 실측으로
   for (std::size_t i = 0; i < ifaces_.size(); ++i) {
@@ -640,7 +640,7 @@ void OpenCRHardware::publish_states()
   }
   if (!imu_name_.empty()) {
     // IMU 가 없으면 NaN → swerve_controller 의 GyroYaw 가 무시하고 바퀴 계산으로
-    const bool ok = s.status & ntp::ST_IMU_OK;
+    const bool ok = s.status & pkt::ST_IMU_OK;
     const double v[10] = {
       s.imu.quat[1], s.imu.quat[2], s.imu.quat[3], s.imu.quat[0],   // 펌웨어는 w,x,y,z → ROS 는 x,y,z,w
       s.imu.gyro[0], s.imu.gyro[1], s.imu.gyro[2],

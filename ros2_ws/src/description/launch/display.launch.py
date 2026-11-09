@@ -23,7 +23,7 @@ from launch_ros.substitutions import FindPackageShare
 def _slider_gui(context, description_command):
     # JSP는 robot_description 파라미터를 읽지 않는다. 슬라이더용 URDF 파일을 직접 넘긴다.
     description = description_command.perform(context)
-    fd, path = tempfile.mkstemp(prefix="nt_gripper_sliders_", suffix=".urdf")
+    fd, path = tempfile.mkstemp(prefix="gripper_sliders_", suffix=".urdf")
     with os.fdopen(fd, "w", encoding="utf-8") as stream:
         stream.write(description)
 

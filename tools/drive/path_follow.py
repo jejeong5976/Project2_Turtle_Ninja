@@ -123,11 +123,11 @@ def main():
     ap.add_argument("--k-psi", type=float, default=1.5)
     ap.add_argument("--k-rot", type=float, default=1.5)
     # 둥근 경로 (smooth_path.py): 주면 모서리를 원호로 이어 멈추지 않고 지나감 (꺾임 150° 넘으면 거기서 멈춤)
-    ap.add_argument("--round", type=float, default=0.0, help="모서리 반지름 [m] (0 = 예전처럼 모서리마다 멈춤, 0.05~0.5)")
+    ap.add_argument("--round", type=float, default=0.0, help="모서리 반지름 [m] (0 = 모서리마다 멈춤, 0.05~0.5)")
     ap.add_argument("--waypoints", default="", help='경유점 "x,y;x,y;..." [m] 시작 자세 기준 (앞 +x · 왼 +y, 시작점 자동). 주면 --shape 대신')
     ap.add_argument("--a-lat", type=float, default=0.5, help="둥근 경로: 옆 가속 상한 [m/s²]")
     ap.add_argument("--w-dir", type=float, default=2.0, help="둥근 경로: 이동 방향이 도는 빠르기 상한 [rad/s]")
-    ap.add_argument("--hz", type=float, default=50.0, help="둥근 경로 추종 주기 [Hz] (직선 구간 추종은 예전 20 Hz)")
+    ap.add_argument("--hz", type=float, default=50.0, help="둥근 경로 추종 주기 [Hz] (직선 구간 추종은 20 Hz)")
     ap.add_argument("--frame", default="odom", choices=("odom", "map"), help="위치 좌표계 (map = SLAM 위치, slam · locate 떠 있을 때)")
     ap.add_argument("--stop-margin", type=float, default=0.09, help="앞 물체 정지: 가는 방향 몸 끝에서 [m]")
     ap.add_argument("--side-margin", type=float, default=0.0, help="앞 물체 정지: 몸 폭 바깥 여유 [m] (벽 27 cm 옆 경로라 0)")
@@ -135,8 +135,8 @@ def main():
     ap.add_argument("--guard", action="store_true", help="pose_guard 판정(/localization_health) 이 꼭 있어야 움직임")
     ap.add_argument("--abs", action="store_true", help="--waypoints 가 --frame 의 절대 좌표 (시작 자세 기준 아님)")
     a = ap.parse_args()
-    if a.yes and os.environ.get("NT_HW", "opencr") != "mock":
-        ap.error("--yes 는 모의(NT_HW=mock)에서만")
+    if a.yes and os.environ.get("ROBOT_HW", "opencr") != "mock":
+        ap.error("--yes 는 모의(ROBOT_HW=mock)에서만")
     L = a.length if a.length is not None else (2.0 if a.shape in ("line", "back") else 0.5 if a.shape in ("star", "repeat") else 1.0)
     if not 0.5 <= a.minutes <= 30:
         sys.exit("--minutes 0.5~30")

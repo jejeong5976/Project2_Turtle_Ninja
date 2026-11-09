@@ -8,8 +8,8 @@
   hardware 인자로 하드웨어 플러그인(= 모터와 실제로 말하는 부품)을 고른다
     mock    : 가짜. 받은 명령을 그대로 상태로 돌려줌 → 로봇 없이 노트북에서 전체 실행 (기본값)
     gazebo  : Gazebo(gz_ros2_control) 용 자리만 (시뮬레이션 월드 · 실행 설정은 아직 없음)
-    opencr  : 플러그인 hardware/OpenCRHardware + OpenCR 펌웨어 firmware/nt_opencr
-              모터 14개 + OpenCR 내장 IMU 를 USB 한 줄로. 패킷 정의 = firmware/nt_opencr/nt_packet.h
+    opencr  : 플러그인 hardware/OpenCRHardware + OpenCR 펌웨어 firmware/opencr
+              모터 14개 + OpenCR 내장 IMU 를 USB 한 줄로. 패킷 정의 = firmware/opencr/opencr_packet.h
   ★ 이 한 줄만 바뀌고, 컨트롤러 · 스워브 노드 · MoveIt · Nav2 는 전부 그대로다.
 
   맨 아래 관성 · 충돌 상자 매크로 (조향 모듈이 씀). 총질량 3.81 kg 실측. 질량 출처는 robot.urdf.xacro:
@@ -21,7 +21,7 @@
 
   <!-- ===== 관절 1개: 컨트롤러가 보는 면 (ROS 단위 rad, rad/s) ===== -->
   <!-- mode 가 velocity 면 속도 명령, 나머지(position · gripper)는 위치 명령 -->
-  <xacro:macro name="nt_joint_ifaces" params="names hardware">
+  <xacro:macro name="joint_ifaces" params="names hardware">
     <xacro:if value="${len(names) > 0}">
       <xacro:property name="jn" value="${names[0]}"/>
       <xacro:property name="m" value="${hw['motors'][jn]}"/>
@@ -57,12 +57,12 @@
           <param name="zero_tick">${m.get('zero_tick', 2048)}</param>   <!-- 관절 0 일 때 모터 눈금 (기본 2048) -->
         </xacro:if>
       </joint>
-      <xacro:nt_joint_ifaces names="${names[1:]}" hardware="${hardware}"/>
+      <xacro:joint_ifaces names="${names[1:]}" hardware="${hardware}"/>
     </xacro:if>
   </xacro:macro>
 
   <!-- ===== 보드 1장 = <ros2_control> 블록 1개 ===== -->
-  <xacro:macro name="nt_bus" params="bus hardware">
+  <xacro:macro name="opencr_bus" params="bus hardware">
     <ros2_control name="${bus['name']}" type="system">
       <hardware>
         <!-- mock_dynamics:=true: 조향 · 바퀴에 속도 · 가속 한계가 있는 가짜 모터 (hardware/src/mock_dynamics.cpp) -->
@@ -94,7 +94,7 @@
         </xacro:if>
       </hardware>
 
-      <xacro:nt_joint_ifaces names="${bus['joints']}" hardware="${hardware}"/>
+      <xacro:joint_ifaces names="${bus['joints']}" hardware="${hardware}"/>
       <!-- Gazebo 전용: 오른쪽 손가락은 URDF <mimic> 으로 왼쪽을 따라감. ros2_control 은 "따라가는 관절" 을
            명령 칸 없이 같은 블록에 적어야 함 (component_parser: mimic 관절 = 명령 칸 금지, 따라갈 관절이 같은 블록에)
            → 보드를 2장으로 나눠도 gripper_left_joint 가 있는 블록에만 들어가게 -->
@@ -123,10 +123,10 @@
   </xacro:macro>
 
   <!-- ===== 보드 목록 전체 ===== -->
-  <xacro:macro name="nt_buses" params="buses hardware">
+  <xacro:macro name="opencr_buses" params="buses hardware">
     <xacro:if value="${len(buses) > 0}">
-      <xacro:nt_bus bus="${buses[0]}" hardware="${hardware}"/>
-      <xacro:nt_buses buses="${buses[1:]}" hardware="${hardware}"/>
+      <xacro:opencr_bus bus="${buses[0]}" hardware="${hardware}"/>
+      <xacro:opencr_buses buses="${buses[1:]}" hardware="${hardware}"/>
     </xacro:if>
   </xacro:macro>
 

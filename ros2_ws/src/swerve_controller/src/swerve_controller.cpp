@@ -157,7 +157,7 @@ CallbackReturn SwerveController::on_init()
     auto_declare<std::vector<double>>("wheel_speed_gain", {});   // 바퀴별 속도 배율 [fl, fr, rl, rr], 비우면 모두 1
     auto_declare<double>("steer_branch_margin", 3.0 * M_PI / 180.0);
     auto_declare<double>("steer_end_slack", 0.0);       // [rad] 0 ~ 2°. 범위 끝을 이만큼 넘는 방향은 끝 각도로 (기본 끔)
-    auto_declare<double>("steer_travel_weight", 0.0);   // 자세 고를 때 돌아야 할 각도 비용 가중치 (0 = 예전과 같음, 0~10)
+    auto_declare<double>("steer_travel_weight", 0.0);   // 자세 고를 때 돌아야 할 각도 비용 가중치 (0 = 안 씀, 0~10)
     auto_declare<double>("steer_coherent_max_travel", 0.0);   // [rad] 공통 자세 이동 한도 (0 = 없음)
     auto_declare<double>("steer_end_guard", 0.0);             // [rad] 멈춘 상태에서 고를 때 범위 끝 벌점 구간 (0 = 끔)
     auto_declare<double>("keep_branch_max_wz", 0.0);          // [rad/s] 이동 중 작은 회전으로 가지 바꾸지 않기 (0 = 끔)
@@ -374,7 +374,7 @@ CallbackReturn SwerveController::on_configure(const rclcpp_lifecycle::State &)
         kin.coherent_max_travel() * 180.0 / M_PI, kin.end_guard() * 180.0 / M_PI);
     }
     drive_ = std::make_unique<SwerveDrive>(kin, cfg);
-    // 실패면 타이머를 만들기 전에 끝냄 (예전엔 맨 끝에서 검사해 실패해도 ack · odom 타이머가 남았음)
+    // 실패면 타이머를 만들기 전에 끝냄 (실패해도 ack · odom 타이머가 남지 않게)
     if (cfg.park_on_idle && !drive_->kinematics().park_reachable()) {
       RCLCPP_ERROR(node->get_logger(), "park_on_idle: 조향 0° 가 모듈별 범위 밖 → 복귀 기능을 쓸 수 없음");
       return CallbackReturn::ERROR;
@@ -537,7 +537,7 @@ CallbackReturn SwerveController::on_activate(const rclcpp_lifecycle::State &)
   std::vector<ModuleState> now;
   last_steer_.assign(names_.size(), 0.0);
   // 지금 조향 자세를 모르면 켜지 않음 — 모르는 자세 대신 0° 를 "유지" 명령으로 보내면 조향이 0° 로 돎
-  //   (예전엔 position 모드만 거부, reported 모드는 0° 를 썼음). 켜진 뒤 못 읽으면 update() 가 마지막 실측을 유지
+  //   (reported 모드도 0° 를 쓰지 않음). 켜진 뒤 못 읽으면 update() 가 마지막 실측을 유지
   if (!read_modules(now)) {
     RCLCPP_ERROR(get_node()->get_logger(), "모터 상태를 못 읽음 (position_velocity 준비 전 포함) → 켜기 거부");
     return CallbackReturn::ERROR;

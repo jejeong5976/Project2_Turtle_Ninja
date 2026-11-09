@@ -1,6 +1,6 @@
 // arm_kinematics.hpp — 실물 집기 계산기와 같은 팔 기구학 (순수 C++, test/test_arm_kinematics.cpp)
 // =====================================================================
-// 모델 = 실물 시험에 쓴 기구학 (config/arm_kinematics.yaml, 10-27 배포 URDF 의 팔 사슬 + 손끝 · 틱 변환표 · 처짐 계수)
+// 모델 = 실물 시험에 쓴 기구학 (config/arm_kinematics.yaml, 배포 URDF 의 팔 사슬 + 손끝 · 틱 변환표 · 처짐 계수)
 //   좌표: 모델 base (바닥 위 base_z_floor) — 로봇 base_link 와 x · y 같고 z 만 다름 (model_z = base_link_z + team_base_z_floor − base_z_floor)
 //   관절 q [rad] 는 모델 관절 (팀 ROS 관절값과 다름) → 틱 → 팀 명령 rad = (틱 − 영점) · 2π/4096
 // 계산
@@ -92,7 +92,7 @@ struct PickPose
 // 퍽 (모델 x, y, 윗면 z, 면 돌림 yaw [°]) 위 heights [mm] 마다 수직 손 자세 (앞 높이 해를 씨앗으로). 실패면 빈 목록 + why
 //   명령(enc)은 실물 계산기처럼 쥔 물체 없이 계산
 //   close_deg: 닫힘축 방향 [°] 을 직접 줌 (이웃 퍽을 보고 고른 방향, grasp_select). NaN 이면 위 규칙
-//   max_tilt_deg: 손을 10° 씩 이만큼까지 바깥(J1 → 퍽 방향)으로 기울여 봄. 0 = 수직 손만 (예전)
+//   max_tilt_deg: 손을 10° 씩 이만큼까지 바깥(J1 → 퍽 방향)으로 기울여 봄. 0 = 수직 손만
 //     기울여도 손끝은 모든 높이에서 퍽 중심축 위 (쥔 퍽을 수직으로 들고 내림 — 옆 퍽 쪽으로 쓸지 않게)
 //   prefer_tilt_deg · max_dev_deg: 이 기울임에 가까운 것부터, 차이가 max_dev 안인 것만 (PLACE: 쥘 때 기울임과 맞춤)
 //   해는 실제 틱 · 처짐 앞먹임 명령 틱 둘 다 관절 범위 안이어야 함

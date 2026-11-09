@@ -19,7 +19,7 @@ ros2 launch moveit_config move_group.launch.py use_rviz:=true
 바퀴 · 팔 차례는 `control_master` 가 관리한다 (바퀴를 세우고 정지를 확인한 뒤 팔). MoveIt 이 `arm_controller` 에 직접 보내면
 이 차례를 건너뛰어 바퀴가 움직이는 중에 팔이 움직일 수 있다. 실행은 `control_master` 가 MoveIt 계획을 받아 자기 차례 아래서 하도록 연결한다.
 
-## 검사 결과 (11-02, GPT URDF 최종본)
+## 검사 결과 (GPT URDF 최종본)
 `config/arm_paths.yaml` 의 30 경로 (넣기 · 빼기 S1~S12 실물 재생, LOOK, 펼치기 · 접기) 의 모든 점 (약 7,800) 을 `/check_state_validity` 로 검사 → 충돌 0.
 그리퍼 연결 막대는 손가락 위치로만 움직여 MoveIt 이 피할 수 없음. 닫힘(−1.6 mm)에서 충돌용 단순 메시끼리만 겹치는
 크랭크 ↔ 손가락 · 막대 ↔ 막대 쌍은 끔 (실제 메시는 막대 사이 0.46 mm). 연결 막대 각도는 `manipulation/arm_state_publisher` 가 `/joint_states_corrected` 로 냄.

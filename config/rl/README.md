@@ -9,5 +9,5 @@
 | `team_swerve.yaml` | 스워브 기하 · 조향 범위 (노드 관측 · 관절 이름) | `sim/robot_sim/rl/data/team_swerve.yaml` |
 
 - `*.npz` = `rl/tasks/local_planner/export.py` 출력 (numpy 만으로 돎, torch 없음 = Jetson), `*.json` = 학습 `cfg.json` (관측 · 속도 한계 · 근접 속도 제한을 노드가 읽음)
-- Isaac 시험 (2026-11-07): nf5 + dock3 10/10, 박스 · 장소 9 곳 131 s, 박스 면 틈 1.19–2.11 cm
+- Isaac 시험: nf5 + dock3, 박스 · 장소 9 곳 131 s, 박스 면 틈 1.19–2.11 cm
 - 바꿀 때: 새 정책을 export → 여기 덮어쓰고 이 표 고침

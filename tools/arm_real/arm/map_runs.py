@@ -1,13 +1,13 @@
-"""11-01 전후 실물 실행 기록 → 칸 ID 짝짓기 (손끝 위치가 가장 가까운 칸). 넣기 · 빼기 성공 기록과 그때 쥐기 자세"""
+"""실물 실행 기록 → 칸 ID 짝짓기 (손끝 위치가 가장 가까운 칸). 넣기 · 빼기 성공 기록과 그때 쥐기 자세"""
 import json, glob, os, sys
 from pathlib import Path
 import numpy as np
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE)); sys.path.insert(0, os.environ.get('NT_REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
+sys.path.insert(0, str(HERE)); sys.path.insert(0, os.environ.get('REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
 import pose_safety as ps
 from gen_paths import S_TO_OLD
 OLD_TO_S = {v: k for k, v in S_TO_OLD.items()}
-rc = json.loads((Path(os.path.join(os.environ.get('NT_ARM_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'arm')), 'rack_cells.json'))).read_text())
+rc = json.loads((Path(os.path.join(os.environ.get('ARM_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'arm')), 'rack_cells.json'))).read_text())
 C = ps.Checker()
 def tip(t):
     return np.asarray(C.M.grip(C._qf(list(t))[0])[0])
@@ -15,7 +15,7 @@ def cell_of(t):
     p = tip(t)
     d = {n: np.hypot(p[0] - c['xy'][0], p[1] - c['xy'][1]) for n, c in rc['cells'].items()}
     n = min(d, key=d.get); return n, d[n] * 1000
-runs = os.environ.get('NT_RUNS_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'arm', 'runs'))
+runs = os.environ.get('RUNS_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'arm', 'runs'))
 out = {}
 for d in sorted(glob.glob(f'{runs}/runner_2026103[01]T*') + glob.glob(f'{runs}/runner_20261101T*')):
     p = d + '/log.jsonl'

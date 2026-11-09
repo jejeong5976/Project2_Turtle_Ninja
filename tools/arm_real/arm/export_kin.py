@@ -4,7 +4,7 @@ import json, math, sys, subprocess
 from pathlib import Path
 import numpy as np
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE)); sys.path.insert(0, os.environ.get('NT_REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
+sys.path.insert(0, str(HERE)); sys.path.insert(0, os.environ.get('REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
 import pose_safety as ps, arm_pose_fk as fk, sag_model, grasp_test as gt
 C = ps.Checker(); M = C.M
 f = M.fk

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""퍽 위 멈추기 시험 자세 만들기 (2026-10-30, 계산만). 그리퍼는 안 씀 — 손끝 가운데가 퍽 중심 위에 오는지 눈으로 확인.
+"""퍽 위 멈추기 시험 자세 만들기 (계산만). 그리퍼는 안 씀 — 손끝 가운데가 퍽 중심 위에 오는지 눈으로 확인.
 
-  $NT_PY grasp_test.py [--x 0.235 --y 0.0] [--heights 60 25] [--tilt 0] [--out grasp_poses.json]
+  $ARM_PY grasp_test.py [--x 0.235 --y 0.0] [--heights 60 25] [--tilt 0] [--out grasp_poses.json]
   → grasp_poses.json (+ pose_safety.py 로 검사 → grasp_poses.checked.json → arm_pose_runner.py)
 
 놓는 법 (기본값): 박스(205 × 205 × 70) 를 차체 앞면 3 cm 앞에 똑바로, 퍽(원기둥 Ø30 × 60) 을 박스 가운데 줄 위, 박스 앞 모서리에서 60 mm.
@@ -20,7 +20,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-sys.path.insert(0, os.environ.get('NT_REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
+sys.path.insert(0, os.environ.get('REACH_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'reach')))
 import arm_pose_fk as fk  # noqa: E402
 import sag_model  # noqa: E402
 

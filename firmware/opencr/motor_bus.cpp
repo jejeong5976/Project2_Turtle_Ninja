@@ -27,9 +27,9 @@ using namespace ControlTableItem;
 
 // 지금 설정 (CONFIG 로 받은 것)
 uint8_t n_ = 0;
-uint8_t ids_[ntp::MAX_JOINTS];
-uint8_t modes_[ntp::MAX_JOINTS];
-bool ext_pos_[ntp::MAX_JOINTS];   // (fw_ext) 전류 기반 위치 + goal_current 0 = 확장 위치 모드 (J1)
+uint8_t ids_[pkt::MAX_JOINTS];
+uint8_t modes_[pkt::MAX_JOINTS];
+bool ext_pos_[pkt::MAX_JOINTS];   // (fw_ext) 전류 기반 위치 + goal_current 0 = 확장 위치 모드 (J1)
 uint16_t ok_ = 0;          // 비트 i = i 번째 모터가 ping 에 대답함 → 이 모터들만 읽고 씀
 bool torque_ = false;
 // 운전 중 되읽기 (R5)
@@ -39,7 +39,7 @@ uint16_t hw_err_ = 0;        // Hardware Error Status ≠ 0 인 모터
 // ---- 고장 잠금 · 시간 예산  ----------------------------------------------
 // 순서: Sync Write 실패 관측 → 고장 확정 → 바퀴에 하나씩 속도 0 (예산 안에서) → 실패면 버스 침묵 → 모터 Bus Watchdog
 //   고장 확정 = 연속 WRITE_FAIL_LIMIT 번, 또는 첫 실패에서 WRITE_FAIL_CONFIRM_MS 가 지난 뒤 또 실패 (루프가 밀려도 늦어지지 않게)
-//   ★ 확정되면 **잠금(latched_)**: 통신이 돌아와도 다시 목표를 쓰지 않음 (예전: 다음 Sync Write 성공 때 원래 속도로 재출발)
+//   ★ 확정되면 **잠금(latched_)**: 통신이 돌아와도 다시 목표를 쓰지 않음 (원래 속도로 다시 출발하지 않게)
 //     잠금을 푸는 길은 CONFIG(bus_configure) 하나 — 사람이 원인 확인 후 하드웨어를 다시 설정할 때만
 //   시간: 운전 중 모든 개별 읽기 · 쓰기에 IO_TIMEOUT_MS 를 직접 넘김 (라이브러리 기본은 100 ms → 바퀴 4개면 0.4 s)
 //   ⚠ 아래 숫자는 설계 목표. 실제 버스 · 모터에서 지키는지는 실물에서 따로 재야 함
@@ -62,13 +62,13 @@ TimeAcc t_sync_read_, t_sync_write_, t_read_, t_write_;
 uint32_t volt_sum_dv_ = 0, volt_n_ = 0;
 uint8_t volt_min_dv_ = 0;   // 0 = 이번 구간에 못 읽음
 // 모터 온도 (전압과 같은 읽기) [°C] — 구간(1 s)마다 TEMP 로. 그 구간에 못 읽은 모터는 TEMP_UNKNOWN 으로 보냄 (옛 값을 새 값처럼 안 보내게)
-uint8_t temp_c_[ntp::MAX_JOINTS];
+uint8_t temp_c_[pkt::MAX_JOINTS];
 uint16_t temp_fresh_ = 0;   // 비트 i = 이 구간에 i 번째 온도를 읽었음
 uint32_t stop_attempt_us_ = 0;
 // 토크 켜기 실패 이유 (TORQUE_FAIL) — 위치 모터의 EEPROM 위치 한계 (CONFIG 때 읽음) · 이번 시도에서 처음 실패한 모터
-int32_t min_lim_[ntp::MAX_JOINTS];
-int32_t max_lim_[ntp::MAX_JOINTS];
-ntp::TorqueFail tf_;
+int32_t min_lim_[pkt::MAX_JOINTS];
+int32_t max_lim_[pkt::MAX_JOINTS];
+pkt::TorqueFail tf_;
 bool tf_new_ = false;
 
 bool last_ok()   // 바로 앞 단일 읽기 · 쓰기가 통신까지 성공했나
@@ -111,16 +111,16 @@ typedef struct
   int32_t velocity;
   int32_t position;
 } __attribute__((packed)) sr_data_t;
-sr_data_t sr_data_[ntp::MAX_JOINTS];
+sr_data_t sr_data_[pkt::MAX_JOINTS];
 uint8_t sr_buf_[256];
 DYNAMIXEL::InfoSyncReadInst_t sr_;
-DYNAMIXEL::XELInfoSyncRead_t sr_xels_[ntp::MAX_JOINTS];
+DYNAMIXEL::XELInfoSyncRead_t sr_xels_[pkt::MAX_JOINTS];
 
 // Sync Write: 바퀴 속도 / 위치 모터 위치 — 두 묶음
-int32_t sw_vel_[ntp::MAX_JOINTS];
-int32_t sw_pos_[ntp::MAX_JOINTS];
+int32_t sw_vel_[pkt::MAX_JOINTS];
+int32_t sw_pos_[pkt::MAX_JOINTS];
 DYNAMIXEL::InfoSyncWriteInst_t sw_vel_info_, sw_pos_info_;
-DYNAMIXEL::XELInfoSyncWrite_t sw_vel_xels_[ntp::MAX_JOINTS], sw_pos_xels_[ntp::MAX_JOINTS];
+DYNAMIXEL::XELInfoSyncWrite_t sw_vel_xels_[pkt::MAX_JOINTS], sw_pos_xels_[pkt::MAX_JOINTS];
 
 int32_t rad_to_pos_tick(float rad)
 {
@@ -189,29 +189,29 @@ bool bus_begin(uint32_t baud)
   return true;
 }
 
-uint16_t bus_configure(const ntp::Config &c)
+uint16_t bus_configure(const pkt::Config &c)
 {
   n_ = c.n;
   uint16_t ok = 0;
   // 팔 보드 = 전류 기반 위치(그리퍼 · J1) 모터가 있는 CONFIG. 주행 보드엔 없음 → 조향(같은 ID 11~14) 에는 안 씀.
   bool arm_board = false;
-  for (uint8_t k = 0; k < c.n; ++k) {arm_board = arm_board || (c.j[k].mode == ntp::MODE_CURRENT_POSITION);}
+  for (uint8_t k = 0; k < c.n; ++k) {arm_board = arm_board || (c.j[k].mode == pkt::MODE_CURRENT_POSITION);}
   for (uint8_t i = 0; i < n_; ++i) {
     ids_[i] = c.j[i].id;
     modes_[i] = c.j[i].mode;
-    ext_pos_[i] = (c.j[i].mode == ntp::MODE_CURRENT_POSITION && c.j[i].goal_current == 0);
-    min_lim_[i] = max_lim_[i] = ntp::TF_NO_LIMIT;   // ping 안 되는 모터도 "모름" (앞 CONFIG 값 · 0 을 한계로 보내지 않게)
+    ext_pos_[i] = (c.j[i].mode == pkt::MODE_CURRENT_POSITION && c.j[i].goal_current == 0);
+    min_lim_[i] = max_lim_[i] = pkt::TF_NO_LIMIT;   // ping 안 되는 모터도 "모름" (앞 CONFIG 값 · 0 을 한계로 보내지 않게)
     if (!dxl.ping(ids_[i])) {continue;}
     // ping 만이 아니라 아래 설정이 **전부** 써져야 ok. 하나라도 실패하면 그 모터는 안 쓰는 것으로
     bool good = dxl.torqueOff(ids_[i]);                                       // 모드는 토크가 꺼져 있어야 바뀜
     good = dxl.writeControlTableItem(RETURN_DELAY_TIME, ids_[i], 0) && good;   // 응답 지연 0 (기본 500 µs → 14개면 7 ms 손해)
-    if (modes_[i] == ntp::MODE_VELOCITY) {
+    if (modes_[i] == pkt::MODE_VELOCITY) {
       good = dxl.setOperatingMode(ids_[i], OP_VELOCITY) && good;
-    } else if (modes_[i] == ntp::MODE_CURRENT_POSITION && c.j[i].goal_current == 0) {
+    } else if (modes_[i] == pkt::MODE_CURRENT_POSITION && c.j[i].goal_current == 0) {
       // 힘 한계 0 = 확장 위치 모드: 일반 위치 제어(PWM 출력)와 같고 여러 바퀴만 됨 — J1.
       //   전류 기반 위치로 J1 을 돌리면 팔을 뻗은 자세에서 10 Hz ±3~6 틱 떨림 (실물 측정)
       good = dxl.setOperatingMode(ids_[i], OP_EXTENDED_POSITION) && good;
-    } else if (modes_[i] == ntp::MODE_CURRENT_POSITION) {
+    } else if (modes_[i] == pkt::MODE_CURRENT_POSITION) {
       good = dxl.setOperatingMode(ids_[i], OP_CURRENT_BASED_POSITION) && good;
       good = dxl.writeControlTableItem(GOAL_CURRENT, ids_[i], c.j[i].goal_current) && good;
     } else {
@@ -228,7 +228,7 @@ uint16_t bus_configure(const ntp::Config &c)
     good = dxl.writeControlTableItem(BUS_WATCHDOG, ids_[i], 0) && good;        // 걸려 있던 것 풀기
     good = dxl.writeControlTableItem(BUS_WATCHDOG, ids_[i], c.bus_watchdog) && good;
     // 위치 한계 (EEPROM, 위치 모드만 — 확장 위치 · 전류 기반 위치 · 속도는 한계를 안 씀). 못 읽으면 검사 안 함
-    if (modes_[i] == ntp::MODE_POSITION) {
+    if (modes_[i] == pkt::MODE_POSITION) {
       const int32_t lo = dxl.readControlTableItem(MIN_POSITION_LIMIT, ids_[i], IO_TIMEOUT_MS);
       const bool lo_ok = last_ok();
       const int32_t hi = dxl.readControlTableItem(MAX_POSITION_LIMIT, ids_[i], IO_TIMEOUT_MS);
@@ -282,38 +282,38 @@ void bus_set_torque(bool on)
   for (uint8_t i = 0; i < n_; ++i) {
     if (!(ok_ & (1u << i))) {continue;}
     if (millis() - t0 > TORQUE_BUDGET_MS) {   // 남은 모터는 다음 바퀴에
-      note(i, ntp::TF_BUDGET, 0);
-      if (tf_.step == ntp::TF_BUDGET && tf_.idx == i) {tf_.dxl_err = tf_.lib_err = 0;}   // 마지막 통신은 앞 모터 것 → 오류 칸을 안 붙임
+      note(i, pkt::TF_BUDGET, 0);
+      if (tf_.step == pkt::TF_BUDGET && tf_.idx == i) {tf_.dxl_err = tf_.lib_err = 0;}   // 마지막 통신은 앞 모터 것 → 오류 칸을 안 붙임
       all = false;
       break;
     }
-    if (on && modes_[i] != ntp::MODE_VELOCITY) {
+    if (on && modes_[i] != pkt::MODE_VELOCITY) {
       // 목표 = 지금 위치 → 토크가 켜지는 순간 제자리
       const int32_t now_pos = static_cast<int32_t>(timed_read(PRESENT_POSITION, ids_[i]));
       if (!last_ok()) {
         // (R5) 읽기 실패면 돌려받은 값(0 등)이 "지금 위치" 가 아님 → 그걸 목표로 쓰면 켜는 순간 팔이 튐
         //      → 이 모터는 이번에 토크를 켜지 않음. all = false 라 10 ms 뒤 다시 시도, 계속 실패면 플러그인이 0.5 s 뒤 ERROR
-        note(i, ntp::TF_READ, 0);
+        note(i, pkt::TF_READ, 0);
         all = false;
         continue;
       }
       // 지금 위치가 EEPROM 위치 한계 밖 (꺼진 동안 손 · 충돌로 돎) → 모터가 그 목표를 거절함. 쓰지 않고 이유만 알림
       //   (자동으로 한계 안으로 돌리지 않음: 켜는 순간 바퀴 · 팔이 휙 돎. 사람이 손으로 돌려 놓고 다시 켬)
-      if (min_lim_[i] != ntp::TF_NO_LIMIT && (now_pos < min_lim_[i] || now_pos > max_lim_[i])) {
-        note(i, ntp::TF_RANGE, now_pos);
+      if (min_lim_[i] != pkt::TF_NO_LIMIT && (now_pos < min_lim_[i] || now_pos > max_lim_[i])) {
+        note(i, pkt::TF_RANGE, now_pos);
         all = false;
         continue;
       }
-      // 목표를 못 썼으면 모터엔 예전 목표가 남아 있음 → 토크를 켜면 그리로 튐. 읽기 실패와 같이 이번엔 안 켬 (11-08)
-      if (!timed_write(GOAL_POSITION, ids_[i], now_pos)) {note(i, ntp::TF_GOAL, now_pos); all = false; continue;}
+      // 목표를 못 썼으면 모터엔 예전 목표가 남아 있음 → 토크를 켜면 그리로 튐. 읽기 실패와 같이 이번엔 안 켬
+      if (!timed_write(GOAL_POSITION, ids_[i], now_pos)) {note(i, pkt::TF_GOAL, now_pos); all = false; continue;}
     }
-    if (on && modes_[i] == ntp::MODE_VELOCITY && !timed_write(GOAL_VELOCITY, ids_[i], 0)) {note(i, ntp::TF_GOAL, 0); all = false; continue;}
-    if (!timed_write(TORQUE_ENABLE, ids_[i], on ? 1 : 0)) {note(i, ntp::TF_TORQUE, 0); all = false;}
+    if (on && modes_[i] == pkt::MODE_VELOCITY && !timed_write(GOAL_VELOCITY, ids_[i], 0)) {note(i, pkt::TF_GOAL, 0); all = false; continue;}
+    if (!timed_write(TORQUE_ENABLE, ids_[i], on ? 1 : 0)) {note(i, pkt::TF_TORQUE, 0); all = false;}
   }
   if (all) {torque_ = on;}
 }
 
-void bus_pos_limits(ntp::PosLimits &l)
+void bus_pos_limits(pkt::PosLimits &l)
 {
   l.n = n_;
   for (uint8_t i = 0; i < n_; ++i) {
@@ -322,14 +322,14 @@ void bus_pos_limits(ntp::PosLimits &l)
   }
 }
 
-bool bus_torque_fail_peek(ntp::TorqueFail &f)
+bool bus_torque_fail_peek(pkt::TorqueFail &f)
 {
   if (!tf_new_) {return false;}
   f = tf_;
   return true;
 }
 
-bool bus_torque_fail_take(ntp::TorqueFail &f)
+bool bus_torque_fail_take(pkt::TorqueFail &f)
 {
   if (!tf_new_) {return false;}
   f = tf_;
@@ -373,7 +373,7 @@ void bus_health_step()
       ++volt_n_;
       if (volt_min_dv_ == 0 || dv < volt_min_dv_) {volt_min_dv_ = static_cast<uint8_t>(dv);}
     }
-    if (vt[2] != ntp::TEMP_UNKNOWN) {
+    if (vt[2] != pkt::TEMP_UNKNOWN) {
       temp_c_[i] = vt[2];
       temp_fresh_ |= bit;
     }
@@ -384,7 +384,7 @@ void bus_health_step()
       if (te == 0 && !(torque_lost_ & bit)) {   // 처음 꺼진 걸 봤을 때 이유 상자 하나 (다시 켜지는 않음 — 과부하면 사람이 원인 확인)
         tf_.idx = i;
         tf_.id = ids_[i];
-        tf_.step = ntp::TF_LOST;
+        tf_.step = pkt::TF_LOST;
         tf_.dxl_err = dxl.getLastStatusPacketError();
         tf_.lib_err = 0;
         tf_.pos = he;
@@ -402,7 +402,7 @@ void bus_health_step()
 // 고장 확정: 잠그고, 모터마다 하나씩 "지금 동작 멈춤" 을 씀 (하나씩 쓰면 모터가 대답 → 정말 받았는지 앎)
 //   ① 바퀴(속도 모드): 속도 0 — 가장 위험한 것부터
 //   ② 조향 · 팔(위치 모드): 목표 = 마지막으로 읽은 현재 위치 → 하던 동작(이전 목표로 가던 것)을 그 자리에서 멈춤
-//      (예전에는 바퀴만 세워서, 관측 읽기가 계속되면 Watchdog 도 안 걸려 팔이 이전 목표까지 계속 갔음)
+//      (바퀴만 세우면 관측 읽기가 계속돼 Watchdog 도 안 걸리고 팔이 이전 목표까지 계속 감)
 //      위치는 직전 Sync Read 값(최대 한 바퀴 10 ms 전) — 그 사이 움직인 만큼 아주 조금 되돌아갈 수 있음
 //      직전 Sync Read 에서 못 읽은 위치 모터는 "지금 위치" 를 모름 → 확인 실패로 침
 //   ③ 그리퍼(전류 기반 위치)는 건드리지 않음: 목표를 지금 위치로 바꾸면 쥐는 힘이 빠져 퍽을 놓칠 수 있음
@@ -415,7 +415,7 @@ static bool stop_one(uint8_t i, uint32_t t0)
 {
   // 라이브러리는 "지난 시간 >= timeout" 이면 포기 → 최악 timeout + 1 ms. 그만큼 남아 있을 때만 시도
   if (millis() - t0 + IO_TIMEOUT_MS + 1 > STOP_BUDGET_MS) {return false;}
-  if (modes_[i] == ntp::MODE_VELOCITY) {
+  if (modes_[i] == pkt::MODE_VELOCITY) {
     return timed_write(GOAL_VELOCITY, ids_[i], 0);
   }
   if (!(read_ok_ & (1u << i))) {return false;}   // 지금 위치를 모름
@@ -437,8 +437,8 @@ static void enter_fault()
   // pass 1 = 조향 · 팔: 바퀴가 모두 확인됐을 때만. 하나라도 실패하면 거기서 멈추고 침묵 (어차피 Watchdog 이 전부 세움)
   for (int pass = 0; pass < 2 && all; ++pass) {
     for (uint8_t i = 0; i < n_; ++i) {
-      if (!(ok_ & (1u << i)) || (modes_[i] == ntp::MODE_CURRENT_POSITION && !ext_pos_[i])) {continue;}   // (fw_ext) 그리퍼만 건너뜀, 확장 위치(J1) 는 세움
-      if ((modes_[i] == ntp::MODE_VELOCITY) != (pass == 0)) {continue;}
+      if (!(ok_ & (1u << i)) || (modes_[i] == pkt::MODE_CURRENT_POSITION && !ext_pos_[i])) {continue;}   // (fw_ext) 그리퍼만 건너뜀, 확장 위치(J1) 는 세움
+      if ((modes_[i] == pkt::MODE_VELOCITY) != (pass == 0)) {continue;}
       all = stop_one(i, t0) && all;
       if (!all && pass == 1) {break;}
     }
@@ -463,7 +463,7 @@ bool bus_is_silent()
   return silent_;
 }
 
-bool bus_write_targets(const ntp::Cmd &c, bool host_ok)
+bool bus_write_targets(const pkt::Cmd &c, bool host_ok)
 {
   // 잠금 중: 아무 목표도 안 씀 (바퀴는 개별 정지로 0 이거나, 침묵으로 Watchdog 이 세움). 계속 "실패" 로 알림
   if (latched_) {return false;}
@@ -476,7 +476,7 @@ bool bus_write_targets(const ntp::Cmd &c, bool host_ok)
   for (uint8_t i = 0; i < n_ && i < c.n; ++i) {
     if (!(ok_ & (1u << i))) {continue;}
     const bool valid = host_ok && (c.valid & (1u << i));
-    if (modes_[i] == ntp::MODE_VELOCITY) {
+    if (modes_[i] == pkt::MODE_VELOCITY) {
       // 바퀴: 끊겼거나 목표가 없으면 0 (멈춤)
       sw_vel_[i] = valid ? rads_to_vel_tick(c.target[i]) : 0;
       sw_vel_xels_[sw_vel_info_.xel_count].id = ids_[i];
@@ -484,13 +484,13 @@ bool bus_write_targets(const ntp::Cmd &c, bool host_ok)
       sw_vel_info_.xel_count++;
     } else if (valid) {
       // 위치 모터: 목표가 있을 때만 씀. 없으면 안 써서 마지막 목표에서 버팀
-      sw_pos_[i] = (modes_[i] == ntp::MODE_CURRENT_POSITION) ? rad_to_ext_tick(c.target[i]) : rad_to_pos_tick(c.target[i]);
+      sw_pos_[i] = (modes_[i] == pkt::MODE_CURRENT_POSITION) ? rad_to_ext_tick(c.target[i]) : rad_to_pos_tick(c.target[i]);
       sw_pos_xels_[sw_pos_info_.xel_count].id = ids_[i];
       sw_pos_xels_[sw_pos_info_.xel_count].p_data = reinterpret_cast<uint8_t *>(&sw_pos_[i]);
       sw_pos_info_.xel_count++;
     }
   }
-  // (R5) 예전에는 반환값을 버렸음 → 읽기만 성공하면 comm_err 0 이라 목표 쓰기 실패를 아무도 몰랐음
+  // (R5) 반환값을 봄: 읽기만 성공하면 comm_err 0 이라 목표 쓰기 실패를 따로 알려야 함
   bool ok = true;
   const uint32_t tw = micros();
   if (sw_vel_info_.xel_count) {sw_vel_info_.is_info_changed = true; ok = dxl.syncWrite(&sw_vel_info_) && ok;}
@@ -507,7 +507,7 @@ bool bus_write_targets(const ntp::Cmd &c, bool host_ok)
   return false;
 }
 
-uint16_t bus_read_states(ntp::State &s)
+uint16_t bus_read_states(pkt::State &s)
 {
   s.n = n_;
   // 일단 "쓰는 모터"(켤 때 설정까지 성공한 것) 전부를 실패로 두고, 대답한 것만 지움
@@ -523,7 +523,7 @@ uint16_t bus_read_states(ntp::State &s)
       if (sr_.p_xels[k].id != ids_[i]) {continue;}
       err &= static_cast<uint16_t>(~(1u << i));
       const sr_data_t &d = sr_data_[i];
-      s.pos[i] = (modes_[i] == ntp::MODE_VELOCITY)
+      s.pos[i] = (modes_[i] == pkt::MODE_VELOCITY)
         ? d.position * POS_RAD_PER_TICK                      // 바퀴: 여러 바퀴 누적 각도 그대로
         : (d.position - 2048) * POS_RAD_PER_TICK;            // 위치 모터: 2048 = 0 rad
       s.vel[i] = d.velocity * VEL_RADS_PER_TICK;
@@ -535,7 +535,7 @@ uint16_t bus_read_states(ntp::State &s)
   return err;
 }
 
-void bus_timing_take(ntp::Diag &g)
+void bus_timing_take(pkt::Diag &g)
 {
   t_sync_read_.take(g.sync_read);
   t_sync_write_.take(g.sync_write);
@@ -549,9 +549,9 @@ void bus_timing_take(ntp::Diag &g)
   volt_min_dv_ = 0;
 }
 
-void bus_temp_take(ntp::Temp &t)
+void bus_temp_take(pkt::Temp &t)
 {
   t.n = n_;
-  for (uint8_t i = 0; i < n_; ++i) {t.c[i] = (temp_fresh_ & (1u << i)) ? temp_c_[i] : ntp::TEMP_UNKNOWN;}
+  for (uint8_t i = 0; i < n_; ++i) {t.c[i] = (temp_fresh_ & (1u << i)) ? temp_c_[i] : pkt::TEMP_UNKNOWN;}
   temp_fresh_ = 0;
 }

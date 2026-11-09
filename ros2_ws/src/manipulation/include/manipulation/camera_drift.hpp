@@ -1,6 +1,6 @@
 // camera_drift.hpp — 홈 자세 손목 사진 (로봇 몸통) 을 기준 사진과 비교해 손목 카메라가 손목에서 얼마나 돌았나 (순수 C++ · Eigen, test/test_camera_drift.cpp)
 // =====================================================================
-// 11-05 실물: 세우기 때 손이 박스를 누르며 카메라 경첩이 3.8° 돌아 퍽을 앞 · 옆으로 잘못 봄 (팔 관절값은 그대로).
+// 실물: 세우기 때 손이 박스를 누르며 카메라 경첩이 3.8° 돌아 퍽을 앞 · 옆으로 잘못 봄 (팔 관절값은 그대로).
 // 홈 자세는 늘 같은 관절이라 몸통 화소가 움직였으면 카메라가 돈 것. 맞은 화소 쌍의 광선을 Kabsch 로 맞춰 회전을 구함
 //   (몸통은 5 ~ 20 cm 라 카메라가 옮겨진 만큼은 회전으로 섞여 들어감 — 경첩 축이 렌즈 가까이라 작음)
 #pragma once
@@ -26,7 +26,7 @@ struct CameraDrift
 bool camera_drift(const std::vector<Eigen::Vector2d> & u_ref, const std::vector<Eigen::Vector2d> & u_now,
   double fx, double fy, double cx, double cy, CameraDrift & out);
 
-// 기준 사진을 새로 찍어도 보정이 끊기지 않게 잇기 (11-08 실물: 받침을 바꾸자 옛 기준과 점이 17 개만 맞아 측정이 멈추고,
+// 기준 사진을 새로 찍어도 보정이 끊기지 않게 잇기 (실물: 받침을 바꾸자 옛 기준과 점이 17 개만 맞아 측정이 멈추고,
 //   그사이 카메라가 0.56° 더 돌아 퍽을 약 3 mm 밀려 잡음).
 //   base = 새 기준을 찍을 때 쓰던 보정 (새 기준 카메라 = 명목 · base), meas = 새 기준 대비 측정 (지금 = 새 기준 · meas)
 //   → 명목 대비 = base · meas. 집기 · 놓기 보정값들은 명목 (손눈 보정 URDF) 기준으로 맞춰 둔 것이라 그대로 씀
@@ -35,7 +35,7 @@ Eigen::Quaterniond chain_drift(const Eigen::Quaterniond & base, const Eigen::Qua
 // 보정 사원수의 크기 [°] (로그용 — 이어 쓴 총 각 = drift_deg(chain_drift(base, meas)))
 double drift_deg(const Eigen::Quaterniond & q);
 
-// ref_base.txt 둘째 줄 = 기준 사진 (ref.png) 과의 짝 "ref <크기 B> <수정 시각 s>" (11-08 밤 검수: 사진만 바뀌면 옛 보정을 이어 쓰면 안 됨)
+// ref_base.txt 둘째 줄 = 기준 사진 (ref.png) 과의 짝 "ref <크기 B> <수정 시각 s>" (검수: 사진만 바뀌면 옛 보정을 이어 쓰면 안 됨)
 std::string ref_base_tag(std::uintmax_t size, long long mtime_s);
 // 저장된 짝 줄이 지금 ref.png 의 짝과 같은가. 저장된 줄이 비었으면 (옛 형식, 사원수만) true (뒤 호환)
 bool ref_base_tag_matches(const std::string & stored, const std::string & now);

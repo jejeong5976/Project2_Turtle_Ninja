@@ -5,7 +5,7 @@
 set -uo pipefail
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-17}"   # run_robot.sh 기본과 같음 (팀 로봇 17)
 NAME=${1:-}; [ -n "$NAME" ] || { sed -n 2,4p "$0"; exit 2; }
-DIR=${NT_MAP_DIR:-$HOME/maps}; mkdir -p "$DIR"; OUT="$DIR/$NAME"
+DIR=${MAP_DIR:-$HOME/maps}; mkdir -p "$DIR"; OUT="$DIR/$NAME"
 for e in pgm yaml posegraph data; do [ -e "$OUT.$e" ] && { echo "✗ $OUT.$e 이미 있음 — 다른 이름으로"; exit 2; }; done
 set +u; source /opt/ros/${ROS_DISTRO_WANT:-lyrical}/setup.bash; set -u
 # run_robot.sh slam 을 띄운 터미널과 같은 ROS_DOMAIN_ID · ROS_AUTOMATIC_DISCOVERY_RANGE 여야 서비스가 보임

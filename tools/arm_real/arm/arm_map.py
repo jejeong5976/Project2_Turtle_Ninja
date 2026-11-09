@@ -1,4 +1,4 @@
-"""팔 전용 하드웨어 지도 (ros/hardware_map_arm_only.yaml) 에서 관절 영점 · 모드 읽기 (2026-10-30 저녁).
+"""팔 전용 하드웨어 지도 (ros/hardware_map_arm_only.yaml) 에서 관절 영점 · 모드 읽기.
 팀 ROS 관절값 = (틱 − 영점) · 2π/4096 (그리퍼는 × 0.01149 m/rad). 영점 없으면 2048. mode gripper = 전류 기반 위치(확장, 여러 바퀴)."""
 import re
 from pathlib import Path

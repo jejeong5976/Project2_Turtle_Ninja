@@ -1,7 +1,7 @@
 # RealSense D435 (손목) 컬러 카메라 내부 파라미터 — ROS camera_info 형식
 # 가이드: docs/perception/yolo26_isaac_sim_guide.md 11.3 (D435는 공장값 사용)
 #
-# 측정: 2026-10-21, `rs-enumerate-devices -c` (librealsense), 개발 노트북
+# 측정:, `rs-enumerate-devices -c` (librealsense), 개발 노트북
 # 개체: 시리얼 261822078400 (ASIC 시리얼 241223120621), 펌웨어 5.17.3.10
 # 스트림: Color 640x480 (30fps 사용 예정)
 # 왜곡: librealsense 표기 "Inverse Brown Conrady", 계수 모두 0 → 왜곡 없는 pinhole로 취급

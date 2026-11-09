@@ -6,7 +6,7 @@
 
 | 패키지 | 쓰는 곳 | 설치 | 개발 PC | Jetson |
 |---|---|---|---|---|
-| `libzxing-dev` (zxing-cpp 2.2.1) | perception 벽 바코드 Code128 판독 (`barcode_reader.cpp`). 없으면 OpenCV 로 빌드되지만 Code128 못 읽음 | `sudo apt install libzxing-dev` | 설치함 (2026-11-01) | 미확인 |
+| `libzxing-dev` (zxing-cpp 2.2.1) | perception 벽 바코드 Code128 판독 (`barcode_reader.cpp`). 없으면 OpenCV 로 빌드되지만 Code128 못 읽음 | `sudo apt install libzxing-dev` | 설치함 | 미확인 |
 | TensorRT · CUDA (JetPack) | perception `perception_node` (광각 · 손목 엔진). 없으면 노드가 빌드 안 됨 | JetPack 에 포함 | 없음 (테스트만) | 미확인 (`dpkg -l \| grep -i tensorrt`) |
 
 ## 확인 명령 (Jetson)

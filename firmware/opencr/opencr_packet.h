@@ -1,8 +1,8 @@
-// nt_packet.h — Jetson ↔ OpenCR 패킷 형식 (편지 규칙)
+// opencr_packet.h — Jetson ↔ OpenCR 패킷 형식 (편지 규칙)
 // =====================================================================
-// ★ 이 파일 하나를 OpenCR 펌웨어(firmware/nt_opencr)와 ROS 플러그인(ros2_ws/src/nt_hardware)이 **같이** 쓴다.
+// ★ 이 파일 하나를 OpenCR 펌웨어(firmware/opencr)와 ROS 플러그인(ros2_ws/src/hardware)이 **같이** 쓴다.
 //   양쪽에 따로 적으면 언젠가 어긋남 → 파일 자체를 하나로 해서 어긋날 수가 없게.
-//   (아두이노 스케치는 자기 폴더 밖 파일을 못 읽어서 원본이 여기 있고, nt_hardware 가 이 폴더를 include 한다)
+//   (아두이노 스케치는 자기 폴더 밖 파일을 못 읽어서 원본이 여기 있고, hardware 가 이 폴더를 include 한다)
 //   그래서 표준 라이브러리(vector 등)도 Arduino 전용 함수도 안 씀 — 순수 C++ 과 <stdint.h> <string.h> 만.
 //
 // 모양 (택배 상자: 머리 + 종류 + 길이 + 데이터 + 체크섬)
@@ -20,7 +20,7 @@
 //                   + CONFIG 를 받으면 그 순간 구간을 끊어 "CONFIG 전" 표시로 한 번 보냄 (전후 숫자가 섞이지 않게)
 //   0x06 TEMP       OpenCR → Jetson  1 Hz (DIAG 바로 뒤): 모터별 Present Temperature [°C]
 //   0x07 TORQUE_FAIL OpenCR → Jetson 토크 켜기가 실패하는 동안 0.5 s 마다: 처음 실패한 모터 · 단계 · 모터 오류 · 지금 위치 · 위치 한계
-//                   (11-07 팀장님 요청: "토크를 못 켬" 만으로는 어느 모터가 왜 못 켰는지 모름)
+//                   ("토크를 못 켬" 만으로는 어느 모터가 왜 못 켰는지 모름)
 //   0x08 POS_LIMITS  OpenCR → Jetson CONFIG_ACK 바로 뒤 한 번: 모터별 EEPROM 위치 한계 (Min/Max Position Limit) [눈금], 위치 모드만
 //                   → 플러그인이 켤 때 찍고, 지금 위치가 밖이면 경고 (조향을 손 · 충돌로 돌린 채 켜면 토크가 안 켜짐)
 //                   모르는 종류는 받는 쪽이 그냥 버림 → DIAG · TEMP 를 모르는 옛 플러그인과도 같이 쓸 수 있음
@@ -34,7 +34,7 @@
 #include <stdint.h>
 #include <string.h>
 
-namespace ntp
+namespace pkt
 {
 
 const uint8_t HEADER1 = 0xAA;
@@ -176,7 +176,7 @@ struct PosLimits
 
 // 토크 켜기 실패 (TORQUE_FAIL) — 위치 모터는 켤 때 ① 지금 위치 읽기 → ② 그 위치를 목표로 쓰기 → ③ Torque Enable 쓰기.
 //   ② 전에 지금 위치가 모터 EEPROM 위치 한계 (Min/Max Position Limit) 밖이면 쓰지 않고 TF_RANGE
-//   (꺼진 동안 손 · 충돌로 조향이 한계 밖으로 돌면 모터가 그 목표를 거절 → 토크가 계속 안 켜짐, 11-07 실물)
+//   (꺼진 동안 손 · 충돌로 조향이 한계 밖으로 돌면 모터가 그 목표를 거절 → 토크가 계속 안 켜짐, 실물)
 const uint8_t TF_READ = 1;        // ① 지금 위치 읽기 실패 (대답 없음)
 const uint8_t TF_RANGE = 2;       // 지금 위치가 위치 한계 밖 → 목표 · 토크를 안 씀
 const uint8_t TF_GOAL = 3;        // ② 목표 쓰기 실패 (위치 모터 = 지금 위치, 바퀴 = 속도 0)
@@ -531,4 +531,4 @@ private:
   uint32_t bad_ = 0;
 };
 
-}  // namespace ntp
+}  // namespace pkt

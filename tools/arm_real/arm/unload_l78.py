@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""L7 · L8 꺼내기 — 사람 시연 재생 (2026-11-01, 계산만). 실행은 사람이: arm_pose_runner.py lc_unl78.checked.json --capture
+"""L7 · L8 꺼내기 — 사람 시연 재생 (계산만). 실행은 사람이: arm_pose_runner.py lc_unl78.checked.json --capture
 
-  $NT_PY unload_l78.py L7      (L7 먼저 — L8 꺼낼 때 L7 위로 다가가야 함)
-  $NT_PY unload_l78.py L8
+  $ARM_PY unload_l78.py L7      (L7 먼저 — L8 꺼낼 때 L7 위로 다가가야 함)
+  $ARM_PY unload_l78.py L8
 
-L7 · L8 은 손을 세운 채로는 퍽을 컵 밖으로 못 듦 (손끝 최고 L8 149 · L7 163 mm). 11-01 사용자 시연(arm_teach, 토크 끔):
+L7 · L8 은 손을 세운 채로는 퍽을 컵 밖으로 못 듦 (손끝 최고 L8 149 · L7 163 mm). 사람 시연(arm_teach, 토크 끔):
   얕게 쥐고(L8 약 14 · L7 약 21 mm) J4 를 기구 끝(약 2485 틱) 가까이 쓰며 거의 수직으로 들어 올림 → 그 관절 기록을 그대로 재생.
   재생 구간만 J4 상한 2470 (끝 15 틱 앞, 12:15 실물: 2495 에서 8 s 버티다 과부하) — 넘는 값은 2470 으로 자름.
 순서: 받침 → 박스 위 → (넣기 때 경유점) → 칸 위에서 그리퍼 '놓기' 간격으로 열기 → 시연 쥐는 자세 → 닫기 → 시연 꺼내기 → 박스 위 → 박스에 놓기 → 받침.
@@ -24,9 +24,9 @@ import pose_safety as ps          # noqa: E402
 import rack_load                  # noqa: E402
 import sag_model                  # noqa: E402
 
-PY = os.environ.get('NT_PY', sys.executable)
-TEACH = HERE / 'teach_l78'   # 11-01 사람 시연 기록 (poses.txt = 자세 폴더 이름, 자세 자료는 NT_POSE_MEASURE/runs/)
-POSE_MEASURE = Path(os.environ.get('NT_POSE_MEASURE', HERE.parent / 'arm_workspace_measure_20261024'))
+PY = os.environ.get('ARM_PY', sys.executable)
+TEACH = HERE / 'teach_l78'   #  사람 시연 기록 (poses.txt = 자세 폴더 이름, 자세 자료는 POSE_MEASURE/runs/)
+POSE_MEASURE = Path(os.environ.get('POSE_MEASURE', HERE.parent / 'arm_workspace_measure_20261024'))
 J4_HI = 2470
 DROP = (0.235, 0.0)               # 박스 놓는 자리 = 넣기 경유점(L7/L8 설정)의 출발 자리
 SHOW = {                          # 칸: (시연 폴더 순서, 쥐는 순간 기록 번호, 꺼낸 끝 기록 번호, 쥔 깊이 m)
@@ -61,7 +61,7 @@ def main():
         q, fq = C._qf(t)
         return gt.q_to_ticks(sag_model.encoder_goal_q(C.M, q, fq, held_kg=kg))
 
-    def cap(t, kg):                                                     # 처짐 앞먹임 명령까지 J4 ≤ J4_HI (11-01 L8: 명령 2471)
+    def cap(t, kg):                                                     # 처짐 앞먹임 명령까지 J4 ≤ J4_HI (L8: 명령 2471)
         t = list(t); t[3] = min(t[3], J4_HI)
         while enc(t, kg)[3] > J4_HI:
             t[3] -= 1

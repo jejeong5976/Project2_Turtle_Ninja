@@ -1,5 +1,5 @@
 # 팔 기구학 — 실물 집기 계산기(arm_tests grasp_test · reach_model · sag_model)와 같은 모델. 손으로 고치지 말 것
-# 모델 base = 10-27 배포 URDF base_link (바닥 위 base_z_floor). 로봇 base_link 와 x · y 같고 z 만 다름
+# 모델 base = 배포 URDF base_link (바닥 위 base_z_floor). 로봇 base_link 와 x · y 같고 z 만 다름
 # 관절 사슬: T_base_armbase(4×4) · joint_T(관절마다 4×4) · axis, 손끝 · 접근축 · 닫힘축 = link5 좌표
 # 틱 ↔ 모델 관절: q = q_deg_at_ref + sign · (틱 − ref_tick) · 360/4096. 처짐: 명령 = 실제 − sag_c · τ (J2 · J3 · J4)
 /**:

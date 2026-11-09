@@ -14,27 +14,27 @@
 
 #include <Arduino.h>
 
-#include "nt_packet.h"
+#include "opencr_packet.h"
 
 bool bus_begin(uint32_t baud);
 
 // CONFIG 적용: 토크 끄고 → 모드 · 속도/가속 한계 · 그리퍼 전류 · 응답 지연 0 · Bus Watchdog 쓰기.
 // 돌려주는 값 = ping 에 대답하고 **설정 쓰기까지 전부 성공한** 모터 비트 (CONFIG_ACK 로 보냄)
 // 고장 잠금(아래)도 여기서만 풀림. ⚠ 모든 모터 토크를 먼저 끄므로 팔이 들려 있으면 처짐 → 팔을 받친 뒤 보낼 것
-uint16_t bus_configure(const ntp::Config &c);
+uint16_t bus_configure(const pkt::Config &c);
 
 // 토크 켜기/끄기. 켤 때는 위치 모터의 목표를 "지금 위치" 로 먼저 맞춰서 팔이 휙 움직이지 않게
 void bus_set_torque(bool on);
 // 실제로 토크가 켜졌나 → STATE 의 ST_TORQUE 비트
 //   = 위의 쓰기가 전부 성공했고 + 운전 중 되읽은 Torque Enable 이 꺼진 모터가 없음 (R5)
-//   예전에는 "마지막 쓰기 성공" 만 기억해서, 운전 중 모터가 스스로 토크를 끄거나(과부하 shutdown) 재부팅돼도 몰랐음
+//   "마지막 쓰기 성공" 만으로는 운전 중 모터가 스스로 토크를 끄거나(과부하 shutdown) 재부팅된 것을 모름
 bool bus_torque_is_on();
 // 토크 켜기/끄기가 실패한 이유 (TORQUE_FAIL 상자) — 마지막 시도에서 처음 실패한 모터 · 단계 · 모터 오류 · 지금 위치 · 위치 한계.
 //   새 것이 있으면 true 로 꺼냄 (꺼내면 지움). 위치 한계는 CONFIG 때 EEPROM 에서 읽음 (위치 모드만)
-bool bus_torque_fail_take(ntp::TorqueFail &f);
-bool bus_torque_fail_peek(ntp::TorqueFail &f);   // 꺼내지 않고 보기 (보낼지 정할 때)
+bool bus_torque_fail_take(pkt::TorqueFail &f);
+bool bus_torque_fail_peek(pkt::TorqueFail &f);   // 꺼내지 않고 보기 (보낼지 정할 때)
 // CONFIG 때 읽은 모터별 EEPROM 위치 한계 (POS_LIMITS 상자, ACK 바로 뒤 한 번). 위치 모드가 아니거나 못 읽으면 TF_NO_LIMIT
-void bus_pos_limits(ntp::PosLimits &l);
+void bus_pos_limits(pkt::PosLimits &l);
 // 모터 상태 되읽기 한 칸 (매 주기 1 모터씩 돌아가며: Hardware Error Status · 입력 전압(배터리) + 온도 · Torque Enable). 14 개면 0.14 s 에 한 바퀴
 //   한 번에 모두 읽으면 버스 시간이 늘어서 하나씩. 통신 실패는 bus_read_states 의 comm_err 가 이미 잡음
 //   전압(144, 2 바이트) · 온도(146, 1 바이트)는 붙어 있어서 읽기 1 번에 3 바이트 → 온도 때문에 늘어난 버스 시간 = 1 바이트 (1 Mbps 에서 10 µs)
@@ -42,7 +42,7 @@ void bus_health_step();
 // Hardware Error Status 가 0 이 아닌 모터 비트 → ST_HW_ERROR
 uint16_t bus_hw_error_mask();
 // 모터 온도 (TEMP 상자, 1 초마다): 이 구간에 읽은 마지막 값 · 못 읽은 모터는 TEMP_UNKNOWN. 꺼내면 새 구간
-void bus_temp_take(ntp::Temp &t);
+void bus_temp_take(pkt::Temp &t);
 
 // 목표 쓰기 (Sync Write 2번: 바퀴 속도, 위치 모터 위치).
 // host_ok = false (Jetson 끊김) 이면 바퀴만 0, 위치 모터는 마지막 목표 그대로 = 그 자리에서 버팀 (팔이 떨어지지 않게)
@@ -54,17 +54,17 @@ void bus_temp_take(ntp::Temp &t);
 //     ① 바퀴에 하나씩 속도 0, 이어서 조향 · 팔은 목표 = 지금 위치 (그리퍼는 그대로 — 쥔 힘 유지)
 //        전체 20 ms 예산, 각 3 ms 응답 대기
 //     ② 하나라도 확인 못 하면 버스 침묵 (bus_is_silent) → 마지막 패킷부터 Bus Watchdog(0.3 s) 이 모든 모터를 세움
-//   잠금 중에는 통신이 돌아와도 목표 · 토크를 바꾸지 않음 (예전: 회복되면 원래 속도로 재출발했음)
+//   잠금 중에는 통신이 돌아와도 목표 · 토크를 바꾸지 않음 (회복돼도 원래 속도로 다시 출발하지 않게)
 //   잠금은 CONFIG(bus_configure) 로만 풀림 — 펌웨어가 스스로 풀지 않음
 //   ⚠ "3 번" 은 판정 횟수일 뿐 정지 시간 보장이 아님. 정지 시간은 실제 버스에서 따로 잼
-bool bus_write_targets(const ntp::Cmd &c, bool host_ok);
+bool bus_write_targets(const pkt::Cmd &c, bool host_ok);
 bool bus_fault_latched();      // → STATE 의 ST_FAULT_LATCHED
 bool bus_is_silent();
 uint32_t bus_stop_attempt_ms();   // 마지막 개별 정지 시도에 걸린 시간 [ms] (시험용)
 
 // 보드 안 시간 측정 (DIAG) — 지금까지 모은 Sync Read · Sync Write · 개별 읽기/쓰기 시간과
 //   마지막 고장 정지 시간을 g 에 채우고 0 부터 다시 모음 (g.loop · resync · ms · window_ms 는 .ino 가 채움)
-void bus_timing_take(ntp::Diag &g);
+void bus_timing_take(pkt::Diag &g);
 
 // 시간 모으기 한 칸 (횟수 · 실패 · 평균 · 최대, 단위 µs)
 struct TimeAcc
@@ -77,7 +77,7 @@ struct TimeAcc
     sum += us;
     if (us > max) {max = us;}
   }
-  void take(ntp::TimeStat &t)
+  void take(pkt::TimeStat &t)
   {
     t.n = static_cast<uint16_t>(n > 65535 ? 65535 : n);
     t.fail = static_cast<uint16_t>(fail > 65535 ? 65535 : fail);
@@ -89,4 +89,4 @@ struct TimeAcc
 };
 
 // 상태 읽기 (Sync Read 1번: 전류 · 속도 · 위치, 주소 126 부터 10 바이트). 돌려주는 값 = 읽기 실패한 모터 비트
-uint16_t bus_read_states(ntp::State &s);
+uint16_t bus_read_states(pkt::State &s);

@@ -49,7 +49,7 @@ TEST(CameraDrift, NoMoveIsIdentityAndTooFewPointsFail)
 
 TEST(CameraDrift, NewReferenceKeepsEarlierDrift)
 {
-  // 11-08 실물: 기준 사진을 새로 찍을 때 카메라는 이미 명목에서 B (약 1.45°) 돌아 있음.
+  // 실물: 기준 사진을 새로 찍을 때 카메라는 이미 명목에서 B (약 1.45°) 돌아 있음.
   //   새 기준 대비 측정 M 만으로는 명목 대비가 아님 → chain_drift(B, M) 로 이어야 퍽이 맞는 자리
   const Eigen::Matrix3d B = (Eigen::AngleAxisd(-0.0222, Eigen::Vector3d::UnitX()) * Eigen::AngleAxisd(-0.0070, Eigen::Vector3d::UnitY()) *
     Eigen::AngleAxisd(-0.0101, Eigen::Vector3d::UnitZ())).toRotationMatrix();
@@ -67,7 +67,7 @@ TEST(CameraDrift, NewReferenceKeepsEarlierDrift)
   ASSERT_TRUE(manipulation::camera_drift(a, b, fx, fy, cx, cy, d));
   EXPECT_LT((d.R - M).norm(), 1e-9);   // 새 기준 대비 측정은 M 만
   const Eigen::Quaterniond q = manipulation::chain_drift(Eigen::Quaterniond(B), Eigen::Quaterniond(d.R));
-  const Eigen::Vector3d P(0.025, -0.044, 0.334);         // 11-08 LOOK 에서 본 퍽 (카메라 좌표)
+  const Eigen::Vector3d P(0.025, -0.044, 0.334);         //  LOOK 에서 본 퍽 (카메라 좌표)
   const Eigen::Vector3d seen = (B * M).transpose() * P;  // 지금 카메라가 본 퍽
   EXPECT_LT((q * seen - P).norm(), 1e-9);                // 이어 쓰면 맞는 자리
   EXPECT_GT((d.R * seen - P).norm(), 0.006);             // 0 에서 다시 (예전) 면 B 만큼 틀림 — LOOK 거리에서 6 mm 넘게
@@ -77,7 +77,7 @@ TEST(CameraDrift, NewReferenceKeepsEarlierDrift)
 
 TEST(CameraDrift, RefBaseTagMatchesOnlyTheSameImage)
 {
-  // 11-08 밤 검수: ref.png 만 바뀌고 ref_base.txt 가 남으면 옛 보정을 잘못 이어 씀 → 크기 · 수정 시각 짝이 같을 때만
+  // 검수: ref.png 만 바뀌고 ref_base.txt 가 남으면 옛 보정을 잘못 이어 씀 → 크기 · 수정 시각 짝이 같을 때만
   const std::string now = manipulation::ref_base_tag(307200, 1731079620);
   EXPECT_EQ(now, "ref 307200 1731079620");
   EXPECT_TRUE(manipulation::ref_base_tag_matches(now, now));

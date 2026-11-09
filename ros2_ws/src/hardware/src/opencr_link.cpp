@@ -127,9 +127,9 @@ OpenCRLink::OpenCRLink(std::vector<JointSpec> joints, uint8_t bus_watchdog)
 
 bool OpenCRLink::open(const std::string & port, int baud, std::string & err)
 {
-  if (joints_.size() > ntp::MAX_JOINTS) {
+  if (joints_.size() > pkt::MAX_JOINTS) {
     err = "모터가 " + std::to_string(joints_.size()) + " 개 — 보드 1장에 최대 " +
-      std::to_string(ntp::MAX_JOINTS) + " 개 (hardware_map.yaml 에서 보드를 나눌 것)";
+      std::to_string(pkt::MAX_JOINTS) + " 개 (hardware_map.yaml 에서 보드를 나눌 것)";
     return false;
   }
   if (!port_.open(port, baud, err)) {return false;}
@@ -143,7 +143,7 @@ void OpenCRLink::close() {port_.close();}
 
 int OpenCRLink::configure(double timeout_s)
 {
-  ntp::Config c{};
+  pkt::Config c{};
   c.n = static_cast<uint8_t>(joints_.size());
   c.bus_watchdog = bus_watchdog_;
   for (std::size_t i = 0; i < joints_.size(); ++i) {
@@ -153,8 +153,8 @@ int OpenCRLink::configure(double timeout_s)
     c.j[i].profile_acc = joints_[i].profile_acc;
     c.j[i].goal_current = joints_[i].goal_current;
   }
-  uint8_t buf[ntp::MAX_FRAME];
-  const uint16_t len = ntp::encode_config(c, buf, sizeof(buf));
+  uint8_t buf[pkt::MAX_FRAME];
+  const uint16_t len = pkt::encode_config(c, buf, sizeof(buf));
   if (len == 0) {return -1;}
 
   waiting_ack_ = true;
@@ -188,13 +188,13 @@ int OpenCRLink::configure(double timeout_s)
 
 bool OpenCRLink::send_command(const std::vector<double> & targets, bool torque)
 {
-  ntp::Cmd c{};
+  pkt::Cmd c{};
   c.seq = ++seq_;
-  c.flags = torque ? ntp::FLAG_TORQUE : 0;
+  c.flags = torque ? pkt::FLAG_TORQUE : 0;
   c.n = static_cast<uint8_t>(joints_.size());
   for (std::size_t i = 0; i < joints_.size(); ++i) {
     const double t = i < targets.size() ? targets[i] : NAN;
-    // 여러 바퀴 관절은 바퀴 보정을 정하기 전 (CONFIG · 통신 끊김 뒤 첫 정상 측정 전) 엔 목표를 안 보냄 — 옛 turn_rad 로 보내면 모터가 이미 다시 센 뒤라 한 바퀴 돌 수 있음 (11-09 검수)
+    // 여러 바퀴 관절은 바퀴 보정을 정하기 전 (CONFIG · 통신 끊김 뒤 첫 정상 측정 전) 엔 목표를 안 보냄 — 옛 turn_rad 로 보내면 모터가 이미 다시 센 뒤라 한 바퀴 돌 수 있음 (검수)
     //   valid 비트가 꺼진 위치 모터는 펌웨어가 목표를 안 바꿈 = 마지막 목표에서 버팀 (motor_bus.cpp bus_write_targets)
     const bool turn_ready = !is_multi_turn(joints_[i]) || turn_set_[i];
     if (std::isfinite(t) && turn_ready) {
@@ -204,8 +204,8 @@ bool OpenCRLink::send_command(const std::vector<double> & targets, bool torque)
       c.target[i] = 0.0f;
     }
   }
-  uint8_t buf[ntp::MAX_FRAME];
-  const uint16_t len = ntp::encode_cmd(c, buf, sizeof(buf));
+  uint8_t buf[pkt::MAX_FRAME];
+  const uint16_t len = pkt::encode_cmd(c, buf, sizeof(buf));
   return len > 0 && port_.write_all(buf, len);
 }
 
@@ -220,9 +220,9 @@ int OpenCRLink::poll()
     for (long k = 0; k < n; ++k) {
       if (!parser_.feed(buf[k])) {continue;}
       ++frames_;
-      if (parser_.type() == ntp::TYPE_STATE) {
-        ntp::State s;
-        if (!ntp::decode_state(parser_.data(), parser_.len(), s)) {continue;}
+      if (parser_.type() == pkt::TYPE_STATE) {
+        pkt::State s;
+        if (!pkt::decode_state(parser_.data(), parser_.len(), s)) {continue;}
         state_.ms = s.ms;
         state_.seq_echo = s.seq_echo;
         state_.status = s.status;
@@ -232,7 +232,7 @@ int OpenCRLink::poll()
         if (state_.joints_valid) {
           for (std::size_t i = 0; i < joints_.size(); ++i) {
             const double k_scale = joints_[i].scale;
-            // 통신 끊김 (T1 켠 채 팔 전원이 잠깐 나감 등) 뒤엔 모터가 0 ~ 4095 로 다시 셀 수 있음 → 바퀴 보정을 다음 정상 측정에서 다시 정함 (11-08 밤 검수)
+            // 통신 끊김 (T1 켠 채 팔 전원이 잠깐 나감 등) 뒤엔 모터가 0 ~ 4095 로 다시 셀 수 있음 → 바퀴 보정을 다음 정상 측정에서 다시 정함 (검수)
             //   J1 (영점 ± 2025 눈금) · 그리퍼는 영점 ± 반 바퀴 안이라 언제 다시 정해도 답이 하나 → 정상 때 동작은 그대로
             if (is_multi_turn(joints_[i]) && turn_set_[i] && (s.comm_err & (1u << i))) {
               turn_set_[i] = 0;
@@ -280,36 +280,36 @@ int OpenCRLink::poll()
         got_state_ = true;
         last_state_time_ = Clock::now();
         ++new_states;
-      } else if (parser_.type() == ntp::TYPE_DIAG) {
-        ntp::Diag g;
-        if (ntp::decode_diag(parser_.data(), parser_.len(), g)) {
+      } else if (parser_.type() == pkt::TYPE_DIAG) {
+        pkt::Diag g;
+        if (pkt::decode_diag(parser_.data(), parser_.len(), g)) {
           diag_.add(g);
           last_diag_ = g;
           ++diag_count_;
         }
-      } else if (parser_.type() == ntp::TYPE_TEMP) {
-        ntp::Temp t;
-        if (ntp::decode_temp(parser_.data(), parser_.len(), t) && t.n == joints_.size()) {
-          for (std::size_t i = 0; i < joints_.size(); ++i) {temps_[i] = t.c[i] == ntp::TEMP_UNKNOWN ? -1 : t.c[i];}
+      } else if (parser_.type() == pkt::TYPE_TEMP) {
+        pkt::Temp t;
+        if (pkt::decode_temp(parser_.data(), parser_.len(), t) && t.n == joints_.size()) {
+          for (std::size_t i = 0; i < joints_.size(); ++i) {temps_[i] = t.c[i] == pkt::TEMP_UNKNOWN ? -1 : t.c[i];}
           ++temp_count_;
         }
-      } else if (parser_.type() == ntp::TYPE_POS_LIMITS) {
-        ntp::PosLimits l;
-        if (ntp::decode_pos_limits(parser_.data(), parser_.len(), l) && l.n == joints_.size()) {
-          pos_limits_.assign(l.n, {ntp::TF_NO_LIMIT, ntp::TF_NO_LIMIT});
+      } else if (parser_.type() == pkt::TYPE_POS_LIMITS) {
+        pkt::PosLimits l;
+        if (pkt::decode_pos_limits(parser_.data(), parser_.len(), l) && l.n == joints_.size()) {
+          pos_limits_.assign(l.n, {pkt::TF_NO_LIMIT, pkt::TF_NO_LIMIT});
           for (uint8_t i = 0; i < l.n; ++i) {pos_limits_[i] = {l.lo[i], l.hi[i]};}
           pos_limits_ok_ = true;
         }
-      } else if (parser_.type() == ntp::TYPE_TORQUE_FAIL) {
-        ntp::TorqueFail f;
-        if (ntp::decode_torque_fail(parser_.data(), parser_.len(), f)) {
+      } else if (parser_.type() == pkt::TYPE_TORQUE_FAIL) {
+        pkt::TorqueFail f;
+        if (pkt::decode_torque_fail(parser_.data(), parser_.len(), f)) {
           torque_fail_ = f;
           torque_fail_time_ = Clock::now();
           ++torque_fail_count_;
         }
-      } else if (parser_.type() == ntp::TYPE_CONFIG_ACK && waiting_ack_) {
-        ntp::ConfigAck a;
-        if (ntp::decode_ack(parser_.data(), parser_.len(), a) && a.n == joints_.size()) {
+      } else if (parser_.type() == pkt::TYPE_CONFIG_ACK && waiting_ack_) {
+        pkt::ConfigAck a;
+        if (pkt::decode_ack(parser_.data(), parser_.len(), a) && a.n == joints_.size()) {
           ack_mask_ = a.ok_mask;
         }
       }
@@ -318,7 +318,7 @@ int OpenCRLink::poll()
   return new_states;
 }
 
-bool OpenCRLink::last_torque_fail(ntp::TorqueFail & f, double & age_s) const
+bool OpenCRLink::last_torque_fail(pkt::TorqueFail & f, double & age_s) const
 {
   if (torque_fail_count_ == 0) {return false;}
   f = torque_fail_;
@@ -342,7 +342,7 @@ std::string pos_limits_text(
   out_of_range.clear();
   char buf[200];
   for (std::size_t i = 0; i < joints.size() && i < lim.size(); ++i) {
-    if (lim[i].first == ntp::TF_NO_LIMIT) {continue;}
+    if (lim[i].first == pkt::TF_NO_LIMIT) {continue;}
     const double a = motor_to_joint(joints[i], (lim[i].first - 2048) * k) * 180.0 / M_PI;
     const double b = motor_to_joint(joints[i], (lim[i].second - 2048) * k) * 180.0 / M_PI;
     const double now = i < q.size() ? q[i] * 180.0 / M_PI : NAN;
@@ -362,7 +362,7 @@ std::string pos_limits_text(
   return line;
 }
 
-std::string torque_fail_text(const std::vector<JointSpec> & joints, const ntp::TorqueFail & f)
+std::string torque_fail_text(const std::vector<JointSpec> & joints, const pkt::TorqueFail & f)
 {
   const std::string name = f.idx < joints.size() ? joints[f.idx].name : std::string("?");
   char who[96];
@@ -387,18 +387,18 @@ std::string torque_fail_text(const std::vector<JointSpec> & joints, const ntp::T
   }
   char buf[320];
   switch (f.step) {
-    case ntp::TF_READ:
+    case pkt::TF_READ:
       std::snprintf(buf, sizeof(buf), "%s 지금 위치 읽기 실패%s → 선 · 전원 · 배터리 확인", who, err);
       break;
-    case ntp::TF_RANGE:
+    case pkt::TF_RANGE:
       std::snprintf(buf, sizeof(buf), "%s 지금 %d 눈금 (관절 %+.0f°) 이 모터 위치 한계 %d–%d 눈금 (관절 %+.0f°~%+.0f°) 밖 → 손으로 한계 안 "
         "(조향이면 똑바로) 으로 돌려 놓고 다시 켤 것", who, f.pos, deg(f.pos), f.min_lim, f.max_lim,
         std::min(deg(f.min_lim), deg(f.max_lim)), std::max(deg(f.min_lim), deg(f.max_lim)));
       break;
-    case ntp::TF_GOAL:
+    case pkt::TF_GOAL:
       std::snprintf(buf, sizeof(buf), "%s 목표 쓰기 실패 (지금 %d 눈금)%s", who, f.pos, err);
       break;
-    case ntp::TF_LOST: {
+    case pkt::TF_LOST: {
       // Hardware Error Status 비트 (XM430): 0 입력 전압 · 2 과열 · 3 엔코더 · 4 전기 충격 · 5 과부하
       std::string hw;
       static const std::pair<int, const char *> bits[] = {{0, "입력 전압"}, {2, "과열"}, {3, "엔코더"}, {4, "전기 충격"}, {5, "과부하"}};
@@ -409,7 +409,7 @@ std::string torque_fail_text(const std::vector<JointSpec> & joints, const ntp::T
         static_cast<unsigned>(f.pos & 0xFF), hw.empty() ? "" : " = ", hw.c_str(), err);
       break;
     }
-    case ntp::TF_BUDGET:
+    case pkt::TF_BUDGET:
       std::snprintf(buf, sizeof(buf), "%s 에서 켜기 시도 시간 초과 (버스가 느림 · 대답 늦은 모터)%s", who, err);
       break;
     default:

@@ -257,9 +257,9 @@ bool park_nodes(
       f.z() = c.floor_z + c.insert_clear + half * (std::fabs(k_s.z()) + std::fabs(n_s.z()));
       const Eigen::Vector3d p_ins = f - (c.length / 2.0) * a_s - Hs * c_h - c.insert_extra * Z;
       // 받침 바깥 위 수직 (반지름 +0.04, 바닥 + 62.5 mm) 에서 기울이며 넣기 — 위치 · 기울임을 같이 나눠 감
-      //   insert_back > 0: 기울이기는 insert_back 위 점까지 (다 기울인 자세), 거기서 그 자세로 곧게 내려 넣기 (11-07 실물: 턱에 2–3 mm 걸침)
+      //   insert_back > 0: 기울이기는 insert_back 위 점까지 (다 기울인 자세), 거기서 그 자세로 곧게 내려 넣기 (실물: 턱에 2–3 mm 걸침)
       const bool straight = c.insert_back > 0.0;
-      // 넣는 끝점을 손등 (손목 카메라) 쪽으로 release_up 만큼 — 넣으면서 같이 (11-07 사용자: 놓기 전에 손목을 카메라 달린 위로 5 mm, 따로 말고 넣으며)
+      // 넣는 끝점을 손등 (손목 카메라) 쪽으로 release_up 만큼 — 넣으면서 같이 (놓기 전에 손목을 카메라 달린 위로 5 mm, 따로 말고 넣으며)
       const Eigen::Vector3d p_end = p_ins + c.release_up * Hs.col(1);
       const Eigen::Vector3d p_tilt_end = straight ? Eigen::Vector3d(p_ins + c.insert_back * Z - c.insert_from_back * R) : p_end;
       const Eigen::Vector3d p_over = at(0.04, c.floor_z + 0.0625);
@@ -270,7 +270,7 @@ bool park_nodes(
         const double fk = static_cast<double>(k) / c.tilt_steps;
         const char * g = (!straight && k == c.tilt_steps) ? release : (k == c.loose_step ? "loose" : "");
         ok = add("park_tilt" + std::to_string(k), p_over + (p_tilt_end - p_over) * fk, cd.th * fk, c.held_kg, true, g);
-        if (ok && c.insert_dj3 != 0.0) {nodes.back().q[2] += c.insert_dj3 * fk;}   // 실물 맞춤 (11-07 사용자: 넣을 때 J3 를 조금 더 올려)
+        if (ok && c.insert_dj3 != 0.0) {nodes.back().q[2] += c.insert_dj3 * fk;}   // 실물 맞춤 (넣을 때 J3 를 조금 더 올려)
       }
       if (ok && straight) {
         ok = add("park_insert", p_end, cd.th, c.held_kg, true, release);
@@ -278,7 +278,7 @@ bool park_nodes(
       }
       Eigen::Vector3d p_rel = p_end;
       // 당기며 놓기: 넣는 점에서 같은 높이 · 같은 기울임으로 J1 쪽 (뒤) 으로 곧게 release_pull 만큼 (+ release_pull_dz 위아래), 끝점에서 놓음
-      //   (11-07 실물: 아래 끝 둘레로 돌려 당기면 손이 10 mm 올라감 → 사용자: 올리지 말고 뒤로 천천히 밀며 넣기)
+      //   (실물: 아래 끝 둘레로 돌려 당기면 손이 10 mm 올라감 → 올리지 말고 뒤로 천천히 밀며 넣기)
       const Eigen::Vector3d p_pull0 = p_end;
       for (int k = 1; pull && ok && k <= c.release_pull_steps; ++k) {
         const double fk = static_cast<double>(k) / c.release_pull_steps;
@@ -288,7 +288,7 @@ bool park_nodes(
       }
       if (!ok) {continue;}
       if (c.press_mode) {
-        // 꽂아 누르기 (밀기 대신, 11-07 사용자 사진): 놓은 손 (같은 기울임) 을 press_top 높이까지 곧게 올려 퍽에서 뺌 → 그 자리에서 손을 수직으로 · 닫음
+        // 꽂아 누르기 (밀기 대신): 놓은 손 (같은 기울임) 을 press_top 높이까지 곧게 올려 퍽에서 뺌 → 그 자리에서 손을 수직으로 · 닫음
         //   → 받침 뒤 (J1 쪽, 퍽이 걸리는 쪽) press_r 위로 → 수직으로 곧게 press_h 까지 내려 꽂음 (걸린 퍽 뒷부분을 눌러 넣어 세움) → 다시 위로
         //   수직 손은 받침 위 손끝 바닥 + 66 mm 까지 닿음 (75 는 안 됨, IK 탐색) → 선 퍽 윗면 (60) 위로 넘어감
         const double z_top = c.floor_z + c.press_top;
@@ -337,7 +337,7 @@ bool park_nodes(
         for (int k = 1; k <= c.push_steps && pushed; ++k) {
           const double f = static_cast<double>(k) / c.push_steps;
           pushed = add("park_push" + std::to_string(k), at(r0 + (x_stop - r0) * f, z0 + (pz - z0) * f), -scoop * (1.0 - f), 0.0, true, "");
-          // J3 더 굽힘: 밀기 가운데서 가장 많이, 끝점에서 다시 0 (굽힌 채 끝나면 그리퍼가 받침에 닿음, 11-07 사용자)
+          // J3 더 굽힘: 밀기 가운데서 가장 많이, 끝점에서 다시 0 (굽힌 채 끝나면 그리퍼가 받침에 닿음)
           if (pushed && c.push_dj3 != 0.0) {nodes.back().q[2] += c.push_dj3 * std::sin(M_PI * f);}
           if (pushed && c.push_dj2 != 0.0) {   // J2 더 올림: + = 손끝 위 (관절 부호는 FK 로)
             Q5 qu = nodes.back().q;

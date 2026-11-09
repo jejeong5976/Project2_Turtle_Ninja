@@ -1,5 +1,9 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.10)
 project(swerve_controller)
+# realtime_tools 가 부르는 find_package(Boost): CMake 3.30+ 의 CMP0167 경고 → 지금 동작 (FindBoost) 그대로
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 OLD)
+endif()
 
 # 빌드 유형을 안 주면 최적화(Release) — 측정: 100 Hz 주기 계산이 -O0 대비 3~4 배 빠름 (최적화 없음이 기본이었음)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
