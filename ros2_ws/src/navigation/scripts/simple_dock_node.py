@@ -8,7 +8,9 @@
 동작: simple_dock_core.DockCore (제자리로 돌아 박스를 보고 → 곧게 다가감, 최고 --v_max). 이 목표 동안 collision_monitor 영역을 끄고
       (박스 면 1 cm 앞이라 PolygonStop 이 걸림) 대신 라이다 원래 점으로 몸 둘레 --margin 안 물체를 직접 봄 → 있으면 멈추고 실패 (abort)
 끝나면 (성공 · 실패 · 취소 · 시간 초과 모두) 영역을 다시 켠 뒤 (3 번까지) 결과를 보냄 → 바로 다음 목표가 와도 안 겹침
-11-08 리뷰 고침: 합친 스캔은 그 스캔 시각의 TF 로 · 안전 틈은 원래 스캔 나이만큼 일찍 · 넘겨받을 때 아직 미끄러지면 설 때까지 0 (최대 0.6 s)
+  다시 켜기가 3 번 다 실패하면: 결과 = 실패 (도착했어도), 1 s 마다 다시 켜기를 이어가고 켜질 때까지 새 목표 거절
+  (영역이 꺼진 채 planning 이 다음 주행으로 넘어가지 않게. 주행 노드 rl_nav 도 목표 시작 때 영역 켬을 확인함)
+리뷰 고침: 합친 스캔은 그 스캔 시각의 TF 로 · 안전 틈은 원래 스캔 나이만큼 일찍 · 넘겨받을 때 아직 미끄러지면 설 때까지 0 (최대 0.6 s)
           · 박스를 한 번도 못 보고 지도 자리에 서면 경고 (--require_box 면 실패)
 """
 import argparse
@@ -74,6 +76,9 @@ class SimpleDock(Node):
         self.polys = [p for p in a.disable_polygons.split(',') if p]
         self.cm = self.create_client(SetParameters, f'{a.cm_node}/set_parameters', callback_group=cb) if self.polys else None
         self.busy = False
+        self.zones_off = False   # 영역 다시 켜기 실패 → 켜질 때까지 새 목표 거절, 타이머가 다시 켬
+        if self.polys:
+            self.create_timer(1.0, self.retry_restore, callback_group=cb)
         self.server = ActionServer(self, NavigateToPose, a.action_name, self.execute, callback_group=cb,
                                    goal_callback=self.on_goal, cancel_callback=lambda g: CancelResponse.ACCEPT)
         self.get_logger().info(f'규칙 정밀 접근: {a.action_name} · 최고 {a.v_max} m/s · 몸 둘레 {a.margin * 100:.0f} cm 안 물체면 멈춤 · '
@@ -123,7 +128,7 @@ class SimpleDock(Node):
         if m is None:
             return np.zeros((0, 2))
         fr = m.header.frame_id or 'base_footprint'
-        try:   # 그 스캔을 잰 시각의 자세로 (최신 TF 면 박스가 v × 지연만큼 멀리 찍혀 면 틈이 줄어듦, 11-08 리뷰)
+        try:   # 그 스캔을 잰 시각의 자세로 (최신 TF 면 박스가 v × 지연만큼 멀리 찍혀 면 틈이 줄어듦, 리뷰)
             T = self.tf2d('odom', fr, rclpy.time.Time.from_msg(m.header.stamp))
         except Exception:
             try:
@@ -166,6 +171,20 @@ class SimpleDock(Node):
             + (' → 영역이 꺼진 채: 다음 주행 전에 collision_monitor 확인' if enabled else ''))
         return False
 
+    def retry_restore(self):
+        """영역 다시 켜기 실패 뒤 1 s 마다 다시 시도 (목표 실행 중이 아닐 때만)"""
+        with self.goal_lock:
+            if not self.zones_off or self.busy:
+                return
+            self.busy = True          # 재시도 동안 새 목표가 끼지 않게
+        try:
+            if self.set_polygons(True):
+                self.get_logger().info('collision_monitor 영역 다시 켬 → 새 목표 받음')
+                self.zones_off = False
+        finally:
+            with self.goal_lock:
+                self.busy = False
+
     def settle(self, t_max=0.6, v_eps=0.02, w_eps=0.08):
         """넘겨받을 때 Nav2 · RL 주행 속도로 아직 미끄러지면 설 때까지 0 (첫 명령이 돌기면 안전 검사의 다가가는 속도가 0 이라)"""
         t0 = time.time()
@@ -181,6 +200,9 @@ class SimpleDock(Node):
     # ---------------------------------------------------------------- 실행
     def on_goal(self, g):
         with self.goal_lock:   # 받는 순간 바로 바쁨 (execute 가 시작되기 전에 두 번째 목표가 오면 거절)
+            if self.zones_off:   # busy 보다 먼저 (다시 켜기 재시도 중에도 이 이유로)
+                self.get_logger().error('collision_monitor 영역을 아직 다시 못 켬 → 목표 거절 (1 s 마다 다시 켜는 중)')
+                return GoalResponse.REJECT
             if self.busy:
                 self.get_logger().warning('다른 목표 실행 중 → 거절')
                 return GoalResponse.REJECT
@@ -199,7 +221,12 @@ class SimpleDock(Node):
             except Exception:
                 pass
         finally:
-            self.set_polygons(True, tries=3)   # 결과보다 먼저 (결과 직후 오는 다음 목표 · 주행이 영역 꺼진 채가 안 되게)
+            # 결과보다 먼저 (결과 직후 오는 다음 목표 · 주행이 영역 꺼진 채가 안 되게)
+            if not self.set_polygons(True, tries=3):
+                self.zones_off = True     # 타이머가 다시 켤 때까지 새 목표 거절
+                if end == 'succeed':
+                    self.get_logger().error('도착했지만 영역을 다시 못 켜서 실패로 보냄')
+                end = 'abort'
             try:
                 {'succeed': gh.succeed, 'cancel': gh.canceled}.get(end, gh.abort)()
             except Exception:
@@ -289,7 +316,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--node_name', default='simple_dock')
     p.add_argument('--action_name', default='dock_to_pose')
-    p.add_argument('--v_max', type=float, default=0.15, help='최고 속도 [m/s] (11-07 실물: 0.05 는 너무 느림)')
+    p.add_argument('--v_max', type=float, default=0.15, help='최고 속도 [m/s] (실물: 0.05 는 너무 느림)')
     p.add_argument('--w_max', type=float, default=0.3, help='제자리 회전 최고 [rad/s]')
     p.add_argument('--margin', type=float, default=0.02, help='몸 둘레 이만큼 + 다가가는 속도 × 0.25 s 안에 박스가 아닌 물체면 그쪽으로 안 감 [m]')
     p.add_argument('--tol_pos', type=float, default=0.005, help='여기까지 오면 끝 [m]')
