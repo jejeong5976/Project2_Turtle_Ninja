@@ -117,7 +117,7 @@ def swerve_setup(context):
     ranges = steer_ranges(hw, margin_ticks)
     multi = [j for j in STEER_JOINTS if hw["motors"][j].get("extended")]
     if multi and is_real:
-        raise RuntimeError(f"extended(여러 바퀴) 조향 {multi} 는 아직 모의 전용 — nt_opencr 펌웨어가 확장 위치 모드를 지원하지 않음")
+        raise RuntimeError(f"extended(여러 바퀴) 조향 {multi} 는 아직 모의 전용 — opencr 펌웨어가 확장 위치 모드를 지원하지 않음")
     policy = context.perform_substitution(LaunchConfiguration("steering_policy"))
     if policy not in ("nearest", "coherent"):
         raise RuntimeError("steering_policy must be nearest | coherent")
@@ -145,7 +145,7 @@ def swerve_setup(context):
             params.update(steer_multi_turn=True)
         note = "모듈별 조향 범위 [deg] " + " · ".join(
             f"{j.split('_')[1]} {math.degrees(a):+.1f}~{math.degrees(b):+.1f}" for j, a, b in zip(STEER_JOINTS, lo, hi))
-    fd, path_r = tempfile.mkstemp(prefix="nt_steer_ranges_", suffix=".yaml")
+    fd, path_r = tempfile.mkstemp(prefix="steer_ranges_", suffix=".yaml")
     with os.fdopen(fd, "w") as f:
         yaml.safe_dump({"swerve_controller": {"ros__parameters": params}}, f)
     files.append(path_r)
@@ -259,7 +259,7 @@ def generate_launch_description():
         Node(package="manipulation", executable="control_master",
              parameters=[cfg("control.yaml"), cfg("arm_paths.yaml"), cfg("rack_look_paths.yaml"), cfg("arm_kinematics.yaml"), rack_cell_params()],
              condition=IfCondition(with_arm), output="both"),
-        # 홈 자세마다 손목 사진으로 카메라가 돈 만큼 → /wrist_cam/drift (control_master 가 손목 검출을 되돌림, 11-05)
+        # 홈 자세마다 손목 사진으로 카메라가 돈 만큼 → /wrist_cam/drift (control_master 가 손목 검출을 되돌림)
         Node(package="manipulation", executable="camera_drift_node",
              parameters=[cfg("control.yaml"), {"reference_image": cfg("camera_home_ref.png")}],
              condition=IfCondition(with_arm), output="both"),
