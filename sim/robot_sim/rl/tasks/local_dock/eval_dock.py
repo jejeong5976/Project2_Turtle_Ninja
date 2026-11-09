@@ -55,7 +55,13 @@ L0 = env.path.length.clone()
 E0 = wrap(env.path.goal_yaw - env.plant.pose[:, 2]).abs()
 rot_near = torch.zeros(B, device=dev)
 K0 = env.cur_k.clone()
-SH = (env.world.box_k >= 0) if env.world.boxes else torch.zeros(B, dtype=torch.bool, device=dev)
+def shifted():                                                 # 이번 에피소드 박스를 실제로 밀었나 (지도 중심 · 회전 0 과 다름)
+    w = env.world
+    c0 = w.box_c[w.box_k.clamp(min=0)]
+    return (w.box_k >= 0) & (((w.box_pose[:, :2] - c0).norm(dim=-1) > 1e-4) | (w.box_pose[:, 2].abs() > 1e-4))
+
+
+SH = shifted() if env.world.boxes else torch.zeros(B, dtype=torch.bool, device=dev)
 _z = np.load(c.env.dice_legs)
 leg_mode = _z['mode'] if 'mode' in _z else None
 mode_names = [str(x) for x in _z['modes']] if 'modes' in _z else []
@@ -69,7 +75,7 @@ with torch.inference_mode():
         rot_near = torch.where(fresh, torch.zeros_like(rot_near), rot_near)
         K0 = torch.where(fresh, env.cur_k, K0)
         if env.world.boxes:
-            SH = torch.where(fresh, env.world.box_k >= 0, SH)
+            SH = torch.where(fresh, shifted(), SH)
         obs, _, _, _ = env.step(pol(obs))
         dist_t, _ = env._goal_err(env.plant.pose)
         rot_near += (dist_t < 0.3).float() * env.plant.odom[:, 2].abs() * env.dt

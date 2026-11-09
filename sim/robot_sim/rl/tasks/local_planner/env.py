@@ -50,6 +50,13 @@ class LocalPlannerEnv(VecEnv):
             e = np.load(c.dice_legs)
             assert 'box_centers' in e, 'box_dynamic 은 box_id · box_centers 가 있는 구간 파일 필요 (local_dock/make_dock_legs.py)'
             self.world.enable_boxes(self.map_names.index('dice'), e['box_centers'], float(e['box_half']))
+        if c.map_boxes:                                 # 지도 ↔ 실제 어긋남 (nf7): 박스를 해석식으로, 에피소드마다 옮김
+            assert not c.box_dynamic, 'box_dynamic (접근 박스 하나) 과 map_boxes (여러 박스) 는 같이 못 씀'
+            import json
+            mb = json.loads(open(c.map_boxes).read())
+            self.world.enable_multi_boxes({self.map_names.index(k): v for k, v in mb.items() if k in self.map_names},
+                                          c.mbox_half, c.mbox_erase_margin)
+            print(f'[local_planner] 박스 해석식: ' + ', '.join(f'{k} {len(v)} 개' for k, v in mb.items() if k in self.map_names), flush=True)
         self.fp_collide = World.footprint_points(c.collide_half, c.footprint_per_side, dev)
         self.fp_clear = World.footprint_points(c.footprint_half, c.footprint_per_side, dev)
         self._check_goals()
@@ -59,6 +66,8 @@ class LocalPlannerEnv(VecEnv):
         z = lambda *s: torch.zeros(*s, device=dev)  # noqa: E731
         self.s_true, self.s_est = z(B), z(B)
         self.map_err = z(B, 3)
+        self.yaw_drift, self.drift_rate = z(B), z(B)      # nf7 yaw 흐름 [rad] · 속도 [rad/s]
+        self.big_err = z(B, 3)                            # nf7 큰 튐 (줄어드는 중)
         self.d_cmd = torch.zeros(B, dtype=torch.long, device=dev)
         self.d_obs = torch.zeros(B, dtype=torch.long, device=dev)
         self.state_ring = z(B, RING, 14)          # 추정 자세 3 · 조향 4 · 바퀴 4 · odom 3
@@ -70,18 +79,21 @@ class LocalPlannerEnv(VecEnv):
         self.prev_steer_goal = z(B, 4)
         self.phi = z(B)
         self.hold = z(B)
+        self.prev_yaw = z(B)                      # 헛회전 계산용 (참 자세 yaw · 목표 방향 오차)
+        self.prev_dyaw_abs = z(B)
         self.is_dice = torch.zeros(B, dtype=torch.bool, device=dev)
         self.episode_length_buf = torch.zeros(B, dtype=torch.long, device=dev)
         self.max_episode_length_t = torch.ones(B, dtype=torch.long, device=dev)
         self.max_episode_length = 10 ** 6
         self.first = torch.ones(B, dtype=torch.bool, device=dev)
-        self.ep = {k: z(B) for k in ('ret', 'travel', 'clear_min', 'dev_max', 'stall')}
+        self.ep = {k: z(B) for k in ('ret', 'travel', 'clear_min', 'dev_max', 'stall', 'rot', 'waste', 'rev')}
         self.level = c.curriculum_start if c.curriculum else 2
         self.outcomes = torch.zeros(c.curriculum_window, device=dev)
         self.outcome_ptr = 0
         self.outcome_count = 0
         self.forced = None                         # 평가: 다음 리셋에 쓸 경로 번호 (B,) (−1 = 무작위)
         self.cur_k = torch.zeros(B, dtype=torch.long, device=dev)   # env 마다 지금 경로 번호 (평가 · 분석용)
+        self.start_xy = torch.zeros(B, 2, device=dev)                # 에피소드 출발 자리 (정지 구역 출발 예외)
         self.extras = {}
         self.last_done = None
         self._physics = torch.compile(self._physics_impl, dynamic=False) if c.compile else self._physics_impl
@@ -120,6 +132,26 @@ class LocalPlannerEnv(VecEnv):
         self.dice_first = int(m.sum())
         bid = e['box_id'] if 'box_id' in e else np.full(len(e['n']), -1)        # 접근 구간의 박스 번호 (−1 = 없음)
         self.bank_box = torch.tensor(np.concatenate([np.full(m.sum(), -1), bid]), dtype=torch.long, device=dev)
+        self.bank_extra = torch.zeros(len(pts), dtype=torch.bool, device=dev)
+        if c.extra_legs:                                 # 추가 구간 (nf7): 다른 지도 (arena5 등) 정차점 구간, 지도 이름은 파일 안 names
+            x = np.load(c.extra_legs)
+            xnames = [str(v) for v in x['names']]
+            for nm in xnames:
+                if nm not in self.map_names:
+                    self.map_names.append(nm)
+            remap = np.array([self.map_names.index(nm) for nm in xnames])
+            xp = x['pts'] + x['start'][:, None]
+            assert xp.shape[1] == pts.shape[1], f'추가 구간 점 수 {xp.shape[1]} ≠ {pts.shape[1]}'
+            nx, tt = len(xp), lambda a, dt: torch.tensor(a, dtype=dt, device=dev)   # noqa: E731
+            self.bank_pts = torch.cat([self.bank_pts, tt(xp, torch.float32)])
+            self.bank_n = torch.cat([self.bank_n, tt(x['n'], torch.long)])
+            self.bank_yaw = torch.cat([self.bank_yaw, tt(x['goal_yaw'], torch.float32)])
+            self.bank_start_yaw = torch.cat([self.bank_start_yaw, tt(x['start_yaw'], torch.float32)])
+            self.bank_map = torch.cat([self.bank_map, tt(remap[x['src']], torch.long)])
+            self.bank_dice = torch.cat([self.bank_dice, torch.ones(nx, dtype=torch.bool, device=dev)])     # 정차점 구간 (출발 yaw 있음)
+            self.bank_box = torch.cat([self.bank_box, torch.full((nx,), -1, dtype=torch.long, device=dev)])
+            self.bank_extra = torch.cat([self.bank_extra, torch.ones(nx, dtype=torch.bool, device=dev)])
+            self.dice_legs += [f'{xnames[s_]}:{lg}' for s_, lg in zip(x['src'], x['legs'])]
 
     def _check_goals(self):
         """목표 자세에서 외곽이 지도와 겹치는 지도 경로는 끝 접선 yaw 로 바꾸고, 그래도 겹치면 안 씀"""
@@ -134,9 +166,10 @@ class LocalPlannerEnv(VecEnv):
         self.bank_ok = (clr(self.bank_yaw) >= 0.005) | self.bank_dice
         dice_clr = clr(self.bank_yaw)[self.bank_dice]
         self.random_ids = torch.nonzero(self.bank_ok & ~self.bank_dice).squeeze(-1)
-        self.dice_ids = torch.nonzero(self.bank_dice).squeeze(-1)
+        self.dice_ids = torch.nonzero(self.bank_dice & ~self.bank_extra).squeeze(-1)
+        self.extra_ids = torch.nonzero(self.bank_extra).squeeze(-1)
         print(f'[local_planner] 지도 경로 {len(self.random_ids)} 개 (목표 yaw 바꿈 {int(bad.sum())} · 뺌 {int((~self.bank_ok).sum())}), '
-              f'dice 구간 {len(self.dice_ids)} 개 (목표 여유 최소 {float(dice_clr.min()) * 100:.1f} cm)', flush=True)
+              f'dice 구간 {len(self.dice_ids)} 개 · 추가 구간 {len(self.extra_ids)} 개 (목표 여유 최소 {float(dice_clr.min()) * 100:.1f} cm, 래스터 기준)', flush=True)
 
     def _rand(self, n, lo, hi):
         return lo + (hi - lo) * torch.rand(n, device=self.device, generator=self.gen)
@@ -147,10 +180,15 @@ class LocalPlannerEnv(VecEnv):
             return
         c, dr, n, dev = self.c, self.dr, len(ids), self.device
         # 경로 고르기: dice 구간 (dice_prob) · 지도 경로
-        use_dice = self._rand(n, 0, 1) < c.dice_prob
+        u = self._rand(n, 0, 1)
+        use_extra = (u < c.extra_prob) if len(self.extra_ids) else torch.zeros(n, dtype=torch.bool, device=dev)
+        use_dice = ~use_extra & (u < c.extra_prob + c.dice_prob)
         kd = self.dice_ids[torch.randint(0, len(self.dice_ids), (n,), device=dev, generator=self.gen)]
         kr = self.random_ids[torch.randint(0, len(self.random_ids), (n,), device=dev, generator=self.gen)]
         k = torch.where(use_dice, kd, kr)
+        if len(self.extra_ids):
+            kx = self.extra_ids[torch.randint(0, len(self.extra_ids), (n,), device=dev, generator=self.gen)]
+            k = torch.where(use_extra, kx, k)
         if self.forced is not None:
             f = self.forced[ids]
             k = torch.where(f >= 0, f, k)
@@ -177,8 +215,11 @@ class LocalPlannerEnv(VecEnv):
             exact = torch.cat([start, torch.where(self.is_dice[ids], wrap(self.bank_start_yaw[k]), yaw).unsqueeze(-1)], -1)
             pose0 = torch.where(bad.unsqueeze(-1), exact, pose0)
         self.cur_k[ids] = k
+        self.start_xy[ids] = pose0[:, :2]
         if c.box_dynamic:
             self._shift_boxes(ids, k, pose0)
+        if c.map_boxes:
+            self._shift_multi_boxes(ids, pose0)
         self.plant.reset_motion(ids, pose0)
         self._place_people(ids)
         # 조향 상태
@@ -201,6 +242,9 @@ class LocalPlannerEnv(VecEnv):
         self.d_obs[ids] = torch.randint(dr.obs_delay_ticks[0], dr.obs_delay_ticks[1] + 1, (n,), device=dev, generator=self.gen)
         self.map_err[ids] = torch.stack([self._rand(n, -dr.map_err_pos, dr.map_err_pos), self._rand(n, -dr.map_err_pos, dr.map_err_pos),
                                          self._rand(n, -1, 1) * math.radians(dr.map_err_yaw_deg)], -1)
+        self.drift_rate[ids] = self._rand(n, -1, 1) * math.radians(dr.yaw_drift_dps)
+        self.yaw_drift[ids] = 0.0
+        self.big_err[ids] = 0.0
         if c.start_speed_prob > 0:
             self._moving_start(ids)
         # 버퍼 · 추적
@@ -213,6 +257,9 @@ class LocalPlannerEnv(VecEnv):
         self.prev_steer_goal[ids] = self.plant.q[ids]
         self.hold[ids] = 0.0
         self.phi[ids] = self._potential()[ids]
+        yaw0 = self.plant.pose[ids, 2]
+        self.prev_yaw[ids] = yaw0
+        self.prev_dyaw_abs[ids] = wrap(self.path.goal_yaw[ids] - yaw0).abs()
         self.episode_length_buf[ids] = 0
         T = (2.0 * self.path.length[ids] / c.vmax + c.timeout_slack_s) / self.dt
         self.max_episode_length_t[ids] = T.ceil().long()
@@ -289,6 +336,43 @@ class LocalPlannerEnv(VecEnv):
         npts = (torch.ceil(L.squeeze(-1) / STEP_PTS).long() + 1).clamp(2, M)
         self.path.set(si, pts, npts, wrap(gy0 + dth[shift]))
 
+    def _shift_multi_boxes(self, ids, pose0):
+        """지도 박스 (해석식) 를 에피소드마다 옮김 (nf7). 출발 · 목표 mbox_exempt 안 박스는 그대로.
+        옮긴 박스가 벽 (박스 지운 래스터) 과 겹치거나 출발 · 목표 외곽이 박스와 겹치면 그 env 는 하나도 안 옮김"""
+        c, w, dev, n = self.c, self.world, self.device, len(ids)
+        mid = w.map_id[ids]
+        nom, valid = w.mb_nom[mid], w.mb_valid[mid]                     # (n,K,3) · (n,K)
+        K = nom.shape[1]
+        w.mb_pose[ids], w.mb_on[ids] = nom, valid
+        start, goal = self.path.pts[ids, 0], self.path.goal[ids]
+        far = ((nom[..., :2] - start.unsqueeze(1)).norm(dim=-1) > c.mbox_exempt) & ((nom[..., :2] - goal.unsqueeze(1)).norm(dim=-1) > c.mbox_exempt)
+        sh = valid & far & (self._rand(n, 0, 1) < c.mbox_shift_prob).unsqueeze(-1)
+        if not sh.any():
+            return
+        dxy = (torch.rand(n, K, 2, device=dev, generator=self.gen) * 2 - 1) * c.mbox_shift_xy
+        dth = (torch.rand(n, K, device=dev, generator=self.gen) * 2 - 1) * math.radians(c.mbox_shift_yaw_deg)
+        moved = nom + torch.cat([dxy, dth.unsqueeze(-1)], -1) * sh.unsqueeze(-1).float()
+        # 옮긴 박스 둘레가 벽 (박스 지운 래스터) 과 겹치면 그 박스는 안 옮김
+        h = w.mb_half
+        t = torch.linspace(-h, h, 9, device=dev)
+        hh = torch.full_like(t, h)
+        per = torch.cat([torch.stack([t, -hh], -1), torch.stack([hh, t], -1), torch.stack([-t, hh], -1), torch.stack([-hh, -t], -1)], 0)   # (36,2)
+        cs, sn = moved[..., 2].cos().unsqueeze(-1), moved[..., 2].sin().unsqueeze(-1)
+        px = moved[..., 0:1] + cs * per[:, 0] - sn * per[:, 1]
+        py = moved[..., 1:2] + sn * per[:, 0] + cs * per[:, 1]
+        wall = w._lookup(w.dfield_nobox, mid, torch.stack([px, py], -1).view(n, -1, 2), w.origin[mid]).view(n, K, -1).min(-1).values
+        sh &= wall >= 0.005
+        w.mb_pose[ids] = torch.where(sh.unsqueeze(-1), moved, nom)
+        # 출발 · 목표 외곽이 (옮긴) 박스와 겹치면 그 env 는 원래 자리로
+        gpose = torch.cat([goal, self.path.goal_yaw[ids].unsqueeze(-1)], -1)
+        clr_s = w.clearance(pose0, self.fp_collide, people=False, ids=ids)
+        clr_g = w.clearance(gpose, self.fp_collide, people=False, ids=ids)
+        clr_s0 = w.clearance(pose0, self.fp_collide, map_id=mid, people=False)       # 래스터 기준 (원래 겹치던 자리는 탓하지 않음)
+        clr_g0 = w.clearance(gpose, self.fp_collide, map_id=mid, people=False)
+        back = ((clr_s < 0.005) & (clr_s < clr_s0 - 1e-4)) | ((clr_g < 0.005) & (clr_g < clr_g0 - 1e-4))
+        if back.any():
+            w.mb_pose[ids[back]] = nom[back]
+
     def _place_people(self, ids):
         """사람 원기둥: 경로 옆 (중심 = 경로점 + 법선 × offset), 벽 · 시작 · 목표에서 떨어진 자리만"""
         c, n, dev, w = self.c, len(ids), self.device, self.world
@@ -317,8 +401,13 @@ class LocalPlannerEnv(VecEnv):
         w.people_c[ids], w.people_r[ids], w.people_on[ids] = cen, r, ok
 
     # ------------------------------------------------------------------ 상태 · 관측
+    def _pose_err(self):
+        """추정 − 참 (B,3): 위치 추정 오차 + 큰 튐 (nf7) + yaw 흐름 (nf7)"""
+        e = self.map_err + self.big_err
+        return torch.stack([e[:, 0], e[:, 1], e[:, 2] + self.yaw_drift], -1)
+
     def _est_pose(self):
-        p, e = self.plant.pose, self.map_err
+        p, e = self.plant.pose, self._pose_err()
         return torch.stack([p[:, 0] + e[:, 0], p[:, 1] + e[:, 1], wrap(p[:, 2] + e[:, 2])], -1)
 
     def _state_now(self):
@@ -392,7 +481,7 @@ class LocalPlannerEnv(VecEnv):
                           (dist_t / 3).unsqueeze(-1), (clr / 0.1).clamp(-1, 3).unsqueeze(-1), (dpp.min(-1).values / 1.0).clamp(max=3).unsqueeze(-1),
                           torch.stack([self.plant.rate_max / 4.8, self.plant.tau_s / 0.15, self.plant.tau_w / 0.06, self.plant.tau_b / 0.08,
                                        self.d_cmd / 3.0, self.d_obs / 4.0, self.ctrl.blend_ratio, self.ctrl.gate_blocked.float()], -1),
-                          self.map_err * torch.tensor([60.0, 60.0, 57.3], device=dev), self.plant.slip,
+                          self._pose_err() * torch.tensor([60.0, 60.0, 57.3], device=dev), self.plant.slip,
                           torch.full((B, 1), float(self.level), device=dev)], -1)
         return TensorDict({'policy': policy, 'privileged': priv}, batch_size=[B], device=dev)
 
@@ -441,6 +530,20 @@ class LocalPlannerEnv(VecEnv):
             lim = torch.tensor([dr.map_err_pos, dr.map_err_pos, math.radians(dr.map_err_yaw_deg)], device=dev)
             err = torch.maximum(torch.minimum(self.map_err + dj, lim), -lim)
             self.map_err = torch.where(jump.unsqueeze(-1), err, self.map_err)
+        if dr.yaw_drift_dps > 0:                       # yaw 흐름 (nf7)
+            lim_d = math.radians(dr.yaw_drift_max_deg)
+            self.yaw_drift = (self.yaw_drift + self.drift_rate * self.dt).clamp(-lim_d, lim_d)
+        if dr.big_jump_rate > 0:                       # 큰 튐 (nf7): 줄어들다가 드물게 새로 튐, 튈 때 yaw 흐름 0 (SLAM 보정)
+            self.big_err = self.big_err * math.exp(-self.dt / dr.big_jump_decay_s)
+            big = self._rand(B, 0, 1) < dr.big_jump_rate * self.dt
+            if big.any():
+                ang = self._rand(B, -math.pi, math.pi)
+                mag = self._rand(B, *dr.big_jump_pos)
+                yj = self._rand(B, *dr.big_jump_yaw_deg) * torch.where(self._rand(B, 0, 1) < 0.5, -1.0, 1.0) * (math.pi / 180)
+                bj = torch.stack([mag * ang.cos(), mag * ang.sin(), yj], -1)
+                self.big_err = torch.where(big.unsqueeze(-1), bj, self.big_err)
+                self.yaw_drift = torch.where(big, torch.zeros_like(self.yaw_drift), self.yaw_drift)
+        prev_wz = self.last_cmd[:, 2].clone()
         cmd = self._command(a)
         ar = torch.arange(B, device=dev)
         travel = torch.zeros(B, device=dev)
@@ -467,6 +570,12 @@ class LocalPlannerEnv(VecEnv):
         # 몸 (참 자세)
         clr = self.world.clearance(self.plant.pose, self.fp_clear)
         collide = self.world.clearance(self.plant.pose, self.fp_collide) < 0
+        zone_hit = torch.zeros_like(collide)
+        if self.c.stop_zone > 0:                                       # 실물 PolygonStop 구역 (사람 뺌, 목표 · 출발 근처 뺌)
+            clr_np = self.world.clearance(self.plant.pose, self.fp_clear, people=False)
+            exempt = (dist < self.c.stop_zone_goal_exempt) | ((self.plant.pose[:, :2] - self.start_xy).norm(dim=-1) < self.c.stop_zone_start_exempt)
+            zone_hit = (clr_np < self.c.stop_zone) & ~exempt & ~collide
+            collide = collide | zone_hit
         near_goal = (dist < 0.3).float()
         r_clear = -rw.clearance * ((rw.clear_margin - clr) / rw.clear_margin).clamp(0, 1) * (1 - near_goal)
         r_dev = -rw.deviation * ((dev_path - 0.1) / 0.1).clamp(0, 4) ** 2
@@ -484,7 +593,18 @@ class LocalPlannerEnv(VecEnv):
         r_cap = -rw.rot_cap_excess * self.rot_excess / c.wmax if c.rot_limit else torch.zeros_like(r_rot)
         r_near = -rw.rot_near * (dist < rw.rot_near_dist).float() * cmd[:, 2].abs() / c.wmax
         r_hold = -rw.hold_cmd * (dist < rw.hold_dist).float() * ((cmd[:, :2].norm(dim=-1) / c.vmax) ** 2 + (cmd[:, 2] / c.wmax) ** 2)
-        rew = r_prog + r_pot + r_clear + r_dev + r_act - rw.time + r_steer + r_stall + r_bound + r_rot + r_cap + r_near + r_hold
+        # 헛회전 (참 자세): 이번 스텝 몸 yaw 변화 중 목표 방향 오차를 줄이지 않은 만큼
+        yaw_now = self.plant.pose[:, 2]
+        dyaw_abs = wrap(self.path.goal_yaw - yaw_now).abs()
+        turned = wrap(yaw_now - self.prev_yaw).abs()
+        waste = (turned - (self.prev_dyaw_abs - dyaw_abs).clamp(min=0.0)).clamp(min=0.0)
+        self.prev_yaw, self.prev_dyaw_abs = yaw_now.clone(), dyaw_abs
+        m = rw.rot_reversal_min
+        reversed_ = ((prev_wz >= m) & (cmd[:, 2] <= -m)) | ((prev_wz <= -m) & (cmd[:, 2] >= m))
+        r_waste = -rw.rot_waste * waste
+        r_rev = -rw.rot_reversal * reversed_.float()
+        rew = (r_prog + r_pot + r_clear + r_dev + r_act - rw.time + r_steer + r_stall + r_bound + r_rot + r_cap + r_near + r_hold
+               + r_waste + r_rev)
         self.last_action = a
 
         bv = self.plant.odom
@@ -502,7 +622,7 @@ class LocalPlannerEnv(VecEnv):
         sat = (actions.abs() > 1.0).float()
         cap = self.rot_capped.float().mean() if c.rot_limit else torch.zeros((), device=dev)
         diag = {'/rew/progress': r_prog.mean(), '/rew/potential': r_pot.mean(), '/rew/clearance': r_clear.mean(),
-                '/rew/deviation': r_dev.mean(), '/rew/stall': r_stall.mean(), '/rew/action_bound': r_bound.mean(), '/rew/rot_cost': r_rot.mean(), '/rew/rot_cap_excess': r_cap.mean(), '/rew/rot_near': r_near.mean(), '/rew/hold_cmd': r_hold.mean(),
+                '/rew/deviation': r_dev.mean(), '/rew/stall': r_stall.mean(), '/rew/action_bound': r_bound.mean(), '/rew/rot_cost': r_rot.mean(), '/rew/rot_cap_excess': r_cap.mean(), '/rew/rot_near': r_near.mean(), '/rew/hold_cmd': r_hold.mean(), '/rew/rot_waste': r_waste.mean(), '/rew/rot_reversal': r_rev.mean(),
                 '/act/approach_capped': self.approach_capped.float().mean() if c.approach_limit else torch.zeros((), device=dev),
                 '/act/mean_out': (actions.abs() > 1.0).float().mean(), '/act/wz_abs': cmd[:, 2].abs().mean(), '/stall/frac': stalled.float().mean(), '/rew/action_rate': r_act.mean(), '/rew/steer_travel': r_steer.mean(),
                 '/rew/terminal': (rw.success * success.float() - rw.collision * collide.float() - rw.lost * lost.float()).mean(),
@@ -512,6 +632,9 @@ class LocalPlannerEnv(VecEnv):
         e['ret'] += rew
         e['travel'] += travel
         e['stall'] += stalled.float() * self.dt
+        e['rot'] += turned
+        e['waste'] += waste
+        e['rev'] += reversed_.float()
         e['clear_min'] = torch.minimum(e['clear_min'], clr)
         e['dev_max'] = torch.maximum(e['dev_max'], dev_path)
         log = dict(diag)
@@ -524,10 +647,16 @@ class LocalPlannerEnv(VecEnv):
                    '/ep/lost': lost[done_ids].float().mean(), '/ep/timeout': timeout[done_ids].float().mean(),
                    '/ep/return': e['ret'][done_ids].mean(), '/ep/steer_travel_rad': e['travel'][done_ids].mean(),
                    '/ep/clear_min_m': e['clear_min'][done_ids].mean(), '/ep/stall_s': e['stall'][done_ids].mean(), '/ep/dev_max_m': e['dev_max'][done_ids].mean(),
-                   '/ep/final_dist_m': dist[done_ids].mean(), '/ep/final_dyaw_deg': dyaw[done_ids].abs().mean() * 57.3}
+                   '/ep/final_dist_m': dist[done_ids].mean(), '/ep/final_dyaw_deg': dyaw[done_ids].abs().mean() * 57.3,
+                   '/ep/rot_total_rad': e['rot'][done_ids].mean(), '/ep/rot_waste_rad': e['waste'][done_ids].mean(),
+                   '/ep/rot_reversals': e['rev'][done_ids].mean()}
             if dd.any():
                 log['/dice/success'] = success[done_ids][dd].float().mean()
                 log['/dice/collision'] = collide[done_ids][dd].float().mean()
+            xd = self.bank_extra[self.cur_k[done_ids]]
+            if xd.any():
+                log['/extra/success'] = success[done_ids][xd].float().mean()
+                log['/extra/collision'] = collide[done_ids][xd].float().mean()
             # 충돌 원인 (끝난 에피소드 중 비율): 목표 0.3 m 안 (정밀 정차) · 사람 (사람 빼면 안 닿음) · 그 밖 (주행 중 벽 · 박스)
             cids = done_ids[collide[done_ids]]
             if len(cids):
@@ -537,6 +666,7 @@ class LocalPlannerEnv(VecEnv):
                 log['/col/near_goal'] = torch.tensor(float(near.sum()) / n_done)
                 log['/col/person'] = torch.tensor(float((by_person & ~near).sum()) / n_done)
                 log['/col/travel_wall'] = torch.tensor(float((~by_person & ~near).sum()) / n_done)
+                log['/col/stop_zone'] = torch.tensor(float(zone_hit[cids].sum()) / n_done)
                 dc = self.is_dice[cids]
                 log['/col/dice_near_goal'] = torch.tensor(float((near & dc).sum()) / n_done)
             ok = done_ids[success[done_ids]]
@@ -553,7 +683,8 @@ class LocalPlannerEnv(VecEnv):
                               'timeout': timeout[done_ids], 'time_s': steps * self.dt, 'travel': e['travel'][done_ids].clone(),
                               'clear_min': e['clear_min'][done_ids].clone(), 'final_dist': dist[done_ids], 'final_dyaw': dyaw[done_ids].abs(),
                               'final_dist_true': dist_true[done_ids], 'final_dyaw_true': dyaw_true[done_ids].abs(),
-                              'length': self.path.length[done_ids].clone(), 'dice': dd.clone(), 'stall_s': e['stall'][done_ids].clone()}
+                              'length': self.path.length[done_ids].clone(), 'dice': dd.clone(), 'stall_s': e['stall'][done_ids].clone(),
+                              'rot': e['rot'][done_ids].clone(), 'rot_waste': e['waste'][done_ids].clone(), 'rot_rev': e['rev'][done_ids].clone()}
         else:
             self.last_done = None
         self._reset_idx(done_ids)
