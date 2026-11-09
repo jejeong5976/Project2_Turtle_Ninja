@@ -6,7 +6,7 @@
 //   - 실제 동작 · 감시 · 퍽 기록부 · 재고는 Executor 가 함
 //   - 상태 2 층
 //       위층 = 로봇 운영 상태
-//         STANDBY  무동작, 준비 확인: odom · control ready · 서버 · lifecycle · 위치 추정 · scan · 검출 · 그리퍼 기록
+//         STANDBY  무동작, 준비 확인: odom · control ready · 서버 · lifecycle · 위치 추정 · scan · 검출 · 그리퍼 기록 · 신호등 토픽 · 바코드 서비스
 //         RUNNING  미션 실행, 아래층
 //         DONE     끝, 결과 COMPLETED · RETURN_FAILED
 //         FAULT    모든 목표 취소, 사람 확인 뒤 /mission/resume → STANDBY → /mission/start
@@ -25,6 +25,7 @@
 //   - /perception/task_text      interfaces/TaskText      바코드 원문 → parse_task
 //   - box_topic                  interfaces/DetectionArray 장소 박스 윗면 중심 · yaw (손목 깊이, kind place_box) → map 으로 모음
 //       장소 LOOK 뒤 측정이 box_min_samples 개 이상이면 PLACE 칸 · 재검증 기준 = 측정 중심 + 박스 회전만큼 돈 눈 오프셋
+//       칸은 퍽이 박스 테두리를 넘지 않게 자름 (place_box_half_m − place_puck_half_m − place_edge_margin_m 안)
 //   - 실행기가 받는 검출 · motion_mode · odom · scan · amcl 은 executor.hpp
 //   - 서비스 std_srvs/Trigger
 //       /mission/start          STANDBY + 준비 완료 → RUNNING, 안 되면 거절 + 이유
@@ -69,7 +70,9 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <cstdio>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -183,7 +186,7 @@ public:
     if (travel_table_path_.empty()) {travel_table_path_ = std::string(MISSION_MAPS_DIR) + "/dice_travel_times.yaml";}
     barcode_table_path_ = declare_parameter<std::string>("barcode_table", "");
     if (barcode_table_path_.empty()) {barcode_table_path_ = std::string(MISSION_MAPS_DIR) + "/dice_barcodes.json";}
-    for (const auto b : declare_parameter<std::vector<int64_t>>("collect_order", {1, 2, 6, 4, 5, 3})) {
+    for (const auto b : declare_parameter<std::vector<int64_t>>("collect_order", {1, 2, 4, 5, 6, 3})) {
       collect_order_.push_back(static_cast<int>(b));
     }
     look_dwell_s_ = declare_parameter<double>("look_dwell_s", 1.0);           // LOOK 뒤 검출 모으는 시간
@@ -209,12 +212,16 @@ public:
     box_min_samples_ = declare_parameter<int>("box_min_samples", 3);
     box_max_shift_m_ = declare_parameter<double>("box_max_shift_m", 0.06);
     box_wait_s_ = declare_parameter<double>("box_wait_s", 2.0);   // 장소 LOOK 뒤 측정 기다리는 최대 시간
+    // 놓는 칸이 박스 테두리를 넘지 않게 (clamp_offset_in_box): 퍽 중심 ≤ 박스 반 변 − 퍽 반폭 − 여유
+    place_limits_.box_half = declare_parameter<double>("place_box_half_m", 0.1025);
+    place_limits_.puck_half = declare_parameter<double>("place_puck_half_m", 0.0212);
+    place_limits_.margin = declare_parameter<double>("place_edge_margin_m", 0.010);
     // 장소별 PLACE 놓는 점 보정 [앞, 왼쪽] mm (정차점에서 장소를 보는 로봇 기준) — 놓는 목표에만 더함, 재검증 · 기록은 눈 점 그대로
     //   실행 중 바로 바꿈 (다음 PLACE 부터): ros2 param set /mission_manager place_offset_L1_mm "[5.0, 0.0]"
     for (int i = 1; i <= kNumPlaces; ++i) {declare_parameter<std::vector<double>>("place_offset_L" + std::to_string(i) + "_mm", {0.0, 0.0});}
     read_timeout_s_ = declare_parameter<double>("read_timeout_s", 5.0);
-    read_retries_ = declare_parameter<int>("read_retries", 6);   // 안 읽히면 같은 자리에서 다시 읽는 횟수 (11-08: 한 번 실패로 미션 전체 포기하던 것)
-    pip_frame_ = declare_parameter<std::string>("dice_pip_frame", "arena");   // arena = 발제 p.4 지도 +Y 기준 세 곳 같은 방향 · viewer = 보는 사람 기준 (11-07 까지)
+    read_retries_ = declare_parameter<int>("read_retries", 6);   // 안 읽히면 같은 자리에서 다시 읽는 횟수 (한 번 실패로 미션 전체 포기하던 것)
+    pip_frame_ = declare_parameter<std::string>("dice_pip_frame", "arena");   // arena = 발제 p.4 지도 +Y 기준 세 곳 같은 방향 · viewer = 보는 사람 기준
     tick_hz_ = declare_parameter<double>("tick_hz", 10.0);
     time_limit_s_ = declare_parameter<double>("time_limit_s", 0.0);
     return_margin_s_ = declare_parameter<double>("return_margin_s", 60.0);
@@ -250,6 +257,7 @@ public:
     } else {
       RCLCPP_ERROR(get_logger(), "dice 경기장 읽기 실패: %s", err.c_str());
     }
+    setup_partial_run(sc);
 
     // ---------------------------------------------------------------- 받기
     sub_sig_ = create_subscription<TrafficLight>(
@@ -323,6 +331,13 @@ public:
           res->message = "출발 구역 단계(HOME · 첫 READ_BARCODE · OBSERVE_SIGNAL)에서만 됨";
           return;
         }
+        if (!signal_fixed_.empty()) {   // 고정 신호: 같은 값을 다시 넣음
+          inject_fixed_signal();
+          publish_signal();
+          res->success = true;
+          res->message = "signal_fixed 라 같은 값 다시 넣음: " + signal_fixed_;
+          return;
+        }
         signal_.reset();
         signal_timed_out_ = false;
         if (phase_ == Phase::OBSERVE_SIGNAL) {observe_start_s_ = now_s();}
@@ -370,10 +385,186 @@ private:
     }
   }
 
+  // ---------------------------------------------------------------- 시험용 부분 실행 (기본 = 전부 끔 → 시연 흐름 그대로)
+  //   signal_fixed  "RGRRGRGGYGYG"  신호등 안 보고 이 12 점멸을 기록한 것으로 (같은 판정 규칙을 거쳐 Done)
+  //   barcode_fixed "P2-01"         바코드 지점에 안 가고 이 원문을 읽은 것으로
+  //   start_phase   COLLECT | DELIVER | VERIFY   HOME 뒤 이 단계부터 (DELIVER = 지금 재고로 배달 계획, cargo_file + cargo_restore)
+  //   stop_after    READ_BARCODE | COLLECT | DELIVER | VERIFY   이 단계 끝나면 복귀하고 COMPLETED
+  //   collect_boxes [1, 2]          collect_order 에서 이 박스만 (순서는 collect_order 그대로)
+  //   잘못된 값이면 시작 때 멈춤 (조용히 다른 흐름으로 가지 않게)
+  static int phase_rank(const std::string & p)
+  {
+    if (p == "READ_BARCODE") {return 0;}
+    if (p == "COLLECT") {return 1;}
+    if (p == "DELIVER") {return 2;}
+    if (p == "VERIFY") {return 3;}
+    return -1;
+  }
+
+  void setup_partial_run(const SignalRecorderConfig & sc)
+  {
+    signal_fixed_ = declare_parameter<std::string>("signal_fixed", "");
+    barcode_fixed_ = declare_parameter<std::string>("barcode_fixed", "");
+    start_phase_ = declare_parameter<std::string>("start_phase", "");
+    stop_after_ = declare_parameter<std::string>("stop_after", "");
+    const auto boxes = declare_parameter<std::vector<int64_t>>("collect_boxes", std::vector<int64_t>{});
+    std::vector<std::string> bad;
+    if (!start_phase_.empty() && (phase_rank(start_phase_) < 1)) {bad.push_back("start_phase 는 COLLECT · DELIVER · VERIFY (지금 " + start_phase_ + ")");}
+    if (!stop_after_.empty() && phase_rank(stop_after_) < 0) {bad.push_back("stop_after 는 READ_BARCODE · COLLECT · DELIVER · VERIFY (지금 " + stop_after_ + ")");}
+    if (!start_phase_.empty() && !stop_after_.empty() && phase_rank(stop_after_) >= 0 && phase_rank(stop_after_) < phase_rank(start_phase_)) {
+      bad.push_back("stop_after " + stop_after_ + " 가 start_phase " + start_phase_ + " 보다 앞");
+    }
+    if (!boxes.empty()) {
+      std::set<int> want;
+      for (const auto b : boxes) {
+        if (b < 1 || b > kNumBoxes) {bad.push_back("collect_boxes 에 없는 박스 " + std::to_string(b));}
+        want.insert(static_cast<int>(b));
+      }
+      std::vector<int> kept;
+      for (const int b : collect_order_) {if (want.count(b)) {kept.push_back(b);}}
+      if (kept.empty()) {bad.push_back("collect_boxes 가 collect_order 와 겹치는 박스 없음");}
+      collect_order_ = kept;
+    }
+    if (!barcode_fixed_.empty() && map_ok_) {
+      std::string e;
+      if (!parse_task(barcode_fixed_, barcodes_, &e)) {bad.push_back("barcode_fixed " + barcode_fixed_ + " 해석 실패: " + e);}
+    }
+    if (!signal_fixed_.empty()) {
+      bool ok = static_cast<int>(signal_fixed_.size()) == sc.expected;
+      for (const char c : signal_fixed_) {ok = ok && (c == 'R' || c == 'Y' || c == 'G');}
+      if (!ok) {
+        bad.push_back("signal_fixed 는 R · Y · G " + std::to_string(sc.expected) + " 글자 (지금 " + signal_fixed_ + ")");
+      } else {
+        inject_fixed_signal();
+        if (signal_.status() != SignalStatus::Done) {
+          bad.push_back("signal_fixed " + signal_fixed_ + " 가 기록 규칙에 안 맞음 (" + signal_status_name(signal_.status()) + ")");
+        }
+      }
+    }
+    if (!bad.empty()) {
+      std::string all;
+      for (const auto & b : bad) {all += "\n  - " + b;}
+      RCLCPP_FATAL(get_logger(), "부분 실행 설정 오류:%s", all.c_str());
+      throw std::runtime_error("부분 실행 설정 오류" + all);
+    }
+    if (!signal_fixed_.empty() || !barcode_fixed_.empty() || !start_phase_.empty() || !stop_after_.empty() || !boxes.empty()) {
+      std::string order;
+      for (const int b : collect_order_) {order += (order.empty() ? "B" : " B") + std::to_string(b);}
+      RCLCPP_WARN(get_logger(), "시험용 부분 실행: 신호 %s · 바코드 %s · 시작 %s · 끝 %s · 박스 %s",
+        signal_fixed_.empty() ? "실제" : signal_fixed_.c_str(), barcode_fixed_.empty() ? "실제" : barcode_fixed_.c_str(),
+        start_phase_.empty() ? "처음부터" : start_phase_.c_str(), stop_after_.empty() ? "끝까지" : stop_after_.c_str(), order.c_str());
+    }
+  }
+
+  // signal_fixed → 기록기에 1 s 켜짐 · 1 s 소등 점멸을 0.1 s 간격으로 넣음 (지난 시각, 같은 판정 규칙) → Done
+  void inject_fixed_signal()
+  {
+    signal_.reset();
+    signal_timed_out_ = false;
+    double t = now_s() - (2.0 * static_cast<double>(signal_fixed_.size()) + 6.0);
+    auto feed = [&](SignalObs o, double dur) {
+        for (int k = 0; k < static_cast<int>(std::lround(dur / 0.1)); ++k) {
+          signal_.observe(t, o);
+          t += 0.1;
+        }
+      };
+    feed(SignalObs::Off, 1.0);
+    for (const char c : signal_fixed_) {
+      feed(c == 'R' ? SignalObs::Red : c == 'Y' ? SignalObs::Yellow : SignalObs::Green, 1.0);
+      feed(SignalObs::Off, 1.0);
+    }
+    feed(SignalObs::Off, 4.0);   // 끝 소등 (end_off_s 2.5 보다 길게)
+    if (signal_.status() == SignalStatus::Done) {
+      RCLCPP_WARN(get_logger(), "신호 고정 (signal_fixed): %s — 신호등 입력 안 씀", signal_.sequence().c_str());
+    }
+  }
+
+  // stop_after 단계가 끝남 → task 를 끝낸 것으로 정리하고 복귀 (결과 COMPLETED)
+  void finish_partial(const char * what)
+  {
+    if (current_task_) {
+      ++tasks_done_;
+      done_ids_.insert(current_task_->task_id);
+      current_task_.reset();
+    }
+    ++bar_i_;
+    delivery_steps_.clear();
+    verify_after_.clear();
+    RCLCPP_WARN(get_logger(), "시험 stop_after %s: 여기서 끝 (놓은 퍽 %d) → 복귀", what, pucks_done_);
+    start_return(std::string("시험 stop_after ") + what);
+  }
+
+  // 바코드 task 를 얻은 뒤 (읽음 · barcode_fixed): stop_after READ_BARCODE → 복귀 / 신호 기록 기다림 / 실행
+  void after_barcode()
+  {
+    if (stop_after_ == "READ_BARCODE") {
+      RCLCPP_WARN(get_logger(), "시험 stop_after READ_BARCODE: 바코드 %s (%s) → 복귀", pending_task_->raw_text.c_str(),
+        dice_order_name(pending_task_->dice_order));
+      ++bar_i_;
+      start_return("시험 stop_after READ_BARCODE");
+      return;
+    }
+    if (signal_record_ && !signal_.finished() && !signal_timed_out_) {
+      queued_task_ = pending_task_;
+      begin_observe(now_s());
+      return;
+    }
+    start_execute(*pending_task_);
+  }
+
+  // start_phase DELIVER: 수집 없이 지금 재고 (cargo_file 에서 복원한 칸 · 그리퍼) 로 배달 계획
+  void start_from_cargo()
+  {
+    const auto & cargo = exec_->cargo();
+    std::size_t n = cargo.gripper() ? 1 : 0;
+    for (const auto & sl : cargo.slots()) {n += sl.second ? 1 : 0;}
+    if (n == 0) {
+      abandon_dice("시험 start_phase DELIVER: 재고 없음 (cargo_file · cargo_restore: true 로 칸 기록을 넣을 것)");
+      return;
+    }
+    RCLCPP_WARN(get_logger(), "시험 start_phase DELIVER: 재고 퍽 %zu 개로 배달 계획", n);
+    if (!plan_from_state(false, now_s())) {
+      abandon_dice("시험 start_phase DELIVER: 배달 계획 실패");
+      return;
+    }
+    auto steps = std::move(delivery_steps_);
+    delivery_steps_.clear();
+    set_steps(Phase::DELIVER, std::move(steps));
+    if (exec_->done()) {on_steps_done();}   // 채울 장소 없음 → 재검증 · 끝
+  }
+
+  // 준비 확인 = 실행기 (odom · 팔 · Nav2 · 위치 · 라이다 · 손목 검출) + 미션 입력
+  //   TRAFFIC_LIGHT: /perception/traffic_light 가 signal_timeout_s 넘게 안 옴 (신호 기록이 Done 이면 안 봄, Incomplete 면 다시 기록하니 봄)
+  //   BARCODE_SERVICE: 바코드 판독 켜기 서비스가 안 보임 (READ_BARCODE 에서 부름)
+  std::vector<std::string> ready_reasons(double now)
+  {
+    auto r = exec_->ready_reasons(now);
+    if (signal_.status() != SignalStatus::Done && (last_light_s_ < 0.0 || now - last_light_s_ > signal_timeout_s_)) {
+      r.push_back("TRAFFIC_LIGHT");
+    }
+    if (barcode_cli_ && barcode_fixed_.empty() && !barcode_cli_->service_is_ready()) {r.push_back("BARCODE_SERVICE:" + barcode_enable_service_);}
+    return r;
+  }
+
   // ---------------------------------------------------------------- STANDBY: 무동작, 준비 확인 · 출발 대기
   void tick_standby(double now)
   {
-    not_ready_ = exec_->ready_reasons(now);
+    not_ready_ = ready_reasons(now);
+    // 준비 상태가 바뀔 때만 로그 (run_robot.sh mission 이 'STANDBY 준비 완료' 줄로 시작 가능을 알림).
+    //   이유가 깜빡이며 바뀌어도 '안 됨' 줄은 2 s 에 한 번까지, '완료' 는 바로
+    const bool changed = not_ready_ != logged_not_ready_ || !standby_logged_;
+    if (changed && (not_ready_.empty() || now - standby_log_s_ >= 2.0)) {
+      standby_log_s_ = now;
+      std::string why;
+      for (const auto & r : not_ready_) {why += (why.empty() ? "" : ", ") + r;}
+      if (not_ready_.empty()) {
+        RCLCPP_INFO(get_logger(), "STANDBY 준비 완료 — /mission/start 받을 수 있음");
+      } else {
+        RCLCPP_INFO(get_logger(), "STANDBY 준비 안 됨: %s", why.c_str());
+      }
+      logged_not_ready_ = not_ready_;
+      standby_logged_ = true;
+    }
     if (auto_start_ && not_ready_.empty()) {
       std::string why;
       start_mission(now, why);
@@ -387,7 +578,7 @@ private:
       why = std::string("STANDBY 아님: ") + op_name(op_);
       return false;
     }
-    const auto r = exec_->ready_reasons(now);
+    const auto r = ready_reasons(now);
     if (!r.empty()) {
       why = "준비 안 됨: " + join(r);
       return false;
@@ -450,7 +641,7 @@ private:
     }
     // ③ 신호등 점멸 기록 (출발 구역에 선 채, 단계 목록 없음)
     if (phase_ == Phase::OBSERVE_SIGNAL && !exec_->waiting_drive()) {
-      // 기록 중이면 signal_wait_s 를 넘어도 끝까지 (12 점멸 24 s + 끝 3 s 를 넉넉히 40 s 더). 기다리다 늦게 시작한 신호를 지우지 않게 (11-08)
+      // 기록 중이면 signal_wait_s 를 넘어도 끝까지 (12 점멸 24 s + 끝 3 s 를 넉넉히 40 s 더). 기다리다 늦게 시작한 신호를 지우지 않게
       const double waited = now - observe_start_s_;
       const bool recording = signal_.status() == SignalStatus::Recording;
       if (signal_.finished() || (waited > signal_wait_s_ && (!recording || waited > signal_wait_s_ + 40.0))) {end_observe(now);}
@@ -625,6 +816,24 @@ private:
     detail_.clear();   // OBSERVE_SIGNAL 의 "기록 중" 등을 지움
     RCLCPP_INFO(get_logger(), "task 시작: %s (%s, R %d · Y %d · G %d)", task.raw_text.c_str(),
       dice_order_name(task.dice_order), dice_counts_.red, dice_counts_.yellow, dice_counts_.green);
+    if (start_phase_ == "DELIVER") {
+      start_from_cargo();
+      return;
+    }
+    if (start_phase_ == "VERIFY") {   // 시험: 이미 놓인 배치를 재검증만 (L1 → L2 → L3)
+      RCLCPP_WARN(get_logger(), "시험 start_phase VERIFY: 세 장소 재검증만");
+      set_steps(Phase::VERIFY, verify_steps({{0, 1, 2}}, dice_map_));
+      if (exec_->done()) {on_steps_done();}
+      return;
+    }
+    if (stop_after_ == "COLLECT") {   // 시험 수집만: 마지막 박스도 배달 계획 대신 집기 계획 (배달 계획이 그 박스 퍽을 DELIVER 에서 집기 때문)
+      for (auto & st : steps) {
+        if (is_custom(st, kPlanDelivery)) {
+          st.kind = kPlanCollectBox;
+          st.name = "plan:collect:B" + std::to_string(box_of(st));
+        }
+      }
+    }
     set_steps(Phase::COLLECT, std::move(steps));
   }
 
@@ -655,6 +864,14 @@ private:
   {
     if (bar_i_ >= 1) {
       start_return("바코드 처리 끝");
+      return;
+    }
+    if (!barcode_fixed_.empty()) {   // 시험: 바코드 지점에 안 감
+      pending_task_ = parse_task(barcode_fixed_, barcodes_, nullptr);
+      RCLCPP_WARN(get_logger(), "바코드 고정 (barcode_fixed): %s (%s)", pending_task_->raw_text.c_str(),
+        dice_order_name(pending_task_->dice_order));
+      phase_ = Phase::READ_BARCODE;
+      after_barcode();
       return;
     }
     set_steps(Phase::READ_BARCODE, build_read_steps(dice_map_.barcode_view, read_timeout_s_, barcode_look_));
@@ -720,14 +937,13 @@ private:
         break;
       case Phase::READ_BARCODE:
         // ReadBarcode 가 pending_task_ 를 채운 상태. 발제 순서: 바코드 → 점멸 관측 → 이동
-        if (signal_record_ && !signal_.finished() && !signal_timed_out_) {
-          queued_task_ = pending_task_;
-          begin_observe(now_s());
-          break;
-        }
-        start_execute(*pending_task_);
+        after_barcode();
         break;
       case Phase::COLLECT:
+        if (stop_after_ == "COLLECT") {
+          finish_partial("COLLECT");
+          break;
+        }
         // 마지막 박스 Plan(Delivery) 가 delivery_steps_ 를 채움. 비었으면 (채울 장소 없음) 재검증으로
         if (delivery_steps_.empty()) {
           RCLCPP_WARN(get_logger(), "DELIVER: 놓을 퍽 없음 → 재검증");
@@ -745,6 +961,10 @@ private:
         delivery_steps_.clear();
         break;
       case Phase::DELIVER:
+        if (stop_after_ == "DELIVER") {
+          finish_partial("DELIVER");
+          break;
+        }
         if (!verify_after_.empty()) {
           RCLCPP_INFO(get_logger(), "VERIFY: 세 장소 재검증");
           set_steps(Phase::VERIFY, std::move(verify_after_));
@@ -773,7 +993,7 @@ private:
   {
     switch (phase_) {
       case Phase::READ_BARCODE:
-        // 안 읽힘 → 같은 자리에서 다시 읽기 (read_retries 번, 11-08). 이미 처리한 바코드 · 팔 · 이동 실패는 예전처럼 끝
+        // 안 읽힘 → 같은 자리에서 다시 읽기 (read_retries 번). 이미 처리한 바코드 · 팔 · 이동 실패는 그대로 끝
         if (detail_.find("바코드 안 읽힘") != std::string::npos && read_tries_ < read_retries_ && op_ == Op::RUNNING) {
           ++read_tries_;
           RCLCPP_WARN(get_logger(), "바코드 안 읽힘 → 그 자리 그 팔 자세로 다시 읽기 %d / %d", read_tries_, read_retries_);
@@ -853,6 +1073,7 @@ private:
 
   // PLACE 목표: 장소 중심 + 주사위 눈 오프셋 (map). 높이 = 놓는 면 + 퍽 반높이 + grasp_offset
   //   이 장소 LOOK 뒤 박스 측정이 있으면 측정 중심 + 박스 회전만큼 돈 오프셋 (place_box.hpp), 없으면 지도 값
+  //   퍽이 박스 테두리를 넘지 않게 눈 오프셋을 박스 좌표에서 (반 변 − 퍽 반폭 − 여유) 안으로 자름 (측정 박스 기준, 없으면 지도 박스)
   bool dice_cell_target(const Step & s, geometry_msgs::msg::PoseStamped & out, std::string & detail)
   {
     const int p = place_of(s), k = cell_of(s);
@@ -861,11 +1082,23 @@ private:
       detail = "dice 칸 없음: L" + std::to_string(p + 1) + " #" + std::to_string(k);
       return false;
     }
-    std::array<double, 2> xy = *pt;
+    std::array<double, 2> off = dice_plan_->places[p].pip_offsets[k];
+    const std::array<double, 2> off0 = off;
+    if (clamp_offset_in_box(off, dice_map_.map_from_arena.yaw, place_limits_)) {
+      RCLCPP_WARN(get_logger(), "L%d #%d: 칸이 박스 테두리 여유 밖 → 오프셋 (%.1f, %.1f) → (%.1f, %.1f) mm 로 안쪽에 놓음", p + 1, k,
+        1000.0 * off0[0], 1000.0 * off0[1], 1000.0 * off[0], 1000.0 * off[1]);
+    }
+    std::array<double, 2> xy;
     if (const auto & f = place_frame_[p]) {
-      xy = frame_point(*f, dice_plan_->places[p].pip_offsets[k]);
+      xy = frame_point(*f, off);
       RCLCPP_INFO(get_logger(), "L%d #%d: 박스 측정 기준 (지도 대비 %.1f mm 이동 · %.1f° 회전) → 칸 (%.3f, %.3f)", p + 1, k,
         1000.0 * std::hypot((*pt)[0] - xy[0], (*pt)[1] - xy[1]), f->dyaw * 180.0 / M_PI, xy[0], xy[1]);
+    } else {
+      const auto & c = dice_map_.places[p].center;
+      xy = {c[0] + off[0], c[1] + off[1]};
+      if (box_measure_) {
+        RCLCPP_WARN(get_logger(), "L%d #%d: 박스 측정 없음 → 지도 박스 기준으로 놓음 (실제 박스가 옮겨졌으면 테두리 보장 못 함)", p + 1, k);
+      }
     }
     {   // 장소별 놓는 점 보정 (place_offset_L*_mm, 로봇 기준 [앞, 왼쪽]) → 이 장소 보는 방향으로 map 에 더함
       const std::string name = "place_offset_L" + std::to_string(p + 1) + "_mm";
@@ -1503,7 +1736,7 @@ private:
   // 로봇이 출발 구역에 있는 동안만 기록 (STANDBY · HOME · 첫 READ_BARCODE · OBSERVE_SIGNAL). 끝난 뒤에는 그대로 둠
   void record_signal(double t, SignalObs o)
   {
-    if (!signal_record_ || signal_.finished() || signal_timed_out_) {return;}
+    if (!signal_fixed_.empty() || !signal_record_ || signal_.finished() || signal_timed_out_) {return;}
     const bool still = op_ == Op::STANDBY || (op_ == Op::RUNNING && at_start_zone());
     if (!still) {return;}
     const auto before = signal_.status();
@@ -1655,6 +1888,7 @@ private:
   std::string box_topic_;
   int box_min_samples_ = 3;
   double box_max_shift_m_ = 0.06, box_wait_s_ = 2.0;
+  PlaceLimits place_limits_;                 // 놓는 칸 박스 테두리 안 범위
   std::array<std::optional<PlaceFrame>, kNumPlaces> place_frame_{};   // 장소별 확정한 박스 기준 (없으면 지도 값)
   std::deque<BoxSample> box_samples_;        // map, 최근 300 개
   rclcpp::Subscription<interfaces::msg::DetectionArray>::SharedPtr sub_box_;                   // STORE 앞에 LOOK_RACK (적재함 칸 측정 → STORE target)
@@ -1669,6 +1903,9 @@ private:
   Op op_ = Op::STANDBY;
   Phase phase_ = Phase::HOME;
   std::vector<std::string> not_ready_;       // STANDBY 준비 안 된 이유
+  std::vector<std::string> logged_not_ready_;   // 마지막으로 로그에 남긴 이유 (바뀔 때만 다시 남김)
+  bool standby_logged_ = false;
+  double standby_log_s_ = -1e9;
   std::string fault_code_;                   // FAULT 원인 코드
   std::optional<std::pair<std::string, std::string>> pending_fault_;   // Custom 단계 · 재계획 안에서 정한 FAULT
   std::string result_;                       // DONE 결과: COMPLETED · RETURN_FAILED
@@ -1695,6 +1932,7 @@ private:
   // 신호등 점멸 기록 (발제 v5)
   SignalRecorder signal_;
   bool signal_record_ = true;
+  std::string signal_fixed_, barcode_fixed_, start_phase_, stop_after_;   // 시험용 부분 실행 (setup_partial_run)
   double signal_timeout_s_ = 1.0, signal_wait_s_ = 90.0;
   double observe_start_s_ = 0.0;
   int signal_retries_ = 2;
@@ -1747,7 +1985,13 @@ private:
 int main(int argc, char ** argv)
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<mission::MissionMaster>());
+  try {
+    rclcpp::spin(std::make_shared<mission::MissionMaster>());
+  } catch (const std::runtime_error & e) {   // 설정 오류 (부분 실행 등): 이유는 이미 FATAL 로그, core dump 없이 끝
+    std::fprintf(stderr, "mission_manager 끝: %s\n", e.what());
+    rclcpp::shutdown();
+    return 1;
+  }
   rclcpp::shutdown();
   return 0;
 }

@@ -1,7 +1,7 @@
 // dice.hpp — 주사위 기억 미션 계산
 //
 // 역할
-//   1. 바코드 해석: Code128 원문 → 정렬 방향, 표 = 레포 maps/dice_barcodes.json (2026-11-04)
+//   1. 바코드 해석: Code128 원문 → 정렬 방향, 표 = 레포 maps/dice_barcodes.json
 //        발제 v5: P2-01 · P2-03 오름차순, P2-02 · P2-04 내림차순
 //   2. 그룹 정렬: 신호등 R · Y · G 횟수 → L1 · L2 · L3 에 놓을 그룹, 동률이면 R → Y → G 순서 유지
 //   3. 주사위 눈: 눈 수 → 장소 중심 기준 놓을 점, 3×3 격자 간격 60 mm
@@ -95,7 +95,7 @@ std::vector<std::array<double, 2>> dice_pip_offsets(int pips, double pitch_m = 0
 std::optional<DicePlan> dice_layout(
   const SignalCounts & counts, DiceOrder order, const DiceConfig & cfg = {}, std::string * error = nullptr);
 
-// 보는 방향 기준 눈 배치 (2026-10-30 사용자 결정: 배치대 앞 관찰 원에서 봤을 때 주사위 모양)
+// 보는 방향 기준 눈 배치 (배치대 앞 관찰 원에서 봤을 때 주사위 모양)
 //   picture : dice_pip_offsets 결과 = 그림 좌표 (x 오른쪽, y 위 = 보는 사람에서 먼 쪽)
 //   (fx, fy): 보는 방향 = 관찰 원 → 장소 중심 단위 벡터 (지도 프레임). 오른쪽 = (fy, −fx)
 //   지도 좌표 = x · 오른쪽 + y · 보는 방향.  (0, 1) (남쪽에서 북쪽을 봄) 이면 그림 = 지도 그대로

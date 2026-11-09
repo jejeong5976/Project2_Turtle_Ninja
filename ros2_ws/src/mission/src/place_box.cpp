@@ -63,6 +63,18 @@ std::array<double, 2> frame_point(const PlaceFrame & f, const std::array<double,
   return {f.x + c * offset[0] - s * offset[1], f.y + s * offset[0] + c * offset[1]};
 }
 
+bool clamp_offset_in_box(std::array<double, 2> & offset, double box_yaw, const PlaceLimits & lim)
+{
+  const double r = std::max(0.0, lim.box_half - lim.puck_half - lim.margin);
+  const double c = std::cos(box_yaw), s = std::sin(box_yaw);
+  // 지도 방향 → 박스 좌표
+  const double u = c * offset[0] + s * offset[1], v = -s * offset[0] + c * offset[1];
+  const double uc = std::clamp(u, -r, r), vc = std::clamp(v, -r, r);
+  if (uc == u && vc == v) {return false;}
+  offset = {c * uc - s * vc, s * uc + c * vc};
+  return true;
+}
+
 void apply_place_frame(DiceMap & arena, DicePlan & plan, int place, const PlaceFrame & f)
 {
   if (place < 0 || place >= static_cast<int>(arena.places.size())) {return;}

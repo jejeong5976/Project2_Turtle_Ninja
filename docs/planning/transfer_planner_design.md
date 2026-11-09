@@ -1,9 +1,8 @@
 # transfer_planner 설계 (A안: 돌면서 다 싣기)
 
-- 작성 2026-10-30, 대상 발제 v5 '주사위 기억 로봇'
-- 상태 (2026-10-30): `transfer_types.hpp` · `transfer_solver` · `transfer_planner` 구현, gtest 13개 통과 (`test/test_transfer.cpp`). 기존 `dice.hpp` 위에 얹음
-- 상태 (2026-11-01): **노드 연결 (9장)** — `dice_map` (경기장 좌표 `maps/dice_map.yaml`) · `dice_steps` (단계 만들기) 추가, `mission_manager` COLLECT · DELIVER · VERIFY, ArmTask STORE 3 · RETRIEVE 4 · LOOK 5 + `slot`. gtest `test_transfer` 18개. **재계획 (8장) 은 아직 없음** → dice 단계 실패면 복귀
-- 상태 (2026-11-01 저녁): 재계획 구현 (9장 '실패 · 재계획'). **planning / mission 패키지 분리**: 이 문서의 계산 파일 · 노드는 `mission` 패키지로 옮김 (`ros2_ws/src/mission/`), 노드 파일 `planning_node.cpp` → `mission_node.cpp` → `planning_master.cpp` → `mission_manager.cpp` (2026-11-02), 단계 실행은 `planning` 패키지 `Executor`. 옛 move 흐름 (`task_planner` 의 Find · Destination) 과 `light_gate` 는 삭제. (본문 표기도 `mission_manager.cpp` 로 바꿈)
+- 상태: `transfer_types.hpp` · `transfer_solver` · `transfer_planner` 구현, gtest 13개 통과 (`test/test_transfer.cpp`). 기존 `dice.hpp` 위에 얹음
+- 상태: **노드 연결 (9장)** — `dice_map` (경기장 좌표 `maps/dice_map.yaml`) · `dice_steps` (단계 만들기) 추가, `mission_manager` COLLECT · DELIVER · VERIFY, ArmTask STORE 3 · RETRIEVE 4 · LOOK 5 + `slot`. gtest `test_transfer` 18개. **재계획 (8장) 은 아직 없음** → dice 단계 실패면 복귀
+- 상태: 재계획 구현 (9장 '실패 · 재계획'). 계산 파일 · 노드 = `mission` 패키지 (`ros2_ws/src/mission/`, 노드 `mission_manager.cpp`), 단계 실행 = `planning` 패키지 `Executor`
 - 비용표: `maps/dice_travel_times.yaml` (Isaac 측정 이동 시간 + 정차 · 팔 가정값). Q1 예상 1659 s (LOOK 5 s 포함)
 
 ## 1. 전략 요약
@@ -25,10 +24,10 @@
 | `transfer_types.hpp` | 노드 번호 · 비용표 · 정차(Stop) · 팔 동작 자료형 | 없음 |
 | `transfer_solver.hpp/.cpp` | 현재 실제 상태 → 남은 일 전체의 최소 시간 동작 순서 (정확해, Dijkstra) | 없음 |
 | `transfer_planner.hpp/.cpp` | 수집 정차 목록 생성, 계획 시점 호출, 해 → 정차 목록 → `Step` 목록 변환, 실패 뒤 재계획 | 없음 |
-| `mission_manager.cpp` (옛 `planning_node.cpp` · `mission_node.cpp`) | Phase 를 COLLECT · DELIVER · VERIFY 로 바꾸고 위 함수 호출 | 있음 |
+| `mission_manager.cpp` | Phase 를 COLLECT · DELIVER · VERIFY 로 바꾸고 위 함수 호출 | 있음 |
 
 - 정확해 하나로 A안 · C안 · 실패 복구를 모두 처리함 (A안은 "수집 순서가 고정된 특수한 경우")
-- `task_planner` 의 move 흐름, `light_gate` 는 2026-11-01 패키지 분리 때 삭제. `task_parser` 는 dice 바코드 해석만 남음
+- `task_planner` 의 move 흐름, `light_gate` 는 패키지 분리 때 삭제. `task_parser` 는 dice 바코드 해석만 남음
 
 ## 3. 자료형 (`transfer_types.hpp`)
 
@@ -73,7 +72,7 @@ struct Stop
 
 ### 4.1 정차 목록 (계획 전, 정보 없이 정함)
 
-- `collect_order` (설정, 기본 `[1, 2, 6, 4, 5, 3]`, 2026-11-04 L2 박스 시간표 기준 수집 → 배달 → 재검증 → 복귀 이동 합 720 가지 중 1 등 293.7 s, 옛 `[1, 2, 6, 3, 4, 5]` 은 298.9 s 8 등) 를 그대로 씀. 옛 순서는 720 가지 순서 비교에서 1 등 (실물 확인 · 하드웨어 끝 속도, 넣기+빼기 30 · 60 s 네 조건 모두)
+- `collect_order` (설정, 기본 `[1, 2, 4, 5, 6, 3]` = arena5 planner_server 시간표 (정차 면 · 회전 시간 포함) 로 순서 720 × 면 조합 중 1 등, 그 전 `[1, 2, 6, 4, 5, 3]`, L2 박스 시간표 기준 수집 → 배달 → 재검증 → 복귀 이동 합 720 가지 중 1 등 293.7 s, 옛 `[1, 2, 6, 3, 4, 5]` 은 298.9 s 8 등) 를 그대로 씀. 옛 순서는 720 가지 순서 비교에서 1 등 (실물 확인 · 하드웨어 끝 속도, 넣기+빼기 30 · 60 s 네 조건 모두)
 - 박스 b 의 정차 = `Look` → 퍽마다 [`Store`(그리퍼 퍽 → 빈 칸, 그리퍼가 차 있을 때만)] → `Pick`
 - **마지막 박스는 Look 만 미리 넣음** → Look 결과로 계획한 뒤 집는 순서를 정함 (4.3)
 - `defer_boxes` 에 든 박스는 Look 만 하고 집지 않음 (C안)
@@ -90,7 +89,7 @@ struct Stop
 ### 4.3 계획 시점 (마지막 박스 Look 직후)
 
 1. 12개 ID 검사: 0–11 이 하나씩 있어야 함. 중복 · 누락 → `MISSION_ERROR(ID_DUP_MISSING)` (발제 규칙, 추정 금지)
-2. `dice_layout()` 으로 장소별 그룹 · 눈 수 확인 (할당 가능 여부는 3 의 solver 가 판정, 해 없음 → `MISSION_ERROR(UNSOLVABLE)`) (2026-11-02 `plan_dice` 삭제)
+2. `dice_layout` 으로 장소별 그룹 · 눈 수 확인 (할당 가능 여부는 3 의 solver 가 판정, 해 없음 → `MISSION_ERROR(UNSOLVABLE)`) (`plan_dice` 삭제)
 3. `TransferSolver` 호출 (5장) → 마지막 박스에서 집는 순서 · 장소 순서 · 장소별 꺼내기 순서 · 할당 (Y 모양, Y 로 보낼 퍽) 결정
 4. 결과를 정차 목록으로 펼쳐 마지막 박스 정차 뒤에 이어 붙임
 
@@ -133,12 +132,12 @@ struct Stop
 ## 6. 배달 단계 정차
 
 - 장소 정차 = `Look`(장소 태그) → 칸마다 [`Retrieve`(그리퍼가 비었을 때)] → `Place(place, cell)`
-- 눈 방향: **배치대 앞 관찰 원에서 봤을 때 주사위 모양** (2026-10-30 사용자 결정). `apply_view_directions()` 가 그림 좌표 → 지도 좌표로 바꾸고 먼 칸부터 정렬
+- 눈 방향: **배치대 앞 관찰 원에서 봤을 때 주사위 모양**. `apply_view_directions` 가 그림 좌표 → 지도 좌표로 바꾸고 먼 칸부터 정렬
   - 보는 방향 (관찰 원 → 장소 중심, 발제 그림): L1 (1, 0) 서 → 동, L2 (0, −1) 북 → 남, L3 (0, 1) 남 → 북
   - 발제 p.4 문구 "지도 위쪽이 +Y, 모든 장소 같은 방향" 과 L1 에서 90° 다름 → 운영자 확인 필요. 지도 기준으로 바꾸려면 보는 방향을 전부 (0, 1)
 - 칸 순서: `order_far_first()` (보는 사람 = 로봇 쪽에서 먼 칸부터)
 - 꺼내기(RETRIEVE) 는 장소 정차 안에서 바로 놓을 퍽만 → 다음 장소 퍽을 그리퍼에 쥐고 주행하지 않음
-- **퍽 쥔 채 주행 안 함 (2026-11-04)**: 이동은 그리퍼가 빌 때만, 박스에서 집은 퍽은 전부 STORE (마지막 박스 퍽도). control 이 쥔 채 DRIVE · HOME 을 안 함
+- **퍽 쥔 채 주행 안 함**: 이동은 그리퍼가 빌 때만, 박스에서 집은 퍽은 전부 STORE (마지막 박스 퍽도). control 이 쥔 채 DRIVE · HOME 을 안 함
 - Place 목표 계산은 F9 (태그 기준 칸 좌표 → base_link) 담당. transfer_planner 는 (장소, 칸 번호) 만 넘김
 - 장소마다 마지막 Place 뒤 `Look` 1회 (그 장소 실측 기록, 재검증과 별개 증거)
 
@@ -146,7 +145,7 @@ struct Stop
 
 ```yaml
 transfer:
-  collect_order: [1, 2, 6, 4, 5, 3]   # 시작 박스 방문 순서
+  collect_order: [1, 2, 4, 5, 6, 3]   # 시작 박스 방문 순서
   defer_boxes: []                     # C안이면 [3, 6] (Look 만 하고 배달 때 집음)
   cargo_slots: [S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12]   # URDF rack_cell_S* 이름, 먼 칸부터 채움
   travel_table: maps/dice_travel_times.yaml   # 노드 쌍 이동 시간 [s]
@@ -174,7 +173,7 @@ transfer:
 | Place 실패 · 놓은 뒤 넘어짐 | 그 장소는 건드리지 않음 (빈 칸 오염 위험). 기록만 남기고 다음 칸 |
 | 재계획 결과 해 없음 | 남은 장소 중 완성 가능한 곳만 채우고 VERIFY · RETURN 로 감 (점수 보존) |
 
-## 9. 노드 변경 (`mission_manager.cpp`, 옛 `planning_node.cpp`) — 2026-11-01 구현
+## 9. 노드 (`mission_manager.cpp`) — 구현
 
 | 항목 | 구현 |
 |---|---|
@@ -182,11 +181,11 @@ transfer:
 | 시작 조건 | 신호 기록 DONE + 횟수 규칙 (각 1–6, 합 12). 아니면 task 실패로 복귀 (색 추정 안 함) |
 | COLLECT | `collect_steps`: 박스마다 Navigate(정차) → Arm LOOK → Plan. Plan(CollectBox) 이 `look_dwell_s` 뒤 박스 반경 안 on_field 퍽으로 `collect_box_actions` → 바로 뒤에 끼워 넣음 |
 | 계획 | 마지막 박스 Plan(Delivery): 실음 + 그리퍼 + 박스 퍽 → `dice_layout` (그룹 · 눈 수 · 눈 위치) → `apply_view_directions` → `plan_transfer`. 실패 = FAULT `DICE_UNSOLVABLE` |
-| DELIVER | `transfer_steps`: move 정차는 Navigate, 팔 동작은 Arm (HOME 안 넣음). PLACE 목표 `Target::Custom` + kind `kTargetDiceCell` (옛 `Target::DiceCell`) = 장소 중심 + `pip_offsets[cell]` (map) → base_link, 높이 top_z + 퍽 반높이 + grasp_offset |
+| DELIVER | `transfer_steps`: move 정차는 Navigate, 팔 동작은 Arm (HOME 안 넣음). PLACE 목표 `Target::Custom` + kind `kTargetDiceCell` = 장소 중심 + `pip_offsets[cell]` (map) → base_link, 높이 top_z + 퍽 반높이 + grasp_offset |
 | PICK | 정차 중이라 LOOK 때 본 odom 위치를 `dice_pick_fresh_s` (90 s) 까지 씀 (STORE 뒤에도) |
 | VERIFY | `verify_steps`: 재검증 순서로 장소마다 Navigate → LOOK → Plan(Verify). `dice_verify`: LOOK 뒤 새 관측 (반경 `verify_radius_m` 0.18) → 칸 (`verify_cell_tol_m` 0.03) · 그룹 · 개수 판정, 세 곳 다 보면 ID 중복 · 누락 → `/planning/verify_record` (VerifyRecord, transient_local) + `~/planning_logs/verify_<시각>.yaml`. 판정이 나빠도 미션은 계속 (기록이 목적) |
-| 순서 | 배치 순서 · 재검증 순서 모두 정확해가 고름 (끝 비용 = 재검증 순회 + 복귀). Q1 (B5 출발) 6 가지 비교: L2→L3→L1 + 재검증 L1→L3→L2 가 이동 174.6 s 로 최소 (2026-11-01 확인, 다음 L3→L2→L1 179.1 s) |
-| 실패 · 재계획 (2026-11-01) | 재시도 뒤에도 실패하면 `dice_recover`: PICK 실패 = 그 퍽 박스에 남김 (skipped), STORE · RETRIEVE · PLACE 실패 = 그 퍽 잃음 (lost), PLACE 실패 장소는 버림. COLLECT 는 그 박스 남은 단계를 지우고 같은 박스 Plan 다시 (이동 실패면 박스 건너뜀), DELIVER 는 지금 상태에서 `plan_from_state`, VERIFY 는 그 장소만 건너뜀. `max_replans` (6) 넘으면 포기 · 복귀 |
+| 순서 | 배치 순서 · 재검증 순서 모두 정확해가 고름 (끝 비용 = 재검증 순회 + 복귀). Q1 (B5 출발) 6 가지 비교: L2→L3→L1 + 재검증 L1→L3→L2 가 이동 174.6 s 로 최소 (확인, 다음 L3→L2→L1 179.1 s) |
+| 실패 · 재계획 | 재시도 뒤에도 실패하면 `dice_recover`: PICK 실패 = 그 퍽 박스에 남김 (skipped), STORE · RETRIEVE · PLACE 실패 = 그 퍽 잃음 (lost), PLACE 실패 장소는 버림. COLLECT 는 그 박스 남은 단계를 지우고 같은 박스 Plan 다시 (이동 실패면 박스 건너뜀), DELIVER 는 지금 상태에서 `plan_from_state`, VERIFY 는 그 장소만 건너뜀. `max_replans` (6) 넘으면 포기 · 복귀 |
 | 부분 계획 | `plan_from_state`: 기록부 박스 위 퍽 + 적재함 + 장소별 놓은 수로, **끝까지 채울 수 있는 장소가 가장 많은 조합** (같은 수면 시간 짧은 쪽) 을 고름. 정확해 `allow_leftover` (남는 퍽 허용, Y 모양 가능 여부는 R/G 가 모양 s 아닌 퍽부터 쓴다고 보고 판정). 처음 계획도 같은 함수 (12 개면 세 곳) |
 | 가짜 세계 시험 | PICK 3 회 실패 (초록 3) → L1 Y2 · L2 R4 채움, L3 G6 못 채움 (6/12) / PLACE 실패 (8, L2) → L2 버림, L1 · L3 채움 (8/12) / STORE 실패 (초록 1 떨어뜨림) → L1 · L2 (6/12). 정상 · PICK 1 회 실패 12/12 PASS 그대로 |
 

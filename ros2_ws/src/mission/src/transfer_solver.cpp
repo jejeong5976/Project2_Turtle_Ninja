@@ -260,7 +260,7 @@ std::optional<SolverResult> solve_transfer(
         }
       }
 
-      // Move: 그리퍼가 빌 때만 (퍽 쥔 채 주행 안 함, 2026-11-04 사용자 결정 — control 도 쥔 채 DRIVE · HOME 을 안 함)
+      // Move: 그리퍼가 빌 때만 (퍽 쥔 채 주행 안 함 — control 도 쥔 채 DRIVE · HOME 을 안 함)
       if (st.grip) {continue;}
       const int carried = st.cargo_count();
       const bool room = st.cargo_count() < in.cargo_capacity;   // 집은 퍽을 넣을 칸
