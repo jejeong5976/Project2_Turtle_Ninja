@@ -43,6 +43,7 @@
 //   - /planning/signal_record  interfaces/SignalRecord   바뀔 때 + 1 Hz, transient_local
 //   - /planning/verify_record  interfaces/VerifyRecord   transient_local
 //   - 서비스 호출 barcode_enable_service std_srvs/SetBool, 기본 /perception/barcode/enable
+//   - 서비스 호출 wide_enable_service std_srvs/SetBool, 기본 /perception/wide/enable (신호 기록 Done 이면 광각 끔)
 //   - 실행기 출력: navigate_to_pose · /arm_task · /mission/cargo · /planning/markers
 //   - 기록 파일 <record_dir>/run_<시각>/ signal.json · signal_attempt<N>.json (다시 기록 전 불완전 기록) · allocation.json · allocation_rev<N>.json · verify.yaml
 // 실행
@@ -246,6 +247,8 @@ public:
     signal_ = SignalRecorder(sc);
     // READ_BARCODE 동안만 perception 바코드 판독을 켬 (std_srvs/SetBool). "" 면 안 부름 (perception 이 늘 켜져 있을 때)
     barcode_enable_service_ = declare_parameter<std::string>("barcode_enable_service", "/perception/barcode/enable");
+    // 광각 (신호등 · 광각 퍽) 은 신호 기록이 Done 이 될 때까지만 켬 → 뒤 단계는 손목만 (Jetson CPU 절약). "" 면 안 부름
+    wide_enable_service_ = declare_parameter<std::string>("wide_enable_service", "/perception/wide/enable");
 
     // 경기장 좌표 · 이동 시간표 · 바코드 표
     std::string err;
@@ -282,6 +285,7 @@ public:
     pub_signal_ = create_publisher<SignalRecord>("/planning/signal_record", rclcpp::QoS(1).reliable().transient_local());
     pub_verify_ = create_publisher<VerifyRecord>("/planning/verify_record", rclcpp::QoS(1).reliable().transient_local());
     if (!barcode_enable_service_.empty()) {barcode_cli_ = create_client<SetBool>(barcode_enable_service_);}
+    if (!wide_enable_service_.empty()) {wide_cli_ = create_client<SetBool>(wide_enable_service_);}
 
     // ---------------------------------------------------------------- 서비스 (사람 · 대회 운영)
     srv_start_ = create_service<Trigger>(
@@ -372,6 +376,7 @@ private:
   {
     const double now = now_s();
     sync_barcode_reader(now);
+    sync_wide_camera(now);
     exec_->update(now);
     if (last_light_s_ < 0.0 || now - last_light_s_ > signal_timeout_s_) {
       record_signal(now, SignalObs::NotSeen);   // 토픽 끊김 = 신호등 못 봄
@@ -1708,6 +1713,38 @@ private:
       });
   }
 
+  // perception 광각을 신호 기록에 맞춤: Done 전 = 켬 (준비 확인 TRAFFIC_LIGHT 도 이때만 봄), Done = 끔
+  //   reset_signal 로 다시 기록하면 다시 켬. 응답 없으면 2 s 뒤 버리고 다시
+  void sync_wide_camera(double now)
+  {
+    if (!wide_cli_) {return;}
+    const bool want = signal_.status() != SignalStatus::Done;
+    if (wide_req_pending_) {
+      if (now - wide_req_sent_s_ < 2.0) {return;}
+      wide_cli_->prune_pending_requests();
+      wide_req_pending_ = false;
+      RCLCPP_WARN(get_logger(), "광각 켜기 서비스 응답 없음 → 다시 보냄");
+    }
+    if (wide_known_ && wide_on_ == want) {return;}
+    if (now - wide_last_try_s_ < 1.0) {return;}
+    wide_last_try_s_ = now;
+    if (!wide_cli_->service_is_ready()) {return;}   // perception 이 없으면 신호등도 없음 → TRAFFIC_LIGHT 가 알림
+    auto req = std::make_shared<SetBool::Request>();
+    req->data = want;
+    const int gen = ++wide_req_gen_;
+    wide_req_pending_ = true;
+    wide_req_sent_s_ = now;
+    wide_cli_->async_send_request(req, [this, want, gen](rclcpp::Client<SetBool>::SharedFuture f) {
+        if (gen != wide_req_gen_) {return;}
+        wide_req_pending_ = false;
+        if (f.get()->success) {
+          wide_known_ = true;
+          wide_on_ = want;
+          RCLCPP_INFO(get_logger(), "perception 광각 %s%s", want ? "켬" : "끔", want ? "" : " (신호 기록 끝)");
+        }
+      });
+  }
+
   void log_signal()
   {
     const std::string msg = "신호등 기록 " + std::string(signal_status_name(signal_.status())) + ": " + signal_.sequence() +
@@ -1967,6 +2004,13 @@ private:
   bool barcode_want_ = false, barcode_on_ = false, barcode_known_ = false, barcode_req_pending_ = false;
   double barcode_last_try_s_ = -1e9, barcode_req_sent_s_ = 0.0;
   int barcode_req_gen_ = 0;
+
+  // perception 광각 켜기 · 끄기 (신호 기록 Done 전까지만)
+  std::string wide_enable_service_;
+  rclcpp::Client<SetBool>::SharedPtr wide_cli_;
+  bool wide_on_ = false, wide_known_ = false, wide_req_pending_ = false;
+  double wide_last_try_s_ = -1e9, wide_req_sent_s_ = 0.0;
+  int wide_req_gen_ = 0;
 
   // ROS
   rclcpp::Subscription<TrafficLight>::SharedPtr sub_sig_;

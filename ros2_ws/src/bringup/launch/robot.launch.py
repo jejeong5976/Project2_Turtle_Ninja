@@ -69,7 +69,7 @@ def steer_ranges(hw, margin_ticks=STEER_MARGIN_TICKS):
 
 
 def spawner_node(name, files, **kw):
-    args_ = [name]
+    args_ = [name, "--service-call-timeout", "60", "--switch-timeout", "30"]   # 11-10: 켤 때 젯슨이 바빠 load_controller 답이 10 s 넘음 → 다시 보내 "이미 있음" 으로 죽던 것
     for f in files:
         args_ += ["--param-file", f]
     return Node(package="controller_manager", executable="spawner", arguments=args_, output="both", **kw)
@@ -268,16 +268,21 @@ def generate_launch_description():
              arguments=["-d", PathJoinSubstitution([desc, "rviz", "navigation.rviz"]), "-f", "odom"]),
     ]
 
-    # 컨트롤러마다 spawner 하나. --param-file: Jazzy 부터 컨트롤러가 controller_manager 설정을 안 물려받음
-    def spawner(name, **kw):
-        return spawner_node(name, [ctrl_yaml], **kw)
-
-    for c in CONTROLLERS:
-        if c in ARM_CONTROLLERS:
-            nodes.append(spawner(c, condition=IfCondition(with_arm)))
-        else:
-            nodes.append(spawner(c))
-    nodes.append(spawner("imu_sensor_broadcaster", condition=IfCondition(is_opencr)))   # IMU 는 hardware 플러그인만 채움
+    # 컨트롤러 spawner 하나로 (swerve 는 swerve_setup 이 따로). --param-file: Jazzy 부터 컨트롤러가 controller_manager 설정을 안 물려받음
+    #   11-10 실물: 컨트롤러마다 spawner 를 띄우면 5 개가 잠금 (/tmp/ros2-control-controller-spawner.lock) 을 두고 줄 서다,
+    #   켤 때 바쁜 젯슨에서 하나가 load_controller 답을 못 받으면 나머지가 20 s 씩 기다려 45 s 안에 못 켬 → 한 프로세스가 차례로
+    def spawner_setup(context):
+        arm_on = context.launch_configurations.get("arm", "true") != "false"
+        opencr = context.launch_configurations.get("hardware", "mock") == "opencr"
+        yaml_path = ctrl_yaml if isinstance(ctrl_yaml, str) else ctrl_yaml.perform(context)
+        names = [c for c in CONTROLLERS if arm_on or c not in ARM_CONTROLLERS]
+        if opencr:
+            names.append("imu_sensor_broadcaster")   # IMU 는 hardware 플러그인만 채움
+        a = ["--service-call-timeout", "60", "--switch-timeout", "30"]
+        for n in names:
+            a += ["--controller", n, "--param-file", yaml_path]
+        return [Node(package="controller_manager", executable="spawner", arguments=a, output="both")]
+    nodes.append(OpaqueFunction(function=spawner_setup))
 
     # 검사가 노드보다 먼저 (거부되면 아무 노드도 안 뜸)
     return LaunchDescription(args + [OpaqueFunction(function=swerve_setup)] + nodes)

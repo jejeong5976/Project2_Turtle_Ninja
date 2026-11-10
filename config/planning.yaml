@@ -42,6 +42,7 @@ mission_manager:
     signal_record: true               # STANDBY · HOME · 첫 READ_BARCODE · OBSERVE_SIGNAL 동안 기록. 순서 = 바코드 → 점멸 관측 → task 실행 (발제 v5)
     barcode_look: true                # READ_BARCODE = 이동 → 팔 LOOK_BARCODE (손목으로 바코드 정면) → 읽기 → 팔 HOME
     barcode_enable_service: /perception/barcode/enable   # READ_BARCODE 동안만 perception 바코드 판독 켬 (std_srvs/SetBool). "" 면 안 부름
+    wide_enable_service: /perception/wide/enable         # 신호 기록 Done 이면 perception 광각 끔 (뒤 단계는 손목만), reset_signal 이면 다시 켬. "" 면 안 부름
     signal_wait_s: 90.0               # OBSERVE_SIGNAL 최대 대기 (넘으면 불완전으로 진행, 색 추정 안 함)
     signal_retries: 0                 # 기록이 불완전하면 비우고 다시 기록하는 횟수. 발제 p.6: 팀 오류로 신호를 다시 안 보여 줌 → 0 = 실제 기록을 signal.json 에 남기고 정지 · 복귀 (전 2)
     signal_expected: 12               # 점멸 수
@@ -53,7 +54,7 @@ mission_manager:
     signal_max_ambiguous: 0.3         # 점멸 안 애매 관측 비율 상한 (넘으면 '?')
     signal_min_count: 1               # 색별 횟수 규칙 (발제 각 1-6)
     signal_max_count: 6
-    control_timeout_s: 1.0            # /odom · /control/motion_mode 끊김 → FAULT
+    control_timeout_s: 3.0            # /odom · /control/motion_mode 끊김 → FAULT (코드 기본 1.0)
     require_motion_mode: true         # MotionMode 따름: 주행은 DRIVE 일 때만, 팔 작업은 ready 일 때만 (control 없이 시험할 땐 false)
     drive_wait_s: 10.0                # 주행 단계에서 DRIVE 를 이만큼 못 받으면 HOME 끼워 넣음 (INIT 은 FAULT)
 
@@ -102,9 +103,10 @@ mission_manager:
     dice_pip_frame: arena             # 주사위 눈 방향: arena = 발제 p.4 지도 +Y 기준 세 곳 같은 방향 · viewer = 보는 사람 기준
 
     # ---- 재고 (적재함 · 그리퍼)
-    # 채우는 순서 = 실물 적재 시험 순서 (칸마다 그때 찬 칸 조건 그대로 성공한 순서). dice 는 11 칸 이상 필요
-    #   먼 칸부터(S1 →) 채우면 S10 을 넣을 때 S5 퍽에 손가락이 닿음 (pose_safety). 빼기 제약은 config/rack_cells.yaml
-    cargo_slots: [S12, S7, S9, S4, S3, S8, S11, S6, S10, S5, S1, S2]   # URDF rack_cell_S* 이름
+    # 채우는 순서 = 뒷줄부터 (base_link x −0.102 S1 · S2 → −0.042 S3 · S8 → +0.018 → +0.078). dice 는 11 칸 이상 필요
+    #   같은 줄 안은 넣기 제약 (rack_store_needs_empty) 순서: 안쪽 칸 (S11 · S12 · S10 · S9) 을 바깥 칸 (S6 · S7 · S5 · S4) 보다 먼저, S1 은 S2 보다 먼저
+    #   번호 순 (S1 → S12) 은 S4 → S9 · S5 → S10 등 넣기 제약을 어김 (S10 을 넣을 때 S5 퍽에 손가락이 닿음, pose_safety). 빼기 제약은 config/rack_cells.yaml
+    cargo_slots: [S1, S2, S3, S8, S11, S6, S12, S7, S10, S5, S9, S4]   # URDF rack_cell_S* 이름
     rack_store_needs_empty: ["S1:S2", "S9:S4", "S10:S5", "S11:S6", "S12:S7"]   # 넣기 전에 비어야 할 칸 (config/rack_cells.yaml rack_constraints). 첫 빈 칸이 어기면 다음 빈 칸
     rack_retrieve_needs_empty: ["S1:S2", "S7:S12", "S10:S5"]                # 빼기 전에 비어야 할 칸 (S7 ← S12 실제로 닿음 −13 mm). 같은 종류 중 지키는 칸 먼저
     # 적재함 칸 측정: STORE 앞에 LOOK_RACK (퍽 쥔 채 그 칸 관찰 자세, 칸마다 다름 = control 표)
@@ -114,6 +116,9 @@ mission_manager:
     rack_topic: /perception/rack/cells
     rack_wait_s: 2.0                  # LOOK_RACK 성공 뒤 그 칸 측정 기다리는 시간
     rack_fresh_s: 30.0                # 이보다 오래된 측정은 STORE 에 안 씀
+    rack_enable_service: /perception/rack/enable   # LOOK_RACK 보낸 뒤 ~ 측정 기다리기 끝까지만 perception 적재함 판독 켬. "" = 안 부름
+    wrist_enable_service: /perception/wrist/enable  # Nav2 · 정밀 접근 목표 진행 중에만 perception 손목 퍽 검출 끔 (CPU). "" = 안 부름 (늘 켜짐)
+    wrist_on_grace_s: 2.0                          # 켠 뒤 이 시간은 손목 검출 끊김 (DETECTION_LOST) 으로 안 셈
     # 장소 박스 측정 (손목 깊이 /perception/wrist/box): 장소 LOOK 뒤 측정 중앙값 = 칸 기준 (중심 + 박스 회전만큼 돈 눈)
     #   못 받거나 지도 중심에서 box_max_shift_m 넘게 멀면 지도 값 (dice_map center)
     box_measure: true

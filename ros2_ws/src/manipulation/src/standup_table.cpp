@@ -47,8 +47,8 @@ bool load_standup_table(const std::string & file, std::vector<StandupPath> & out
   return true;
 }
 
-int nearest_standup(const std::vector<StandupPath> & table, double x, double y, double axis_deg, double side,
-  double & dx, double & dy, double & dyaw_deg, double step_x, double step_y, double step_deg)
+int nearest_farpick(const std::vector<StandupPath> & table, double x, double y, double axis_deg, double side,
+  double & dx, double & dy, double & dyaw_deg, double period_deg, double step_x, double step_y, double step_deg)
 {
   double side_best = std::numeric_limits<double>::infinity();
   for (const auto & p : table) {side_best = std::min(side_best, std::abs(p.side - side));}
@@ -57,7 +57,7 @@ int nearest_standup(const std::vector<StandupPath> & table, double x, double y, 
   for (size_t i = 0; i < table.size(); ++i) {
     const auto & p = table[i];
     if (std::abs(std::abs(p.side - side) - side_best) > 1e-6) {continue;}
-    const double da = std::remainder(axis_deg - p.axis_deg, 180.0);
+    const double da = period_deg > 0.0 ? std::remainder(axis_deg - p.axis_deg, period_deg) : 0.0;   // 주기 0 = 축 무시 (원기둥)
     const double d = std::pow((x - p.x) / step_x, 2) + std::pow((y - p.y) / step_y, 2) + std::pow(da / step_deg, 2);
     if (d < best_d) {
       best_d = d;
@@ -68,6 +68,21 @@ int nearest_standup(const std::vector<StandupPath> & table, double x, double y, 
     }
   }
   return best;
+}
+
+int nearest_standup(const std::vector<StandupPath> & table, double x, double y, double axis_deg, double side,
+  double & dx, double & dy, double & dyaw_deg, double step_x, double step_y, double step_deg)
+{
+  return nearest_farpick(table, x, y, axis_deg, side, dx, dy, dyaw_deg, 180.0, step_x, step_y, step_deg);   // 긴축은 180° 마다 같음
+}
+
+std::string farpick_table_name(bool has_nbr, double nbr_dir_deg)
+{
+  if (!has_nbr || !std::isfinite(nbr_dir_deg)) {return "farpick_paths_ok75_nbr_none.txt";}
+  const int k = ((static_cast<int>(std::lround(nbr_dir_deg / 45.0)) % 8) + 8) % 8;   // 가장 가까운 45°, 0 … 315
+  char buf[48];
+  std::snprintf(buf, sizeof(buf), "farpick_paths_ok75_nbr_%03d.txt", k * 45);
+  return buf;
 }
 
 bool standup_retarget(const ArmModel & m, const Q5 & q_table, const StandupRetarget & r, bool scale, RetargetResult & out)

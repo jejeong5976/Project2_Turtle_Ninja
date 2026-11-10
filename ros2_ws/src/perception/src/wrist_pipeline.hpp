@@ -41,6 +41,7 @@
 
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -90,8 +91,9 @@ private:
   using Sync = message_filters::Synchronizer<Policy>;
 
   void on_frame(const Image::ConstSharedPtr & color, const Image::ConstSharedPtr & depth_msg);
-  void on_rack(const Image::ConstSharedPtr & color);
+  bool on_rack(const Image::ConstSharedPtr & color);   // 이번 장을 처리했으면 true (처리 시간 기록용)
   void on_box(const Image::ConstSharedPtr & color, const Image::ConstSharedPtr & depth_msg);
+  void report_timing();   // 5 s 마다 입력 Hz · 단계별 처리 시간 로그
   bool to_depth_m(const Image::ConstSharedPtr & depth_msg, cv::Mat1f & depth);   // 16UC1 mm · 32FC1 m → m
   void publish_rack_debug(
     const Image::ConstSharedPtr & color, const cv::Mat & gray, const std::vector<wrist::RackTag> & tags,
@@ -108,6 +110,9 @@ private:
   std::string frame_id_, world_frame_;
   double tf_timeout_s_{0.05}, reset_move_m_{0.01}, reset_rot_deg_{2.0}, depth_scale_{0.001};
   double min_rise_m_{0.0};      // 납작한 무늬 거르기 (wrist.min_rise_m)
+  // wrist.tag_centre: 장마다 읽음 (실행 중 ros2 param set 으로 바꿈). false = 퍽 중심 · 면 방향을 모양으로만 (태그가 비뚤게 붙은 퍽)
+  bool tag_roi_{true};          // 태그를 분할 상자 둘레만 검출 (wrist.tag_roi)
+  int tag_roi_pad_px_{24};      // 상자 둘레 여유 [px] (wrist.tag_roi_pad_px)
   bool publish_debug_{false};
   std::optional<wrist::Mat3> last_R_;
   wrist::Vec3 last_t_{wrist::Vec3::Zero()};
@@ -140,7 +145,7 @@ private:
   std::optional<wrist::Mat3> rack_last_R_;
   wrist::Vec3 rack_last_t_{wrist::Vec3::Zero()};
   std::optional<rclcpp::Time> rack_last_stamp_;
-  std::atomic<bool> rack_enabled_{true};
+  std::atomic<bool> rack_enabled_{false};
   std::atomic<uint32_t> rack_reset_req_{0};
   uint32_t rack_reset_done_{0};
   rclcpp::Publisher<interfaces::msg::DetectionArray>::SharedPtr rack_pub_;
@@ -155,8 +160,21 @@ private:
   std::atomic<bool> box_enabled_{true};
   rclcpp::Publisher<interfaces::msg::DetectionArray>::SharedPtr box_pub_;
 
-  int n_frames_{0};
-  double sum_seg_ms_{0.0}, sum_all_ms_{0.0};
+  // 처리 시간 (5 s 마다 평균 로그): 단계별 합 [ms] + 들어온 장 수 (입력 Hz 확인용)
+  struct Timing
+  {
+    int frames = 0;                 // on_frame 이 분할까지 간 장
+    int pucks = 0;                  // 자세 계산한 퍽 수 (퍽당 시간용)
+    int box_runs = 0;               // on_box 가 실제로 계산한 횟수
+    int tag_runs = 0;               // 태그 검출한 장 (분할이 있는 장만)
+    int rack_runs = 0;              // on_rack 이 실제로 처리한 장
+    double conv = 0, tf = 0, seg = 0, tags = 0, pose = 0, track = 0, pub = 0, all = 0, box = 0, sync_cb = 0, rack = 0;
+    perception::wrist::PoseTiming pose_parts;   // 자세 단계별 (퍽 전체 합)
+  };
+  std::vector<double> lat_ms_, pair_dt_ms_;   // 짝마다 촬영 → 처리 시작 · 컬러 − 깊이 시각 차 [ms], 보고 때 비움
+  Timing tm_;
+  std::array<size_t, 3> last_counts_{{0, 0, 0}};   // 마지막 장 분할 · 자세 · 확정 수
+  std::atomic<int> n_color_{0}, n_depth_{0}, n_sync_{0};   // 콜백 스레드가 다를 수 있음
   std::chrono::steady_clock::time_point last_report_{std::chrono::steady_clock::now()};
 };
 

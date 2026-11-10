@@ -3,6 +3,8 @@
 #include "wrist_pipeline.hpp"
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <utility>
@@ -29,6 +31,11 @@ cv::Scalar color_of(const std::string & label)
   if (label == "green") {return {0, 255, 0};}
   return {255, 255, 0};
 }
+
+double ms_since(std::chrono::steady_clock::time_point t0)
+{
+  return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+}
 }  // namespace
 
 WristPipeline::WristPipeline(
@@ -52,6 +59,9 @@ WristPipeline::WristPipeline(
   depth_scale_ = n.declare_parameter<double>("wrist.depth_scale", 0.001);
   // 윗면이 둘레 낮은 면보다 이만큼도 안 솟은 분할은 퍽이 아님 (납작한 무늬). 0 = 안 봄
   min_rise_m_ = n.declare_parameter<double>("wrist.min_rise_m", 0.0);
+  n.declare_parameter<bool>("wrist.tag_centre", true);
+  tag_roi_ = n.declare_parameter<bool>("wrist.tag_roi", true);
+  tag_roi_pad_px_ = static_cast<int>(n.declare_parameter<int>("wrist.tag_roi_pad_px", 24));
   publish_debug_ = n.declare_parameter<bool>("wrist.publish_debug", false);
   const auto color_topic = n.declare_parameter<std::string>("wrist.color_topic", "/camera/camera/color/image_raw");
   const auto depth_topic = n.declare_parameter<std::string>(
@@ -59,8 +69,10 @@ WristPipeline::WristPipeline(
   const auto info_topic = n.declare_parameter<std::string>("wrist.info_topic", "/camera/camera/color/camera_info");
   // 영상 구독 QoS: 기본 reliable (큰 영상을 프로세스 사이에서 best_effort 로 받으면 조각 손실로 장이 빠짐, 광각과 같은 이유)
   //   realsense2_camera 기본 발행은 reliable → 호환. 드라이버를 best_effort 로 바꿨으면 여기도 best_effort
+  //   깊이 (보관 장 수) 는 작게: 처리가 카메라보다 느리면 쌓인 옛 장 대신 최근 장을 처리 (5 면 약 0.2 s 늦은 장)
   const auto qos_mode = n.declare_parameter<std::string>("wrist.image_qos", "reliable");
-  rclcpp::QoS img_qos(5);
+  const auto qos_depth = n.declare_parameter<int>("wrist.image_qos_depth", 2);
+  rclcpp::QoS img_qos(static_cast<size_t>(std::max<int64_t>(qos_depth, 1)));
   if (qos_mode == "best_effort") {img_qos.best_effort();} else {img_qos.reliable();}
 
   // 엔진: 실패해도 노드는 계속 (광각 · 바코드는 돎)
@@ -80,7 +92,7 @@ WristPipeline::WristPipeline(
   tracker_ = pw::PuckTracker(static_cast<int>(window), static_cast<int>(min_hits), match_m);
 
   // 적재함 컵 바닥 태그
-  rack_enabled_ = n.declare_parameter<bool>("rack.enabled", true);
+  rack_enabled_ = n.declare_parameter<bool>("rack.enabled", false);   // planning 이 LOOK_RACK 동안만 ~/rack/enable 로 켬
   rack_frame_ = n.declare_parameter<std::string>("rack.frame", "base_link");
   {
     std::vector<int64_t> def(rack_p_.cell_tag_ids.begin(), rack_p_.cell_tag_ids.end());
@@ -165,13 +177,26 @@ WristPipeline::WristPipeline(
   }
   // 동기 전 컬러 → 적재함 (깊이 안 씀, 켜져 있을 때만)
   color_sub_.registerCallback(std::function<void(const Image::ConstSharedPtr &)>(
-      [this](const Image::ConstSharedPtr & m) {on_rack(m);}));
+      [this](const Image::ConstSharedPtr & m) {
+        ++n_color_;
+        const auto r0 = std::chrono::steady_clock::now();
+        if (on_rack(m)) {tm_.rack += ms_since(r0); ++tm_.rack_runs;}   // 같은 손목 그룹 = 짝 콜백과 번갈아 돎
+      }));
+  depth_sub_.registerCallback(std::function<void(const Image::ConstSharedPtr &)>(
+      [this](const Image::ConstSharedPtr &) {++n_depth_;}));   // 입력 Hz 확인용 (처리 시간 로그)
   sync_ = std::make_shared<Sync>(Policy(10), color_sub_, depth_sub_);
   sync_->registerCallback(
     std::function<void(const Image::ConstSharedPtr &, const Image::ConstSharedPtr &)>(
       [this](const Image::ConstSharedPtr & c, const Image::ConstSharedPtr & d) {
+        ++n_sync_;
+        const rclcpp::Time tc(c->header.stamp, RCL_ROS_TIME), td(d->header.stamp, RCL_ROS_TIME);
+        lat_ms_.push_back((node_.now() - tc).seconds() * 1e3);          // 촬영 → 짝 콜백 시작 (늦음)
+        pair_dt_ms_.push_back(std::abs((tc - td).seconds()) * 1e3);     // 컬러 · 깊이 촬영 시각 차이
+        const auto s0 = std::chrono::steady_clock::now();
         on_box(c, d);
         on_frame(c, d);
+        tm_.sync_cb += ms_since(s0);
+        report_timing();
       }));
   RCLCPP_INFO(node.get_logger(), "[wrist] 컬러 %s · 깊이 %s · 위쪽 TF %s ← %s", color_topic.c_str(), depth_topic.c_str(),
     world_frame_.c_str(), frame_id_.c_str());
@@ -186,6 +211,7 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
   }
   if (!enabled_ || !seg_) {return;}
   const auto t0 = std::chrono::steady_clock::now();
+  Timing st;   // 이번 장 단계별 [ms], 분할까지 간 장만 tm_ 에 더함
   if (!info_) {
     RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] camera_info 아직 없음");
     return;
@@ -200,6 +226,7 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
     return;
   }
   if (!to_depth_m(depth_msg, depth)) {return;}
+  st.conv = ms_since(t0);
   if (depth.size() != bgr.size()) {
     RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] 깊이 %dx%d ≠ 컬러 %dx%d (align_depth 켜야 함)",
       depth.cols, depth.rows, bgr.cols, bgr.rows);
@@ -207,6 +234,7 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
   }
 
   // 촬영 시각 카메라 자세 → 월드 위쪽 · 움직임
+  const auto t_tf = std::chrono::steady_clock::now();
   pw::Mat3 R;
   pw::Vec3 t;
   try {
@@ -220,6 +248,7 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
       world_frame_.c_str(), frame_id_.c_str(), e.what());
     return;
   }
+  st.tf = ms_since(t_tf);
   const pw::Vec3 up = R.transpose() * pw::Vec3::UnitZ();
   if (last_R_) {
     const double move = (t - last_t_).norm();
@@ -230,6 +259,7 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
   last_t_ = t;
 
   // 분할 → 자세 → 거르기 → 확정
+  const auto t_s0 = std::chrono::steady_clock::now();
   std::vector<pw::SegInstance> inst;
   try {
     inst = (*seg_)(bgr);
@@ -238,15 +268,30 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
     return;
   }
   const auto t_seg = std::chrono::steady_clock::now();
+  st.seg = std::chrono::duration<double, std::milli>(t_seg - t_s0).count();
   std::vector<pw::TagPose> tags;
   if (!inst.empty()) {
     cv::Mat gray;
     cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
-    tags = pw::detect_tags(gray, K);
+    if (tag_roi_) {   // 퍽 태그는 퍽 위에만 있음 → 분할 상자 둘레만 (전체 영상 두 번 = 장당 약 17 ms, Jetson)
+      std::vector<cv::Rect> rois;
+      for (const auto & s : inst) {
+        const int p = tag_roi_pad_px_;
+        rois.emplace_back(cv::Point(static_cast<int>(std::floor(s.box[0])) - p, static_cast<int>(std::floor(s.box[1])) - p),
+          cv::Point(static_cast<int>(std::ceil(s.box[2])) + p, static_cast<int>(std::ceil(s.box[3])) + p));
+      }
+      tags = pw::detect_tags_in(gray, rois, K);
+    } else {
+      tags = pw::detect_tags(gray, K);
+    }
+    ++st.tag_runs;
   }
+  const auto t_tag = std::chrono::steady_clock::now();
+  st.tags = std::chrono::duration<double, std::milli>(t_tag - t_seg).count();
   std::vector<pw::RawPuck> raws;
+  const bool tag_centre = node_.get_parameter("wrist.tag_centre").as_bool();
   for (const auto & s : inst) {
-    auto p = pw::puck_pose(s.mask, depth, K, tags, &up, min_rise_m_);
+    auto p = pw::puck_pose(s.mask, depth, K, tags, &up, min_rise_m_, tag_centre, &st.pose_parts);
     if (!p) {continue;}
     pw::RawPuck r;
     r.pose = std::move(*p);
@@ -256,7 +301,12 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
     r.reject = pw::reject_reason(r.pose);
     raws.push_back(std::move(r));
   }
+  st.pose = ms_since(t_tag);
+  st.pucks = static_cast<int>(inst.size());
+  const auto t_trk = std::chrono::steady_clock::now();
   const auto dets = tracker_.update(raws);
+  st.track = ms_since(t_trk);
+  const auto t_pub = std::chrono::steady_clock::now();
 
   interfaces::msg::DetectionArray out;
   out.header = color->header;
@@ -284,18 +334,61 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
   det_pub_->publish(out);
   if (publish_debug_ && debug_pub_->get_subscription_count() > 0) {publish_debug(color, bgr, K, raws, dets);}
 
-  // 처리 시간 (5 s 마다 평균)
-  const auto t1 = std::chrono::steady_clock::now();
-  sum_seg_ms_ += std::chrono::duration<double, std::milli>(t_seg - t0).count();
-  sum_all_ms_ += std::chrono::duration<double, std::milli>(t1 - t0).count();
-  ++n_frames_;
-  if ((t1 - last_report_) > std::chrono::seconds(5)) {
-    RCLCPP_INFO(node_.get_logger(), "[wrist] %d 장 평균: 전체 %.1f ms (분할 %.1f ms), 이번 장 분할 %zu · 자세 %zu · 확정 %zu",
-      n_frames_, sum_all_ms_ / n_frames_, sum_seg_ms_ / n_frames_, inst.size(), raws.size(), dets.size());
-    n_frames_ = 0;
-    sum_seg_ms_ = sum_all_ms_ = 0.0;
-    last_report_ = t1;
-  }
+  // 처리 시간: 단계별로 더해 두고 report_timing 이 5 s 마다 평균
+  st.pub = ms_since(t_pub);
+  st.all = ms_since(t0);
+  ++tm_.frames;
+  tm_.pucks += st.pucks;
+  tm_.conv += st.conv;
+  tm_.tf += st.tf;
+  tm_.seg += st.seg;
+  tm_.tags += st.tags;
+  tm_.tag_runs += st.tag_runs;
+  tm_.pose += st.pose;
+  tm_.pose_parts.points += st.pose_parts.points;
+  tm_.pose_parts.shape += st.pose_parts.shape;
+  tm_.pose_parts.ring += st.pose_parts.ring;
+  tm_.pose_parts.refine += st.pose_parts.refine;
+  tm_.track += st.track;
+  tm_.pub += st.pub;
+  tm_.all += st.all;
+  last_counts_ = {inst.size(), raws.size(), dets.size()};
+}
+
+// 5 s 마다: 들어온 장 (컬러 · 깊이 · 짝) Hz + on_frame 단계별 평균 [ms] + on_box · on_rack · 짝 콜백 전체
+//   짝 콜백 전체 (on_box + on_frame) + 적재함 (같은 손목 그룹) 이 1 / 카메라 Hz 를 넘으면 장이 밀려 빠짐
+void WristPipeline::report_timing()
+{
+  const auto now = std::chrono::steady_clock::now();
+  const double dt = std::chrono::duration<double>(now - last_report_).count();
+  if (dt < 5.0) {return;}
+  const int nc = n_color_.exchange(0), nd = n_depth_.exchange(0), ns = n_sync_.exchange(0);
+  const auto & m = tm_;
+  const double f = std::max(m.frames, 1);
+  const double pk = std::max(m.pucks, 1);
+  auto q3 = [](std::vector<double> v) {   // 중앙 · 95 % · 최대
+      if (v.empty()) {return std::array<double, 3>{0, 0, 0};}
+      return std::array<double, 3>{pw::percentile(v, 50), pw::percentile(v, 95), *std::max_element(v.begin(), v.end())};
+    };
+  const auto la = q3(lat_ms_), pd = q3(pair_dt_ms_);
+  RCLCPP_INFO(node_.get_logger(),
+    "[wrist] 자세 퍽당 ms: 점 %.1f · 모양 %.1f · 고리 %.1f · 보정 %.1f | 촬영→처리 시작 ms 중앙 %.0f · 95%% %.0f · 최대 %.0f | "
+    "컬러·깊이 시각 차 ms 중앙 %.1f · 95%% %.1f · 최대 %.1f",
+    m.pose_parts.points / pk, m.pose_parts.shape / pk, m.pose_parts.ring / pk, m.pose_parts.refine / pk,
+    la[0], la[1], la[2], pd[0], pd[1], pd[2]);
+  lat_ms_.clear();
+  pair_dt_ms_.clear();
+  RCLCPP_INFO(node_.get_logger(),
+    "[wrist] %.1f s: 입력 컬러 %.1f Hz · 깊이 %.1f Hz · 짝 %.1f Hz · 처리 %.1f Hz | 장당 ms: 변환 %.1f · TF %.1f · 분할 %.1f · "
+    "태그 %.1f (회당 %.1f) · 자세 %.1f (퍽당 %.1f) · 확정 %.1f · 발행 %.1f = 전체 %.1f | 박스 %.1f ms × %d | "
+    "적재함 %.1f ms × %d | 짝 콜백 %.1f ms | 이번 장 분할 %zu · 자세 %zu · 확정 %zu",
+    dt, nc / dt, nd / dt, ns / dt, m.frames / dt, m.conv / f, m.tf / f, m.seg / f, m.tags / f,
+    m.tag_runs > 0 ? m.tags / m.tag_runs : 0.0, m.pose / f,
+    m.pucks > 0 ? m.pose / m.pucks : 0.0, m.track / f, m.pub / f, m.all / f, m.box_runs > 0 ? m.box / m.box_runs : 0.0,
+    m.box_runs, m.rack_runs > 0 ? m.rack / m.rack_runs : 0.0, m.rack_runs, ns > 0 ? m.sync_cb / ns : 0.0,
+    last_counts_[0], last_counts_[1], last_counts_[2]);
+  tm_ = Timing{};
+  last_report_ = now;
 }
 
 pw::Mat3 WristPipeline::camera_rot(const pw::Mat3 & R_tf) const
@@ -335,6 +428,7 @@ void WristPipeline::on_box(const Image::ConstSharedPtr & color, const Image::Con
     return;
   }
   box_last_stamp_ = stamp;
+  const auto b0 = std::chrono::steady_clock::now();
   cv::Mat1f depth;
   if (!to_depth_m(depth_msg, depth)) {return;}
   pw::Mat3 R;
@@ -372,22 +466,24 @@ void WristPipeline::on_box(const Image::ConstSharedPtr & color, const Image::Con
     RCLCPP_DEBUG(node_.get_logger(), "[box] 못 찾음: %s", r.why.c_str());
   }
   box_pub_->publish(out);
+  tm_.box += ms_since(b0);
+  ++tm_.box_runs;
 }
 
 // 적재함: 컵 바닥 태그 → 칸 바닥 중심 · yaw (rack.frame 기준), 카메라가 멈춘 장만 다수결에 넣음
-void WristPipeline::on_rack(const Image::ConstSharedPtr & color)
+bool WristPipeline::on_rack(const Image::ConstSharedPtr & color)
 {
   if (rack_reset_req_ != rack_reset_done_) {
     rack_reset_done_ = rack_reset_req_;
     rack_filter_.reset();
     rack_last_R_.reset();
   }
-  if (!rack_enabled_ || !info_) {return;}
+  if (!rack_enabled_ || !info_) {return false;}
   const rclcpp::Time stamp(color->header.stamp);
   if (rack_last_stamp_ && (stamp - *rack_last_stamp_).seconds() < rack_min_period_s_ &&
     (stamp - *rack_last_stamp_).seconds() >= 0.0)
   {
-    return;
+    return false;
   }
   rack_last_stamp_ = stamp;
 
@@ -403,7 +499,7 @@ void WristPipeline::on_rack(const Image::ConstSharedPtr & color)
   } catch (const tf2::TransformException & e) {
     RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[rack] TF %s ← %s 없음: %s (발행 안 함)",
       rack_frame_.c_str(), frame_id_.c_str(), e.what());
-    return;
+    return false;
   }
   // 카메라가 움직였으면 이번 장은 안 셈 + 묶음 지움 (흔들린 영상 · TF 시각 어긋남)
   bool still = false;
@@ -421,7 +517,7 @@ void WristPipeline::on_rack(const Image::ConstSharedPtr & color)
     gray = image_cv::to_mono8(*color);
   } catch (const std::exception & e) {
     RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[rack] 영상 변환: %s", e.what());
-    return;
+    return false;
   }
   const pw::Intrinsics K{info_->k[0], info_->k[4], info_->k[2], info_->k[5]};
   cv::Mat D;
@@ -487,6 +583,7 @@ void WristPipeline::on_rack(const Image::ConstSharedPtr & color)
   if (rack_publish_debug_ && rack_debug_pub_->get_subscription_count() > 0) {
     publish_rack_debug(color, gray, tags, rejected, lines);
   }
+  return true;
 }
 
 // 확인용 그림: 받은 태그 초록 테두리 + 칸 이름 · 칸 x 축 화살표, 거른 태그 빨강 + 이유, 왼쪽 위 URDF 대비 차이

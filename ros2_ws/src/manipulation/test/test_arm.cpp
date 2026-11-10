@@ -934,3 +934,17 @@ TEST(DriveFoldGuard, FutureAndNonfiniteTimestampsCannotPermitDrive)
   h.observe(std::nan(""),true);EXPECT_FALSE(h.healthy(10.));
   EXPECT_FALSE(f.confirmed(std::nan("")));
 }
+
+// ============================================================================ ⑥ 쥐기 뒤 빈손 판단
+// 문턱 = gripper_close (−0.0016) 와 퍽에 닿은 자리 (약 0.0046) 사이 (control.yaml grasp_empty_m 0.0015). 실측 · 문턱이 NaN 이면 판단 안 함
+TEST(GraspEmpty, Rules)
+{
+  using manipulation::grasp_empty;
+  EXPECT_TRUE(grasp_empty(-0.0016, 0.0015));           // 끝까지 닫힘 = 빈손
+  EXPECT_TRUE(grasp_empty(0.0010, 0.0015));
+  EXPECT_FALSE(grasp_empty(0.0046, 0.0015));           // 퍽을 쥠
+  EXPECT_FALSE(grasp_empty(0.0015, 0.0015));           // 문턱 자체는 쥔 쪽
+  EXPECT_FALSE(grasp_empty(std::nan(""), 0.0015));     // 실측 없음 → 안 봄
+  EXPECT_FALSE(grasp_empty(-0.0016, std::nan("")));    // 문턱 없음 → 안 봄
+  EXPECT_FALSE(grasp_empty(-0.0016, -1.0));            // −1 = 끔 (standup_grip_min_m 과 같은 규칙)
+}

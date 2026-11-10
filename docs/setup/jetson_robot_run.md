@@ -92,12 +92,12 @@ python3 tools/diagnostics/sensor_check.py                                       
 # T1 바퀴 + 라이다 + 저장 지도 이어 그리기
 cd ~/nt_test && DRIVE_PORT=$D bash tools/jetson/run_robot.sh remap opencr ~/maps/arena5
 # T2 (T1 지도가 뜨고 몇 초 뒤 — 먼저 켜면 planner_server 가 'transform base_link → map' 시간 초과로 시작 못 함)
-ros2 launch navigation nav2.launch.py mission_hold:=false dock:=simple
+ros2 launch navigation nav2.launch.py mission_hold:=false dock:=rl
 # T3 목표 보내기 (팀 시험 도구, 레포 밖 ~/rl_drive_real)
 cd ~/rl_drive_real && python3 goals_real.py --map dice_map_a5b.yaml --auto B1 L1 B2 B6 L3 B3 B5 B4 L2 START
 ```
-- `dock:=simple` = 규칙 정밀 접근 (`navigation/scripts/simple_dock_*.py`): 돌고 → 곧게 0.15 m/s, 박스 앞면을 지도 자리 ±25 cm 안에서 찾음,
-  라이다 원래 점으로 몸 둘레 2 cm (+ 속도 × 0.25 s) 안 물체 쪽으로는 안 감 → 막히면 멈추고 실패 (이유를 로그에). 기본이 `simple` (`dock:=rl` = 팀 dock3, B1 앞에서 벽에 부딪힘).
+- `dock:=simple` = 규칙 정밀 접근 (`navigation` simple_dock_node (C++, `src/simple_dock_*.cpp`)): 돌고 → 곧게 0.15 m/s, 박스 앞면을 지도 자리 ±25 cm 안에서 찾음,
+  라이다 원래 점으로 몸 둘레 2 cm (+ 속도 × 0.25 s) 안 물체 쪽으로는 안 감 → 막히면 멈추고 실패 (이유를 로그에). 기본은 `rl` (팀 dock3, 성공 범위 `dock_tol` 1.5 cm · 2°), 규칙 노드는 `dock:=simple`.
 - `~/nav2_tol.yaml` (planner tolerance 0.35) 은 팀 2 차 rl_nav 와 같이 쓰지 않음 (목표가 장애물 칸이면 노드가 목표를 물려 계획).
 - 정차점 = `maps/dice_map.yaml` 도면 좌표 + `map_from_arena`. `start` 는 지도를 그릴 때 로봇이 **도면 출발 자세 (출발 구역 가운데, 신호등 쪽)** 에 있었다는 가정.
   다르면 정차점이 통째로 어긋남 (arena5: 31 cm · 5.9° → 먼 박스 25–40 cm). 지도에 도면을 맞춰 값을 구함:

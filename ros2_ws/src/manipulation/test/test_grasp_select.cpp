@@ -84,13 +84,13 @@ TEST(GraspSelect, NarrowerOpeningWhenNeeded)
   EXPECT_NEAR(axis_diff_deg(ch.close_rad, 0.0), 0.0, 1e-6);
 }
 
-// 7) 면 방향 모르는 네모 목표 (외접 21.2 mm) 는 넣기 폭(안쪽 면 18.4 mm)으로 못 내려감 → 6 과 같은 배치면 거절
+// 7) 면 방향 모르는 네모 목표 (외접 24.6 mm) 는 넣기 폭(안쪽 면 18.4 mm)으로 못 내려감 → 6 과 같은 배치면 거절
 TEST(GraspSelect, UnknownSquareTargetNeedsWideOpening)
 {
   const std::vector<NeighborPuck> nb{cyl(0.306, 0.0), cyl(0.194, 0.0), cyl(0.25, 0.050), cyl(0.25, -0.050)};
   EXPECT_FALSE(pick({true, false, 0.0}, manipulation::close_candidates(false, 0.0, 0.0), nb, 0.0).ok);
-  EXPECT_NEAR(manipulation::target_half_along({true, false, 0.0}, 0.3), 0.015 * std::sqrt(2.0), 1e-12);
-  EXPECT_NEAR(manipulation::target_half_along({true, true, 0.2}, 0.2 + M_PI / 2), 0.015, 1e-12);
+  EXPECT_NEAR(manipulation::target_half_along({true, false, 0.0}, 0.3), 0.0174 * std::sqrt(2.0), 1e-12);
+  EXPECT_NEAR(manipulation::target_half_along({true, true, 0.2}, 0.2 + M_PI / 2), 0.0174, 1e-12);
 }
 
 // 8) 기본 방향 여유가 충분하면 (≥ 5 mm) 더 넓은 방향이 있어도 손목을 안 돌림
@@ -136,4 +136,20 @@ TEST(GraspSelect, LyingFootprintClearance)
   const std::vector<NeighborPuck> far_nb{cyl(0.25 + 0.052, 0.0)};   // 여유 = 52 − 긴축 반 30 − 반지름 15 − slop 2 = 5 mm
   EXPECT_NEAR(manipulation::footprint_clearance(c, 0.0, half, far_nb), 0.005, 1e-9);
   EXPECT_GT(manipulation::footprint_clearance(c, 0.0, half, {}), 1.0);   // 이웃 없음
+}
+
+// 12) 면 정렬 · 붙은 (간격 0) 네모 둘: 연결선 (x) 방향 닫힘은 겹침, 수직 (y) 닫힘은 여유 25.5 − 19.4 = 6.1 mm → 집힘
+TEST(GraspSelect, TouchingSquaresGraspPerpendicular)
+{
+  NeighborPuck n;
+  n.c = {0.25 + 0.0348, 0.0};   // 한 변 34.8 mm 만큼 떨어짐 = 면이 붙음
+  n.square = true;
+  n.yaw_known = true;
+  n.yaw = 0.0;
+  EXPECT_LE(manipulation::finger_clearance({0.25, 0.0}, 0.0, kOpen, {n}), 0.0);
+  EXPECT_NEAR(manipulation::finger_clearance({0.25, 0.0}, M_PI / 2, kOpen, {n}), 0.0255 - 0.0194, 1e-9);
+  const auto ch = pick({true, true, 0.0}, manipulation::close_candidates(true, 0.0, 0.0), {n}, 0.0);
+  ASSERT_TRUE(ch.ok);
+  EXPECT_NEAR(axis_diff_deg(ch.close_rad, M_PI / 2), 0.0, 1e-6);
+  EXPECT_DOUBLE_EQ(ch.grip, kOpen);
 }

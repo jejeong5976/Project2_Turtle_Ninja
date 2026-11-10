@@ -61,19 +61,19 @@ double rect_rect(const V2 & ca, const V2 & ha, double aa, const V2 & cb, const V
 // 닫힘축은 180° 주기 → 기본 방향과 차이
 double axis_off(double a, double ref) {return std::fabs(std::remainder(a - ref, M_PI));}
 
-// 사각 (중심 c, 반 크기 h, 방향 a) ↔ 이웃 퍽 하나 거리 (겹치면 0 이하)
-double rect_puck(const V2 & c, const V2 & h, double a, const NeighborPuck & p, double puck_half, double slop)
+// 사각 (중심 c, 반 크기 h, 방향 a) ↔ 이웃 퍽 하나 거리 (겹치면 0 이하). 원기둥 = 반지름 puck_half, 네모 = 반폭 square_half 정사각 (면 방향 모르면 외접원)
+double rect_puck(const V2 & c, const V2 & h, double a, const NeighborPuck & p, double puck_half, double slop, double square_half)
 {
   if (p.radius > 0.0) {return point_rect(rot(p.c - c, -a), h) - (p.radius + slop);}
-  if (p.square && p.yaw_known) {return rect_rect(c, h, a, p.c, V2(puck_half + slop, puck_half + slop), p.yaw);}
-  const double r = (p.square ? puck_half * std::sqrt(2.0) : puck_half) + slop;
+  if (p.square && p.yaw_known) {return rect_rect(c, h, a, p.c, V2(square_half + slop, square_half + slop), p.yaw);}
+  const double r = (p.square ? square_half * std::sqrt(2.0) : puck_half) + slop;
   return point_rect(rot(p.c - c, -a), h) - r;
 }
 }  // namespace
 
 double finger_clearance(
   const Eigen::Vector2d & center, double close_rad, double grip, const std::vector<NeighborPuck> & nb,
-  const FingerTip & f, double puck_half, double slop)
+  const FingerTip & f, double puck_half, double slop, double square_half)
 {
   double best = std::numeric_limits<double>::infinity();
   const V2 hf(0.5 * (f.outer0 - f.inner0), 0.5 * (f.w_hi - f.w_lo));   // 손가락 반 크기 (닫힘축, 폭)
@@ -83,7 +83,7 @@ double finger_clearance(
     const V2 cf = center + rot(local, close_rad);
     for (const auto & p : nb) {
       if (!std::isfinite(p.c.x()) || !std::isfinite(p.c.y())) {continue;}
-      best = std::min(best, rect_puck(cf, hf, close_rad, p, puck_half, slop));
+      best = std::min(best, rect_puck(cf, hf, close_rad, p, puck_half, slop, square_half));
     }
   }
   return best;
@@ -91,22 +91,22 @@ double finger_clearance(
 
 double footprint_clearance(
   const Eigen::Vector2d & center, double axis_rad, const Eigen::Vector2d & half, const std::vector<NeighborPuck> & nb,
-  double puck_half, double slop)
+  double puck_half, double slop, double square_half)
 {
   double best = std::numeric_limits<double>::infinity();
   for (const auto & p : nb) {
     if (!std::isfinite(p.c.x()) || !std::isfinite(p.c.y())) {continue;}
-    best = std::min(best, rect_puck(center, half, axis_rad, p, puck_half, slop));
+    best = std::min(best, rect_puck(center, half, axis_rad, p, puck_half, slop, square_half));
   }
   return best;
 }
 
-double target_half_along(const TargetPuck & t, double close_rad, double puck_half)
+double target_half_along(const TargetPuck & t, double close_rad, double puck_half, double square_half)
 {
   if (!t.square) {return puck_half;}
-  if (!t.yaw_known) {return puck_half * std::sqrt(2.0);}
+  if (!t.yaw_known) {return square_half * std::sqrt(2.0);}
   const double d = close_rad - t.yaw;
-  return puck_half * (std::fabs(std::cos(d)) + std::fabs(std::sin(d)));   // 닫힘축 방향으로 본 사각의 반 길이
+  return square_half * (std::fabs(std::cos(d)) + std::fabs(std::sin(d)));   // 닫힘축 방향으로 본 사각의 반 길이 (17.4·(|cos δ|+|sin δ|))
 }
 
 std::vector<double> close_candidates(bool square_yaw_known, double yaw, double default_close)

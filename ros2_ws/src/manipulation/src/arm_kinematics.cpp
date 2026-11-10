@@ -13,8 +13,10 @@ namespace manipulation
 namespace
 {
 constexpr double kDeg = 180.0 / M_PI;
-constexpr double kTiltFaceTol = 35.0 * M_PI / 180.0;   // 기울인 손: 닫힘축(접선)과 퍽 면 · 고른 방향 차이 허용 (손가락이 닫히며 면에 맞춤, 45° 아래면 가까운 면으로 돎).
-                                                       //   박스 오른쪽 · 왼쪽 먼 구석은 박스에 나란한 네모 면이 접선과 30° 남짓 (실물 (0.247, −0.111) 30°) → 35
+constexpr double kTiltFaceAlignMaxDeg = 20.0;   // 이 기울임까지는 닫힘축을 퍽 면에 맞춤 (넘으면 접선)
+constexpr double kTiltFaceTol = 45.0 * M_PI / 180.0;   // 기울인 손: 닫힘축(접선)과 퍽 면 · 고른 방향 차이 허용 (손가락이 닫히며 면에 맞춤, 45° 아래면 가까운 면으로 돎).
+                                                       //   45 = 네모 면 90° 주기의 최대 차 → 모든 면 허용. 기울여 쥔 퍽은 접선 방향으로 내려놓고 수직으로 다시 쥐므로 (regrasp_nodes) 최종 쥐기는 면에 맞음
+                                                       //   (실물: 이웃 없는 퍽의 면−접선 35–45° (약 22 %) 가 35 에서 다 거절 — 기울인 손을 아예 안 풀어 봄)
 constexpr double kG = 9.81;
 
 Eigen::Matrix4d axis_angle(const Eigen::Vector3d & axis, double a)
@@ -246,7 +248,7 @@ std::vector<PickPose> pick_poses(
   const std::vector<Q5> & first_seeds, bool allow_vertical)
 {
   const double ca = std::isfinite(close_deg) ? close_deg / kDeg : default_close_rad(m, x, y, yaw_deg);
-  // 5 축 팔은 손을 J1 → 퍽 수직면 안으로만 기울일 수 있음 → 기울인 손은 닫힘축 = 접선, 기울임 = 바깥 반지름 방향
+  // 5 축 팔은 손을 J1 → 퍽 수직면 안으로만 기울일 수 있음 → 기울임 = 바깥 반지름 방향, 닫힘축은 J5 로 면에 맞춤 (아래 close, 20° 넘게 기울이면 접선)
   //   닫힘축이 접선에서 kTiltFaceTol 넘게 다르면 (면이 틀어진 네모 · 이웃 때문에 고른 방향) 기울이지 않음. 안이면 손가락이 닫히며 퍽을 면에 맞춤
   const double az = std::atan2(y - m.j1_xy.y(), x - m.j1_xy.x());
   const double tangential = az + M_PI / 2.0;
@@ -265,9 +267,16 @@ std::vector<PickPose> pick_poses(
   const double tilt_max = *std::max_element(tilts.begin(), tilts.end());   // 실제로 풀어 본 가장 큰 기울임 (이유 글)
   for (double tilt : tilts) {
     const double t = tilt / kDeg;
-    const double cc = tilt > 0.0 ? tangential : ca;
-    const Eigen::Vector3d close(std::cos(cc), std::sin(cc), 0.0);
     const Eigen::Vector3d app = std::sin(t) * radial - std::cos(t) * Eigen::Vector3d::UnitZ();
+    // 기울인 손 닫힘축: 고른 방향 (네모 = 접선에 가장 가까운 면) 을 접근축에 수직인 면으로 내린 것 — J5 가 면 차이만큼만 돎, 닫힘축은
+    //   수평에서 asin(sin 기울임 · sin 차이) (10° · 25° 차 = 4°). 11-10 12:0x 실물: 접선 고정이면 18.8° 틀어진 네모 모서리를 손가락이 침.
+    //   기울임 kTiltFaceAlignMaxDeg 넘으면 접선 그대로 (닫힘축이 수평에서 많이 기욺)
+    Eigen::Vector3d close(std::cos(ca), std::sin(ca), 0.0);
+    if (tilt > kTiltFaceAlignMaxDeg + 1e-9) {
+      close = Eigen::Vector3d(std::cos(tangential), std::sin(tangential), 0.0);
+    } else if (tilt > 0.0) {
+      close = (close - close.dot(app) * app).normalized();
+    }
     std::vector<PickPose> out;
     std::vector<Q5> seeds = first_seeds;
     bool ok = true;

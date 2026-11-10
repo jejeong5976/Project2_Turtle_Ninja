@@ -5,6 +5,7 @@
 #include "perception/common.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 #include <Eigen/Eigenvalues>
@@ -52,29 +53,48 @@ double range_5_95(const std::vector<double> & v) {return percentile(v, 95.0) - p
 double percentile(std::vector<double> v, double q)
 {
   if (v.empty()) {return 0.0;}
-  std::sort(v.begin(), v.end());
+  // 전체 정렬 대신 lo 번째 · 그다음 값만 고름 (정렬했을 때와 같은 두 값 → 결과 같음)
   const double pos = q / 100.0 * static_cast<double>(v.size() - 1);
   const auto lo = static_cast<size_t>(std::floor(pos));
   const size_t hi = std::min(lo + 1, v.size() - 1);
   const double f = pos - static_cast<double>(lo);
-  return v[lo] + f * (v[hi] - v[lo]);
+  std::nth_element(v.begin(), v.begin() + static_cast<std::ptrdiff_t>(lo), v.end());
+  const double v_lo = v[lo];
+  const double v_hi = hi == lo ? v_lo : *std::min_element(v.begin() + static_cast<std::ptrdiff_t>(hi), v.end());
+  return v_lo + f * (v_hi - v_lo);
 }
 
 double median(std::vector<double> v) {return percentile(std::move(v), 50.0);}
 
 std::vector<Vec3> deproject(const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K)
 {
+  return deproject_in(mask, depth_m, K, cv::Rect(0, 0, mask.cols, mask.rows));
+}
+
+namespace
+{
+// sub = 원본 영상의 tl 에서 시작하는 부분 마스크. 화소 좌표는 원본 기준, 행 우선 순서
+std::vector<Vec3> deproject_sub(const cv::Mat1b & sub, const cv::Mat1f & depth_m, const Intrinsics & K, const cv::Point & tl)
+{
   std::vector<Vec3> out;
-  for (int v = 0; v < mask.rows; ++v) {
-    const uint8_t * m = mask.ptr<uint8_t>(v);
-    const float * d = depth_m.ptr<float>(v);
-    for (int u = 0; u < mask.cols; ++u) {
-      const double z = d[u];
-      if (!m[u] || !(z > DEPTH_MIN && z < DEPTH_MAX)) {continue;}
-      out.emplace_back((u - K.cx) * z / K.fx, (v - K.cy) * z / K.fy, z);
+  for (int y = 0; y < sub.rows; ++y) {
+    const int v = tl.y + y;
+    const uint8_t * m = sub.ptr<uint8_t>(y);
+    const float * d = depth_m.ptr<float>(v) + tl.x;
+    for (int x = 0; x < sub.cols; ++x) {
+      const double z = d[x];
+      if (!m[x] || !(z > DEPTH_MIN && z < DEPTH_MAX)) {continue;}
+      out.emplace_back((tl.x + x - K.cx) * z / K.fx, (v - K.cy) * z / K.fy, z);
     }
   }
   return out;
+}
+}  // namespace
+
+std::vector<Vec3> deproject_in(const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K, const cv::Rect & roi)
+{
+  const cv::Rect r = roi & cv::Rect(0, 0, mask.cols, mask.rows);
+  return deproject_sub(mask(r), depth_m, K, r.tl());
 }
 
 double top_height(const std::vector<double> & h)
@@ -91,13 +111,14 @@ double top_height(const std::vector<double> & h)
   return t;
 }
 
-std::vector<TagPose> detect_tags(const cv::Mat & gray, const Intrinsics & K, const cv::Mat & dist)
+namespace
 {
-  std::vector<std::vector<cv::Point2f>> corners;
-  std::vector<int> ids;
+// 회색 영상 → 태그 모서리 · ID. 퍽 태그를 하나도 못 읽으면 대비를 올려 (CLAHE) 한 번 더
+//   실물: 누운 퍽 옆면 태그 (16 mm, 화면 약 25 px) 가 보였다 안 보였다.
+//   적재함 칸 태그도 같은 처리로 2/12 → 12/12 (manipulation rack_tag_node)
+void find_tags(const cv::Mat & gray, std::vector<std::vector<cv::Point2f>> & corners, std::vector<int> & ids)
+{
   detect_apriltags(gray, corners, ids);   // common.hpp (광각과 같은 검출기 · 설정)
-  // 퍽 태그를 하나도 못 읽으면 대비를 올려 (CLAHE) 한 번 더 — 실물: 누운 퍽 옆면 태그 (16 mm, 화면 약 25 px) 가 보였다 안 보였다.
-  //   적재함 칸 태그도 같은 처리로 2/12 → 12/12 (manipulation rack_tag_node)
   if (std::none_of(ids.begin(), ids.end(), [](int id) {return is_puck_tag(id);})) {
     thread_local const auto clahe = cv::createCLAHE(3.0, cv::Size(8, 8));
     cv::Mat eq;
@@ -109,6 +130,69 @@ std::vector<TagPose> detect_tags(const cv::Mat & gray, const Intrinsics & K, con
       if (std::find(ids.begin(), ids.end(), i2[k]) == ids.end()) {ids.push_back(i2[k]); corners.push_back(c2[k]);}
     }
   }
+}
+
+std::vector<TagPose> tags_from_corners(
+  const std::vector<std::vector<cv::Point2f>> & corners, const std::vector<int> & ids,
+  const Intrinsics & K, const cv::Mat & dist);
+}  // namespace
+
+std::vector<TagPose> detect_tags(const cv::Mat & gray, const Intrinsics & K, const cv::Mat & dist)
+{
+  std::vector<std::vector<cv::Point2f>> corners;
+  std::vector<int> ids;
+  find_tags(gray, corners, ids);
+  return tags_from_corners(corners, ids, K, dist);
+}
+
+std::vector<cv::Rect> merge_rois(std::vector<cv::Rect> rois, const cv::Size & img)
+{
+  const cv::Rect full(0, 0, img.width, img.height);
+  for (auto & r : rois) {r &= full;}
+  rois.erase(std::remove_if(rois.begin(), rois.end(), [](const cv::Rect & r) {return r.area() <= 0;}), rois.end());
+  bool merged = true;
+  while (merged) {   // 겹치는 것끼리 감싸는 사각형으로 (같은 태그를 두 번 검출 · 잘라 읽지 않게)
+    merged = false;
+    for (size_t i = 0; i < rois.size() && !merged; ++i) {
+      for (size_t j = i + 1; j < rois.size(); ++j) {
+        if ((rois[i] & rois[j]).area() > 0) {
+          rois[i] |= rois[j];
+          rois.erase(rois.begin() + static_cast<long>(j));
+          merged = true;
+          break;
+        }
+      }
+    }
+  }
+  return rois;
+}
+
+std::vector<TagPose> detect_tags_in(
+  const cv::Mat & gray, const std::vector<cv::Rect> & rois, const Intrinsics & K, const cv::Mat & dist)
+{
+  std::vector<std::vector<cv::Point2f>> corners;
+  std::vector<int> ids;
+  for (const auto & r : merge_rois(rois, gray.size())) {
+    std::vector<std::vector<cv::Point2f>> c;
+    std::vector<int> i;
+    find_tags(gray(r), c, i);   // 영역마다 CLAHE 도 따로 (영역 대비 기준)
+    const cv::Point2f off(static_cast<float>(r.x), static_cast<float>(r.y));
+    for (size_t k = 0; k < i.size(); ++k) {
+      if (std::find(ids.begin(), ids.end(), i[k]) != ids.end()) {continue;}
+      for (auto & p : c[k]) {p += off;}
+      ids.push_back(i[k]);
+      corners.push_back(std::move(c[k]));
+    }
+  }
+  return tags_from_corners(corners, ids, K, dist);
+}
+
+namespace
+{
+std::vector<TagPose> tags_from_corners(
+  const std::vector<std::vector<cv::Point2f>> & corners, const std::vector<int> & ids,
+  const Intrinsics & K, const cv::Mat & dist)
+{
   const cv::Matx33d Kc(K.fx, 0, K.cx, 0, K.fy, K.cy, 0, 0, 1);
   const cv::Mat D = dist.empty() ? cv::Mat::zeros(1, 5, CV_64F) : dist;
   std::vector<TagPose> out;
@@ -138,6 +222,7 @@ std::vector<TagPose> detect_tags(const cv::Mat & gray, const Intrinsics & K, con
   }
   return out;
 }
+}  // namespace
 
 TagPose refine_tag_with_depth(TagPose t, const cv::Mat1f & depth_m, const Intrinsics & K)
 {
@@ -244,16 +329,33 @@ std::pair<std::optional<Vec3>, std::array<double, 2>> lying_face(
   return {(up - axis * up.dot(axis)).normalized(), {w, 0.0}};
 }
 
+namespace
+{
+// 마스크 둘레 고리 (RING_IN ~ RING_OUT 화소) 깊이 점 (행 우선). 팽창 · 변환은 마스크 상자 + RING_OUT 안에서만
+//   (전체 영상 29×29 타원 팽창이 Jetson 에서 퍽당 수 ms). 상자 밖 마스크는 0 이라 팽창 결과가 전체 영상 때와 같음
+std::vector<Vec3> ring_points(const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K)
+{
+  static const cv::Mat k_out = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(2 * RING_OUT + 1, 2 * RING_OUT + 1));
+  static const cv::Mat k_in = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(2 * RING_IN + 1, 2 * RING_IN + 1));
+  const cv::Rect box = cv::boundingRect(mask);
+  if (box.area() == 0) {return {};}
+  const cv::Rect roi = cv::Rect(box.x - RING_OUT, box.y - RING_OUT, box.width + 2 * RING_OUT, box.height + 2 * RING_OUT) &
+    cv::Rect(0, 0, mask.cols, mask.rows);
+  const cv::Mat1b sub = mask(roi).clone();   // 떼어 냄: 팽창이 roi 밖 원본 화소를 읽지 않게 (영상 끝 = 전체 영상 때와 같은 테두리)
+  cv::Mat1b out_d, in_d;
+  cv::dilate(sub, out_d, k_out);
+  cv::dilate(sub, in_d, k_in);
+  const cv::Mat1b ring = out_d & ~in_d;
+  return deproject_sub(ring, depth_m, K, roi.tl());
+}
+}  // namespace
+
 std::optional<double> support_height(const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K, const Vec3 & up_in,
   double top_h)
 {
   const Vec3 up = up_in.normalized();
-  cv::Mat1b out_d, in_d;
-  cv::dilate(mask, out_d, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(2 * RING_OUT + 1, 2 * RING_OUT + 1)));
-  cv::dilate(mask, in_d, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(2 * RING_IN + 1, 2 * RING_IN + 1)));
-  const cv::Mat1b ring = out_d & ~in_d;
   std::vector<double> h;
-  for (const auto & q : deproject(ring, depth_m, K)) {
+  for (const auto & q : ring_points(mask, depth_m, K)) {
     const double hq = q.dot(up);
     if (hq < top_h - 0.010) {h.push_back(hq);}
   }
@@ -264,12 +366,8 @@ std::optional<double> support_height(const cv::Mat1b & mask, const cv::Mat1f & d
 std::optional<double> ring_low_height(const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K, const Vec3 & up_in)
 {
   const Vec3 up = up_in.normalized();
-  cv::Mat1b out_d, in_d;
-  cv::dilate(mask, out_d, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(2 * RING_OUT + 1, 2 * RING_OUT + 1)));
-  cv::dilate(mask, in_d, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(2 * RING_IN + 1, 2 * RING_IN + 1)));
-  const cv::Mat1b ring = out_d & ~in_d;
   std::vector<double> h;
-  for (const auto & q : deproject(ring, depth_m, K)) {h.push_back(q.dot(up));}
+  for (const auto & q : ring_points(mask, depth_m, K)) {h.push_back(q.dot(up));}
   if (static_cast<int>(h.size()) < RING_MIN_POINTS) {return std::nullopt;}
   return percentile(h, 10.0);
 }
@@ -390,10 +488,18 @@ bool tag_lying_refine(PuckPose & p, const Intrinsics & K, const Vec3 & up_in)
 
 std::optional<PuckPose> puck_pose(
   const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K,
-  const std::vector<TagPose> & tags, const Vec3 * up_cam, double min_rise_m)
+  const std::vector<TagPose> & tags, const Vec3 * up_cam, double min_rise_m, bool tag_centre, PoseTiming * timing)
 {
-  auto all = deproject(mask, depth_m, K);
-  if (static_cast<int>(all.size()) < MIN_POSE_POINTS) {return std::nullopt;}
+  using clk = std::chrono::steady_clock;
+  auto t_mark = clk::now();
+  auto lap = [&](double PoseTiming::* f) {   // 지난 구간 시간을 timing 에 더함
+      const auto now = clk::now();
+      if (timing) {timing->*f += std::chrono::duration<double, std::milli>(now - t_mark).count();}
+      t_mark = now;
+    };
+  const cv::Rect r = cv::boundingRect(mask);   // 마스크 상자 (상자 밖은 0 → 점 변환 · 고리도 이 안만)
+  auto all = deproject_in(mask, depth_m, K, r);
+  if (static_cast<int>(all.size()) < MIN_POSE_POINTS) {lap(&PoseTiming::points); return std::nullopt;}
   // 중앙값(좌표별)에서 6 cm 밖 튀는 점 제거
   Vec3 med;
   for (int k = 0; k < 3; ++k) {
@@ -407,7 +513,8 @@ std::optional<PuckPose> puck_pose(
   for (const auto & q : all) {
     if ((q - med).norm() < OUTLIER_R) {pts.push_back(q);}
   }
-  if (static_cast<int>(pts.size()) < MIN_POSE_POINTS) {return std::nullopt;}
+  if (static_cast<int>(pts.size()) < MIN_POSE_POINTS) {lap(&PoseTiming::points); return std::nullopt;}
+  lap(&PoseTiming::points);
 
   PuckPose p;
   const Vec3 c = mean_of(pts);
@@ -420,9 +527,6 @@ std::optional<PuckPose> puck_pose(
     p.spread[k] = range_5_95(dots(pts, es.eigenvectors().col(2 - k), c));
   }
   // 마스크 상자 · 잘림
-  cv::Mat nz;
-  cv::findNonZero(mask, nz);
-  const cv::Rect r = cv::boundingRect(nz);
   p.bbox = {r.x, r.y, r.x + r.width - 1, r.y + r.height - 1};
   p.truncated = p.bbox[0] <= 2 || p.bbox[1] <= 2 || p.bbox[2] >= mask.cols - 3 || p.bbox[3] >= mask.rows - 3;
 
@@ -451,16 +555,22 @@ std::optional<PuckPose> puck_pose(
     p.tag = t;
     break;
   }
+  lap(&PoseTiming::shape);
   if (up_cam != nullptr && min_rise_m > 0.0) {   // 납작한 무늬 (실물: 상자 로고를 퍽으로 잡음) — 둘레보다 안 솟았으면 퍽 아님
     const Vec3 upn = up_cam->normalized();
     const auto low = ring_low_height(mask, depth_m, K, upn);
-    if (low && top_height(dots(pts, upn)) - *low < min_rise_m) {return std::nullopt;}
+    if (low && top_height(dots(pts, upn)) - *low < min_rise_m) {lap(&PoseTiming::ring); return std::nullopt;}
   }
   if (up_cam != nullptr) {
     const Vec3 upn = up_cam->normalized();
     const auto hs = dots(pts, upn);
-    gravity_refine(p, pts, *up_cam, support_height(mask, depth_m, K, upn, top_height(hs)));
-    if (!tag_top_refine(p, K, *up_cam)) {tag_lying_refine(p, K, *up_cam);}
+    const auto sh = support_height(mask, depth_m, K, upn, top_height(hs));
+    lap(&PoseTiming::ring);
+    gravity_refine(p, pts, *up_cam, sh);
+    if (tag_centre || p.truncated) {   // 끄면 모양 중심 (잘린 마스크만 태그 중심)
+      if (!tag_top_refine(p, K, *up_cam)) {tag_lying_refine(p, K, *up_cam);}
+    }
+    lap(&PoseTiming::refine);
   }
   return p;
 }

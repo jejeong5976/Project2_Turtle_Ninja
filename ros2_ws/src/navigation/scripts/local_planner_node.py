@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""학습한 지역 계획기 정책을 ROS 로 돌리는 노드 (MPPI · bt_navigator 대신). 실물 = navigation nav2.launch.py local_planner:=rl 이 띄움 (주행 · 정밀 접근 두 개),
+"""학습한 지역 계획기 정책을 ROS 로 돌리는 노드 (MPPI · bt_navigator 대신). 파이썬 판 = Isaac 시험용
 Isaac 시험 = sim/robot_sim/rl/tasks/local_planner/deploy/run_isaac_dock.sh (같은 파일 링크). 학습 코드 = sim/robot_sim/rl/tasks/
+실물 = C++ 판 src/local_planner_node.cpp + src/rl_core.cpp (nav2.launch.py local_planner:=rl, 같은 인자 · 같은 식). 여기를 고치면 C++ 판도 같이 고칠 것
 
 받는 것: navigate_to_pose 액션 (목표), /odom (몸 속도), /joint_states (조향 위치 · 바퀴 속도), /scan (navigation scan_merger: 앞 · 뒤 합친 360°, 몸 상자 ±0.17 × ±0.19 안 점 버림), TF map → base_footprint (--goal_frame odom 이면 odom → base_footprint + 목표 받을 때 한 번 map → odom)
   /scan 이 scan_stale_s 넘게 안 오면 (라이다 한쪽 끊기면 scan_merger 가 안 냄) 0 속도 내고 기다림

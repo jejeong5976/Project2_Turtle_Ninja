@@ -81,7 +81,7 @@ perception ──────/perception/traffic_light┤  (신호등 최종 상
 | `pose.position`이 NaN · `frame_id` 빈 것 · TF 변환 실패 → 버림 | - | - |
 | ID 못 읽은 후보를 오래 못 보면 삭제 | 30 s | `candidate_max_age_s` |
 | `/perception/traffic_light` 끊김 → UNKNOWN + 못 찾음으로 봄 | 1.0 s | `signal_timeout_s` |
-| `/odom` · `/control/motion_mode` 끊김 → FAULT (RUNNING) | 1.0 s | `control_timeout_s` |
+| `/odom` · `/control/motion_mode` 끊김 → FAULT (RUNNING) | 3.0 s (코드 기본 1.0) | `control_timeout_s` |
 | 검출 출력 생존은 카메라 프레임별 (`DetectionArray.header.frame_id`, 빈 배열도 출력) | d435_color_optical_frame | `detection_frames` |
 | MotionMode 따르기 (control 없이 시험할 땐 false) | true | `require_motion_mode` |
 
@@ -354,6 +354,7 @@ RUNNING 안: HOME → READ_BARCODE → OBSERVE_SIGNAL → COLLECT → DELIVER �
 
 - `OBSERVE_SIGNAL` (순서): 첫 바코드를 읽은 뒤 출발 구역에 선 채 신호등 점멸 기록 끝까지 기다림 (9.1절). 기록은 STANDBY · HOME · 첫 READ_BARCODE 중에도 하므로 운영자가 언제 시작해도 놓치지 않음. 끝나거나 `signal_wait_s` 넘으면 COLLECT, 이미 끝났으면 건너뜀. 기록이 불완전하면 움직이지 않고 복귀 처리 (`DONE`)
 - `READ_BARCODE` 동안만 perception 바코드 판독을 켬: `barcode_enable_service` (기본 `/perception/barcode/enable`, std_srvs/SetBool) 에 true, 다른 단계 · FAULT · DONE 이면 false. 응답 받을 때까지 1 s 마다 다시 보냄
+- 신호 기록이 Done 이 되면 perception 광각을 끔: `wide_enable_service` (기본 `/perception/wide/enable`) 에 false, Done 전 (`/mission/reset_signal` 뒤 포함) 은 true. 뒤 단계는 손목만 써서 Jetson CPU 를 덜 씀. 광각 퍽 검출 (RViz 용) 도 같이 멈춤
 
 | 위층 | 하는 일 | 다음 |
 |---|---|---|
@@ -498,6 +499,7 @@ dice 의 `Custom` 뜻 (`mission/common.hpp`)
 | `verify_radius_m` / `verify_cell_tol_m` | 0.18 / 0.03 | 재검증 판정 |
 | `record_dir` / `max_replans` | ~/planning_logs / 6 | 기록 파일 폴더 / 재계획 최대 횟수 |
 | `barcode_look` / `barcode_enable_service` | true / /perception/barcode/enable | |
+| `wide_enable_service` | /perception/wide/enable | 신호 기록 Done 이면 광각 끔, "" = 안 부름 |
 | `signal_record` / `signal_wait_s` / `signal_*` | true / 90.0 / 9.1절 | 점멸 기록 |
 | `map_frame` / `base_frame` / `odom_frame` | map / base_link / odom | |
 | `tick_hz` | 10.0 | 판단 주기 |
@@ -507,7 +509,7 @@ dice 의 `Custom` 뜻 (`mission/common.hpp`)
 | `min_confidence` | 0.5 | |
 | `candidate_max_age_s` | 30.0 | |
 | `signal_timeout_s` | 1.0 | |
-| `control_timeout_s` | 1.0 | `/odom` · `/control/motion_mode` |
+| `control_timeout_s` | 3.0 (코드 기본 1.0) | `/odom` · `/control/motion_mode` |
 | `require_motion_mode` | true | |
 | `drive_wait_s` | 10.0 | |
 | `auto_start` | false | true 면 준비되는 즉시 시작 (시험용) |
@@ -523,7 +525,9 @@ dice 의 `Custom` 뜻 (`mission/common.hpp`)
 | `server_wait_s` | 30.0 | |
 | `nav_timeout_s` / `arm_timeout_s` | 60.0 / 60.0 | |
 | `read_timeout_s` | 5.0 | |
-| `cargo_slots` | S1 … S12 | 12 칸 = URDF `rack_cell_S*`, 팔에서 먼 칸부터 = 채우는 순서 (dice 는 11 칸 이상 필요) |
+| `cargo_slots` | S1, S2, S3, S8, S11, S6, S12, S7, S10, S5, S9, S4 | 12 칸 = URDF `rack_cell_S*`, 목록 순서 = 채우는 순서 = 뒷줄부터, 같은 줄은 넣기 제약 순서 (dice 는 11 칸 이상 필요) |
+| `rack_enable_service` | /perception/rack/enable | LOOK_RACK 보낸 뒤 ~ 칸 측정 기다리기 끝까지만 perception 적재함 판독 켬 (std_srvs/SetBool), "" = 안 부름 |
+| `wrist_enable_service` | "" (설정 /perception/wrist/enable) | Nav2 · 정밀 접근 목표 진행 중에만 perception 손목 퍽 검출 끔, 그 밖 (도착 뒤 · 팔 작업 · 대기 · FAULT) 켬. 끈 동안 · 켠 뒤 `wrist_on_grace_s` (2 s) 는 DETECTION_LOST 로 안 셈. "" = 안 부름 |
 | `cargo_file` / `cargo_restore` | "" / false | |
 | `puck_standoff_m` | 0.30 | 퍽 앞에 설 거리 (임시, 팔 닿는 범위 받으면 조정) |
 | `pick_fresh_s` | 2.0 | 이보다 오래된 위치로 안 집음 |

@@ -366,4 +366,34 @@ bool park_nodes(
   return true;
 }
 
+bool park_near(const Eigen::Vector2d & j1, const Eigen::Vector2d & p, double max_r)
+{
+  return std::isfinite(max_r) && (p - j1).norm() <= max_r + 1e-9;
+}
+
+std::vector<Eigen::Vector2d> park_relocate_spots(
+  const Eigen::Vector2d & j1, const Eigen::Vector2d & puck, double min_x, double max_abs_y, double near_r)
+{
+  std::vector<Eigen::Vector2d> out;
+  const Eigen::Vector2d d = puck - j1;
+  if (d.norm() < 1e-6) {return out;}
+  const Eigen::Vector2d dir = d.normalized(), side(-dir.y(), dir.x());
+  // x = min_x + 2 mm 가 되는 반지름 (방향이 거의 옆이면 J1 에서 그만큼)
+  const double r_near = dir.x() > 0.1 ? (min_x + 0.002 - j1.x()) / dir.x() : min_x + 0.002 - j1.x();
+  for (double r = r_near; r <= near_r + 1e-9; r += 0.01) {
+    for (double lat : {0.0, 0.04, -0.04, 0.08, -0.08}) {
+      const Eigen::Vector2d s = j1 + dir * r + side * lat;
+      if (s.x() < min_x || std::fabs(s.y()) > max_abs_y || !park_near(j1, s, near_r)) {continue;}
+      out.push_back(s);
+    }
+  }
+  return out;
+}
+
+double park_relocate_axis_deg(const Eigen::Vector2d & j1, const Eigen::Vector2d & spot)
+{
+  const Eigen::Vector2d d = spot - j1;
+  return std::atan2(d.y(), d.x()) * kDeg;
+}
+
 }  // namespace manipulation

@@ -112,6 +112,21 @@ TEST(ArmKinematics, TiltedHandReachesFarther)
   for (int j = 0; j < 5; ++j) {EXPECT_EQ(a[2].ticks[j], b[2].ticks[j]);}
 }
 
+// 면이 접선에서 40° 돈 네모 퍽 (먼 자리, 수직 안 닿음): 이웃이 없으면 가장 가까운 면 (90° 주기) 이 닫힘축 → 접선과 40° 차여도 기울인 손이 풀림
+//   (11-09 실물: 허용 35° 라 35–45° 돈 퍽은 기울임을 아예 안 풀어 거절 → 45°)
+TEST(ArmKinematics, TiltedHandAcceptsFaceRotated40)
+{
+  const auto m = kin_data::model();
+  std::string why;
+  const double tang = (std::atan2(0.0 - m.j1_xy.y(), 0.28 - m.j1_xy.x()) + M_PI / 2.0) * 180.0 / M_PI;   // 접선 방향 [°]
+  const double yaw = tang + 40.0;   // 면 법선이 접선에서 40° (90° 주기라 어느 면도 40° 차)
+  EXPECT_TRUE(manipulation::pick_poses(m, 0.28, 0.0, 0.058, yaw, {40, 10, -30}, why).empty());   // 수직 손 안 닿음
+  const auto far = manipulation::pick_poses(m, 0.28, 0.0, 0.058, yaw, {40, 10, -30}, why, std::nan(""), 30.0);
+  ASSERT_EQ(far.size(), 3u) << why;
+  EXPECT_GT(far.back().tilt_deg, 0.0);
+  EXPECT_LE(far.back().tilt_deg, 30.0);
+}
+
 // 선호 기울임 (PLACE: 쥘 때 기울임) 에 가까운 것부터 · 차이 한도 밖은 안 씀
 TEST(ArmKinematics, TiltPreferenceAndLimit)
 {

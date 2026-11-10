@@ -3,10 +3,19 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <random>
 
+#include <opencv2/core/version.hpp>
 #include <opencv2/imgproc.hpp>
+
+#if CV_VERSION_MAJOR > 4 || (CV_VERSION_MAJOR == 4 && CV_VERSION_MINOR >= 7)
+#include <opencv2/objdetect/aruco_detector.hpp>
+#else
+#include <opencv2/aruco.hpp>
+#endif
 
 #include "perception/wrist_pose.hpp"
 #include "perception/wrist_tracker.hpp"
@@ -521,4 +530,66 @@ TEST(Tracker, TagCentredFramesWin)
   ASSERT_EQ(d.size(), 1u);
   EXPECT_FALSE(d[0].center_from_tag);
   EXPECT_NEAR(d[0].position.x(), 0.006, 1e-12);
+}
+
+// 퍽 태그 두 개 (ID 3 · 7, 칸당 4 px = 화면 약 32 px) 를 회색 영상에 찍음
+cv::Mat two_tag_image()
+{
+  cv::Mat img(480, 640, CV_8UC1, cv::Scalar(200));
+  const std::array<std::pair<int, cv::Point>, 2> tags{{{3, {100, 120}}, {7, {420, 300}}}};
+  for (const auto & [id, at] : tags) {
+    cv::Mat bits;
+#if CV_VERSION_MAJOR > 4 || (CV_VERSION_MAJOR == 4 && CV_VERSION_MINOR >= 7)
+    cv::aruco::generateImageMarker(cv::aruco::getPredefinedDictionary(cv::aruco::DICT_APRILTAG_36h11), id, 8, bits, 1);
+#else
+    cv::aruco::drawMarker(cv::aruco::getPredefinedDictionary(cv::aruco::DICT_APRILTAG_36h11), id, 8, bits, 1);
+#endif
+    cv::Mat big;
+    cv::resize(bits, big, cv::Size(32, 32), 0, 0, cv::INTER_NEAREST);
+    cv::Mat tex(40, 40, CV_8U, cv::Scalar(255));   // 흰 여백 1 칸
+    big.copyTo(tex(cv::Rect(4, 4, 32, 32)));
+    tex.copyTo(img(cv::Rect(at.x, at.y, 40, 40)));
+  }
+  return img;
+}
+
+TEST(Tags, RoiMatchesFullImage)
+{
+  const cv::Mat gray = two_tag_image();
+  const Intrinsics K{605.9, 605.4, 324.0, 245.9};
+  const auto full = detect_tags(gray, K);
+  ASSERT_EQ(full.size(), 2u);
+  // 상자 둘레만: 같은 ID · 모서리 (원본 좌표)
+  const auto roi = detect_tags_in(gray, {cv::Rect(80, 100, 80, 80), cv::Rect(400, 280, 80, 80)}, K);
+  ASSERT_EQ(roi.size(), 2u);
+  for (const auto & f : full) {
+    const auto it = std::find_if(roi.begin(), roi.end(), [&](const TagPose & r) {return r.id == f.id;});
+    ASSERT_NE(it, roi.end());
+    for (int i = 0; i < 4; ++i) {
+      EXPECT_NEAR(it->corners[i].x, f.corners[i].x, 0.5);
+      EXPECT_NEAR(it->corners[i].y, f.corners[i].y, 0.5);
+    }
+    EXPECT_NEAR((it->R - f.R).norm(), 0.0, 1e-3);
+  }
+  // 한 상자만 → 그 태그만, 영역 밖 태그는 안 읽음
+  const auto one = detect_tags_in(gray, {cv::Rect(400, 280, 80, 80)}, K);
+  ASSERT_EQ(one.size(), 1u);
+  EXPECT_EQ(one[0].id, 7);
+  EXPECT_TRUE(detect_tags_in(gray, {}, K).empty());
+  // 영상 밖으로 나간 상자도 잘라서 읽음
+  EXPECT_EQ(detect_tags_in(gray, {cv::Rect(-20, -20, 200, 200)}, K).size(), 1u);
+}
+
+TEST(Tags, MergeRois)
+{
+  const cv::Size img(640, 480);
+  // 겹침 → 하나, 떨어진 것 그대로, 영상 밖 자름, 빈 것 버림
+  const auto m = merge_rois({cv::Rect(0, 0, 50, 50), cv::Rect(40, 40, 50, 50), cv::Rect(300, 300, 20, 20),
+      cv::Rect(620, 470, 50, 50), cv::Rect(700, 10, 10, 10)}, img);
+  ASSERT_EQ(m.size(), 3u);
+  EXPECT_EQ(m[0], cv::Rect(0, 0, 90, 90));
+  EXPECT_EQ(m[1], cv::Rect(300, 300, 20, 20));
+  EXPECT_EQ(m[2], cv::Rect(620, 470, 20, 10));
+  // 사슬로 이어진 셋 → 하나
+  EXPECT_EQ(merge_rois({cv::Rect(0, 0, 10, 10), cv::Rect(100, 0, 10, 10), cv::Rect(5, 0, 100, 5)}, img).size(), 1u);
 }

@@ -1,17 +1,17 @@
 """nav2.launch.py — Nav2 실행 (planner · collision_monitor + 지역 계획기 + localization:=amcl 이면 map_server · AMCL)
   지역 계획기 local_planner:
-    rl (기본) = RL 노드 둘 (navigation/scripts/local_planner_node.py, 정책 레포 config/rl/):
+    rl (기본) = RL 노드 둘 (navigation local_planner_node (C++, src/local_planner_node.cpp), 정책 레포 config/rl/):
                 주행 rl_nav = navigate_to_pose (nf5) · 정밀 접근 rl_dock = dock_to_pose (dock3, planning dock_action)
                 controller(MPPI) · behavior · bt_navigator 는 안 띄움 (navigate_to_pose 가 겹침)
     mppi = controller(MPPI) · behavior · bt_navigator + 정밀 접근 rl_dock. 박스에 붙어 선 자리 출발 처리 (빠져나오기 · 영역 끄기) 없음
-  정밀 접근 dock: simple (기본) = simple_dock_node.py (규칙: 돌고 → 곧게 붙음, 라이다 원래 점으로 옆 벽 · 사람 멈춤) / rl = rl_dock (dock3)
+  정밀 접근 dock: rl (기본) = rl_dock (dock3) / simple = simple_dock_node (규칙: 돌고 → 곧게 붙음, 라이다 원래 점으로 옆 벽 · 사람 멈춤)
 
   # 실물 (기본 localization:=slam): slam.launch.py 를 먼저 띄움 -> map -> odom · /map 은 slam_toolbox
   ros2 launch navigation slam.launch.py hardware:=opencr slam_mode:=mapping map:=$HOME/maps/arena   # 시연: 저장 지도 이어 그리기
   ros2 launch navigation nav2.launch.py
   ros2 launch navigation nav2.launch.py mission_hold:=false                                  # planning 없이 Nav2 만 시험
   ros2 launch navigation nav2.launch.py local_planner:=mppi                                  # 주행을 MPPI 로
-  ros2 launch navigation nav2.launch.py dock:=rl                                             # 정밀 접근을 팀 RL dock3 으로 (기본 simple — 실물: dock3 이 옆 벽에 부딪힘)
+  ros2 launch navigation nav2.launch.py dock:=simple                                         # 정밀 접근을 규칙 노드로 (기본 rl = dock3)
   # AMCL (시뮬 · slam_toolbox 없이): map_server + AMCL 이 map -> odom · /map
   ros2 launch navigation nav2.launch.py localization:=amcl map:=<지도.yaml> use_sim_time:=true rviz:=true
   ros2 launch navigation nav2.launch.py localization:=amcl map:=<지도.yaml> initial_pose:=-1.468,-2.202,180  # 출발 자세로 AMCL 시작
@@ -76,10 +76,10 @@ def rl_files():
 
 
 def rl_node(name, policy, cfg, d, sim, extra):
-    """local_planner_node.py 하나. 정책 = numpy npz (torch 없음)"""
+    """local_planner_node (C++) 하나. 정책 = npz (export.py). 인자는 파이썬 판 scripts/local_planner_node.py 와 같음"""
     args = ["--node_name", name, "--policy", os.path.join(d, policy), "--cfg", os.path.join(d, cfg),
             "--swerve_yaml", os.path.join(d, "team_swerve.yaml")] + (["--sim_time"] if sim else []) + extra
-    return Node(package="navigation", executable="local_planner_node.py", name=name, output="screen", arguments=args)
+    return Node(package="navigation", executable="local_planner_node", name=name, output="screen", arguments=args)
 
 
 def make_nodes(context):
@@ -147,7 +147,7 @@ def make_nodes(context):
     # 정밀 접근 (박스 · 장소 정차 0.2575 = 면 1 cm, planning dock_action): 그동안 영역 끔 · 목표 odom 고정 · 라이다로 박스 맞춤
     if dock == "simple":
         # 규칙 정밀 접근: 같은 dock_to_pose · 영역 끔 · 목표 odom 고정 · 박스 맞춤 (box_tracker.py). dock_tol = 더 안 줄 때 받아 주는 거리
-        nodes.append(Node(package="navigation", executable="simple_dock_node.py", name="simple_dock", output="screen",
+        nodes.append(Node(package="navigation", executable="simple_dock_node", name="simple_dock", output="screen",
                           arguments=["--tol_ok", dock_tol, "--v_max", dock_vmax, "--disable_polygons", POLYGONS] + (["--sim_time"] if sim else [])))
     else:
         nodes.append(rl_node("rl_dock", "dock3.npz", "dock3.json", rld, sim,
@@ -180,8 +180,8 @@ def generate_launch_description():
         DeclareLaunchArgument("initial_pose", default_value="", description="출발 자세 map 기준 'x,y,yaw_deg' (localization:=amcl 일 때만)"),
         DeclareLaunchArgument("local_planner", default_value="rl",
                               description="rl = RL 주행 (nf5) + 정밀 접근 (dock3) / mppi = MPPI · bt_navigator + 정밀 접근"),
-        DeclareLaunchArgument("dock", default_value="simple",
-                              description="정밀 접근 dock_to_pose: simple = simple_dock_node.py (규칙, 기본: 실물 B1 0.5 cm · 0.15 m/s) / rl = rl_dock (dock3)"),
+        DeclareLaunchArgument("dock", default_value="rl",
+                              description="정밀 접근 dock_to_pose: rl = rl_dock (dock3, 기본) / simple = simple_dock_node (규칙, 실물 B1 0.5 cm · 0.15 m/s)"),
         DeclareLaunchArgument("dock_vmax", default_value="0.15",
                               description="dock:=simple 최고 속도 [m/s] (박스 가까이서는 남은 거리에 비례해 느려짐). 실물: 0.05 는 너무 느림"),
         DeclareLaunchArgument("dock_tol", default_value="0.015",

@@ -34,6 +34,12 @@ std::vector<ArmAction> make_arm_plan(uint8_t task, double o, double c)
   }
 }
 
+// 빈손: 그리퍼가 문턱보다 더 닫힘 (퍽이 있으면 그 전에 멈춤). 실측 · 문턱이 NaN 이면 안 봄
+bool grasp_empty(double grip_now_m, double empty_m)
+{
+  return std::isfinite(grip_now_m) && std::isfinite(empty_m) && grip_now_m < empty_m;
+}
+
 // ============================================================================ ② 차례
 const char * turn_name(Turn t)
 {

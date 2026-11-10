@@ -120,4 +120,14 @@ bool park_nodes(
   const ArmModel & m, const ParkCfg & c, const LyingGrasp & g, const Q5 & q_from, std::vector<ParkNode> & out,
   double & elev_used, std::string & why);
 
+// 옮겨 놓기 (control_master park_relocate): 먼 · 옆 누운 퍽을 가까운 자리로 옮겨 세움 — 순수 계산
+// 가까운 자리 (실물에서 받침 세우기가 되는 자리) 인가 = J1 에서 거리 ≤ max_r
+bool park_near(const Eigen::Vector2d & j1, const Eigen::Vector2d & p, double max_r);
+// 옮겨 놓을 자리 후보 (가까운 것부터): J1 → 퍽 선 위 x = min_x + 2 mm 부터 1 cm 씩 바깥으로 near_r 까지, 각각 옆으로 0 · ±4 · ±8 cm.
+//   박스 밖 (x < min_x · |y| > max_abs_y) · 가까운 자리 밖은 뺌
+std::vector<Eigen::Vector2d> park_relocate_spots(
+  const Eigen::Vector2d & j1, const Eigen::Vector2d & puck, double min_x, double max_abs_y, double near_r);
+// 옮겨 놓은 퍽 긴축 [°] = 그 자리의 반지름 (J1 → 자리) 방향: 가까운 자리에서 되는 방향 (lying_grasp 가 바깥 끝을 쥠, 닫힘축 = 접선이라 수직 · 기울인 손 둘 다)
+double park_relocate_axis_deg(const Eigen::Vector2d & j1, const Eigen::Vector2d & spot);
+
 }  // namespace manipulation

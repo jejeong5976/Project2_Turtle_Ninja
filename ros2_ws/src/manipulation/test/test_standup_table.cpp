@@ -81,3 +81,30 @@ TEST(StandupTable, NearestUsesSizeAndHalfTurnSymmetry)
   EXPECT_EQ(manipulation::nearest_standup(t, 0.26, 0.05, -85.0, 0.030, dx, dy, da), 2);
   EXPECT_EQ(manipulation::nearest_standup({}, 0.26, 0.05, -85.0, 0.030, dx, dy, da), -1);
 }
+
+TEST(StandupTable, FarpickTableNameRoundsNeighborDirection)
+{
+  EXPECT_EQ(manipulation::farpick_table_name(false, 30.0), "farpick_paths_ok75_nbr_none.txt");
+  EXPECT_EQ(manipulation::farpick_table_name(true, 0.0), "farpick_paths_ok75_nbr_000.txt");
+  EXPECT_EQ(manipulation::farpick_table_name(true, 50.0), "farpick_paths_ok75_nbr_045.txt");
+  EXPECT_EQ(manipulation::farpick_table_name(true, -20.0), "farpick_paths_ok75_nbr_000.txt");
+  EXPECT_EQ(manipulation::farpick_table_name(true, -90.0), "farpick_paths_ok75_nbr_270.txt");
+  EXPECT_EQ(manipulation::farpick_table_name(true, 175.0), "farpick_paths_ok75_nbr_180.txt");   // 180 = −180
+  EXPECT_EQ(manipulation::farpick_table_name(true, -170.0), "farpick_paths_ok75_nbr_180.txt");
+}
+
+TEST(StandupTable, FarpickNearestUsesQuarterTurnAndIgnoresAxisForCylinder)
+{
+  std::vector<StandupPath> t(3);
+  t[0].side = 0.0348; t[0].x = 0.30; t[0].y = 0.0; t[0].axis_deg = 80.0;
+  t[1].side = 0.0348; t[1].x = 0.30; t[1].y = 0.0; t[1].axis_deg = 0.0;
+  t[2].side = 0.030; t[2].x = 0.30; t[2].y = 0.0; t[2].axis_deg = 45.0;
+  double dx = 0, dy = 0, da = 0;
+  // 네모 90° 주기: −85° 는 5° 와 같음 → 0° (차 5°) 가 80° (차 15°) 보다 가까움
+  EXPECT_EQ(manipulation::nearest_farpick(t, 0.30, 0.0, -85.0, 0.0348, dx, dy, da, 90.0), 1);
+  EXPECT_NEAR(da, 5.0, 1e-9);
+  // 원기둥: 축 무시 (차 0), 크기 0.030 표만
+  EXPECT_EQ(manipulation::nearest_farpick(t, 0.302, 0.0, -85.0, 0.030, dx, dy, da, 0.0), 2);
+  EXPECT_NEAR(da, 0.0, 1e-9);
+  EXPECT_NEAR(dx, 0.002, 1e-9);
+}

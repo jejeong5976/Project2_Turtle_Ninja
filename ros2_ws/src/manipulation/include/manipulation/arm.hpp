@@ -54,6 +54,10 @@ struct ArmAction
 // 모르는 작업 번호면 빈 목록. 마지막 동작은 항상 접기(home) → 끝나면 바로 주행해도 안전
 std::vector<ArmAction> make_arm_plan(uint8_t task, double gripper_open, double gripper_close);
 
+// 쥐기 (닫기) 뒤 빈손 판단 (순수, control_master 가 그리퍼 실측으로): 실측 grip_now_m 이 empty_m 보다 더 닫혔으면 true
+//   실측 없음 (NaN) · 문턱 없음 (NaN) 은 false (판단 안 함 = 지금처럼 진행). empty_m 을 −1 로 두면 끔
+bool grasp_empty(double grip_now_m, double empty_m);
+
 // ============================================================================
 // ② 차례 정하기 (MotionArbiter)
 // D15: 모터 전원을 따로 빼서 쓰되, 순간 전류를 줄이려고 **한 번에 한 무리만** 움직인다.

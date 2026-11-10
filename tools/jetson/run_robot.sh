@@ -49,7 +49,7 @@ if [ "$MODE" = mission ]; then   # 시연 전체 (bringup/mission_system.launch.
   [ "$ROS_DOMAIN_ID" = 17 ] || say "⚠ ROS_DOMAIN_ID=$ROS_DOMAIN_ID (팀 로봇 = 17)"
 fi
 if [ "$MODE" = slam ] || [ "$MODE" = remap ] || [ "$MODE" = locate ] || [ "$MODE/$HW" = mission/opencr ]; then   # navigation/slam.launch.py 가 robot.launch.py (바퀴만) 를 포함
-  PKG=navigation; LAUNCH=slam.launch.py
+  [ "$MODE" = mission ] || { PKG=navigation; LAUNCH=slam.launch.py; }   # mission 은 위에서 정한 bringup/mission_system.launch.py 그대로
   # USB 자리 (실물: 앞 2.1 · 뒤 2.2)
   LF=${LIDAR_FRONT:-/dev/serial/by-path/platform-3610000.usb-usb-0:2.1:1.0-port0}
   LR=${LIDAR_REAR:-/dev/serial/by-path/platform-3610000.usb-usb-0:2.2:1.0-port0}
@@ -107,12 +107,12 @@ stop_launch() {
 }
 trap stop_launch EXIT
 trap 'exit 130' INT TERM
-for i in $(seq 1 90); do
+for i in $(seq 1 300); do
   grep -qa "activated swerve_controller" "$RUN/launch.log" && break
   kill -0 "$LP" 2>/dev/null || { say "✗ launch 가 먼저 끝남:"; tail -15 "$RUN/launch.log"; exit 5; }
   sleep 0.5
 done
-grep -qa "activated swerve_controller" "$RUN/launch.log" || { say "✗ 45 s 안에 swerve_controller 활성화 안 됨:"; tail -15 "$RUN/launch.log"; exit 5; }
+grep -qa "activated swerve_controller" "$RUN/launch.log" || { say "✗ 150 s 안에 swerve_controller 활성화 안 됨:"; tail -15 "$RUN/launch.log"; exit 5; }
 grep -a -m1 "모듈별 조향 범위\|조향 영점 없음" "$RUN/launch.log" | sed 's/.*launch.user\]: //' | tee -a "$RUN/wrapper.log" || true
 RANGES=$(grep -ao "/tmp/steer_ranges_[A-Za-z0-9_]*\.yaml" "$RUN/launch.log" | head -1)
 [ -n "$RANGES" ] && cp "$RANGES" "$RUN/steer_ranges.yaml" 2>/dev/null

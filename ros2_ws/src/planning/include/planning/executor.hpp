@@ -22,6 +22,7 @@
 //   - 액션 navigate_to_pose → Nav2, /arm_task → control_master
 //   - 액션 dock_action (기본 dock_to_pose, NavigateToPose 형) → RL 정밀 접근 노드. Step.dock 인 이동만
 //   - 서비스 호출 <lifecycle_manager>/is_active, 1 Hz
+//   - 서비스 호출 rack_enable_service std_srvs/SetBool, 기본 /perception/rack/enable (LOOK_RACK 동안만 켬)
 //   - /mission/cargo       interfaces/CargoState              적재함 · 그리퍼 재고, 바뀔 때 + 1 Hz
 //   - /planning/markers    visualization_msgs/MarkerArray     퍽 기록부 · 후보 · Nav2 목표, 2 Hz
 // 실행
@@ -64,6 +65,7 @@
 //   - 그리퍼 기록에 퍽이 있는데 이동 단계가 오면 이동 안 하고 Fault CARRY_DRIVE (퍽 쥔 채 주행 안 함)
 //   - 팔이 LOOK · LOOK_BARCODE 로 펴진 채 이동 단계가 오면 HOME 을 먼저 끼움 (control 은 접힘 실측 뒤에만 DRIVE → 기다리면 drive_wait_s 손해)
 //   - LOOK_RACK: 성공 뒤 그 칸 측정을 rack_wait_s 동안 기다림 (팔 결과 뒤 촬영분만) → 다음 STORE target 에 넣음
+//       perception 적재함 판독은 LOOK_RACK 보낸 뒤 ~ 측정 기다리기 끝까지만 켬 (rack_enable_service, 손목 CPU 절약)
 //       못 받거나 LOOK_RACK 이 거절되면 단계는 성공으로 넘기고 STORE target 은 빈 프레임 (= 녹화 경로 그대로)
 
 #pragma once
@@ -96,6 +98,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
+#include "std_srvs/srv/set_bool.hpp"
 #include "std_srvs/srv/trigger.hpp"
 #include "tf2_ros/buffer.hpp"
 #include "tf2_ros/transform_listener.hpp"
@@ -218,6 +221,7 @@ private:
   using ArmTask = interfaces::action::ArmTask;
   using ArmGoalHandle = rclcpp_action::ClientGoalHandle<ArmTask>;
   using Trigger = std_srvs::srv::Trigger;
+  using SetBool = std_srvs::srv::SetBool;
 
   // 액션 목표 1개의 진행 상황 (gen: 보낼 때마다 증가, 늦게 온 옛 콜백은 gen 이 달라 무시)
   struct GoalTrack
@@ -287,6 +291,9 @@ private:
   void insert_relook(const std::string & puck_id);
   bool update_drive_reason(double now, bool drive_step, ExecEvent & ev);
   StepResult wait_rack(const Step & s, double now);   // LOOK_RACK 성공 뒤 칸 측정 기다리기
+  void sync_rack_reader(double now);                  // perception 적재함 판독 켜기 · 끄기를 LOOK_RACK 진행에 맞춤
+  void sync_wrist(double now);                        // perception 손목 검출: 주행 목표 진행 중 끔, 그 밖 켬
+  bool wrist_quiet(double now) const;                 // 손목 검출을 일부러 끈 동안 · 켠 직후 (검출 끊김 안 셈)
   void on_rack(const interfaces::msg::DetectionArray & msg);
   void stop_blocked_nav();
 
@@ -348,6 +355,18 @@ private:
   std::unordered_map<std::string, RackSeen> rack_seen_;   // 칸 이름 → 마지막 측정
   std::unordered_map<std::string, RackSeen> rack_meas_;   // LOOK_RACK 으로 받은 측정 → 다음 STORE target
   double rack_wait_start_ = -1.0;            // LOOK_RACK 성공 뒤 측정 기다리기 시작 (-1 = 안 기다림)
+  std::string rack_enable_service_;          // perception 적재함 판독 켜기 (std_srvs/SetBool), "" = 안 부름
+  rclcpp::Client<SetBool>::SharedPtr rack_cli_;
+  bool rack_want_ = false;                   // LOOK_RACK 보낸 뒤 ~ 측정 기다리기 끝까지 true
+  bool rack_known_ = false, rack_on_ = false, rack_req_pending_ = false;
+  double rack_req_sent_s_ = 0.0, rack_last_try_s_ = -1e9;
+  int rack_req_gen_ = 0;
+  std::string wrist_enable_service_;         // "" = 손목 검출 켜고 끄기 안 함
+  double wrist_on_grace_s_ = 2.0;            // 켠 뒤 이 시간은 검출 끊김 안 셈
+  rclcpp::Client<SetBool>::SharedPtr wrist_cli_;
+  bool wrist_known_ = false, wrist_on_ = false, wrist_req_pending_ = false;
+  double wrist_req_sent_s_ = 0.0, wrist_last_try_s_ = -1e9, wrist_on_s_ = -1.0;
+  int wrist_req_gen_ = 0;
   std::string cargo_file_;
   std::string task_id_;
 

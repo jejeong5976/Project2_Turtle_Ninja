@@ -130,7 +130,9 @@ bool parse_arm(const std::vector<std::string> & tok, const Names & names, Comman
     out.task = t == "look" ? ArmTask::Goal::LOOK : ArmTask::Goal::LOOK_BARCODE;
     // look rack = 빈 손 적재함 스캔 (control_master 경로 rack_scan, 받침에서 시작해 받침으로 끝남)
     if (t == "look" && tok.size() == 2 && lower(tok[1]) == "rack") {out.slot = "rack"; return true;}
-    if (tok.size() != 1) {err = t == "look" ? "look [rack]" : t + " 는 인자 없음"; return false;}
+    // look left · right = 박스 옆 끝 보기 (LOOK 자세에서 J1 만 ±look_side_deg), 그 자세에서 pick det 가능
+    if (t == "look" && tok.size() == 2 && (lower(tok[1]) == "left" || lower(tok[1]) == "right")) {out.slot = lower(tok[1]); return true;}
+    if (tok.size() != 1) {err = t == "look" ? "look [rack|left|right]" : t + " 는 인자 없음"; return false;}
     return true;
   }
   if (t == "store" || t == "retrieve") {

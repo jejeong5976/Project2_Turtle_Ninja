@@ -49,6 +49,22 @@ void cuda_ok(cudaError_t e, const char * what)
 {
   if (e != cudaSuccess) {throw std::runtime_error(std::string(what) + ": " + cudaGetErrorString(e));}
 }
+
+// GPU 결과 기다리기 = 잠듦 (BlockingSync). CUDA 기본 (Auto) 은 컨텍스트 수 ≤ 코어 수면 spin
+//   → 추론 동안 CPU 코어 하나가 100 % 로 기다림 (Jetson: 손목 · 광각 30 Hz 면 코어 절반 넘게)
+//   CUDA 컨텍스트 만들기 전에만 바꿀 수 있음 → 첫 엔진에서 한 번. 이미 만들어졌으면 (다른 CUDA 사용) 그대로 둠
+void use_blocking_sync()
+{
+  static const bool once = [] {
+      const cudaError_t e = cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);
+      if (e != cudaSuccess) {
+        std::cerr << "[trt] cudaSetDeviceFlags(BlockingSync) 실패, 기본 대기 방식 유지: " << cudaGetErrorString(e) << std::endl;
+        cudaGetLastError();   // 오류 상태 지움 (다음 CUDA 호출이 이 오류를 받지 않게)
+      }
+      return true;
+    }();
+  (void)once;
+}
 }  // namespace
 
 struct TrtEngine::Impl
@@ -83,6 +99,7 @@ TrtEngine::TrtEngine(const std::string & path)
     throw std::runtime_error("모델 확장자는 .engine / .plan (.onnx 는 Jetson 에서 trtexec 로 변환): " + path);
   }
   I.names = read_names(path);
+  use_blocking_sync();   // runtime · 엔진 만들기 (컨텍스트 생성) 전
   std::ifstream f(path, std::ios::binary);
   if (!f) {throw std::runtime_error("엔진 파일 없음: " + path);}
   const std::vector<char> blob((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());

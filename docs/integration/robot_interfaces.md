@@ -62,7 +62,7 @@ T_5c · T_5d 는 광학축 회전까지 포함하므로 optical 회전을 다시
 `camera_link` 는 CAD 전면 프레임이고, `camera_optical_frame` · `d435_color_optical_frame` (인지 노드 · 시뮬 이름) 은 `wrist_cam_color_optical_frame` 과 같은 위치·방향의 별칭이다.
 손목 · 광각 카메라와 프로파일은 `with_accessories:=true` 일 때 들어간다.
 
-적재함 시각 프레임은 `rack_cell_S1_link` ~ `rack_cell_S12_link` 이다. 번호는 팔 J1 축에서 먼 칸부터이다. 채우는 순서는 `config/planning.yaml` `cargo_slots` (실물 시험 순서 S12, S7, S9, …), 칸끼리 제약은 `config/rack_cells.yaml` `rack_constraints`.
+적재함 시각 프레임은 `rack_cell_S1_link` ~ `rack_cell_S12_link` 이다. 번호는 팔 J1 축에서 먼 칸부터이다. 채우는 순서는 `config/planning.yaml` `cargo_slots` (뒷줄부터 S1, S2, S3, S8, …), 칸끼리 제약은 `config/rack_cells.yaml` `rack_constraints`.
 옛 이름 (`arm_tests/rack_cells.json`) 대응: S1 = L8, S2 = L7, S3 = L6, S4 = B, S5 = L2, S6 = L4, S7 = D, S8 = L5, S9 = A, S10 = L1, S11 = L3, S12 = C.
 적재함 (새 적재함) 은 `rack_link` 에 팀 Onshape CAD 메시 두 개 (`meshes/rack/rack_8cell.obj` · `rack_4cell.obj`, 판 · 나사 구멍 · 옆 홈 포함) 를 그대로 붙인다.
 `base_link → rack_link` 고정 관절 `rack_fixed` 는 (−0.102, 0.0671, 0.1385) m, 회전 없음: CAD 칸 중심 12 개를 실측 칸 표에 평행 이동으로 맞춘 자리. 판 밑면이 상판 (z 0.1305) 위.
@@ -125,7 +125,7 @@ STORE · RETRIEVE 경로는 실물 적재함 12 칸 시험에서 성공한 실�
 | `bringup/rack_tags.launch.py` | rack_tag_node | `rack_tags:=true` 일 때만 |
 
 - 준비: 스크립트가 swerve 활성 뒤 mission_manager 의 `STANDBY 준비 완료` 줄을 기다림 (`READY_WAIT_S`, 기본 120 s). 그 뒤 신호등 점멸 시작 → `ros2 service call /mission/start std_srvs/srv/Trigger '{}'`
-- 지도 고정은 `SLAM_MODE=localization`. 덧붙임 예 `dice_map:=$HOME/maps/dice_map_arena5.yaml` · `publish_debug:=true` · `dock:=rl`
+- 지도 고정은 `SLAM_MODE=localization`. 덧붙임 예 `dice_map:=$HOME/maps/dice_map_arena5.yaml` · `publish_debug:=true` · `dock:=simple`
 - 로봇 없이 조립 확인: `ros2 launch bringup mission_system.launch.py` (mock, 라이다 · 카메라 · 인지 끔) → 노드 · 액션 이름 확인용, 준비 완료는 안 됨 (SLAM TF · 손목 검출 없음)
 - 실물 거부 조건: 라이다 둘 중 하나 없음 · pose_guard 끔 · perception 끔 · drive_only 지도 · 지도 `.posegraph`/`.data` 없음 · 엔진 / `.names.txt` 없음 · perception_node 미설치
 

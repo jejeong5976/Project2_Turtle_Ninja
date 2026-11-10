@@ -101,12 +101,21 @@ double median(std::vector<double> v);
 
 // 마스크(0 아님 = 퍽) 안 유효 깊이 화소 → 카메라 좌표 점 (행 우선 순서 = np.nonzero 와 같음)
 std::vector<Vec3> deproject(const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K);
+// deproject 와 같지만 roi 안 화소만 (roi 밖 마스크가 0 일 때 결과 같음)
+std::vector<Vec3> deproject_in(const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K, const cv::Rect & roi);
 
 // 점 높이 → 윗면 높이 (상위 5 % 에서 시작, ±TOP_WIN 안 점 중앙값 5 번 반복)
 double top_height(const std::vector<double> & h);
 
 // 회색 영상 → AprilTag 36h11 (ID 0–14 만, IPPE_SQUARE 두 해). dist 비우면 왜곡 0
 std::vector<TagPose> detect_tags(const cv::Mat & gray, const Intrinsics & K, const cv::Mat & dist = cv::Mat());
+
+// detect_tags 와 같지만 rois 안만 검출 (퍽 분할 상자 둘레). 겹치는 영역은 합침, 모서리는 원본 좌표, 같은 ID 는 처음 것
+std::vector<TagPose> detect_tags_in(
+  const cv::Mat & gray, const std::vector<cv::Rect> & rois, const Intrinsics & K, const cv::Mat & dist = cv::Mat());
+
+// 영상 밖은 자르고, 겹치는 사각형은 감싸는 사각형 하나로 합침
+std::vector<cv::Rect> merge_rois(std::vector<cv::Rect> rois, const cv::Size & img);
 
 // 태그 안쪽 깊이 평면 법선과 더 가까운 IPPE 해를 고름 (점 < 12 면 그대로)
 TagPose refine_tag_with_depth(TagPose t, const cv::Mat1f & depth_m, const Intrinsics & K);
@@ -152,10 +161,22 @@ std::optional<double> support_height(const cv::Mat1b & mask, const cv::Mat1f & d
 // 마스크 둘레 고리 (RING_IN ~ RING_OUT 화소) 깊이 점의 높이 (위쪽 내적) 10 % 값 — 둘레에서 가장 낮은 면 쪽. 점이 RING_MIN_POINTS 보다 적으면 없음
 std::optional<double> ring_low_height(const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K, const Vec3 & up);
 
+// puck_pose 단계별 시간 [ms] (더해 감, 계측용)
+struct PoseTiming
+{
+  double points = 0;   // 마스크 → 점 · 튀는 점 제거
+  double shape = 0;    // 주축 · 퍼짐 · 상자 · 태그 고르기
+  double ring = 0;     // 둘레 고리 (놓인 면 높이 · min_rise)
+  double refine = 0;   // gravity_refine + 태그 보정
+};
+
 // 마스크 1개 → 퍽 자세. 점 부족이면 없음. up_cam 은 카메라 좌표 월드 위쪽 (없으면 nullptr)
 //   min_rise_m > 0 이고 위쪽을 알면: 윗면이 둘레의 낮은 면 (ring_low_height) 보다 이만큼도 안 높으면 퍽이 아님 (상자에 인쇄된 무늬 등) → 없음
 std::optional<PuckPose> puck_pose(
   const cv::Mat1b & mask, const cv::Mat1f & depth_m, const Intrinsics & K,
-  const std::vector<TagPose> & tags, const Vec3 * up_cam, double min_rise_m = 0.0);
+  const std::vector<TagPose> & tags, const Vec3 * up_cam, double min_rise_m = 0.0, bool tag_centre = true,
+  PoseTiming * timing = nullptr);
+//   tag_centre false: 중심 · 면 방향을 모양 (마스크 · 깊이) 으로만 — 태그가 퍽에 비뚤게 붙어도 안 따라감 (태그는 ID · 기울기 축에만).
+//     단 마스크가 화면 끝에 잘리면 (truncated) 모양 중심을 못 믿으므로 태그 중심 그대로 (11-09 실물: 누운 초록 퍽 태그 중심이면 끝 쥐기를 놓침)
 
 }  // namespace perception::wrist

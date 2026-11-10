@@ -124,10 +124,14 @@ Executor::Executor(rclcpp::Node & node)
   // ---- 적재함 칸 측정 (LOOK_RACK 뒤 기다리는 시간, STORE 에 쓸 수 있는 측정 나이)
   rack_wait_s_ = node_.declare_parameter<double>("rack_wait_s", 2.0);
   rack_fresh_s_ = node_.declare_parameter<double>("rack_fresh_s", 30.0);
+  rack_enable_service_ = node_.declare_parameter<std::string>("rack_enable_service", "/perception/rack/enable");
+  // ---- 손목 퍽 검출 (perception ~/wrist/enable): 주행 목표 진행 중에만 끔 (CPU). "" = 안 건드림 (perception 설정 그대로)
+  wrist_enable_service_ = node_.declare_parameter<std::string>("wrist_enable_service", "");
+  wrist_on_grace_s_ = node_.declare_parameter<double>("wrist_on_grace_s", 2.0);
 
   // ---- 재고: 칸 이름 (팔이 닿는 칸만), 기록 파일 (빈 문자열 = 저장 안 함)
   cargo_ = Cargo(node_.declare_parameter<std::vector<std::string>>("cargo_slots",
-    {"S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12"}));
+    {"S1", "S2", "S3", "S8", "S11", "S6", "S12", "S7", "S10", "S5", "S9", "S4"}));   // 뒷줄부터, 넣기 제약 순서
   {   // 칸 제약 "칸:비어야 할 칸" (config/rack_cells.yaml rack_constraints, 최악 검사 + 실물 S7 ← S12 −13 mm)
     auto rules = [&](const char * name, const std::vector<std::string> & def) {
         Cargo::SlotRules out;
@@ -278,6 +282,8 @@ Executor::Executor(rclcpp::Node & node)
   if (!dock_action_.empty()) {dock_client_ = rclcpp_action::create_client<Nav>(&node_, dock_action_);}
   nav_cur_client_ = nav_client_;
   arm_client_ = rclcpp_action::create_client<ArmTask>(&node_, "/arm_task");
+  if (!rack_enable_service_.empty()) {rack_cli_ = node_.create_client<SetBool>(rack_enable_service_);}
+  if (!wrist_enable_service_.empty()) {wrist_cli_ = node_.create_client<SetBool>(wrist_enable_service_);}
 
   // Nav2 lifecycle_manager is_active (std_srvs/Trigger) 를 1 Hz 로 물어봄
   for (const auto & name : lifecycle_services) {
@@ -402,6 +408,93 @@ void Executor::update(double now)
     std::string why;
     if (!update_cargo(late, why)) {mark_doubt(late, "늦은 최종 성공인데 재고 기록 불일치: " + why);}
   }
+  sync_rack_reader(now);
+  sync_wrist(now);
+}
+
+// perception 손목 퍽 검출을 주행에 맞춤: Nav2 · 정밀 접근 목표가 진행 중이면 끔, 그 밖 (도착 뒤 · 팔 작업 · 대기 · FAULT) 은 켬
+//   - 주행 중 손목 카메라는 퍽을 안 봄 (팔 접음), 분할이 CPU 를 씀. control_master 는 LOOK 뒤 검출을 10 s 쓰고 그 사이 차체는 안 움직임
+//   - 끈 동안 · 켠 뒤 wrist_on_grace_s 는 검출 출력 끊김 (DETECTION_LOST) 으로 안 셈 (wrist_quiet)
+//   - 처음 서비스가 보이면 지금 상태로 한 번 맞춤. 응답 없으면 2 s 뒤 버리고 다시
+void Executor::sync_wrist(double now)
+{
+  if (!wrist_cli_) {return;}
+  const bool want = !nav_.active;
+  if (wrist_req_pending_) {
+    if (now - wrist_req_sent_s_ < 2.0) {return;}
+    wrist_cli_->prune_pending_requests();
+    wrist_req_pending_ = false;
+    RCLCPP_WARN(logger(), "손목 검출 켜고 끄기 서비스 응답 없음 → 다시 보냄");
+  }
+  if (wrist_known_ && wrist_on_ == want) {return;}
+  if (now - wrist_last_try_s_ < (want ? 0.2 : 1.0)) {return;}
+  wrist_last_try_s_ = now;
+  if (!wrist_cli_->service_is_ready()) {return;}
+  auto req = std::make_shared<SetBool::Request>();
+  req->data = want;
+  const int gen = ++wrist_req_gen_;
+  wrist_req_pending_ = true;
+  wrist_req_sent_s_ = now;
+  if (want) {wrist_on_s_ = now;}   // 켜는 요청부터 grace (응답 · 첫 장까지)
+  wrist_cli_->async_send_request(req, [this, want, gen](rclcpp::Client<SetBool>::SharedFuture f) {
+      if (gen != wrist_req_gen_) {return;}
+      wrist_req_pending_ = false;
+      if (f.get()->success) {
+        wrist_known_ = true;
+        wrist_on_ = want;
+        if (want) {wrist_on_s_ = now_s();}
+        RCLCPP_INFO(logger(), "perception 손목 검출 %s", want ? "켬" : "끔 (주행 중)");
+      }
+    });
+}
+
+// 손목 검출을 일부러 끈 동안 · 켠 직후 → 검출 출력 끊김을 장애로 안 봄
+bool Executor::wrist_quiet(double now) const
+{
+  if (!wrist_cli_) {return false;}
+  if (wrist_req_pending_) {return true;}
+  if (wrist_known_ && !wrist_on_) {return true;}
+  return wrist_on_s_ > 0.0 && now - wrist_on_s_ < wrist_on_grace_s_;
+}
+
+// perception 적재함 판독을 지금 단계에 맞춤: LOOK_RACK 보낸 뒤 ~ 측정 기다리기 끝까지만 켬 (응답 없으면 2 s 뒤 버리고 다시)
+//   - 켤 때 perception 은 칸 묶음을 비움 → 팔 결과 뒤 멈춘 장으로 새로 확정
+//   - 처음 서비스가 보이면 한 번 끔 (perception 설정이 켜짐이어도 맞춤)
+void Executor::sync_rack_reader(double now)
+{
+  if (!rack_cli_) {return;}
+  const bool want = rack_want_ && step_i_ < steps_.size() && steps_[step_i_].type == StepType::Arm &&
+    steps_[step_i_].arm_task == kArmLookRack;
+  if (rack_req_pending_) {
+    if (now - rack_req_sent_s_ < 2.0) {return;}
+    rack_cli_->prune_pending_requests();   // 늦은 응답은 gen 으로 무시
+    rack_req_pending_ = false;
+    RCLCPP_WARN(logger(), "적재함 판독 서비스 응답 없음 → 다시 보냄");
+  }
+  if (rack_known_ && rack_on_ == want) {return;}
+  if (now - rack_last_try_s_ < (want ? 0.2 : 1.0)) {return;}
+  rack_last_try_s_ = now;
+  if (!rack_cli_->service_is_ready()) {
+    if (want) {
+      RCLCPP_WARN_THROTTLE(logger(), *node_.get_clock(), 5000, "적재함 판독 서비스 %s 없음 → 칸 측정 못 받을 수 있음",
+        rack_enable_service_.c_str());
+    }
+    return;
+  }
+  auto req = std::make_shared<SetBool::Request>();
+  req->data = want;
+  const int gen = ++rack_req_gen_;
+  rack_req_pending_ = true;
+  rack_req_sent_s_ = now;
+  rack_cli_->async_send_request(req, [this, want, gen](rclcpp::Client<SetBool>::SharedFuture f) {
+      if (gen != rack_req_gen_) {return;}
+      rack_req_pending_ = false;
+      if (f.get()->success) {
+        rack_known_ = true;
+        rack_on_ = want;
+        RCLCPP_INFO(logger(), "perception 적재함 판독 %s", want ? "켬" : "끔");
+      }
+    });
 }
 
 // 제어 끊김 (STANDBY 에서 수신을 확인했으므로 여기선 끊김만 봄) · 센서 · 위치 감시
@@ -424,7 +517,7 @@ std::optional<ExecEvent> Executor::supervise(double now)
     for (const auto & t : stale_scans) {which += (which.empty() ? "" : ", ") + t;}
     return fault("SCAN_LOST", "라이다 끊김 회복 안 됨: " + which);
   }
-  if (det_mon_.update(require_detections_ && !stale_detection_frames(now).empty(), now) == Health::Fault) {
+  if (det_mon_.update(require_detections_ && !wrist_quiet(now) && !stale_detection_frames(now).empty(), now) == Health::Fault) {
     return fault("DETECTION_LOST", "검출 출력 끊김 회복 안 됨");
   }
   if (loc_mon_.update(require_localization_ && localization_lost(now), now) == Health::Fault) {
@@ -532,6 +625,7 @@ StepResult Executor::wait_rack(const Step & s, double now)
     RCLCPP_WARN(logger(), "%s: %.1f s 안에 칸 측정 못 받음 → 측정 없이 STORE", s.name.c_str(), rack_wait_s_);
   }
   rack_wait_start_ = -1.0;
+  rack_want_ = false;
   arm_unfolded_ = false;
   return StepResult::Success;
 }
@@ -552,6 +646,7 @@ void Executor::on_rack(const DetectionArray & msg)
 void Executor::on_fail(ExecEvent & ev)
 {
   const Step & s = steps_[step_i_];
+  rack_want_ = false;   // LOOK_RACK 실패 (재시도면 보낼 때 다시 켬)
   // HOME 실패 = 팔을 접을 수 없음 → 바퀴도 못 풂
   if (s.type == StepType::Arm && s.arm_task == kArmHome) {
     ev.kind = ExecEvent::Kind::Fault;
@@ -858,6 +953,7 @@ void Executor::stop()
   }
   waiting_drive_ = false;
   rack_wait_start_ = -1.0;
+  rack_want_ = false;
   arm_timeout_wait_ = false;   // 늦은 성공은 update() 가 재고에 반영
   cancel_nav();
   cancel_arm();
@@ -1135,6 +1231,7 @@ StepResult Executor::run_arm(const Step & s, double now)
       return server_wait_expired(now, "/arm_task") ? StepResult::Fail : StepResult::Running;
     }
     arm_step_ = s;   // 취소 뒤 늦게 성공하면 재고 반영용
+    if (s.arm_task == kArmLookRack) {rack_want_ = true;}   // 팔이 관찰 자세로 가는 동안 perception 적재함 판독 켬
     server_wait_start_ = -1.0;
     step_running_ = true;
     step_start_s_ = now;
@@ -1144,6 +1241,7 @@ StepResult Executor::run_arm(const Step & s, double now)
   if (arm_.done && arm_.rejected && s.arm_task == kArmLookRack) {
     RCLCPP_WARN(logger(), "%s 거절 (%s) → 칸 측정 없이 STORE", s.name.c_str(), arm_.message.c_str());
     rack_meas_.erase(s.slot);
+    rack_want_ = false;
     return StepResult::Success;
   }
   // 거절 → action_retry_s 뒤 다시 보냄 (켤 때 팔 재생기 준비 기다리기)

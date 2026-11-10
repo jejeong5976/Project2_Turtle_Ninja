@@ -121,7 +121,8 @@ def make(context):
     # 3. Nav2 (localization = slam 고정: map → odom 은 slam_toolbox 하나)
     if on("nav"):
         out.append(include("navigation", "nav2.launch.py", {
-            "localization": "slam", "map": "", "local_planner": arg("local_planner"),   # map = AMCL 용, 위 posegraph 경로가 새지 않게 "dock": arg("dock"),
+            "localization": "slam", "map": "", "local_planner": arg("local_planner"),   # map = AMCL 용, 위 posegraph 경로가 새지 않게
+            "dock": arg("dock"),
             "dock_vmax": arg("dock_vmax"), "dock_tol": arg("dock_tol"), "mission_hold": arg("mission_hold"),
             "rviz": arg("rviz")}))
 
@@ -170,7 +171,7 @@ def generate_launch_description():
         # Nav2
         A("nav", default_value="true", choices=["true", "false"]),
         A("local_planner", default_value="rl", choices=["rl", "mppi"]),
-        A("dock", default_value="simple", choices=["simple", "rl"]),
+        A("dock", default_value="rl", choices=["rl", "simple"]),
         A("dock_vmax", default_value="0.15"),
         A("dock_tol", default_value="0.015"),
         A("mission_hold", default_value="true", choices=["true", "false"], description="true = mission 이 /mission/hold 로 주행 허가"),

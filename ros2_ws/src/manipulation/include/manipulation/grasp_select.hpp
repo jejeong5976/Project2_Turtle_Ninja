@@ -2,7 +2,7 @@
 // =====================================================================
 // 수직 손이 퍽 높이 안으로 내려가면 손가락 끝 두 개가 이웃 퍽과 같은 높이 → 위에서 본 2D 거리로 판단
 //   손가락 끝 (URDF 충돌 메시, 손끝 tip5 기준 끝 35 mm): 닫힘축 방향 안쪽 면 9.1 mm + q · 바깥 면 27.3 mm + q, 폭 ±16.4 mm (q = 손가락 위치 [m])
-//   이웃 퍽: 원기둥 = 원, 면 방향 아는 사각기둥 = 회전 사각, 모르는 사각기둥 = 외접원, 누운 · 방향 모름 = 반지름 30 mm 원. 놓인 위치 오차만큼 키움
+//   이웃 퍽: 원기둥 = 반지름 15 mm 원, 면 방향 아는 사각기둥 = 회전 사각 (반폭 17.4 mm), 모르는 사각기둥 = 외접원 24.6 mm, 누운 · 방향 모름 = 반지름 30 mm 원. 놓인 위치 오차만큼 키움
 //   목표 퍽: 손가락 안쪽 면이 목표 퍽 바깥보다 target_clear 이상 바깥이어야 함 (좁게 열 때 퍽 모서리 위로 내려가지 않게)
 // 후보: 닫힘 방향 (네모 = 면 방향 2 개, 원기둥 · 모름 = 기본 방향부터 15° 간격 12 개) × 벌림 폭 (넓은 것부터)
 // 순서: 넓은 벌림부터. 같은 폭 안에서 기본 방향 여유가 prefer_default 이상이면 기본 방향 먼저, 그다음 여유 큰 순 (같으면 기본 방향에 가까운 순)
@@ -62,16 +62,16 @@ struct GraspLimits
 // 손가락 두 개 (닫힘 방향 close_rad, 손가락 위치 grip) ↔ 이웃 퍽 최소 거리 [m] (겹치면 0 이하)
 double finger_clearance(
   const Eigen::Vector2d & center, double close_rad, double grip, const std::vector<NeighborPuck> & nb,
-  const FingerTip & f = FingerTip{}, double puck_half = 0.015, double slop = 0.002);
+  const FingerTip & f = FingerTip{}, double puck_half = 0.015, double slop = 0.002, double square_half = 0.0174);
 
 // 놓을 퍽 발자국 (중심 center, 방향 axis_rad, 반 크기 half = (축 방향, 옆)) ↔ 이웃 퍽 최소 거리 [m] (이웃 없으면 무한)
 //   누운 퍽을 놓을 때: 긴축 끝 (±30 mm) 이 손가락 폭 (±16.4 mm) 밖으로 나옴 → 손가락 여유만으로는 모자람
 double footprint_clearance(
   const Eigen::Vector2d & center, double axis_rad, const Eigen::Vector2d & half, const std::vector<NeighborPuck> & nb,
-  double puck_half = 0.015, double slop = 0.002);
+  double puck_half = 0.015, double slop = 0.002, double square_half = 0.0174);
 
-// 목표 퍽이 닫힘축 방향으로 차지하는 반 길이 [m] (원기둥 15 mm, 면 정렬 네모 15 mm, 모르는 네모 = 외접 21.2 mm)
-double target_half_along(const TargetPuck & t, double close_rad, double puck_half = 0.015);
+// 목표 퍽이 닫힘축 방향으로 차지하는 반 길이 [m] (원기둥 15 mm, 면 정렬 네모 17.4 mm, 기울면 17.4·(|cos δ|+|sin δ|), 모르는 네모 = 외접 24.6 mm)
+double target_half_along(const TargetPuck & t, double close_rad, double puck_half = 0.015, double square_half = 0.0174);
 
 // 닫힘 방향 후보: 네모(면 방향 앎) → yaw, yaw + 90°. 그 밖 → default_close 부터 15° 간격 12 개 (180° 주기)
 std::vector<double> close_candidates(bool square_yaw_known, double yaw, double default_close);

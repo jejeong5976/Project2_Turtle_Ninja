@@ -351,3 +351,38 @@ TEST(ParkStand, RefusesLargeRoll)
   EXPECT_FALSE(lying_grasp(m, 0.31, 0.0, kTop, 90.0, kHeights, gc, g, why, 30.0));
   EXPECT_FALSE(why.empty());
 }
+
+// 옮겨 놓기 (park_relocate): 가까운 자리 = J1 에서 거리, 자리 후보는 J1 → 퍽 선 위 박스 앞쪽 끝부터 가까운 자리 · 박스 안만 (가까운 것이 첫째),
+//   첫 후보에 긴축 = 반지름 방향으로 놓인 퍽은 받침 세우기가 됨
+TEST(ParkStand, RelocateNearZoneAndSpots)
+{
+  const auto m = kin_data::model();
+  const Eigen::Vector2d j1 = m.j1_xy;
+  const Eigen::Vector2d ok(0.225, -0.050), far(0.296, -0.065);   // 11-09 실물: 된 자리 · 안 된 자리
+  const double near_r = (ok - j1).norm() + 0.005;
+  EXPECT_TRUE(park_near(j1, ok, near_r));
+  EXPECT_FALSE(park_near(j1, far, near_r));
+  const auto spots = park_relocate_spots(j1, far, 0.212, 0.075, near_r);
+  ASSERT_FALSE(spots.empty());
+  for (const auto & s : spots) {
+    EXPECT_GE(s.x(), 0.212 - 1e-9);
+    EXPECT_LE(std::fabs(s.y()), 0.075 + 1e-9);
+    EXPECT_TRUE(park_near(j1, s, near_r));
+  }
+  const Eigen::Vector2d d = far - j1, s0 = spots.front() - j1;
+  EXPECT_NEAR(spots.front().x(), 0.214, 1e-6);              // 박스 앞쪽 끝 (regrasp_min_x + 2 mm)
+  EXPECT_NEAR(s0.x() * d.y() - s0.y() * d.x(), 0.0, 1e-9);   // J1 → 퍽 선 위
+  for (size_t i = 1; i < spots.size(); ++i) {EXPECT_GE((spots[i] - j1).norm(), s0.norm() - 1e-9);}
+  EXPECT_TRUE(park_relocate_spots(j1, far, 0.212, 0.075, 0.1).empty());   // 가까운 자리가 박스 앞보다 안쪽이면 후보 없음
+  const double axis = park_relocate_axis_deg(j1, spots.front());
+  EXPECT_NEAR(axis, std::atan2(s0.y(), s0.x()) * 180.0 / M_PI, 1e-9);
+  LyingGraspCfg gc;
+  ParkCfg pk;
+  std::vector<ParkNode> pn;
+  double elev = 0.0;
+  auto accept = [&](const LyingGrasp & c, std::string & w) {return park_nodes(m, pk, c, ticks_to_q(m, c.poses[0].ticks), pn, elev, w);};
+  LyingGrasp g;
+  std::string why;
+  ASSERT_TRUE(lying_grasp(m, spots.front().x(), spots.front().y(), kTop, axis, kHeights, gc, g, why, 30.0, accept)) << why;
+  EXPECT_NE(find(pn, "park_re_lift"), nullptr);
+}

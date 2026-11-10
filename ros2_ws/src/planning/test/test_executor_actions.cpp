@@ -4,6 +4,7 @@
 //   - 팔 시간 초과 뒤 최종 결과가 끝내 안 옴 (server_wait_s · 서버 없어짐) → 재시도 대신 FAULT
 //   - 취소 결과 기다리는 중 서버가 없어졌다 다시 뜸 → 더 안 기다림 (resume 안 막힘)
 //   - 손목 카메라 drift: 재검증용 원시 관측만 되돌린 위치, 기록부는 명목 TF. 다른 프레임 drift 는 무시
+//   - perception 적재함 판독: 처음 끔 → LOOK_RACK 보낼 때 켬 → 칸 측정 기다리기 끝나면 끔
 //   실행: colcon test --packages-select planning (ROS_DOMAIN_ID · ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST 권장)
 //   액션 · 발행 이름은 시험마다 고유 이름공간으로 바꿈 → 같은 도메인의 실물 /arm_task · Nav2 에 안 닿음
 
@@ -24,6 +25,7 @@
 #include "planning/executor.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
+#include "std_srvs/srv/set_bool.hpp"
 #include "tf2/LinearMath/Quaternion.hpp"
 #include "tf2_ros/static_transform_broadcaster.hpp"
 
@@ -83,6 +85,8 @@ protected:
     client_.reset();
     nav_srv_.reset();
     arm_srv_.reset();
+    rack_srv_.reset();
+    wrist_srv_.reset();
     server_.reset();
     std::filesystem::remove_all(dir_);
   }
@@ -92,7 +96,7 @@ protected:
   {
     const std::string cargo_file = (dir_ / "cargo.yaml").string();
     if (!gripper_puck.empty()) {
-      Cargo c({"S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12"});
+      Cargo c({"S1", "S2", "S3", "S8", "S11", "S6", "S12", "S7", "S10", "S5", "S9", "S4"});   // 실행기 기본 cargo_slots 와 같은 순서 (파일 칸 순서가 다르면 복원 실패)
       CargoItem it;
       it.puck_id = gripper_puck;
       ASSERT_TRUE(c.on_pick(it));
@@ -108,12 +112,24 @@ protected:
     o.parameter_overrides({
       {"require_scan", false}, {"require_detections", false}, {"require_localization", false},
       {"require_motion_mode", false}, {"lifecycle_services", std::vector<std::string>{}},
-      {"cargo_file", cargo_file}, {"cargo_restore", !gripper_puck.empty()}, {"server_wait_s", server_wait_s}});
+      {"cargo_file", cargo_file}, {"cargo_restore", !gripper_puck.empty()}, {"server_wait_s", server_wait_s},
+      {"rack_enable_service", ns_ + "/rack_enable"}, {"rack_wait_s", 0.3},
+      {"wrist_enable_service", ns_ + "/wrist_enable"}});
     client_ = std::make_shared<rclcpp::Node>("exec_test_client", ns_, o);
     server_ = std::make_shared<rclcpp::Node>("exec_test_server", ns_);
     exec_ = std::make_unique<Executor>(*client_);
     nav_srv_ = std::make_unique<FakeServer<Nav>>(server_, ns_ + "/navigate_to_pose");
     arm_srv_ = std::make_unique<FakeServer<ArmTask>>(server_, ns_ + "/arm_task");
+    rack_srv_ = server_->create_service<std_srvs::srv::SetBool>(ns_ + "/rack_enable",
+      [this](const std::shared_ptr<std_srvs::srv::SetBool::Request> q, std::shared_ptr<std_srvs::srv::SetBool::Response> r) {
+        rack_calls_.push_back(q->data);
+        r->success = true;
+      });
+    wrist_srv_ = server_->create_service<std_srvs::srv::SetBool>(ns_ + "/wrist_enable",
+      [this](const std::shared_ptr<std_srvs::srv::SetBool::Request> q, std::shared_ptr<std_srvs::srv::SetBool::Response> r) {
+        wrist_calls_.push_back(q->data);
+        r->success = true;
+      });
     client_ex_ = std::make_unique<rclcpp::executors::SingleThreadedExecutor>();
     server_ex_ = std::make_unique<rclcpp::executors::SingleThreadedExecutor>();
     client_ex_->add_node(client_);
@@ -212,6 +228,10 @@ protected:
   std::unique_ptr<Executor> exec_;
   std::unique_ptr<FakeServer<Nav>> nav_srv_;
   std::unique_ptr<FakeServer<ArmTask>> arm_srv_;
+  rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr rack_srv_;
+  std::vector<bool> rack_calls_;   // 적재함 판독 켜기 요청 순서
+  rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr wrist_srv_;
+  std::vector<bool> wrist_calls_;  // 손목 검출 켜기 요청 순서
 };
 
 }  // namespace
@@ -442,4 +462,52 @@ int main(int argc, char ** argv)
   const int r = RUN_ALL_TESTS();
   rclcpp::shutdown();
   return r;
+}
+
+// 적재함 판독은 LOOK_RACK 동안만: 처음 끔 → 팔 목표 보낼 때 켬 → 측정 기다리기 (못 받음) 끝나면 끔
+TEST_F(ExecutorActions, RackReaderOnlyDuringLookRack)
+{
+  start("P1");
+  Step s;
+  s.type = StepType::Arm;
+  s.arm_task = kArmLookRack;
+  s.puck_id = "P1";
+  s.slot = "S1";
+  s.name = "arm:LOOK_RACK S1";
+  exec_->set_steps({s});
+  // 단계 시작 전 = 끔 (perception 이 켜져 있어도 맞춤)
+  ASSERT_TRUE(spin_until([&] {return rack_calls_.size() == 1;}, [&] {exec_->update(now());}));
+  EXPECT_FALSE(rack_calls_[0]);
+  ASSERT_TRUE(spin_until([&] {return !arm_srv_->goals.empty();}, [&] {exec_->update(now()); exec_->step(now());}));
+  ASSERT_TRUE(spin_until([&] {return rack_calls_.size() == 2;}, [&] {exec_->update(now());}));
+  EXPECT_TRUE(rack_calls_[1]);
+  arm_succeed_without_step(0);
+  ExecEvent ev;
+  ASSERT_TRUE(spin_until([&] {return ev.kind == ExecEvent::Kind::StepOk;},
+    [&] {exec_->update(now()); ev = exec_->step(now());}));
+  ASSERT_TRUE(spin_until([&] {return rack_calls_.size() == 3;}, [&] {exec_->update(now());}));
+  EXPECT_FALSE(rack_calls_[2]);
+  // 이미 끔 → 더 안 부름
+  for (int i = 0; i < 50; ++i) {exec_->update(now()); spin(); std::this_thread::sleep_for(std::chrono::milliseconds(5));}
+  EXPECT_EQ(rack_calls_.size(), 3u);
+}
+
+// 손목 검출은 주행 목표 진행 중에만 끔: 처음 켬 (지금 상태로 맞춤) → Nav2 목표 보내면 끔 → 도착하면 켬 → 그대로면 더 안 부름
+TEST_F(ExecutorActions, WristOffOnlyWhileNavigating)
+{
+  start();
+  exec_->set_steps({go(1.0)});
+  ASSERT_TRUE(spin_until([&] {return wrist_calls_.size() == 1;}, [&] {exec_->update(now());}));
+  EXPECT_TRUE(wrist_calls_[0]);
+  ASSERT_TRUE(spin_until([&] {return !nav_srv_->goals.empty();}, [&] {exec_->update(now()); exec_->step(now());}));
+  ASSERT_TRUE(spin_until([&] {return wrist_calls_.size() == 2;}, [&] {exec_->update(now());}));
+  EXPECT_FALSE(wrist_calls_[1]);
+  nav_srv_->goals[0]->succeed(std::make_shared<Nav::Result>());
+  ExecEvent ev;
+  ASSERT_TRUE(spin_until([&] {return ev.kind == ExecEvent::Kind::StepOk;},
+    [&] {exec_->update(now()); ev = exec_->step(now());}));
+  ASSERT_TRUE(spin_until([&] {return wrist_calls_.size() == 3;}, [&] {exec_->update(now());}));
+  EXPECT_TRUE(wrist_calls_[2]);
+  for (int i = 0; i < 50; ++i) {exec_->update(now()); spin(); std::this_thread::sleep_for(std::chrono::milliseconds(5));}
+  EXPECT_EQ(wrist_calls_.size(), 3u);
 }

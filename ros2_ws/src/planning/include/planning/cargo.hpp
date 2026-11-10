@@ -19,8 +19,8 @@
 // note
 //   - 기록과 맞지 않는 전환은 false 로 거부, 예: 빈 그리퍼로 STORE → 실행기가 불확실 표시 + FAULT (inventory_policy apply_arm_success)
 //   - 칸 이름은 control 과 같은 이름을 씀, 팔이 닿는 칸만 등록. 기본 S1–S12 = URDF rack_cell_S*, 팔에서 먼 칸부터
-//   - 빈 칸은 목록 순서대로 채움 (free_slot) → S1 = 가장 먼 칸부터
-//   - 꺼낼 칸은 운반 계획 (transfer_planner) 이 정함: 목록 뒤 = 가까운 칸부터
+//   - 빈 칸은 목록 순서대로 채움 (free_slot) → 목록 = cargo_slots (뒷줄부터)
+//   - 꺼낼 칸은 운반 계획 (transfer_planner) 이 정함: 목록 뒤 = 나중에 넣은 칸부터
 //   - 칸 제약 (set_rules): 넣기 · 빼기 전에 비어 있어야 하는 칸 (config/rack_cells.yaml rack_constraints, 팔 경로가 옆 칸 퍽에 닿음)
 //       free_slot 은 제약을 지키는 첫 빈 칸, 그런 칸이 없으면 첫 빈 칸 (막지 않음). 빼기는 retrieve_ok 로 고름
 

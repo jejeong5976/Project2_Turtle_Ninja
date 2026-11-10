@@ -38,6 +38,14 @@ bool load_standup_table(const std::string & file, std::vector<StandupPath> & out
 int nearest_standup(const std::vector<StandupPath> & table, double x, double y, double axis_deg, double side,
   double & dx, double & dy, double & dyaw_deg, double step_x = 0.0075, double step_y = 0.01, double step_deg = 7.5);
 
+// 먼 · 옆 퍽 붙은 선 퍽 집기 표 (config/farpick/farpick_paths_ok75_nbr_<방향>.txt, 11-10 강화학습 — 같은 형식, load_standup_table 로 읽음)
+//   이웃 퍽 방향 [°, base_link] → 가장 가까운 45° 표 이름 (000 … 315), 이웃 없으면 nbr_none
+std::string farpick_table_name(bool has_nbr, double nbr_dir_deg);
+
+// nearest_standup 과 같되 축 주기 period_deg (네모 90, 0 이하 = 축 무시 — 원기둥 · 면 모르는 네모)
+int nearest_farpick(const std::vector<StandupPath> & table, double x, double y, double axis_deg, double side,
+  double & dx, double & dy, double & dyaw_deg, double period_deg, double step_x = 0.0075, double step_y = 0.01, double step_deg = 7.5);
+
 // 표 자세 하나를 실물에 맞게 옮김 (control_master 세우기 · 시뮬 재생 시험이 같은 계산)
 //   1) 표 칸 퍽 (from) → 실제 퍽 (to): 수평 이동 + 퍽 둘레 da 회전 (손끝 · 접근축 · 닫힘축)
 //   2) scale 이 켜진 점 (쥔 뒤 경로) 은 anchor (쥐는 손끝) 에서 수평 거리를 reach_scale 배로 (덜 뻗기)

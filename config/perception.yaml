@@ -63,23 +63,27 @@ perception:
       reset_rot_deg: 2.0
       depth_scale: 0.001                 # 16UC1 깊이 단위 → m
       min_rise_m: 0.0                    # 윗면이 둘레 낮은 면보다 이만큼도 안 솟은 분할은 퍽 아님 (실물: 상자 로고를 green 퍽으로). 0 = 안 봄.
+      tag_centre: false                  # 11-10: 퍽 중심을 모양으로 (태그는 ID 만) — 태그가 비뚤게 붙은 퍽
                                          #   0.012 로 켜기 전에 퍽이 붙어 꽉 찬 박스에서 가운데 퍽이 안 빠지는지 확인 (둘레가 옆 퍽 윗면뿐이면 빠짐)
       publish_debug: false               # true 면 /perception/wrist_debug_image
       color_topic: /camera/camera/color/image_raw
       depth_topic: /camera/camera/aligned_depth_to_color/image_raw
       info_topic: /camera/camera/color/camera_info
       image_qos: reliable                # reliable | best_effort. 컬러 · 깊이 구독, best_effort 면 장이 빠짐
+      image_qos_depth: 2                 # 보관 장 수. 처리가 카메라보다 느릴 때 쌓인 옛 장 대신 최근 장 (5 면 약 0.2 s 늦은 장)
+      tag_roi: true                      # 퍽 태그를 분할 상자 둘레만 검출 (false = 전체 영상, 장당 약 17 ms Jetson)
+      tag_roi_pad_px: 24                 #   상자 둘레 여유 [px]
       drift_correct: true                # 손목 카메라가 손목에서 돈 만큼 (manipulation camera_drift_node, 홈 사진) 박스 윗면 · 적재함 칸 측정과 퍽 위쪽 방향을 바로잡음
       drift_topic: /wrist_cam/drift      #   퍽 위치는 카메라 좌표로 내고 control_master 가 같은 값으로 되돌림 (두 번 안 곱함)
 
     rack:                                # 적재함 컵 바닥 AprilTag (손목 컬러만, 깊이 안 씀) → /perception/rack/cells
-      enabled: true                      # ~/rack/enable 로 켜고 끔
+      enabled: false                     # ~/rack/enable 로 켜고 끔. planning 이 LOOK_RACK 동안만 켬 (늘 켜면 손목 콜백에서 10 Hz 태그 검출)
       frame: base_link                   # 출력 frame_id. 이 프레임 ← wrist.frame_id TF 로 바꿈 (z = 위)
       # 칸 S1 … S12 의 컵 바닥 태그 ID (실물 붙인 그대로, 위치 순서라 S 번호 순서와 다름)
       #   S1 20 · S2 21 · S3 22 · S4 31 · S5 26 · S6 24 · S7 29 · S8 23 · S9 30 · S10 27 · S11 25 · S12 28
       #   태그를 다시 붙이면 여기만 고침. 퍽 0–11 · 장소 12–14 와 겹치면 안 됨
       cell_tag_ids: [20, 21, 22, 31, 26, 24, 29, 23, 30, 27, 25, 28]
-      tag_side_m: 0.026                  # 검은 테두리 한 변. 인쇄 후 자로 잰 값으로 바꿀 것
+      tag_side_m: 0.0246                 # 검은 테두리 한 변. 인쇄 후 자로 잰 값으로 바꿀 것
       max_view_deg: 25.0                 # 태그 법선 ↔ 시선 각도 한계. 컵 벽 28 mm 때문에 실제로는 약 8° 넘으면 태그가 가려짐
       max_tilt_deg: 10.0                 # 태그 법선 ↔ frame z 각도 한계 (PnP 두 해 중 틀린 해 · 들뜬 태그 거름)
       max_reproj_px: 1.5                 # 모서리 재투영 오차 RMS 한계

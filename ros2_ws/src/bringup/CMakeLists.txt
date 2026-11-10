@@ -9,6 +9,7 @@ install(DIRECTORY "${REPOSITORY_CONFIG_DIR}/"
   DESTINATION share/${PROJECT_NAME}/config
   FILES_MATCHING PATTERN "*.yaml"
   PATTERN "standup_paths.txt"
+  PATTERN "farpick_paths_*.txt"   # 먼 퍽 강화학습 표 (control_master farpick_dir = config/farpick)
   PATTERN "camera_home_ref.png"   # 손목 카메라 기준 홈 사진 (camera_drift_node)   # 누운 퍽 세우기 경로 표 (control_master stand_lying)
   PATTERN "*.npz"   # RL 주행 정책 (config/rl, navigation nav2.launch.py local_planner:=rl)
   PATTERN "*.json"
