@@ -275,6 +275,11 @@ std::optional<SolverResult> solve_transfer(
         } else {
           const int p = node_place(v);
           if (carried == 0 || st.slots[p] == 0) {continue;}
+          bool before_open = false;   // 순서 강제: 앞 순번 장소가 아직 안 끝났으면 못 감
+          for (int q = 0; q < kNumPlaces && in.place_rank[p] >= 0; ++q) {
+            if (in.place_rank[q] >= 0 && in.place_rank[q] < in.place_rank[p] && st.slots[q] > 0) {before_open = true;}
+          }
+          if (before_open) {continue;}
           bool any = false;
           for (int kk = 0; kk < kNumKinds && !any; ++kk) {
             any = st.cargo[kk] > 0 && fits(static_cast<PuckKind>(kk), in.place_group[p], s_box);
