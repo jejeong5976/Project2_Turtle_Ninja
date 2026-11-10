@@ -13,7 +13,10 @@
 //   - mission_core 라이브러리, mission_manager 가 부름. 시험 test_transfer
 // note
 //   - 칸 이름은 Cargo 기록을 그대로 따라 계산함 = 어느 칸에 몇 번 퍽이 있는지
-//   - 넣기 = 목록 앞 빈 칸 (S1 = 팔에서 가장 먼 칸), 꺼내기 = 그 종류가 든 칸 중 목록 뒤 (가까운 칸) 먼저
+//   - 넣기 = 목록 앞 빈 칸 (cargo_slots 순서 = 뒷줄부터), 꺼내기 = 그 장소 그룹에 맞는 퍽이 든 칸 중 목록 뒤 (나중에 넣은 칸) 먼저
+//   - 칸 제약 (넣기 · 빼기 전에 비어야 할 칸) 을 지키게 퍽 · 칸 · 장소 안 순서를 DFS 로 고름. 안 되면 장소 방문 순서 · Y 모양을
+//     바꾼 다른 해, 그래도 안 되면 막는 퍽을 빈 칸으로 옮기기 (1 → 2 번), 끝까지 없으면 옛 방식 (막지 않음)
+//   - 쥔 퍽은 출발 전에 지금 자리에서 넣음 (재계획 때 그리퍼에 퍽이 남은 경우)
 //   - 박스에 남은 퍽이 max_remaining 기본 4 개보다 많으면 정확해 대신 대체 해: 가까운 박스 순 수집 → 배달만 정확해
 
 #pragma once
@@ -58,7 +61,7 @@ std::optional<TransferPlan> plan_transfer(
 
 // 수집 정차 1곳의 팔 동작 (LOOK 은 정차 시작 때 노드가 이미 함)
 //   at_box : 이 박스에서 본 퍽 (보통 2개, 집을 순서대로)
-//   퍽마다 PICK → STORE (그리퍼가 이미 차 있으면 그것부터 STORE). 끝나면 그리퍼 빔 = 바로 주행 가능
+//   그리퍼가 이미 차 있으면 그것부터 STORE (박스에 남은 퍽이 없어도) → 퍽마다 PICK → STORE. 끝나면 그리퍼 빔 = 바로 주행 가능
 //   빈 칸이 모자라면 빈 목록 + error
 std::vector<ArmAction> collect_box_actions(
   const std::vector<TransferPuck> & at_box, const Cargo & cargo, std::string * error = nullptr);

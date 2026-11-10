@@ -50,6 +50,9 @@ struct SolverInput
   std::string yellow_shape;                // "" = 아직 안 정함. Y 장소에 하나라도 놓았으면 그 모양 ("cylinder" | "box")
   // true = 퍽이 칸보다 많아도 됨 (재계획: 일부 장소만 채울 때). 남는 퍽은 그대로 두거나 실은 채로 끝남
   bool allow_leftover = false;
+  // 장소 방문 순서 강제 (−1 = 자유). place_rank[p] = 순번: 순번이 앞선 장소를 다 채우기 전에는 p 로 이동 안 함
+  //   (적재함 칸 제약 때문에 다른 해가 필요할 때 transfer_planner 가 씀)
+  std::array<int, kNumPlaces> place_rank{{-1, -1, -1}};
 };
 
 enum class SolverAct : uint8_t { Move, Pick, Store, Retrieve, Place };

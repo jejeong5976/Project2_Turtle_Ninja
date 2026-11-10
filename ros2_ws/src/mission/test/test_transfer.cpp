@@ -456,12 +456,12 @@ TEST(Transfer, RetrievesNearestSlotFirst)
   EXPECT_EQ(n, 12);
 }
 
-// 실물 채우는 순서 + 칸 제약 (planning.yaml): 다 실은 뒤 배달할 때 S12 가 찬 채 S7 · S5 가 찬 채 S10 · S2 가 찬 채 S1 을 안 뺌
+// 채우는 순서 + 칸 제약 (planning.yaml): 다 실은 뒤 배달할 때 S12 가 찬 채 S7 · S5 가 찬 채 S10 · S2 가 찬 채 S1 을 안 뺌
 //   (같은 장소 안 순서 바꾸기 → 그래도 걸리면 막는 퍽을 빈 칸으로 옮김: RETRIEVE → STORE)
 TEST(Transfer, RetrieveKeepsRackRules)
 {
   const auto all = q1_pucks();
-  Cargo cargo({"S12", "S7", "S9", "S4", "S3", "S8", "S11", "S6", "S10", "S5", "S1", "S2"});
+  Cargo cargo({"S1", "S2", "S3", "S8", "S11", "S6", "S12", "S7", "S10", "S5", "S9", "S4"});
   cargo.set_rules({{"S1", "S2"}, {"S9", "S4"}, {"S10", "S5"}, {"S11", "S6"}, {"S12", "S7"}}, {{"S1", "S2"}, {"S7", "S12"}, {"S10", "S5"}});
   for (const auto & p : all) {
     const CargoItem it{p.id, kind_color(p.kind), kind_shape(p.kind), "", false};
@@ -1147,4 +1147,160 @@ TEST(PlaceBox, PlaceOffsetFollowsViewDirection)
   const auto z2 = place_offset_map(a.places[2].view_dir, {0.0, 0.0});
   EXPECT_DOUBLE_EQ(z2[0], 0.0);
   EXPECT_DOUBLE_EQ(z2[1], 0.0);
+}
+
+// ---------------------------------------------------------------- 적재함 칸 제약 · 쥔 퍽 (전수 시험에서 찾은 경우)
+namespace
+{
+
+// 실물 넣는 순서 · 칸 제약 (config/planning.yaml) 을 건 적재함
+Cargo rack_with_rules()
+{
+  Cargo c({"S1", "S2", "S3", "S8", "S11", "S6", "S12", "S7", "S10", "S5", "S9", "S4"});
+  c.set_rules({{"S1", "S2"}, {"S9", "S4"}, {"S10", "S5"}, {"S11", "S6"}, {"S12", "S7"}}, {{"S1", "S2"}, {"S7", "S12"}, {"S10", "S5"}});
+  return c;
+}
+
+// "GbGcRc…" (박스 1 부터 2 개씩, 가까운 퍽 먼저) → 퍽 12 개
+std::vector<TransferPuck> pucks_from(const std::string & k)
+{
+  std::vector<TransferPuck> v;
+  for (int i = 0; i < 12; ++i) {
+    const bool red = k[2 * i] == 'R', box = k[2 * i + 1] == 'b';
+    v.push_back(TransferPuck{std::to_string(i), static_cast<PuckKind>((red ? 0 : 2) + (box ? 1 : 0)), i / 2 + 1});
+  }
+  return v;
+}
+
+struct RackRun
+{
+  int violations = 0;   // 넣기 · 빼기 전에 비어야 할 칸이 찬 채 한 동작 수
+  int relocs = 0;       // 같은 정차에서 RETRIEVE 바로 뒤 STORE (막는 퍽 옮기기)
+  int placed = 0;
+};
+
+// 노드 흐름 그대로: collect_order 앞 5 곳 collect_box_actions → 마지막 박스에서 plan_transfer → 끝까지 재생하며 칸 제약 검사
+RackRun run_rack(const std::string & kinds, const SignalCounts & sc, DiceOrder order)
+{
+  RackRun out;
+  TransferCosts costs;
+  EXPECT_TRUE(load_transfer_costs(TEST_TRAVEL_TABLE, costs));
+  const auto all = pucks_from(kinds);
+  const std::vector<int> collect{1, 2, 4, 5, 6, 3};
+  Cargo cargo = rack_with_rules();
+  auto apply = [&](const ArmAction & a) {
+      if (a.op == ArmOp::Store && !cargo.store_ok(a.slot)) {++out.violations;}
+      if (a.op == ArmOp::Retrieve && !cargo.retrieve_ok(a.slot)) {++out.violations;}
+      if (a.op == ArmOp::Pick) {EXPECT_TRUE(cargo.on_pick({a.puck_id, a.color, a.shape, "", false}));}
+      if (a.op == ArmOp::Store) {EXPECT_TRUE(cargo.on_store(a.slot));}
+      if (a.op == ArmOp::Retrieve) {EXPECT_TRUE(cargo.on_retrieve(a.slot));}
+      if (a.op == ArmOp::Place) {EXPECT_TRUE(cargo.on_place().has_value()); ++out.placed;}
+    };
+  for (std::size_t i = 0; i + 1 < collect.size(); ++i) {
+    std::vector<TransferPuck> at;
+    for (const auto & p : all) {if (p.box == collect[i]) {at.push_back(p);}}
+    for (const auto & a : collect_box_actions(at, cargo)) {apply(a);}
+  }
+  SolverInput in;
+  in.position = collect.back();
+  in.stopped = true;
+  for (const auto & p : all) {if (p.box == collect.back()) {in.on_boxes.push_back(p);}}
+  EXPECT_TRUE(fill_carried(cargo, in));
+  const auto lay = dice_layout(sc, order);
+  EXPECT_TRUE(lay.has_value());
+  for (int i = 0; i < kNumPlaces; ++i) {
+    in.place_group[i] = lay->places[i].group;
+    in.slots_left[i] = lay->places[i].pips;
+  }
+  std::string err;
+  const auto plan = plan_transfer(in, costs, cargo, {{0, 0, 0}}, &err);
+  EXPECT_TRUE(plan.has_value()) << err;
+  if (!plan) {return out;}
+  check_plan_rules(*plan, all, in);
+  for (const auto & s : plan->stops) {
+    for (std::size_t i = 0; i < s.actions.size(); ++i) {
+      if (i + 1 < s.actions.size() && s.actions[i].op == ArmOp::Retrieve && s.actions[i + 1].op == ArmOp::Store) {++out.relocs;}
+      apply(s.actions[i]);
+    }
+  }
+  return out;
+}
+
+}  // namespace
+
+TEST(RackRules, PicksOtherPuckOfSameGroup)
+{
+  // L3 G3 에 꼭 갈 초록 사각 S1 퍽 0 · S7 퍽 5 가 S2 · S12 에 막힘 (옛 펼치기 = 같은 종류 뒤 칸만 → 막힌 채 뺌)
+  //   → G 의 초록 원기둥으로 S2 퍽 4 를 쓰고 L2 를 먼저 가면 옮기기 없이 됨
+  const auto r = run_rack("GbGcGcRbGcGbGcRbRcGcRcRc", SignalCounts{3, 6, 3}, DiceOrder::Descending);
+  EXPECT_EQ(r.violations, 0);
+  EXPECT_EQ(r.relocs, 0);
+  EXPECT_EQ(r.placed, 12);
+}
+
+TEST(RackRules, CycleNeedsOneRelocation)
+{
+  // S7(R) ← S12(Y) = L1 먼저, S10(Y) ← S5(R) = L2 먼저 → 방문 순서로는 못 풂, 막는 퍽 한 번 옮김
+  const auto r = run_rack("GcGbGbGbRcRcRbRbGbRcRcRc", SignalCounts{5, 6, 1}, DiceOrder::Descending);
+  EXPECT_EQ(r.violations, 0);
+  EXPECT_EQ(r.relocs, 1);
+  EXPECT_EQ(r.placed, 12);
+}
+
+TEST(RackRules, CollectStoresGripperWithNoPucksLeft)
+{
+  // 박스 마지막 퍽 STORE 가 거절된 뒤 다시 계획: 박스에 남은 퍽이 없어도 쥔 퍽을 넣어야 출발 가능
+  Cargo cargo = rack_with_rules();
+  ASSERT_TRUE(cargo.on_pick({"3", "red", "box", "", false}));
+  std::string err;
+  const auto acts = collect_box_actions({}, cargo, &err);
+  ASSERT_EQ(acts.size(), 1u) << err;
+  EXPECT_EQ(acts[0].op, ArmOp::Store);
+  EXPECT_EQ(acts[0].puck_id, "3");
+}
+
+TEST(RackRules, ReplanStoresGripperBeforeMoving)
+{
+  // 배달 중 PLACE 거절 → 그 장소 버림, 퍽은 그리퍼에 남음 → 서 있지 않은 상태 (stopped=false) 로 재계획
+  //   정확해 (박스 남은 퍽 ≤ 4) · 대체 해 (> 4) 둘 다 출발 전에 지금 자리에서 넣어야 함
+  for (const int left_on_boxes : {0, 6}) {
+    const auto all = q1_pucks();
+    Cargo cargo = rack_with_rules();
+    SolverInput in;
+    in.position = place_node(1);
+    in.stopped = false;
+    in.place_group = {{'Y', 'R', 'G'}};
+    in.slots_left = {{2, 0, 6}};   // L2 버림
+    in.allow_leftover = true;
+    for (const auto & p : all) {
+      const CargoItem it{p.id, kind_color(p.kind), kind_shape(p.kind), "", false};
+      if (std::stoi(p.id) < 12 - left_on_boxes) {
+        if (p.id == "0") {continue;}
+        ASSERT_TRUE(cargo.on_pick(it));
+        ASSERT_TRUE(cargo.on_store(*cargo.free_slot_for(it)));
+      } else {
+        in.on_boxes.push_back(p);
+      }
+    }
+    ASSERT_TRUE(cargo.on_pick({"0", kind_color(all[0].kind), kind_shape(all[0].kind), "", false}));   // 쥔 퍽 (빨강)
+    ASSERT_TRUE(fill_carried(cargo, in));
+    std::string err;
+    const auto plan = plan_transfer(in, test_costs(), cargo, {{0, 0, 0}}, &err);
+    ASSERT_TRUE(plan.has_value()) << left_on_boxes << ": " << err;
+    ASSERT_FALSE(plan->stops.empty());
+    const auto & first = plan->stops.front();
+    EXPECT_FALSE(first.move) << left_on_boxes;
+    EXPECT_EQ(first.node, place_node(1));
+    ASSERT_FALSE(first.actions.empty());
+    EXPECT_EQ(first.actions.front().op, ArmOp::Store);
+    EXPECT_EQ(first.actions.front().puck_id, "0");
+    bool holding = true;
+    for (const auto & s : plan->stops) {
+      if (s.move) {EXPECT_FALSE(holding) << "퍽 쥔 채 이동: " << s.name;}
+      for (const auto & a : s.actions) {
+        if (a.op == ArmOp::Pick || a.op == ArmOp::Retrieve) {holding = true;}
+        if (a.op == ArmOp::Store || a.op == ArmOp::Place) {holding = false;}
+      }
+    }
+  }
 }

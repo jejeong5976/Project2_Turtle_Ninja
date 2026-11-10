@@ -138,6 +138,13 @@ struct Stop
 - 칸 순서: `order_far_first()` (보는 사람 = 로봇 쪽에서 먼 칸부터)
 - 꺼내기(RETRIEVE) 는 장소 정차 안에서 바로 놓을 퍽만 → 다음 장소 퍽을 그리퍼에 쥐고 주행하지 않음
 - **퍽 쥔 채 주행 안 함**: 이동은 그리퍼가 빌 때만, 박스에서 집은 퍽은 전부 STORE (마지막 박스 퍽도). control 이 쥔 채 DRIVE · HOME 을 안 함
+  - 재계획 때 그리퍼에 퍽이 남았으면 (PLACE · STORE 거절 뒤) 출발 전에 지금 자리에서 STORE (`collect_box_actions` 는 박스에 남은 퍽이 없어도 쥔 퍽부터 넣음)
+- **적재함 칸 제약** (`config/planning.yaml` `rack_store_needs_empty` · `rack_retrieve_needs_empty`): solver 는 종류 단위로만 풀고, 펼칠 때 칸을 정함
+  1. 같은 해에서 퍽 · 칸 · 장소 안 꺼내는 순서를 DFS 로 고름 (그 장소 그룹에 맞는 퍽이면 solver 가 고른 종류와 달라도 됨, 같은 조건이면 목록 뒤 칸 먼저)
+  2. 안 되면 장소 방문 순서 6 가지 (`SolverInput.place_rank`) × Y 모양으로 다시 풀어 되는 해 중 가장 빠른 것
+  3. 그래도 안 되면 막는 퍽을 빈 칸으로 옮기기 1 → 2 번 허용 (1 번에 RETRIEVE + STORE 시간)
+  4. 끝까지 없으면 옛 방식: 같은 종류 뒤 칸, 막는 퍽 옮기기, 옮길 칸이 없으면 막지 않음
+  - 전수 시험 (정상 흐름 120 만 경우): 위반 1.6 % → 0, 옮기기 쓴 계획 15 % → 0.02 %. 남는 위반 = 실패가 겹쳐 지키는 빈 칸이 없는 경우뿐 (임시 칸 T 로 풀 수 있음, 미반영)
 - Place 목표 계산은 F9 (태그 기준 칸 좌표 → base_link) 담당. transfer_planner 는 (장소, 칸 번호) 만 넘김
 - 장소마다 마지막 Place 뒤 `Look` 1회 (그 장소 실측 기록, 재검증과 별개 증거)
 
@@ -147,7 +154,7 @@ struct Stop
 transfer:
   collect_order: [1, 2, 4, 5, 6, 3]   # 시작 박스 방문 순서
   defer_boxes: []                     # C안이면 [3, 6] (Look 만 하고 배달 때 집음)
-  cargo_slots: [S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12]   # URDF rack_cell_S* 이름, 먼 칸부터 채움
+  cargo_slots: [S1, S2, S3, S8, S11, S6, S12, S7, S10, S5, S9, S4]   # URDF rack_cell_S* 이름, 뒷줄부터 채움 (같은 줄은 넣기 제약 순서)
   travel_table: maps/dice_travel_times.yaml   # 노드 쌍 이동 시간 [s]
   stop_s: 20.0
   look_s: 5.0
