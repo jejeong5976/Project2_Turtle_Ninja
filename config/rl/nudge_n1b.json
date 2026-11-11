@@ -1,0 +1,61 @@
+{
+ "num_envs": 256,
+ "seed": 1,
+ "task": {
+  "tasks": [
+   "store",
+   "retrieve"
+  ],
+  "dice_rows": [
+   -1,
+   0
+  ],
+  "occupied_min": 0,
+  "occupied_max_start": 3,
+  "occupied_max_end": 11,
+  "curriculum_success": 0.6,
+  "curriculum_window": 400
+ },
+ "reward": {
+  "contact_eps": 0.001,
+  "collision": -1.0,
+  "near_dist": 0.005,
+  "near": -0.2,
+  "severe_depth": 0.003,
+  "stored_move": 0.01,
+  "stored_tilt_deg": 20.0,
+  "stand_depth": 0.001,
+  "self_force": 0.5,
+  "terminate_collision": -5.0,
+  "drop": -5.0,
+  "own_cup_scrape": -0.05,
+  "reach": 2.0,
+  "grasp": 1.0,
+  "carry": 3.0,
+  "place": 10.0,
+  "place_xy_cell": 0.004,
+  "place_xy_box": 0.01,
+  "place_tilt_deg": 5.0,
+  "home": 2.0,
+  "home_tol": 0.05,
+  "home_shaping": 0.5,
+  "action_rate": -0.01,
+  "joint_vel": -0.001,
+  "time": -0.005
+ },
+ "train": {
+  "num_steps_per_env": 32,
+  "max_iterations": 100,
+  "save_interval": 100,
+  "experiment_name": "training2_nudge",
+  "run_name": "n1b"
+ },
+ "max_joint_speed": 0.7,
+ "point_spacing": 0.005,
+ "checkpoint": "/home/haeminkim/바탕화면/git/TIL/classes/PhysicalAi/projects/project-2/archive/manipulator/training2/logs/20261111_210322_n1b/model_199.pt",
+ "obs_dim": 86,
+ "act_dim": 6,
+ "episode_length_s": 4.0,
+ "policy_hz": 30,
+ "npz_vs_torch_max_diff": 8.344650268554688e-07
+}
