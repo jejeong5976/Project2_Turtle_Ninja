@@ -43,6 +43,7 @@ mission_manager:
     barcode_look: true                # READ_BARCODE = 이동 → 팔 LOOK_BARCODE (손목으로 바코드 정면) → 읽기 → 팔 HOME
     barcode_enable_service: /perception/barcode/enable   # READ_BARCODE 동안만 perception 바코드 판독 켬 (std_srvs/SetBool). "" 면 안 부름
     wide_enable_service: /perception/wide/enable         # 신호 기록 Done 이면 perception 광각 끔 (뒤 단계는 손목만), reset_signal 이면 다시 켬. "" 면 안 부름
+    wide_capture_service: /wide_cam/set_capture     # 같은 때 광각 usb_cam 캡처도 멈춤 (MJPG 디코딩 CPU 약 40 %), reset_signal 이면 다시 켬. "" 면 안 부름
     signal_wait_s: 90.0               # OBSERVE_SIGNAL 최대 대기 (넘으면 불완전으로 진행, 색 추정 안 함)
     signal_retries: 0                 # 기록이 불완전하면 비우고 다시 기록하는 횟수. 발제 p.6: 팀 오류로 신호를 다시 안 보여 줌 → 0 = 실제 기록을 signal.json 에 남기고 정지 · 복귀 (전 2)
     signal_expected: 12               # 점멸 수
@@ -87,7 +88,7 @@ mission_manager:
     loc_ready_yaw_std_deg: 10.0
     loc_lost_xy_std_m: 0.30           # amcl 만: 실행 중 상실 판단
     loc_lost_yaw_std_deg: 30.0
-    loc_fault_s: 1.0                  # 위치 추정 상실이 이만큼 이어지면 FAULT
+    loc_fault_s: 5.0                  # 위치 추정 상실이 이만큼 이어지면 FAULT
     monitor_recover_s: 2.0            # scan · 검출 끊김: 회복이 이만큼 유지되면 해제
     monitor_max_recoveries: 2         # 자동 해제 최대 횟수 (start 마다 초기화)
     monitor_fault_s: 10.0             # 이만큼 회복 못 하면 FAULT
@@ -106,13 +107,13 @@ mission_manager:
     # 채우는 순서 = 뒷줄부터 (base_link x −0.102 S1 · S2 → −0.042 S3 · S8 → +0.018 → +0.078). dice 는 11 칸 이상 필요
     #   같은 줄 안은 넣기 제약 (rack_store_needs_empty) 순서: 안쪽 칸 (S11 · S12 · S10 · S9) 을 바깥 칸 (S6 · S7 · S5 · S4) 보다 먼저, S1 은 S2 보다 먼저
     #   번호 순 (S1 → S12) 은 S4 → S9 · S5 → S10 등 넣기 제약을 어김 (S10 을 넣을 때 S5 퍽에 손가락이 닿음, pose_safety). 빼기 제약은 config/rack_cells.yaml
-    cargo_slots: [S1, S2, S3, S8, S11, S6, S12, S7, S10, S5, S9, S4]   # URDF rack_cell_S* 이름
-    rack_store_needs_empty: ["S1:S2", "S9:S4", "S10:S5", "S11:S6", "S12:S7"]   # 넣기 전에 비어야 할 칸 (config/rack_cells.yaml rack_constraints). 첫 빈 칸이 어기면 다음 빈 칸
-    rack_retrieve_needs_empty: ["S1:S2", "S7:S12", "S10:S5"]                # 빼기 전에 비어야 할 칸 (S7 ← S12 실제로 닿음 −13 mm). 같은 종류 중 지키는 칸 먼저
+    cargo_slots: ["S1", "S2", "S8", "S3", "S11", "S6", "S12", "S7", "S10", "S5", "S9", "S4"]   # URDF rack_cell_S* 이름
+    rack_store_needs_empty: ["S10:S5"]   # 넣기 전에 비어야 할 칸 (config/rack_cells.yaml rack_constraints). 첫 빈 칸이 어기면 다음 빈 칸
+    rack_retrieve_needs_empty: ["S7:S12", "S10:S5", "S11:S10", "S11:S6", "S11:S5"]                # 빼기 전에 비어야 할 칸 (S7 ← S12 실제로 닿음 −13 mm). 같은 종류 중 지키는 칸 먼저
     # 적재함 칸 측정: STORE 앞에 LOOK_RACK (퍽 쥔 채 그 칸 관찰 자세, 칸마다 다름 = control 표)
     #   → perception /perception/rack/cells 의 그 칸 (base_link 칸 바닥 중심 + yaw) → STORE target
     #   LOOK_RACK 거절 (control 구현 전) · 측정 못 받음 → STORE target 빈 프레임 (= 녹화 경로 그대로)
-    rack_look: true
+    rack_look: false
     rack_topic: /perception/rack/cells
     rack_wait_s: 2.0                  # LOOK_RACK 성공 뒤 그 칸 측정 기다리는 시간
     rack_fresh_s: 30.0                # 이보다 오래된 측정은 STORE 에 안 씀
@@ -161,3 +162,8 @@ mission_manager:
     pick_relook: true                 # PICK 이 팔을 움직이고 실패하면 재시도 전 HOME → 같은 정차 LOOK 다시 → 그 뒤 검출로 집음
     relook_wait_s: 1.5                # 다시 보기 LOOK 뒤 새 검출 기다리는 최대 시간, 안 오면 그 재시도 실패
     place_retries: 1
+    loc_max_recoveries: -1   # 11-11 추가
+    side_look_order: ["left", "near"]   # 11-11 추가
+    relook_before_pick: true   # 11-11 추가
+    relook_dwell_s: 0.5   # 11-11 추가
+    empty_grasp_skip: true   # 11-11 추가

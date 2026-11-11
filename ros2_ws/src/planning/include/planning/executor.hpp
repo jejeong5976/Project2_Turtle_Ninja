@@ -42,6 +42,10 @@
 //       → 표시가 있으면 ready_reasons 에 INVENTORY_UNCERTAIN (start 거절), clear_gripper 거절
 //       → 지우는 길: 원인 작업의 늦은 최종 성공 (control 확인) 또는 사람 확인 resolve_inventory. HOME 성공으로는 안 지움
 //       → 늦은 최종 성공도 기록과 안 맞으면 반영 · 해소 안 함 (표시 유지). RUNNING 중 표시가 있으면 supervise 가 FAULT
+//       예외 (empty_grasp_skip, 기본 켬): PICK 실패 결과 글에 EMPTY_GRASP (control 이 그리퍼 실측으로 빈손 확인)
+//         → 퍽은 박스에 그대로 · 그리퍼 빔 = 재고 확실 → 불확실 표시 · 재시도 없이 StepFailed (need_home)
+//         → 미션 dice_recover 가 그 퍽 skipped + 그 박스 앞 LOOK 다시 → 재계획, 다음 단계 앞에 HOME. stop() 직전 도착한 같은 결과도 표시 안 함
+//         → control 은 퍽이 박스에 남는 닫기에서만 토큰을 붙임. 받침 다시 쥐기 (park_re_down) 빈손은 토큰 없음 → 예전대로 FAULT
 //   - 최종 성공인데 기록과 안 맞는 전환 (apply_arm_success 실패) → 재고 · 기록부 그대로, 불확실 표시 + Fault INVENTORY_UNCERTAIN
 //       정상 · 시간 초과 뒤 성공 · FAULT 뒤 늦은 성공 (update) · stop() 선반영 모두 update_cargo 한 곳으로 (각 결과는 한 번만 반영)
 //   - 보내기 전 재고 확인 (arm_preflight_ok): PICK · STORE · LOOK_RACK · RETRIEVE · PLACE 의 퍽 · 칸이 기록과 안 맞으면
@@ -50,6 +54,7 @@
 //       DRIVE_LOST · SCAN_LOST = 이동 차단 / DETECTION_LOST = PICK 시작 차단
 //       LOCALIZATION_LOST = 이동 + PICK + Target::Puck · Custom 팔 목표 (PLACE 등) 시작 차단, HOME · LOOK 류 · STORE · RETRIEVE 허용
 //         Custom 은 resolver 프레임을 미리 모름 (미션 PLACE = map) → 보수적으로 차단 (arm_start_blocked, health.hpp)
+//         FAULT = 끊김이 loc_fault_s 넘게 이어짐, 또는 loc_max_recoveries (기본 3, -1 = 제한 없음) 번 돌아온 뒤 또 끊김
 //   - 취소한 목표의 최종 결과가 오기 전에는 새 목표를 안 보냄, server_wait_s 넘으면 단계 실패 (서버가 없어지면 안 기다림)
 //   - 팔 시간 초과는 취소 결과까지 기다려 판정, 결국 성공이면 단계 성공, 결과가 끝내 안 오면 FAULT (ARM_NO_RESULT)
 //   - FAULT 등으로 취소한 팔 작업이 결국 성공하면 update() 가 재고에 반영 (한 번만). 취소한 팔 작업은 HOME 필요로 봄
@@ -304,6 +309,7 @@ private:
   bool localization_lost(double now);
   static bool leaves_arm_unfolded(const Step & s);
   bool robot_pose(Pose2D & out);
+  bool store_returned_to_box(const Step & s, ArmEnd end, const std::string & message);
 
   // 액션
   bool server_wait_expired(double now, const std::string & what);
@@ -339,6 +345,8 @@ private:
   int nav_retries_, pick_retries_, place_retries_;
   bool pick_relook_ = true;                  // PICK 이 팔을 움직이고 실패하면 재시도 전에 같은 정차 LOOK 다시
   double relook_wait_s_ = 1.5;               // 다시 보기 LOOK 뒤 새 검출 기다리는 최대 시간
+  bool empty_grasp_skip_ = true;             // PICK 빈손 확인 (결과 글 EMPTY_GRASP) → 재고 불확실 FAULT 대신 그 퍽 건너뜀 (StepFailed)
+  bool store_return_replan_ = true;          // STORE 박스 되돌림 (결과 글 STORE_RETURNED_TO_BOX) → 그리퍼 비움 · 퍽 박스로 · StepFailed (다시 계획)
   std::map<std::string, double> relook_after_;   // 퍽 ID → 다시 보기 LOOK 성공 시각 (이 뒤 검출로만 집음)
   double rack_wait_s_, rack_fresh_s_;
 

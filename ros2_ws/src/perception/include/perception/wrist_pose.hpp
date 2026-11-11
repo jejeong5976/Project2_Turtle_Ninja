@@ -117,6 +117,10 @@ std::vector<TagPose> detect_tags_in(
 // 영상 밖은 자르고, 겹치는 사각형은 감싸는 사각형 하나로 합침
 std::vector<cv::Rect> merge_rois(std::vector<cv::Rect> rois, const cv::Size & img);
 
+// 모서리 4 개 (aruco 순서, 원본 화소) → TagPose (IPPE_SQUARE 두 해). PnP 실패면 없음. detect_tags · 태그 다시 찾기 공용
+std::optional<TagPose> tag_pose_from_corners(
+  int id, const std::array<cv::Point2f, 4> & corners, const Intrinsics & K, const cv::Mat & dist = cv::Mat());
+
 // 태그 안쪽 깊이 평면 법선과 더 가까운 IPPE 해를 고름 (점 < 12 면 그대로)
 TagPose refine_tag_with_depth(TagPose t, const cv::Mat1f & depth_m, const Intrinsics & K);
 

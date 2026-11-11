@@ -20,6 +20,8 @@
   <depend>interfaces</depend>
   <depend>eigen</depend>
   <depend>libopencv-dev</depend>
+  <!-- 손목 태그 다시 찾기 AprilTag 3 (manipulation 과 같은 apriltag). CMake 는 QUIET: 없으면 aruco 만 -->
+  <depend>apriltag</depend>
   <!-- 바코드 Code128: zxing-cpp (apt libzxing-dev, rosdep 키 확인 전이라 depend 안 씀 — README 설치 목록) -->
   <!-- TensorRT · CUDA 는 Jetson JetPack 것 (rosdep 키 없음) -->
 

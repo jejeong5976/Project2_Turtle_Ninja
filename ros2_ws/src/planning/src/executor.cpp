@@ -55,7 +55,9 @@ Executor::Executor(rclcpp::Node & node)
   scan_mon_ = ConditionMonitor(mon_recover_s, mon_max, mon_fault_s);
   det_mon_ = ConditionMonitor(mon_recover_s, mon_max, mon_fault_s);
   // 위치 추정: 잠깐(loc_fault_s) 안에 돌아오면 계속, 아니면 FAULT (데이터만 다시 와도 자동 재개 안 함)
-  loc_mon_ = ConditionMonitor(0.0, 3, node_.declare_parameter<double>("loc_fault_s", 1.0));
+  //   loc_max_recoveries: start 뒤 이만큼 돌아온 다음 또 끊기면 FAULT (기본 3 = 예전 그대로). -1 = 횟수 제한 없음 (loc_fault_s 만 봄)
+  const int loc_max = static_cast<int>(node_.declare_parameter<int>("loc_max_recoveries", 3));
+  loc_mon_ = ConditionMonitor(0.0, loc_max, node_.declare_parameter<double>("loc_fault_s", 1.0));
   // 위치 추정 출처: health = pose_guard /localization_health (실물 slam_toolbox, nav2.launch.py localization:=slam)
   //                 amcl   = /amcl_pose 공분산 + localization lifecycle (시뮬, localization:=amcl)
   const auto loc_source = node_.declare_parameter<std::string>("localization_source", "health");
@@ -119,6 +121,11 @@ Executor::Executor(rclcpp::Node & node)
   pick_retries_ = node_.declare_parameter<int>("pick_retries", 2);
   pick_relook_ = node_.declare_parameter<bool>("pick_relook", true);
   relook_wait_s_ = node_.declare_parameter<double>("relook_wait_s", 1.5);
+  // PICK 빈손 확인 (control 결과 글 EMPTY_GRASP) → 재고 불확실 FAULT 대신 그 퍽 건너뜀 (false = 예전대로 FAULT)
+  empty_grasp_skip_ = node_.declare_parameter<bool>("empty_grasp_skip", true);
+  // STORE 넣기 걸림 뒤 control 이 퍽을 박스에 되돌려 놓음 (결과 글 STORE_RETURNED_TO_BOX x y, control store_recover)
+  //   → 재고 불확실 FAULT 대신 그리퍼 비움 · 그 퍽 박스 (그 자리) 로 되돌리고 단계 실패 → 미션이 다시 계획 (false = 예전대로 FAULT)
+  store_return_replan_ = node_.declare_parameter<bool>("store_return_replan", true);
   place_retries_ = node_.declare_parameter<int>("place_retries", 1);
   require_motion_mode_ = node_.declare_parameter<bool>("require_motion_mode", true);
   // ---- 적재함 칸 측정 (LOOK_RACK 뒤 기다리는 시간, STORE 에 쓸 수 있는 측정 나이)
@@ -661,6 +668,26 @@ void Executor::on_fail(ExecEvent & ev)
     ev.detail = detail_;
     return;
   }
+  // PICK 빈손 확인 (control 이 그리퍼 실측으로 확인, 결과 글 EMPTY_GRASP) → 퍽은 박스에 그대로 · 그리퍼 빔 = 재고 확실
+  //   불확실 FAULT · 재시도 없이 StepFailed → 미션이 그 퍽 skipped + 재계획 (dice_recover). 팔은 움직였으므로 HOME 먼저
+  //   (control 이 스스로 접는 중이면 ready 를 기다리거나 거절 뒤 다시 보냄, 이미 접혔으면 HOME 은 바로 성공)
+  if (empty_grasp_skip_ && s.type == StepType::Arm && empty_grasp_confirmed(s.arm_task, arm_end_, arm_.message)) {
+    RCLCPP_WARN(logger(), "빈손 PICK: 퍽 %s 박스에 그대로 → 이번엔 건너뜀 (재고 그대로, HOME 먼저)", s.puck_id.c_str());
+    ev.kind = ExecEvent::Kind::StepFailed;
+    ev.step = s;
+    ev.detail = detail_;
+    ev.need_home = true;
+    return;
+  }
+  // STORE 넣기 걸림 → control 이 퍽을 박스에 되돌려 놓음 (STORE_RETURNED_TO_BOX x y) → 그리퍼 빔 · 퍽 박스 그 자리 = 재고 확실
+  //   불확실 FAULT · 재시도 없이 StepFailed → 미션이 다시 계획 (같은 퍽 두 번이면 건너뜀, dice_recover). 팔은 움직였으므로 HOME 먼저
+  if (s.type == StepType::Arm && store_returned_to_box(s, arm_end_, arm_.message)) {
+    ev.kind = ExecEvent::Kind::StepFailed;
+    ev.step = s;
+    ev.detail = detail_;
+    ev.need_home = true;
+    return;
+  }
   // 재고를 바꾸는 팔 작업이 수락된 뒤 성공으로 안 끝남 → 퍽 위치 모름 → 재시도 · 재계획 없이 FAULT
   //   (재시도하면 쥔 퍽을 떨구거나 같은 퍽을 두 번 집을 수 있음, 미션이 lost 로 단정하면 기록이 실물과 어긋남)
   if (s.type == StepType::Arm && inventory_doubt_after(s.arm_task, arm_end_)) {
@@ -939,6 +966,10 @@ void Executor::stop()
       RCLCPP_WARN(logger(), "FAULT 직전 끝난 팔 작업 성공 → 재고 반영: %s", arm_step_->name.c_str());
       std::string why;
       if (!update_cargo(*arm_step_, why)) {mark_doubt(*arm_step_, "FAULT 직전 끝난 팔 작업 성공인데 재고 기록 불일치: " + why);}
+    } else if (empty_grasp_skip_ && empty_grasp_confirmed(arm_step_->arm_task, ArmEnd::Failed, arm_.message)) {
+      RCLCPP_WARN(logger(), "FAULT 직전 빈손 PICK: 퍽 %s 박스에 그대로 → 재고 그대로", arm_step_->puck_id.c_str());
+    } else if (store_returned_to_box(*arm_step_, ArmEnd::Failed, arm_.message)) {
+      RCLCPP_WARN(logger(), "FAULT 직전 STORE 박스 되돌림: 퍽 %s 그리퍼 비움 · 박스로", arm_step_->puck_id.c_str());
     } else if (inventory_doubt_after(arm_step_->arm_task, ArmEnd::Failed)) {
       mark_doubt(*arm_step_, "FAULT 직전 팔 작업 실패: " + arm_.message);
     }
@@ -1323,6 +1354,35 @@ bool Executor::update_cargo(const Step & s, std::string & why)
   if (s.arm_task == kArmPlace) {last_placed_ = r.placed;}
   if (r.doubt_cleared) {RCLCPP_WARN(logger(), "재고 불확실 해소 (최종 성공): %s", s.name.c_str());}
   if (r.changed) {cargo_changed();}
+  return true;
+}
+
+// STORE 결과 글 STORE_RETURNED_TO_BOX x y (base_link) → 그리퍼 기록 비움 · 퍽 기록부 on_field + 그 자리 (map, 지금 로봇 위치로).
+//   store_return_replan 꺼짐 · 토큰 없음 · 그리퍼 기록이 그 퍽이 아님 = false (→ 예전대로 불확실 FAULT)
+bool Executor::store_returned_to_box(const Step & s, ArmEnd end, const std::string & message)
+{
+  double bx = 0.0, by = 0.0;
+  if (!store_return_replan_ || !store_returned_confirmed(s.arm_task, end, message, &bx, &by)) {return false;}
+  std::string state, err;
+  if (!apply_store_returned(cargo_, s.puck_id, &state, &err)) {
+    RCLCPP_ERROR(logger(), "STORE 박스 되돌림인데 재고 기록 불일치 (%s): %s → 예전대로 불확실", s.name.c_str(), err.c_str());
+    return false;
+  }
+  Pose2D rp;
+  std::string where = "기록부 위치 그대로 (로봇 위치 모름)";
+  if (const auto rec = registry_.find(s.puck_id); rec && robot_pose(rp)) {
+    PuckRecord r = *rec;
+    r.x = rp.x + std::cos(rp.yaw) * bx - std::sin(rp.yaw) * by;
+    r.y = rp.y + std::sin(rp.yaw) * bx + std::cos(rp.yaw) * by;
+    registry_.update(r);
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "map (%.3f, %.3f)", r.x, r.y);
+    where = buf;
+  }
+  if (!state.empty()) {registry_.set_state(s.puck_id, state);}
+  cargo_changed();
+  RCLCPP_WARN(logger(), "STORE 박스 되돌림: 퍽 %s 그리퍼 비움 → 박스 base (%.3f, %.3f) = %s, 재고 확실 → 다시 계획 (HOME 먼저)",
+    s.puck_id.c_str(), bx, by, where.c_str());
   return true;
 }
 

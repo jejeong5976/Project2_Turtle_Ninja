@@ -190,6 +190,23 @@ std::vector<PuckDetection> PuckTracker::update(const std::vector<RawPuck> & raws
   return out;
 }
 
+int PuckTracker::known_id_near(const Vec3 & center) const
+{
+  const Track * near = nullptr;
+  double best = match_m_;
+  for (const auto & t : tracks_) {
+    const double d = (center - t.obs.back().second.pose.center).norm();
+    if (d <= best) {best = d; near = &t;}
+  }
+  if (near == nullptr) {return -1;}
+  OrderedVote<int> ids;
+  for (const auto & [f, r] : near->obs) {
+    if (frame_ + 1 - f < window_ && r.pose.tag) {ids.add(r.pose.tag->id, 1.0);}   // 다음 장 (frame_ + 1) 기준 창
+  }
+  const int * id = ids.best();
+  return id ? *id : -1;
+}
+
 PuckDetection PuckTracker::summarize(const std::vector<const RawPuck *> & recent) const
 {
   // 선/누움 다수결: 많은 쪽 장만 남겨 중심 · 긴축 · 면 방향 계산 (동점이면 최근 장). 위쪽 모름이면 전부

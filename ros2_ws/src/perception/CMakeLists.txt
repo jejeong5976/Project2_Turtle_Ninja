@@ -32,12 +32,24 @@ add_library(perception_core STATIC
   src/wrist_seg.cpp
   src/wrist_rack.cpp
   src/wrist_box.cpp
+  src/wrist_tag_rescue.cpp
+  src/wrist_held.cpp
 )
 target_include_directories(perception_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> ${OpenCV_INCLUDE_DIRS})
 target_compile_features(perception_core PUBLIC cxx_std_17)
 target_link_libraries(perception_core PUBLIC Eigen3::Eigen ${OpenCV_LIBS})
 set_target_properties(perception_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# AprilTag 3 (ros-<distro>-apriltag, manipulation rack_tag_node 와 같은 것) 있으면 손목 태그 다시 찾기 (wrist_tag_rescue) 에 씀
+#   실물 11-10: 손목 aruco 가 못 읽은 퍽 태그를 같은 장면에서 rack_tag_node (CLAHE + AprilTag 3) 는 읽음. 없으면 aruco 만
+find_package(apriltag QUIET)
+if(apriltag_FOUND)
+  message(STATUS "손목 태그 다시 찾기: AprilTag 3")
+  target_link_libraries(perception_core PRIVATE apriltag::apriltag)
+  target_compile_definitions(perception_core PRIVATE PERCEPTION_HAVE_APRILTAG)
+else()
+  message(WARNING "apriltag 없음 → 손목 태그 다시 찾기는 OpenCV aruco 만. sudo apt install ros-$ENV{ROS_DISTRO}-apriltag")
+endif()
 
 # ---- perception_barcode: 바코드 판독기 + 노드 단계 (ROS 씀, TensorRT 없이 빌드 → 개발 PC 테스트)
 add_library(perception_barcode STATIC src/barcode.cpp)
@@ -89,10 +101,14 @@ install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-  foreach(t test_wide test_wrist_pose test_wrist_seg test_wrist_rack test_wrist_box)
+  foreach(t test_wide test_wrist_pose test_wrist_seg test_wrist_rack test_wrist_box test_wrist_tag_rescue)
     ament_add_gtest(${t} test/${t}.cpp)
     target_link_libraries(${t} perception_core)
   endforeach()
+  # 쥔 퍽 마스크 재기: 11-11 실물 분할 마스크 (test/data/held_*_mask.png)
+  ament_add_gtest(test_wrist_held test/test_wrist_held.cpp)
+  target_link_libraries(test_wrist_held perception_core)
+  target_compile_definitions(test_wrist_held PRIVATE HELD_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/data")
   ament_add_gtest(test_barcode test/test_barcode.cpp)
   target_link_libraries(test_barcode perception_barcode)
   # 메시지 규칙 (msg_utils.hpp) 은 interfaces · geometry_msgs 필요

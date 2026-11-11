@@ -30,6 +30,8 @@ def generate_launch_description():
         raise RuntimeError(f"rack_cells.yaml rack_tags.ids 에 칸이 빠짐: {missing}")
     arg = LaunchConfiguration
     return LaunchDescription([
+        DeclareLaunchArgument("held_fresh", default_value="false", choices=["true", "false"],
+                              description="쥔 퍽 정지·재투영 검사 측정 토픽 추가 (기존 토픽 그대로)"),
         DeclareLaunchArgument("image_topic", default_value="/camera/camera/color/image_raw"),
         DeclareLaunchArgument("info_topic", default_value="/camera/camera/color/camera_info"),
         DeclareLaunchArgument("min_view_cos", default_value="0.94",
@@ -37,6 +39,7 @@ def generate_launch_description():
         DeclareLaunchArgument("camera_frame", default_value="d435_color_optical_frame",
                               description="TF 조회 이름 (URDF). 드라이버 영상 header 는 camera_color_optical_frame 이라 덮어씀"),
         Node(package="manipulation", executable="rack_tag_node", output="both", parameters=[{
+            "held_fresh": ParameterValue(arg("held_fresh"), value_type=bool),
             "image_topic": arg("image_topic"),
             "info_topic": arg("info_topic"),
             "camera_frame": arg("camera_frame"),

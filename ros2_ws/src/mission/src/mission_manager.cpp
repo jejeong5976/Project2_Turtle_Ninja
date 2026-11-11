@@ -17,6 +17,9 @@
 //                        불완전 ('?' · 개수 · 끊김 · 횟수 규칙) 이면 signal_retries 번까지 기록을 비우고 다음 시퀀스를 다시 기록
 //                        (운영자가 12 점멸 + 3 s 소등 뒤 다시 틀어 줌)
 //         COLLECT        기록이 완전하고 횟수 규칙에 맞아야 시작, 아니면 복귀. 박스마다 이동 → LOOK → Plan
+//                        퍽이 side_look_expected 개보다 적게 보이면 Plan 이 먼저 옆 보기 (LOOK side_look_order, 기본 left · near) → 합쳐서 Plan
+//                        relook_before_pick: 손목이 그 퍽을 안 보는 자세 (STORE 뒤 P0 · 그 퍽이 없는 옆 보기) 에서 시작할 PICK 앞에
+//                        LOOK 다시 (그 퍽을 본 slot) → 그 퍽 새 검출 기다림 (최대 relook_dwell_s) → PICK
 //         DELIVER        운반 계획대로 [RETRIEVE] PLACE, 목표 = 장소 중심 + 주사위 눈 오프셋
 //         VERIFY         재검증 순서로 장소마다 이동 → LOOK → Plan Verify
 //         RETURN_HOME    출발점으로 이동
@@ -44,6 +47,7 @@
 //   - /planning/verify_record  interfaces/VerifyRecord   transient_local
 //   - 서비스 호출 barcode_enable_service std_srvs/SetBool, 기본 /perception/barcode/enable
 //   - 서비스 호출 wide_enable_service std_srvs/SetBool, 기본 /perception/wide/enable (신호 기록 Done 이면 광각 끔)
+//   - 서비스 호출 wide_capture_service std_srvs/SetBool, 기본 /wide_cam/set_capture (신호 기록 Done 이면 usb_cam 캡처 · MJPG 디코딩 멈춤)
 //   - 실행기 출력: navigate_to_pose · /arm_task · /mission/cargo · /planning/markers
 //   - 기록 파일 <record_dir>/run_<시각>/ signal.json · signal_attempt<N>.json (다시 기록 전 불완전 기록) · allocation.json · allocation_rev<N>.json · verify.yaml
 // 실행
@@ -55,6 +59,11 @@
 //   - 재고 작업 (PICK · STORE · RETRIEVE · PLACE · LOOK_RACK) 이 수락 뒤 성공으로 안 끝나면 재계획 없이 FAULT INVENTORY_UNCERTAIN
 //       (실행기 판정, planning/inventory_policy.hpp). 사람이 실물 확인 → /mission/inventory_* → resume → start
 //       최종 성공인데 재고 기록과 안 맞아도 같음. 보내기 전 단계 퍽 · 칸이 기록과 안 맞으면 팔 명령 없이 FAULT INVENTORY_MISMATCH
+//       예외: PICK 빈손 확인 (control 결과 글 EMPTY_GRASP, 실행기 empty_grasp_skip) → FAULT 없이 단계 실패 → dice_recover 가 그 퍽 skipped
+//             + COLLECT 면 HOME → 같은 박스 앞 LOOK 다시 → Plan 다시 (빈손 쥐기가 옆 퍽을 밀었을 수 있음)
+//       예외: STORE 넣기 걸림 → control 이 퍽을 박스에 되돌림 (결과 글 STORE_RETURNED_TO_BOX, 실행기 store_return_replan) → 그리퍼 빔 ·
+//             퍽 박스로 → FAULT 없이 단계 실패 → 빈손 PICK 과 같이 HOME → 앞 LOOK 다시 → Plan 다시 (그 퍽 다시 집음).
+//             같은 퍽이 store_return_skip_n 번 되돌아오면 그 퍽 skipped (무한 반복 방지)
 //   - 대기 원인은 상태가 아님: 실행기 wait_reasons = DRIVE_LOST · SCAN_LOST · DETECTION_LOST · LOCALIZATION_LOST
 //   - time_limit_s > 0 이면 첫 start 부터 재서 시간이 모자랄 때 RETURN_HOME. 기본 0 = 제한 없음
 //   - FAULT 원인: 실행기 Fault = 제어 끊김 · 감시 회복 실패 · HOME 실패 · DRIVE 복구 안 됨 · 재고 불확실, 경기장 파일 문제, 미등록 바코드, dice 계획 불가
@@ -171,8 +180,17 @@ public:
         return dice_cell_target(s, out, detail);
       });
     exec_->set_arm_sent_hook([this](const Step & s, double now) {
+        for (auto & ws : look_windows_) {   // 팔이 움직이기 시작 → 서 있던 LOOK 자세 구간 끝 (puck_views)
+          if (!ws.empty() && ws.back().to < 0.0) {ws.back().to = now;}
+        }
         if (!is_look_task(s.arm_task)) {return;}
-        if (box_of(s) >= 1 && box_of(s) <= kNumBoxes) {look_started_[box_of(s) - 1] = now;}
+        // 옆 보기 LOOK · 다시 보기 LOOK (puck_id 있음 · PICK 앞 다시 보기) 은 관측 구간 시작을 안 바꿈 → 옆 보기 뒤 Plan 은 앞 LOOK 부터 본 퍽을 합쳐 씀
+        //   빈손 뒤 다시 보기 → Plan 다시 때도 옆에서만 본 퍽이 남음 (다시 본 퍽은 기록부가 위치 · last_seen 을 새로 씀)
+        if (starts_box_look(s)) {   // 새 정차의 앞 LOOK
+          look_started_[box_of(s) - 1] = now;
+          side_look_[box_of(s) - 1] = SideLookState::Unchecked;
+          look_windows_[box_of(s) - 1].clear();
+        }
         if (place_of(s) >= 0 && place_of(s) < kNumPlaces) {
           look_place_started_[place_of(s)] = now;
           place_frame_[place_of(s)].reset();   // 새로 보면 기준도 새로 (kPlaceBox 가 확정)
@@ -191,6 +209,24 @@ public:
       collect_order_.push_back(static_cast<int>(b));
     }
     look_dwell_s_ = declare_parameter<double>("look_dwell_s", 1.0);           // LOOK 뒤 검출 모으는 시간
+    // 옆 보기: 박스 LOOK 에서 쓸 퍽이 side_look_expected 개보다 적으면 Plan 전에 LOOK slot side_look_order 순서로 옆을 봄
+    //   (박스 끝 퍽이 가운데 LOOK 화면 밖, 11-10 B2). 각 자세 look_dwell_s 뒤 앞 · 옆에서 본 퍽을 합쳐 계획. 정차마다 한 번
+    side_cfg_.enabled = declare_parameter<bool>("side_look_missing", true);
+    side_cfg_.expected = static_cast<int>(declare_parameter<int>("side_look_expected", 2));
+    //   기본 left · near: 앞 + left 로 right 쪽까지 거의 다 보임 (11-10 화각 계산), near (J3 +look_near_tilt_deg) 가 가까운 줄
+    side_cfg_.order = declare_parameter<std::vector<std::string>>("side_look_order", {"left", "near"});
+    for (const auto & o : side_cfg_.order) {
+      if (!is_side_slot(o)) {RCLCPP_WARN(get_logger(), "side_look_order 의 '%s' 는 안 씀 (right · left · near · far 만)", o.c_str());}
+    }
+    RCLCPP_INFO(get_logger(), "옆 보기 (side_look_missing): %s, 박스 퍽 < %d 개면 %s", side_cfg_.enabled ? "켬" : "끔",
+      side_cfg_.expected, join(side_cfg_.order).c_str());
+    // PICK 앞 다시 보기: 손목이 그 퍽을 안 보는 자세에서 시작할 PICK (같은 박스 둘째 퍽부터 = STORE 뒤 P0, 그 퍽이 없는 옆 보기 자세) 앞에
+    //   LOOK 다시 → control 이 방금 검출에 맞춰 집음 (11-10 밤 맞춤 11/11, LOOK 때 위치로 집기 2/10 빈손). 옆에서만 본 퍽은 그 slot 으로
+    //   다시 본 뒤 그 퍽 새 검출이 오면 바로, relook_dwell_s 안에 안 오면 앞 검출로 그대로 집음 (막지 않음)
+    relook_before_pick_ = declare_parameter<bool>("relook_before_pick", true);
+    relook_dwell_s_ = declare_parameter<double>("relook_dwell_s", 0.5);
+    RCLCPP_INFO(get_logger(), "PICK 앞 다시 보기 (relook_before_pick): %s, 새 검출 최대 %.1f s", relook_before_pick_ ? "켬" : "끔",
+      relook_dwell_s_);
     // 정차 중 PICK: 차체가 서 있으면 LOOK 때 본 odom 기준 위치가 그대로 맞음 → STORE 뒤에도 씀
     dice_pick_fresh_s_ = declare_parameter<double>("dice_pick_fresh_s", 90.0);
     transfer_max_remaining_ = declare_parameter<int>("transfer_max_remaining", 4);
@@ -203,6 +239,8 @@ public:
     record_dir_ = declare_parameter<std::string>("record_dir", "~/planning_logs");
     // 재계획: 단계가 재시도 뒤에도 실패하면 그 퍽 · 장소를 빼고 지금 상태에서 다시 계획 (이 횟수 넘으면 포기 · 복귀)
     max_replans_ = declare_parameter<int>("max_replans", 6);
+    // STORE 박스 되돌림 (STORE_RETURNED_TO_BOX) 이 같은 퍽에 이 번 나오면 그 퍽 건너뜀 (그 전엔 다시 집어 넣기)
+    store_return_skip_n_ = declare_parameter<int>("store_return_skip_n", 2);
     // 바코드는 손목으로 읽음: READ_BARCODE = 이동 → LOOK_BARCODE → 읽기 → HOME
     barcode_look_ = declare_parameter<bool>("barcode_look", true);
     // 적재함: STORE 앞에 LOOK_RACK (퍽 쥔 채 그 칸을 손목으로 봄 → perception 칸 측정 → STORE target)
@@ -249,6 +287,8 @@ public:
     barcode_enable_service_ = declare_parameter<std::string>("barcode_enable_service", "/perception/barcode/enable");
     // 광각 (신호등 · 광각 퍽) 은 신호 기록이 Done 이 될 때까지만 켬 → 뒤 단계는 손목만 (Jetson CPU 절약). "" 면 안 부름
     wide_enable_service_ = declare_parameter<std::string>("wide_enable_service", "/perception/wide/enable");
+    // 광각 usb_cam 캡처도 같은 때 멈춤 (perception 을 꺼도 usb_cam 은 MJPG 디코딩을 계속해 CPU 약 40 %). "" 면 안 부름
+    wide_capture_service_ = declare_parameter<std::string>("wide_capture_service", "/wide_cam/set_capture");
 
     // 경기장 좌표 · 이동 시간표 · 바코드 표
     std::string err;
@@ -285,7 +325,12 @@ public:
     pub_signal_ = create_publisher<SignalRecord>("/planning/signal_record", rclcpp::QoS(1).reliable().transient_local());
     pub_verify_ = create_publisher<VerifyRecord>("/planning/verify_record", rclcpp::QoS(1).reliable().transient_local());
     if (!barcode_enable_service_.empty()) {barcode_cli_ = create_client<SetBool>(barcode_enable_service_);}
-    if (!wide_enable_service_.empty()) {wide_cli_ = create_client<SetBool>(wide_enable_service_);}
+    if (!wide_enable_service_.empty()) {wide_.cli = create_client<SetBool>(wide_enable_service_);}
+    if (!wide_capture_service_.empty()) {capture_.cli = create_client<SetBool>(wide_capture_service_);}
+    wide_.name = "perception 광각";
+    capture_.name = "광각 usb_cam 캡처";
+    capture_.ok_on = "Start Capturing";   // usb_cam 0.8.1 set_capture 는 처리하고도 success = false, 글만 이렇게 줌 (Jetson 실물 확인)
+    capture_.ok_off = "Stop Capturing";
 
     // ---------------------------------------------------------------- 서비스 (사람 · 대회 운영)
     srv_start_ = create_service<Trigger>(
@@ -808,11 +853,15 @@ private:
     }
     placed_count_ = {0, 0, 0};
     look_started_.fill(0.0);
+    side_look_.fill(SideLookState::Unchecked);
+    for (auto & ws : look_windows_) {ws.clear();}
+    puck_views_.clear();
     look_place_started_.fill(0.0);
     for (auto & f : place_frame_) {f.reset();}
     place_dead_ = {false, false, false};
     yellow_used_shape_.clear();
     replans_ = 0;
+    store_returned_n_.clear();
     current_node_ = kNodeStart;
     alloc_revision_ = 0;
     alloc_history_.clear();
@@ -919,6 +968,12 @@ private:
   void on_step_ok(const ExecEvent & ev)
   {
     const Step & s = ev.step;
+    // 박스 LOOK 자세에 섬 → 다음 팔 작업 보낼 때까지 이 자세 구간 (그 동안 찍힌 퍽 = 이 slot 에서 보임, puck_views)
+    if (s.type == StepType::Arm && is_look_task(s.arm_task) && box_of(s) >= 1 && box_of(s) <= kNumBoxes) {
+      auto & ws = look_windows_[box_of(s) - 1];
+      ws.push_back(LookWindow{s.slot, now_s(), -1.0});
+      if (ws.size() > 32) {ws.erase(ws.begin());}
+    }
     if (s.type == StepType::Navigate) {
       if (box_of(s) >= 1) {current_node_ = box_of(s);}
       if (place_of(s) >= 0) {current_node_ = place_node(place_of(s));}
@@ -1070,6 +1125,8 @@ private:
       case kPlanVerify:
         return run_plan(s, now, started, detail);
       case kPlaceBox: return run_place_box(s, now, started);
+      case kLookDwell: return now - started < look_dwell_s_ ? StepResult::Running : StepResult::Success;   // 옆 보기 자세로 검출 모음
+      case kRelookDwell: return run_relook_dwell(s, now, started);
       default:
         detail = "모르는 Custom 단계: " + std::to_string(s.kind);
         return StepResult::Fail;
@@ -1230,9 +1287,25 @@ private:
       return StepResult::Fail;
     }
     // 그 박스 LOOK 을 시작한 뒤 본 퍽 (다시 계획할 때도 같은 LOOK 결과를 씀: 복구 HOME 뒤엔 카메라가 박스를 안 봄)
+    //   옆 보기 LOOK · 다시 보기 LOOK 은 look_started_ 를 안 바꿈 → 옆 보기 · 빈손 뒤 다시 보기 뒤에도 앞 LOOK 부터 본 퍽 (앞 + 옆 합침)
     const double look_t = look_started_[box - 1];
     const auto at_box = pucks_at_box(box, look_t > 0.0 ? look_t - 0.5 : started - 2.0);
     RCLCPP_INFO(get_logger(), "B%d LOOK: 퍽 %zu 개 (%s)", box, at_box.size(), puck_list(at_box).c_str());
+    // 옆 보기: 이 정차 첫 Plan 에서 퍽이 모자라면 계획 전에 옆을 보고 같은 Plan 을 다시 (그때는 본 만큼으로 계획)
+    const bool side_merged = side_look_[box - 1] == SideLookState::Pending;
+    if (auto more = side_look_on_plan(side_look_[box - 1], s, at_box.size(), side_cfg_); !more.empty()) {
+      std::string slots;
+      for (const auto & m : more) {
+        if (is_side_look(m)) {slots += (slots.empty() ? "" : ", ") + m.slot;}
+      }
+      RCLCPP_INFO(get_logger(), "B%d LOOK: 퍽 %zu 개 < %d → 옆 보기 (%s)", box, at_box.size(), side_cfg_.expected, slots.c_str());
+      exec_->insert_after_current(std::move(more));
+      return StepResult::Success;
+    }
+    if (side_merged) {
+      RCLCPP_INFO(get_logger(), "B%d 옆 보기 뒤: 앞 + 옆 퍽 %zu 개로 계획 (%s)", box, at_box.size(), puck_list(at_box).c_str());
+    }
+    if (relook_before_pick_) {update_puck_views(box, at_box);}
 
     if (s.kind == kPlanCollectBox) {
       std::string err;
@@ -1241,7 +1314,9 @@ private:
         detail = "B" + std::to_string(box) + " 집기 계획 실패: " + err;
         return StepResult::Fail;
       }
-      exec_->insert_after_current(arm_steps(actions, rack_look_, box_measure_));
+      auto arm = arm_steps(actions, rack_look_, box_measure_);
+      if (relook_before_pick_) {arm = with_pick_relooks(arm, held_arm_step(), puck_views_);}
+      exec_->insert_after_current(std::move(arm));
       return StepResult::Success;
     }
     return plan_from_state(true, now) ? StepResult::Success : StepResult::Fail;   // kPlanDelivery
@@ -1269,6 +1344,59 @@ private:
     }
     sort_near_first(out);
     return out;
+  }
+
+  // ---------------------------------------------------------------- PICK 앞 다시 보기 (relook_before_pick)
+  // 이 정차 LOOK 자세 구간마다 찍힌 퍽 → 퍽별 본 slot (puck_views_). 먼저 기록한 slot 은 두고 새 slot 만 뒤에 더함
+  //   (원시 관측은 최근 30 s 만 있음 → 늦은 Plan 다시 때 앞 구간 관측이 없어져도 처음 본 slot 이 남음)
+  void update_puck_views(int box, const std::vector<TransferPuck> & at_box)
+  {
+    std::vector<SeenAt> seen;
+    for (const ObsRecord & o : exec_->recent_obs()) {
+      if (!o.id.empty()) {seen.push_back(SeenAt{o.id, o.stamp});}
+    }
+    for (const auto & [id, slots] : puck_views(look_windows_[box - 1], seen)) {
+      auto & v = puck_views_[id];
+      for (const auto & sl : slots) {
+        if (std::find(v.begin(), v.end(), sl) == v.end()) {v.push_back(sl);}
+      }
+    }
+    for (const auto & p : at_box) {
+      const std::string slot = relook_slot(puck_views_, p.id);
+      if (!slot.empty()) {RCLCPP_INFO(get_logger(), "B%d 퍽 %s: 옆 보기 %s 에서만 봄 → 집기 전 다시 보기도 %s", box, p.id.c_str(), slot.c_str(), slot.c_str());}
+    }
+  }
+
+  // 지금 단계 앞 같은 정차의 마지막 팔 단계 = 팔이 서 있는 자세 (이동 단계 너머는 안 봄, 없으면 nullopt)
+  std::optional<Step> held_arm_step() const
+  {
+    const auto & st = exec_->steps();
+    for (std::size_t j = std::min(exec_->index(), st.size()); j-- > 0;) {
+      if (st[j].type == StepType::Navigate) {break;}
+      if (st[j].type == StepType::Arm) {return st[j];}
+    }
+    return std::nullopt;
+  }
+
+  // 다시 보기 LOOK 뒤: 그 자세에 선 뒤 찍힌 그 퍽 검출이 오면 바로 PICK, relook_dwell_s 넘으면 앞 검출로 PICK (막지 않음)
+  StepResult run_relook_dwell(const Step & s, double now, double started)
+  {
+    double since = started;
+    if (box_of(s) >= 1 && box_of(s) <= kNumBoxes) {   // LOOK 성공 시각 (이 단계는 다음 주기에 시작)
+      const auto & ws = look_windows_[box_of(s) - 1];
+      if (!ws.empty() && ws.back().to < 0.0) {since = std::min(since, ws.back().from);}
+    }
+    const auto & obs = exec_->recent_obs();
+    for (auto it = obs.rbegin(); it != obs.rend(); ++it) {   // 받은 순서 (카메라마다 촬영 시각이 조금 엇갈릴 수 있어 끝까지 봄)
+      if (it->stamp >= since && it->id == s.puck_id) {
+        RCLCPP_INFO(get_logger(), "B%d 퍽 %s 다시 보기: 새 검출 %.2f s 뒤 → PICK", box_of(s), s.puck_id.c_str(), now - since);
+        return StepResult::Success;
+      }
+    }
+    if (now - started < relook_dwell_s_) {return StepResult::Running;}
+    RCLCPP_WARN(get_logger(), "B%d 퍽 %s 다시 보기: %.1f s 안에 새 검출 없음 → 앞 검출로 PICK", box_of(s), s.puck_id.c_str(),
+      relook_dwell_s_);
+    return StepResult::Success;
   }
 
   // 같은 박스 안에서 정차 자리에 가까운 퍽부터 = 집는 순서 (먼 퍽부터 집으면 팔이 앞 퍽을 칠 수 있음)
@@ -1373,6 +1501,8 @@ private:
       delivery_steps_.clear();
     } else {
       delivery_steps_ = transfer_steps(*best, dice_map_, rack_look_, box_measure_);
+      // 서서 이어 하면 (마지막 박스) 지금 팔 자세부터, 아니면 첫 정차가 이동 → LOOK
+      if (relook_before_pick_) {delivery_steps_ = with_pick_relooks(delivery_steps_, stopped ? held_arm_step() : std::nullopt, puck_views_);}
       RCLCPP_INFO(get_logger(), "배달 계획: %s (%d 곳), 남은 퍽 %d, Y 모양 %s, 예상 %.0f s, 정차 %zu",
         chosen.c_str(), best_n, avail, best->yellow_shape.c_str(), best->cost_s, best->stops.size());
     }
@@ -1401,11 +1531,27 @@ private:
   //   VERIFY  : 그 장소 재검증만 건너뜀
   //   퍽 영향 : 여기 오는 PICK · STORE · RETRIEVE · PLACE · LOOK_RACK 실패 = 보내기 전 실패 · 목표 거절뿐 (팔 안 움직임)
   //             (수락 뒤 실패는 실행기가 재고 불확실 FAULT 로 보냄 → 여기 안 옴). 그래서 재고 기록은 안 바꿈 (lost 단정 안 함)
+  //             예외: PICK 빈손 확인 (EMPTY_GRASP) 은 팔이 움직였어도 여기 옴 (그리퍼 빔 · 퍽 박스에 그대로, need_home → HOME 먼저)
+  //                   COLLECT 면 Plan 다시 앞에 같은 정차 앞 LOOK 다시 (box_relook_step: HOME → LOOK → Plan, 밀린 옆 퍽 새 검출)
   //             PICK 실패 = 그 퍽 박스에 남김 (skipped, 다시 안 집음)
   //             PLACE 실패한 장소는 더 안 건드림 (같은 이유로 다시 실패할 수 있음, 퍽은 그리퍼에 남아 다른 장소에 씀)
   //   실행기 사건 처리 중 (주기 사이) 에만 부름 → 단계 목록을 바꿔도 됨
   bool dice_recover(const Step & f)
   {
+    // 옆 보기 LOOK (right · left · near · far) · PICK 앞 다시 보기 LOOK 실패 · 거절: 그 LOOK 만 건너뜀 (재계획 · 횟수 아님)
+    //   옆 보기: 다음 옆 보기 · 같은 Plan 은 그대로 → 본 만큼으로 계획. 다시 보기: 그 PICK 은 앞 검출로 (예전처럼)
+    //   팔이 움직이다 실패했으면 on_step_failed 가 다음 단계 앞에 HOME
+    if (is_side_look(f) || is_pick_relook(f)) {
+      const std::size_t at = exec_->index();
+      std::size_t e = std::min(at + 1, exec_->steps().size());
+      if (e < exec_->steps().size() &&
+        (is_custom(exec_->steps()[e], kLookDwell) || is_custom(exec_->steps()[e], kRelookDwell))) {++e;}   // 그 자세 기다리기도 뺌
+      exec_->erase_steps(at, e);
+      RCLCPP_WARN(get_logger(), "%s 실패 → 이 %s 건너뜀 (%s)", f.name.c_str(), is_pick_relook(f) ? "다시 보기" : "옆 보기",
+        is_pick_relook(f) ? "앞 검출로 집음" : "본 퍽으로 계속");
+      if (exec_->done()) {on_steps_done();}
+      return true;
+    }
     if (phase_ != Phase::VERIFY && ++replans_ > max_replans_) {   // 재검증 건너뛰기는 횟수에 안 셈
       RCLCPP_WARN(get_logger(), "재계획 %d 번 넘음 → 포기", max_replans_);
       return false;
@@ -1417,6 +1563,17 @@ private:
           break;
         case kArmPlace:
           if (place_of(f) >= 0 && place_of(f) < kNumPlaces) {place_dead_[place_of(f)] = true;}
+          break;
+        case kArmStore:
+          if (detail_.find(kStoreReturnedToken) != std::string::npos) {   // 퍽은 박스로 되돌아감 (실행기가 그리퍼 비움 · on_field)
+            const int n = ++store_returned_n_[f.puck_id];
+            if (n >= store_return_skip_n_) {
+              exec_->mark_puck(f.puck_id, "skipped");
+              RCLCPP_WARN(get_logger(), "STORE 박스 되돌림 %s: %d 번째 → 그 퍽 건너뜀 (박스에 둠)", f.puck_id.c_str(), n);
+            } else {
+              RCLCPP_WARN(get_logger(), "STORE 박스 되돌림 %s: %d 번째 → 다시 집어 넣기 (%d 번째면 건너뜀)", f.puck_id.c_str(), n, store_return_skip_n_);
+            }
+          }
           break;
         default:
           break;   // STORE · RETRIEVE · LOOK_RACK: 재고 그대로 다시 계획. LOOK 실패: 그 자리 퍽을 못 봄 → Plan 이 본 것만으로 진행
@@ -1450,6 +1607,7 @@ private:
       }
       exec_->erase_steps(at, e);
       if (is_custom(f, kPlanDelivery)) {return false;}   // 계획 자체가 실패
+      if (box >= 1 && box <= kNumBoxes) {side_look_[box - 1] = SideLookState::Done;}   // 복구 Plan 은 옆 보기 안 함 (실패 처리 그대로)
       Step again;
       again.type = StepType::Custom;
       const bool skip_box = f.type == StepType::Navigate || f.type == StepType::Custom;
@@ -1464,7 +1622,22 @@ private:
         box_of(again) = box;
         again.name = std::string(had_delivery ? "plan:delivery:B" : "plan:collect:B") + std::to_string(box) + ":again";
       }
-      exec_->insert_steps(at, {again});
+      std::vector<Step> ins{again};
+      // PICK 빈손 (EMPTY_GRASP): 손가락이 박스 안까지 내려가 닫혔다 올라옴 → 옆 퍽이 밀렸을 수 있음
+      //   → 같은 정차 앞 LOOK 을 다시 (HOME → LOOK → Plan) 해서 새 검출로 계획. 다른 실패는 예전대로 (팔 안 들어감)
+      //   STORE 박스 되돌림 (STORE_RETURNED_TO_BOX) 도 같음: 퍽을 박스에 다시 내려놓음 → 새 검출로 다시 집음
+      const bool store_back = f.type == StepType::Arm && f.arm_task == kArmStore && detail_.find(kStoreReturnedToken) != std::string::npos;
+      if (!skip_box && f.type == StepType::Arm && ((f.arm_task == kArmPick && detail_.find(kEmptyGraspToken) != std::string::npos) || store_back))
+      {
+        const char * what = store_back ? "STORE 박스 되돌림" : "빈손 PICK";
+        if (auto look = box_relook_step(exec_->steps(), at, box, f.puck_id)) {
+          RCLCPP_WARN(get_logger(), "%s %s → B%d 앞 LOOK 다시 뒤 계획 (새 검출)", what, f.puck_id.c_str(), box);
+          ins.insert(ins.begin(), *look);
+        } else {
+          RCLCPP_WARN(get_logger(), "%s %s → B%d 앞 LOOK 못 찾음, 앞 검출로 계획", what, f.puck_id.c_str(), box);
+        }
+      }
+      exec_->insert_steps(at, ins);
       return true;
     }
     if (phase_ == Phase::DELIVER) {
@@ -1713,34 +1886,56 @@ private:
       });
   }
 
-  // perception 광각을 신호 기록에 맞춤: Done 전 = 켬 (준비 확인 TRAFFIC_LIGHT 도 이때만 봄), Done = 끔
-  //   reset_signal 로 다시 기록하면 다시 켬. 응답 없으면 2 s 뒤 버리고 다시
+  struct EnableToggle   // std_srvs/SetBool 로 켜고 끄는 대상 하나 (sync_toggle)
+  {
+    std::string name;
+    rclcpp::Client<SetBool>::SharedPtr cli;
+    std::string ok_on, ok_off;   // success 를 안 채우는 서버면 응답 글이 이것과 같을 때 성공으로 봄 (usb_cam set_capture)
+    bool on = false, known = false, pending = false;
+    double last_try_s = -1e9, sent_s = 0.0;
+    int gen = 0;
+  };
+
+  // 광각을 신호 기록에 맞춤: Done 전 = 켬 (준비 확인 TRAFFIC_LIGHT 도 이때만 봄), Done = 끔
+  //   perception 광각 처리 · usb_cam 캡처 둘 다. reset_signal 로 다시 기록하면 다시 켬
   void sync_wide_camera(double now)
   {
-    if (!wide_cli_) {return;}
     const bool want = signal_.status() != SignalStatus::Done;
-    if (wide_req_pending_) {
-      if (now - wide_req_sent_s_ < 2.0) {return;}
-      wide_cli_->prune_pending_requests();
-      wide_req_pending_ = false;
-      RCLCPP_WARN(get_logger(), "광각 켜기 서비스 응답 없음 → 다시 보냄");
+    sync_toggle(capture_, want, now);
+    sync_toggle(wide_, want, now);
+  }
+
+  // std_srvs/SetBool 서비스 하나를 want 에 맞춤. 응답 없으면 2 s 뒤 버리고 다시, 서비스 없으면 1 s 마다 다시 봄
+  //   (서비스가 없으면 그 노드가 없는 것 → 광각 perception 이면 TRAFFIC_LIGHT 가 알림)
+  void sync_toggle(EnableToggle & t, bool want, double now)
+  {
+    if (!t.cli) {return;}
+    if (t.pending) {
+      if (now - t.sent_s < 2.0) {return;}
+      t.cli->prune_pending_requests();
+      t.pending = false;
+      RCLCPP_WARN(get_logger(), "%s 켜기 · 끄기 서비스 응답 없음 → 다시 보냄", t.name.c_str());
     }
-    if (wide_known_ && wide_on_ == want) {return;}
-    if (now - wide_last_try_s_ < 1.0) {return;}
-    wide_last_try_s_ = now;
-    if (!wide_cli_->service_is_ready()) {return;}   // perception 이 없으면 신호등도 없음 → TRAFFIC_LIGHT 가 알림
+    if (t.known && t.on == want) {return;}
+    if (now - t.last_try_s < 1.0) {return;}
+    t.last_try_s = now;
+    if (!t.cli->service_is_ready()) {return;}
     auto req = std::make_shared<SetBool::Request>();
     req->data = want;
-    const int gen = ++wide_req_gen_;
-    wide_req_pending_ = true;
-    wide_req_sent_s_ = now;
-    wide_cli_->async_send_request(req, [this, want, gen](rclcpp::Client<SetBool>::SharedFuture f) {
-        if (gen != wide_req_gen_) {return;}
-        wide_req_pending_ = false;
-        if (f.get()->success) {
-          wide_known_ = true;
-          wide_on_ = want;
-          RCLCPP_INFO(get_logger(), "perception 광각 %s%s", want ? "켬" : "끔", want ? "" : " (신호 기록 끝)");
+    const int gen = ++t.gen;
+    t.pending = true;
+    t.sent_s = now;
+    t.cli->async_send_request(req, [this, &t, want, gen](rclcpp::Client<SetBool>::SharedFuture f) {
+        if (gen != t.gen) {return;}
+        t.pending = false;
+        const auto r = f.get();
+        const std::string & ok_msg = want ? t.ok_on : t.ok_off;
+        if (r->success || (!ok_msg.empty() && r->message == ok_msg)) {
+          t.known = true;
+          t.on = want;
+          RCLCPP_INFO(get_logger(), "%s %s%s", t.name.c_str(), want ? "켬" : "끔", want ? "" : " (신호 기록 끝)");
+        } else {
+          RCLCPP_WARN(get_logger(), "%s %s 실패: %s", t.name.c_str(), want ? "켜기" : "끄기", r->message.c_str());
         }
       });
   }
@@ -1917,6 +2112,9 @@ private:
   BarcodeTable barcodes_;   // 바코드 원문 → 정렬 방향 (barcode_table)
   double tick_hz_ = 10.0, time_limit_s_ = 0.0, return_margin_s_ = 60.0, read_timeout_s_ = 5.0;
   double look_dwell_s_ = 1.0, dice_pick_fresh_s_ = 90.0;
+  SideLookConfig side_cfg_;                  // 옆 보기 (side_look_*)
+  bool relook_before_pick_ = true;           // PICK 앞 다시 보기 (with_pick_relooks)
+  double relook_dwell_s_ = 0.5;              // 다시 보기 뒤 그 퍽 새 검출 최대 기다림 [s]
   double verify_radius_m_ = 0.18, verify_cell_tol_m_ = 0.03, verify_vote_ratio_ = 0.7;
   int transfer_max_remaining_ = 4, max_replans_ = 6;
   bool auto_start_ = false, barcode_look_ = true;
@@ -1987,8 +2185,13 @@ private:
   std::array<bool, kNumPlaces> place_dead_{{false, false, false}};   // PLACE 실패한 장소 (더 안 건드림)
   std::string yellow_used_shape_;            // Y 장소에 놓은 모양 (재계획 때 고정)
   int replans_ = 0;
+  int store_return_skip_n_ = 2;
+  std::map<std::string, int> store_returned_n_;   // 퍽별 STORE 박스 되돌림 횟수 (이번 미션)
   int current_node_ = kNodeStart;            // 마지막으로 도착한 노드
-  std::array<double, kNumBoxes> look_started_{};   // 박스별 LOOK 시작 시각 (그 뒤 검출 = 그 박스 관측)
+  std::array<double, kNumBoxes> look_started_{};   // 박스별 앞 LOOK 시작 시각 (그 뒤 검출 = 그 박스 관측, 옆 보기 · 다시 보기 LOOK 은 안 바꿈 = starts_box_look)
+  std::array<SideLookState, kNumBoxes> side_look_{};   // 박스별 이 정차의 옆 보기 (dice_steps.hpp, 앞 LOOK 이 Unchecked 로 되돌림)
+  std::array<std::vector<LookWindow>, kNumBoxes> look_windows_{};   // 박스별 이 정차 LOOK 자세 구간 (앞 LOOK 이 비움, puck_views)
+  PuckViews puck_views_;                     // 퍽 ID → 그 퍽을 본 LOOK slot (박스 Plan 때 갱신, task 마다 비움)
   std::array<double, kNumPlaces> look_place_started_{};   // 장소별 마지막 LOOK 시작 시각 (재검증 관측 구간)
 
   // 재검증 · 기록
@@ -2006,11 +2209,8 @@ private:
   int barcode_req_gen_ = 0;
 
   // perception 광각 켜기 · 끄기 (신호 기록 Done 전까지만)
-  std::string wide_enable_service_;
-  rclcpp::Client<SetBool>::SharedPtr wide_cli_;
-  bool wide_on_ = false, wide_known_ = false, wide_req_pending_ = false;
-  double wide_last_try_s_ = -1e9, wide_req_sent_s_ = 0.0;
-  int wide_req_gen_ = 0;
+  std::string wide_enable_service_, wide_capture_service_;
+  EnableToggle wide_, capture_;   // perception 광각 처리 · usb_cam 캡처
 
   // ROS
   rclcpp::Subscription<TrafficLight>::SharedPtr sub_sig_;

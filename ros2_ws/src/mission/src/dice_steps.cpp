@@ -2,6 +2,7 @@
 
 #include "mission/dice_steps.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <set>
 
@@ -130,6 +131,153 @@ std::vector<Step> arm_steps(
     steps.push_back(s);
   }
   return steps;
+}
+
+bool is_side_slot(const std::string & slot)
+{
+  return slot == "right" || slot == "left" || slot == "near" || slot == "far";
+}
+
+bool is_side_look(const Step & s)
+{
+  return s.type == StepType::Arm && s.arm_task == kArmLook && is_side_slot(s.slot);
+}
+
+bool is_pick_relook(const Step & s)
+{
+  // 실행기 insert_relook 이 복사한 것 (puck_id 붙음) 은 아님 → 그 실패는 예전 처리 그대로
+  return s.type == StepType::Arm && s.arm_task == kArmLook && s.kind == kPickRelook && s.puck_id.empty();
+}
+
+bool starts_box_look(const Step & s)
+{
+  return s.type == StepType::Arm && is_look_task(s.arm_task) && box_of(s) >= 1 && box_of(s) <= kNumBoxes &&
+         !is_side_look(s) && !is_pick_relook(s) && s.puck_id.empty();
+}
+
+std::vector<Step> side_look_steps(const Step & plan, std::size_t seen, const SideLookConfig & cfg)
+{
+  const int b = box_of(plan);
+  const bool box_plan = is_custom(plan, kPlanCollectBox) || is_custom(plan, kPlanDelivery);
+  if (!cfg.enabled || !box_plan || b < 1 || b > kNumBoxes || static_cast<int>(seen) >= cfg.expected) {return {};}
+  std::vector<std::string> slots;
+  for (const auto & o : cfg.order) {
+    if (is_side_slot(o)) {slots.push_back(o);}
+  }
+  if (slots.empty()) {return {};}
+  const std::string bn = "B" + std::to_string(b);
+  std::vector<Step> out;
+  for (std::size_t i = 0; i < slots.size(); ++i) {
+    Step lk = look_step(b, -1);
+    lk.slot = slots[i];
+    lk.name += ":" + slots[i];
+    out.push_back(lk);
+    if (i + 1 < slots.size()) {   // 다음 옆 보기 전에 이 자세로 검출 모음
+      Step w;
+      w.type = StepType::Custom;
+      w.kind = kLookDwell;
+      box_of(w) = b;
+      w.name = "wait:" + bn + ":" + slots[i];
+      out.push_back(w);
+    }
+  }
+  Step again = plan;
+  again.name += ":side";
+  out.push_back(again);
+  return out;
+}
+
+std::vector<Step> side_look_on_plan(SideLookState & st, const Step & plan, std::size_t seen, const SideLookConfig & cfg)
+{
+  if (st != SideLookState::Unchecked) {
+    st = SideLookState::Done;
+    return {};
+  }
+  auto more = side_look_steps(plan, seen, cfg);
+  st = more.empty() ? SideLookState::Done : SideLookState::Pending;
+  return more;
+}
+
+std::optional<Step> box_relook_step(const std::vector<Step> & steps, std::size_t at, int box, const std::string & puck_id)
+{
+  if (box < 1 || box > kNumBoxes) {return std::nullopt;}
+  for (std::size_t j = std::min(at, steps.size()); j-- > 0;) {
+    const Step & s = steps[j];
+    if (s.type == StepType::Navigate) {break;}   // 앞 정차
+    if (s.type != StepType::Arm || !is_look_task(s.arm_task) || is_side_look(s) || box_of(s) != box) {continue;}
+    Step look = s;   // 같은 자세 · 목표 그대로 (실행기 · PICK 앞 다시 보기 LOOK 이었어도 같은 앞 LOOK)
+    look.kind = kNoKind;   // PICK 앞 다시 보기 표시는 안 물려받음 (실패 처리 = 예전 빈손 뒤 다시 보기 그대로)
+    look.puck_id = puck_id.empty() ? std::string("?") : puck_id;   // 비면 미션이 새 정차로 보고 옆 보기를 되돌림
+    look.name = "arm:LOOK:B" + std::to_string(box) + "(빈손 뒤 다시 보기:" + look.puck_id + ")";
+    return look;
+  }
+  return std::nullopt;
+}
+
+PuckViews puck_views(const std::vector<LookWindow> & windows, const std::vector<SeenAt> & seen)
+{
+  PuckViews out;
+  for (const auto & w : windows) {
+    for (const auto & o : seen) {
+      if (o.id.empty() || o.stamp < w.from || (w.to >= 0.0 && o.stamp > w.to)) {continue;}
+      auto & v = out[o.id];
+      if (std::find(v.begin(), v.end(), w.slot) == v.end()) {v.push_back(w.slot);}
+    }
+  }
+  return out;
+}
+
+namespace
+{
+// 그 퍽을 그 slot 자세에서 봤나. 기록이 없으면 앞 LOOK ("") 에서 본 것으로 봄
+bool seen_from(const PuckViews & views, const std::string & id, const std::string & slot)
+{
+  const auto it = views.find(id);
+  if (it == views.end() || it->second.empty()) {return slot.empty();}
+  return std::find(it->second.begin(), it->second.end(), slot) != it->second.end();
+}
+}  // namespace
+
+std::string relook_slot(const PuckViews & views, const std::string & id)
+{
+  const auto it = views.find(id);
+  if (it == views.end() || seen_from(views, id, "")) {return "";}
+  for (const auto & slot : it->second) {
+    if (is_side_slot(slot)) {return slot;}
+  }
+  return "";
+}
+
+std::vector<Step> with_pick_relooks(
+  const std::vector<Step> & steps, const std::optional<Step> & held, const PuckViews & views)
+{
+  std::vector<Step> out;
+  std::optional<Step> arm = held;   // 지금 팔 자세를 정한 마지막 팔 단계
+  for (const auto & s : steps) {
+    if (s.type == StepType::Navigate) {arm.reset();}
+    const int b = box_of(s);
+    if (s.type == StepType::Arm && s.arm_task == kArmPick && b >= 1 && b <= kNumBoxes) {
+      const bool sees = arm && arm->type == StepType::Arm && arm->arm_task == kArmLook && box_of(*arm) == b &&
+        seen_from(views, s.puck_id, arm->slot);
+      if (!sees) {
+        Step lk = look_step(b, -1);
+        lk.slot = relook_slot(views, s.puck_id);
+        lk.kind = kPickRelook;
+        lk.name += (lk.slot.empty() ? std::string() : ":" + lk.slot) + "(집기 전 다시 보기:" + s.puck_id + ")";
+        Step w;
+        w.type = StepType::Custom;
+        w.kind = kRelookDwell;
+        box_of(w) = b;
+        w.puck_id = s.puck_id;
+        w.name = "wait:B" + std::to_string(b) + ":" + s.puck_id;
+        out.push_back(lk);
+        out.push_back(w);
+      }
+    }
+    out.push_back(s);
+    if (s.type == StepType::Arm) {arm = s;}
+  }
+  return out;
 }
 
 std::vector<Step> transfer_steps(

@@ -2,8 +2,9 @@
 //
 // 역할
 //   - planning::Step 의 kind · ref 에 dice 용 뜻을 정함, 실행기는 이 칸을 해석 안 함
-//       Custom 단계 kind = kReadBarcode · kPlanCollectBox · kPlanDelivery · kPlanVerify
+//       Custom 단계 kind = kReadBarcode · kPlanCollectBox · kPlanDelivery · kPlanVerify · kPlaceBox · kLookDwell · kRelookDwell
 //       Custom 목표 kind = kTargetDiceCell, PLACE 목표 = 장소 place 의 cell 번째 칸
+//       팔 LOOK 표시 kind = kPickRelook (PICK 앞 다시 보기, 실행기는 해석 안 함)
 //       ref[0] = 박스 1–6, ref[1] = 장소 0–2 = L1–L3, ref[2] = 칸 번호, 먼 칸부터
 //   - box_of · place_of · cell_of · is_custom · is_dice_cell 도우미
 // 입력
@@ -33,6 +34,9 @@ enum StepKind : int
   kPlanDelivery = 3,      // 할당 · 운반 계획 → 배달 · 재검증 단계 (ref[0] < 1 이면 지금 자리에서 재계획)
   kPlanVerify = 4,        // 재검증: 장소 LOOK 뒤 새 관측으로 칸 · 그룹 판정
   kPlaceBox = 5,          // 장소 LOOK 뒤 박스 측정 기다려 칸 기준 확정 (place_box.hpp), 못 받으면 지도 값
+  kLookDwell = 6,         // 옆 보기 LOOK 뒤 look_dwell_s 동안 그 자세로 검출 모음 (side_look_steps)
+  kRelookDwell = 7,       // PICK 앞 다시 보기 LOOK 뒤 그 퍽 새 검출 기다림, 최대 relook_dwell_s (with_pick_relooks)
+  kPickRelook = 8,        // 팔 LOOK 단계 표시: PICK 앞 다시 보기 (관측 구간 · 옆 보기 상태를 안 바꿈, starts_box_look 거짓)
   kTargetDiceCell = 10,   // PLACE 목표 = 장소 중심 + 주사위 눈 오프셋 (Target::Custom)
 };
 

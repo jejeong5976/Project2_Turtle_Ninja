@@ -948,3 +948,93 @@ TEST(GraspEmpty, Rules)
   EXPECT_FALSE(grasp_empty(-0.0016, std::nan("")));    // 문턱 없음 → 안 봄
   EXPECT_FALSE(grasp_empty(-0.0016, -1.0));            // −1 = 끔 (standup_grip_min_m 과 같은 규칙)
 }
+
+// ============================================================================ ⑦ 보드 상태 없이 (hw_status_optional)
+// 11-10 실물: list_hardware_components 를 DDS 로 끝내 못 찾아 컨트롤러 · 관절 측정이 멀쩡한데 "보드 상태를 아직 못 받음" 으로 팔 작업 거절
+TEST(HardwareWatch, ComponentsOptionalOnlyWhenNeverReceivedOrUnreachable)
+{
+  HardwareWatch w(0.3, 0.1, 1.0);
+  w.observe(1.0, true);
+  EXPECT_FALSE(w.healthy(1.1)) << "기본 (optional 꺼짐) = 지금처럼 보드 상태 필요";
+  EXPECT_NE(w.status(1.1).find("아직 못 받음"), std::string::npos);
+  w.set_components_optional(true);
+  EXPECT_FALSE(w.healthy(1.1)) << "재생기 (JTC) 준비 전에는 안 봐 줌";
+  w.set_controllers_ready(true);
+  EXPECT_TRUE(w.healthy(1.1)) << "못 받음 + 관절 측정 신선 + 재생기 준비 → 정상";
+  EXPECT_TRUE(w.components_waived(1.1));
+  EXPECT_FALSE(w.healthy(1.5)) << "관절 측정이 끊기면 그대로 이상";
+  w.observe(1.6, true);
+  w.observe(1.65, false);
+  w.observe(1.8, false);
+  EXPECT_FALSE(w.healthy(1.8)) << "NaN 지속도 그대로 이상";
+  w.observe(1.9, true);
+  EXPECT_TRUE(w.healthy(1.9));
+  // 받은 보드 상태가 이상이면 지금처럼 이상 (서비스가 보이든 안 보이든 · 오래됐든)
+  w.observe_components(2.0, false, "bus_arm=inactive");
+  w.observe(2.0, true);
+  EXPECT_FALSE(w.healthy(2.0));
+  EXPECT_NE(w.status(2.0).find("bus_arm"), std::string::npos);
+  w.set_components_reachable(false);
+  w.observe(3.5, true);
+  EXPECT_FALSE(w.healthy(3.5)) << "마지막 답이 이상 → 안 보여도 이상";
+  // 정상 답을 받은 뒤: 서비스가 보이는데 답이 끊기면 지금처럼 이상, 안 보이면 관절 측정으로
+  w.set_components_reachable(true);
+  w.observe_components(4.0, true, "");
+  w.observe(4.0, true);
+  EXPECT_TRUE(w.healthy(4.0));
+  EXPECT_FALSE(w.components_waived(4.0)) << "보드 상태가 신선하면 원래대로";
+  w.observe(5.5, true);
+  EXPECT_FALSE(w.healthy(5.5)) << "보이는 서비스의 답이 1 s 넘게 없음 = 지금처럼 이상";
+  w.set_components_reachable(false);
+  EXPECT_TRUE(w.healthy(5.5)) << "서비스가 안 보임 + 마지막 답 정상 → 관절 측정으로";
+  w.set_controllers_ready(false);
+  EXPECT_FALSE(w.healthy(5.5)) << "재생기가 없어지면 이상";
+}
+
+TEST(HardwareWatch, ComponentsOptionalIgnoredWhenTimeoutOff)
+{
+  HardwareWatch w(0.3, 0.1, 0.0);   // 보드 상태 안 봄 (단위 시험 · 보드 상태를 못 묻는 환경) — 그대로
+  w.set_components_optional(true);
+  w.observe(1.0, true);
+  EXPECT_TRUE(w.healthy(1.1));
+  EXPECT_FALSE(w.components_waived(1.1));
+}
+
+// ============================================================================ ⑧ 실패 뒤 자동 접기 (fail_fold_s)
+TEST(FailFold, ArmOnlyAfterAbortNotHomeHwOk)
+{
+  using manipulation::fail_fold_arm;
+  EXPECT_TRUE(fail_fold_arm(ArmEnd::ABORTED, false, 3.0, true));
+  EXPECT_FALSE(fail_fold_arm(ArmEnd::CANCELED, false, 3.0, true)) << "취소는 planning 이 정함";
+  EXPECT_FALSE(fail_fold_arm(ArmEnd::SUCCEEDED, false, 3.0, true));
+  EXPECT_FALSE(fail_fold_arm(ArmEnd::ABORTED, true, 3.0, true)) << "HOME 실패 뒤 같은 HOME 반복 안 함";
+  EXPECT_FALSE(fail_fold_arm(ArmEnd::ABORTED, false, 0.0, true)) << "0 이하 = 끔";
+  EXPECT_FALSE(fail_fold_arm(ArmEnd::ABORTED, false, -1.0, true));
+  EXPECT_FALSE(fail_fold_arm(ArmEnd::ABORTED, false, std::nan(""), true));
+  EXPECT_FALSE(fail_fold_arm(ArmEnd::ABORTED, false, 3.0, false)) << "하드웨어 이상으로 끝남 → 사람이 복구 뒤 HOME";
+}
+
+TEST(FailFold, BlockReasons)
+{
+  using manipulation::fail_fold_block;
+  using manipulation::FailFoldState;
+  FailFoldState s;
+  EXPECT_TRUE(fail_fold_block(s).empty()) << "빈손 · 펴진 채 → 접음";
+  s.empty_grasp = true;
+  s.half_closed = true;
+  EXPECT_TRUE(fail_fold_block(s).empty()) << "빈손 확인이 걸렸으면 그리퍼 실측과 상관없이 빈손";
+  s.empty_grasp = false;
+  EXPECT_FALSE(fail_fold_block(s).empty()) << "반쯤 닫힘 = 퍽을 쥐었을 수 있음";
+  s = FailFoldState{};
+  s.carrying = true;
+  EXPECT_FALSE(fail_fold_block(s).empty()) << "퍽을 쥔 채 안 접음";
+  s = FailFoldState{};
+  s.folded = true;
+  EXPECT_FALSE(fail_fold_block(s).empty()) << "이미 접힘";
+  s = FailFoldState{};
+  s.step_mode = true;
+  EXPECT_FALSE(fail_fold_block(s).empty()) << "구분 동작 작업 (사람이 보는 중)";
+  s = FailFoldState{};
+  s.park_left = true;
+  EXPECT_FALSE(fail_fold_block(s).empty()) << "받침 안 다시 쥐기 빈손 — 퍽이 받침에 남음 (접으면 그 위로 내려감)";
+}

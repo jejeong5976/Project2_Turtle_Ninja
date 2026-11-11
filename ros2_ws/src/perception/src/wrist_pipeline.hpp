@@ -22,6 +22,12 @@
 //       frame_id = rack.frame (기본 base_link), kind "rack_cell", label "S1"…, id = 태그 ID,
 //       pose = 칸 바닥 중심 + yaw 만 (x 축 = 칸 앞), confidence = 최근 rack.window 장 중 본 비율
 //   - /perception/rack_debug_image  sensor_msgs/Image, rack.publish_debug 일 때만
+//   - /held_puck/image  interfaces/DetectionArray, wrist.held.enable 일 때 처리한 영상마다 (쥔 퍽 없으면 빈 배열)
+//       손에 쥔 퍽의 분할 마스크를 픽셀로 잰 값 (wrist_held.hpp). frame_id = wrist.frame_id, kind "held_image", 아래 칸에 담음:
+//       label = 색, shape = 분할 모양 (box · cylinder), confidence = 분할 신뢰도, bbox = 마스크 상자,
+//       pose.position.x = 위 모서리 y [px] · .y = 왼쪽 모서리 x [px] · .z = 아래 끝 y [px],
+//       pose.orientation.x = 위 모서리 기울기 [°] · .y = 왼쪽 모서리 기울기 [°] (못 재면 NaN) · .z = 마스크 넓이 [px] · .w = 0,
+//       yaw_known = 왼쪽 모서리를 잼. 위치 · 방향이 아니라 픽셀 값임 (control_master held_image 가 기준과 비교)
 //   - /perception/wrist/box  interfaces/DetectionArray, 박스 처리한 영상마다, 못 찾으면 빈 배열
 //       frame_id = box.frame (기본 base_footprint), kind "place_box", pose = 윗면 중심 (z = box.top_z) + yaw 만,
 //       confidence = 맞춤 잔차가 작을수록 1 에 가까움
@@ -31,6 +37,9 @@
 //   - header.stamp = 촬영 시각, frame_id = wrist.frame_id = URDF 이름, 드라이버 이름 아님
 //   - TF 를 못 구하면 발행 안 함. 위쪽 없이 내면 긴축이 틀림 → planning 은 검출 끊김으로 앎
 //   - 태그는 퍽 ID 0–11 만 쓰고, 방향은 중력 + 점군으로 구함
+//   - 태그 다시 찾기 (wrist.tag_rescue, 기본 켬): 분할 상자 둘레 1차 검출 (aruco) 에서 태그를 못 받고 묶음 ID 도 없는 퍽만
+//     넓힌 상자 (wrist.tag_rescue_pad_px) 를 퍽마다 AprilTag 3 (있으면) · aruco 로 다시 봄. 태그 중심이 그 퍽 마스크
+//     (wrist.tag_rescue_margin_px 여유) 안일 때만 붙임, 태그 하나는 퍽 하나에만 (wrist_tag_rescue.hpp)
 //   - 엔진을 못 읽으면 분할은 멈추고 바코드 판독만 함
 //   - 영상 QoS 기본 reliable, realsense2_camera 기본 발행과 맞음
 //   - 적재함은 카메라가 멈춰 있을 때만 셈 (장 사이 rack.still_move_m · rack.still_rot_deg 넘게 움직이면 묶음 지움)
@@ -48,6 +57,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <message_filters/subscriber.hpp>
@@ -62,9 +72,11 @@
 
 #include "interfaces/msg/detection_array.hpp"
 #include "perception/wrist_box.hpp"
+#include "perception/wrist_held.hpp"
 #include "perception/wrist_pose.hpp"
 #include "perception/wrist_rack.hpp"
 #include "perception/wrist_seg.hpp"
+#include "perception/wrist_tag_rescue.hpp"
 #include "perception/wrist_tracker.hpp"
 
 namespace perception
@@ -94,13 +106,16 @@ private:
   bool on_rack(const Image::ConstSharedPtr & color);   // 이번 장을 처리했으면 true (처리 시간 기록용)
   void on_box(const Image::ConstSharedPtr & color, const Image::ConstSharedPtr & depth_msg);
   void report_timing();   // 5 s 마다 입력 Hz · 단계별 처리 시간 로그
+  void publish_held(const Image::ConstSharedPtr & color, const wrist::HeldMeasure & m);   // /held_puck/image
   bool to_depth_m(const Image::ConstSharedPtr & depth_msg, cv::Mat1f & depth);   // 16UC1 mm · 32FC1 m → m
   void publish_rack_debug(
     const Image::ConstSharedPtr & color, const cv::Mat & gray, const std::vector<wrist::RackTag> & tags,
     const std::vector<std::pair<wrist::RackTag, std::string>> & rejected, const std::vector<std::string> & lines);
   void publish_debug(
     const Image::ConstSharedPtr & color, const cv::Mat & bgr, const wrist::Intrinsics & K,
-    const std::vector<wrist::RawPuck> & raws, const std::vector<wrist::PuckDetection> & dets);
+    const std::vector<wrist::RawPuck> & raws, const std::vector<wrist::PuckDetection> & dets,
+    const std::vector<wrist::TagPose> & tags, const wrist::RescueStats & rs,
+    const std::vector<std::pair<wrist::TagPose, std::string>> & rescued);
 
   rclcpp::Node & node_;
   BarcodeStage * barcode_;   // barcode.camera = wrist 일 때만
@@ -113,7 +128,14 @@ private:
   // wrist.tag_centre: 장마다 읽음 (실행 중 ros2 param set 으로 바꿈). false = 퍽 중심 · 면 방향을 모양으로만 (태그가 비뚤게 붙은 퍽)
   bool tag_roi_{true};          // 태그를 분할 상자 둘레만 검출 (wrist.tag_roi)
   int tag_roi_pad_px_{24};      // 상자 둘레 여유 [px] (wrist.tag_roi_pad_px)
+  // wrist.tag_rescue: 장마다 읽음 (ros2 param set 으로 켜고 끄며 비교). 나머지 wrist.tag_rescue_* 는 시작 때만
+  std::unique_ptr<wrist::TagRescuer> rescuer_;
+  wrist::RescueCooldown rescue_cool_;   // 못 찾은 퍽 자리 쉼 (묶음 지울 때 같이 지움)
   bool publish_debug_{false};
+  // 쥔 퍽 재기 (wrist.held.*): enable 은 장마다 읽음, 켜면 분할 문턱을 min(wrist.conf, held.conf) 로 낮추고 일반 검출은 wrist.conf 로 다시 거름
+  float conf_{0.5f};
+  wrist::HeldParams held_p_;
+  rclcpp::Publisher<interfaces::msg::DetectionArray>::SharedPtr held_pub_;
   std::optional<wrist::Mat3> last_R_;
   wrist::Vec3 last_t_{wrist::Vec3::Zero()};
   std::atomic<bool> enabled_{true};
@@ -168,7 +190,13 @@ private:
     int box_runs = 0;               // on_box 가 실제로 계산한 횟수
     int tag_runs = 0;               // 태그 검출한 장 (분할이 있는 장만)
     int rack_runs = 0;              // on_rack 이 실제로 처리한 장
+    int rescue_runs = 0;            // 태그 다시 찾기가 검출까지 한 장
+    int rescue_rois = 0;            // 그 넓힌 상자 수
+    int rescued = 0;                // 붙인 태그 수
+    int rescue_need = 0;            // 다시 찾을 퍽 수 (장마다 더함, 쉬는 퍽 포함)
     double conv = 0, tf = 0, seg = 0, tags = 0, pose = 0, track = 0, pub = 0, all = 0, box = 0, sync_cb = 0, rack = 0;
+    double seg_pre = 0, seg_infer = 0, seg_gpu = 0, seg_post = 0;   // 분할 안 (SegModel::last_timing)
+    double rescue = 0;              // 태그 다시 찾기 (자세 다시 계산 포함) [ms]
     perception::wrist::PoseTiming pose_parts;   // 자세 단계별 (퍽 전체 합)
   };
   std::vector<double> lat_ms_, pair_dt_ms_;   // 짝마다 촬영 → 처리 시작 · 컬러 − 깊이 시각 차 [ms], 보고 때 비움

@@ -5,6 +5,7 @@
 //   - 취소 결과 기다리는 중 서버가 없어졌다 다시 뜸 → 더 안 기다림 (resume 안 막힘)
 //   - 손목 카메라 drift: 재검증용 원시 관측만 되돌린 위치, 기록부는 명목 TF. 다른 프레임 drift 는 무시
 //   - perception 적재함 판독: 처음 끔 → LOOK_RACK 보낼 때 켬 → 칸 측정 기다리기 끝나면 끔
+//   - PICK 빈손 확인 (결과 글 EMPTY_GRASP): 재고 불확실 FAULT 대신 StepFailed (need_home), 그 뒤 HOME 이 이동보다 먼저
 //   실행: colcon test --packages-select planning (ROS_DOMAIN_ID · ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST 권장)
 //   액션 · 발행 이름은 시험마다 고유 이름공간으로 바꿈 → 같은 도메인의 실물 /arm_task · Nav2 에 안 닿음
 
@@ -44,11 +45,17 @@ struct FakeServer
   typename rclcpp_action::Server<A>::SharedPtr server;
   std::vector<std::shared_ptr<GoalHandle>> goals;
   std::vector<rclcpp_action::GoalUUID> cancel_requests;
+  bool reject = false;   // true 면 새 목표 거절 (control 이 스스로 접는 중 등)
+  int rejected = 0;
 
   FakeServer(rclcpp::Node::SharedPtr node, const std::string & name)
   {
     server = rclcpp_action::create_server<A>(node, name,
-      [](const rclcpp_action::GoalUUID &, std::shared_ptr<const typename A::Goal>) {
+      [this](const rclcpp_action::GoalUUID &, std::shared_ptr<const typename A::Goal>) {
+        if (reject) {
+          ++rejected;
+          return rclcpp_action::GoalResponse::REJECT;
+        }
         return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
       },
       [this](std::shared_ptr<GoalHandle> gh) {
@@ -91,8 +98,9 @@ protected:
     std::filesystem::remove_all(dir_);
   }
 
-  // gripper_puck 이 있으면 그리퍼에 그 퍽을 쥔 재고 기록으로 시작
-  void start(const std::string & gripper_puck = "", double server_wait_s = 30.0)
+  // gripper_puck 이 있으면 그리퍼에 그 퍽을 쥔 재고 기록으로 시작. extra = 시험별 파라미터 더하기
+  void start(const std::string & gripper_puck = "", double server_wait_s = 30.0,
+    const std::vector<rclcpp::Parameter> & extra = {})
   {
     const std::string cargo_file = (dir_ / "cargo.yaml").string();
     if (!gripper_puck.empty()) {
@@ -109,12 +117,14 @@ protected:
     o.arguments({"--ros-args", "-r", "/arm_task:=" + ns_ + "/arm_task",
       "-r", "/mission/cargo:=" + ns_ + "/cargo", "-r", "/planning/markers:=" + ns_ + "/markers",
       "-r", "/wrist_cam/drift:=" + ns_ + "/drift", "-r", "/perception/wrist/detections:=" + ns_ + "/detections"});
-    o.parameter_overrides({
+    std::vector<rclcpp::Parameter> params{
       {"require_scan", false}, {"require_detections", false}, {"require_localization", false},
       {"require_motion_mode", false}, {"lifecycle_services", std::vector<std::string>{}},
       {"cargo_file", cargo_file}, {"cargo_restore", !gripper_puck.empty()}, {"server_wait_s", server_wait_s},
       {"rack_enable_service", ns_ + "/rack_enable"}, {"rack_wait_s", 0.3},
-      {"wrist_enable_service", ns_ + "/wrist_enable"}});
+      {"wrist_enable_service", ns_ + "/wrist_enable"}};
+    params.insert(params.end(), extra.begin(), extra.end());
+    o.parameter_overrides(params);
     client_ = std::make_shared<rclcpp::Node>("exec_test_client", ns_, o);
     server_ = std::make_shared<rclcpp::Node>("exec_test_server", ns_);
     exec_ = std::make_unique<Executor>(*client_);
@@ -165,7 +175,10 @@ protected:
   }
 
   // 팔 목표가 받아들여지고 (피드백 수신) 서버가 성공을 낸 뒤 결과가 클라이언트에 옴 (step() 은 안 부름)
-  void arm_succeed_without_step(std::size_t goal_i)
+  void arm_succeed_without_step(std::size_t goal_i) {arm_finish_without_step(goal_i, true);}
+
+  // 위와 같은데 실패 (abort + 결과 글) 도 냄
+  void arm_finish_without_step(std::size_t goal_i, bool success, const std::string & message = "")
   {
     ASSERT_TRUE(spin_until([&] {return arm_srv_->goals.size() > goal_i;}));
     auto gh = arm_srv_->goals[goal_i];
@@ -176,9 +189,31 @@ protected:
     ASSERT_TRUE(spin_until([&] {return exec_->arm_phase() == "moving";},
       [&] {if (n++ % 20 == 0) {gh->publish_feedback(fb);}}));
     auto res = std::make_shared<ArmTask::Result>();
-    res->success = true;
-    gh->succeed(res);
+    res->success = success;
+    res->message = message;
+    if (success) {gh->succeed(res);} else {gh->abort(res);}
     ASSERT_TRUE(spin_until([&] {return exec_->arm_phase().empty();}));   // 결과 도착 (active 끝)
+  }
+
+  // PICK 목표 = 미션 resolver 가 주는 base_link 점 (검출 · TF 없이 보낼 수 있게)
+  void use_base_target()
+  {
+    exec_->set_target_resolver([](const Step &, geometry_msgs::msg::PoseStamped & out, std::string &) {
+        out.header.frame_id = "base_link";
+        out.pose.position.x = 0.25;
+        return true;
+      });
+  }
+
+  static Step pick(const std::string & puck)
+  {
+    Step s;
+    s.type = StepType::Arm;
+    s.arm_task = kArmPick;
+    s.target = Target::Custom;
+    s.puck_id = puck;
+    s.name = "arm:PICK:" + puck;
+    return s;
   }
 
   static Step look()
@@ -510,4 +545,180 @@ TEST_F(ExecutorActions, WristOffOnlyWhileNavigating)
   EXPECT_TRUE(wrist_calls_[2]);
   for (int i = 0; i < 50; ++i) {exec_->update(now()); spin(); std::this_thread::sleep_for(std::chrono::milliseconds(5));}
   EXPECT_EQ(wrist_calls_.size(), 3u);
+}
+
+// PICK 빈손 확인 (결과 글 EMPTY_GRASP, ArmRunner 앞말 붙어도) → FAULT 아님, StepFailed + need_home, 재고 · 표시 그대로
+//   재시도 · 다시 보기는 안 끼움 (미션 dice_recover 가 그 퍽 skipped). 미션처럼 HOME 을 끼우면 HOME 이 이동보다 먼저
+TEST_F(ExecutorActions, EmptyGraspPickSkippedThenHomeBeforeDrive)
+{
+  start();
+  use_base_target();
+  exec_->set_steps({pick("P1"), go(1.0)});
+  ASSERT_TRUE(spin_until([&] {return !arm_srv_->goals.empty();}, [&] {exec_->step(now());}));
+  arm_finish_without_step(0, false, "팔 작업 중단: EMPTY_GRASP 빈손: 그리퍼가 -0.0010 m 까지 닫힘");
+  const ExecEvent ev = exec_->step(now());
+  ASSERT_EQ(ev.kind, ExecEvent::Kind::StepFailed);
+  EXPECT_EQ(ev.step.puck_id, "P1");
+  EXPECT_TRUE(ev.need_home);
+  EXPECT_NE(ev.detail.find("EMPTY_GRASP"), std::string::npos);
+  EXPECT_EQ(exec_->index(), 0u);
+  EXPECT_EQ(exec_->steps().size(), 2u);   // 재시도 HOME · 다시 보기 LOOK 안 끼움
+  EXPECT_EQ(arm_srv_->goals.size(), 1u);
+  EXPECT_FALSE(exec_->cargo().holding());
+  EXPECT_FALSE(exec_->cargo().doubt().has_value());
+  EXPECT_FALSE(not_ready("INVENTORY_UNCERTAIN"));
+  EXPECT_FALSE(not_ready("GRIPPER_RECORD"));
+
+  // 미션 (dice_recover 가 PICK 지움 + on_step_failed 가 HOME) 처럼
+  exec_->erase_steps(0, 1);
+  exec_->insert_home("팔 작업 실패 뒤");
+  ASSERT_TRUE(spin_until([&] {return arm_srv_->goals.size() == 2u;}, [&] {exec_->step(now());}));
+  EXPECT_EQ(arm_srv_->goals[1]->get_goal()->task, kArmHome);
+  EXPECT_TRUE(nav_srv_->goals.empty());   // 접기 전에는 이동 목표 없음
+  arm_succeed_without_step(1);
+  ASSERT_EQ(exec_->step(now()).kind, ExecEvent::Kind::StepOk);
+  ASSERT_TRUE(spin_until([&] {return !nav_srv_->goals.empty();}, [&] {exec_->step(now());}));
+  EXPECT_FALSE(exec_->cargo().doubt().has_value());
+}
+
+// 빈손 뒤 HOME 이 control 스스로 접기와 겹쳐 거절됨 → action_retry_s 뒤 다시 보냄 → 받으면 HOME → 이동
+TEST_F(ExecutorActions, EmptyGraspHomeRejectedWhileAutoFoldingIsRetried)
+{
+  start("", 30.0, {rclcpp::Parameter("action_retry_s", 0.1)});
+  use_base_target();
+  exec_->set_steps({pick("P1"), go(1.0)});
+  ASSERT_TRUE(spin_until([&] {return !arm_srv_->goals.empty();}, [&] {exec_->step(now());}));
+  arm_finish_without_step(0, false, "EMPTY_GRASP 빈손");
+  ASSERT_EQ(exec_->step(now()).kind, ExecEvent::Kind::StepFailed);
+  exec_->erase_steps(0, 1);
+  exec_->insert_home("팔 작업 실패 뒤");
+
+  arm_srv_->reject = true;   // 스스로 접는 중
+  ExecEvent ev;
+  ASSERT_TRUE(spin_until([&] {return arm_srv_->rejected >= 2;}, [&] {ev = exec_->step(now());}));
+  EXPECT_EQ(ev.kind, ExecEvent::Kind::None);   // 거절은 실패 아님 (action_retry_max_s 안)
+  arm_srv_->reject = false;  // 접기 끝
+  ASSERT_TRUE(spin_until([&] {return arm_srv_->goals.size() == 2u;}, [&] {exec_->step(now());}));
+  EXPECT_EQ(arm_srv_->goals[1]->get_goal()->task, kArmHome);
+  arm_succeed_without_step(1);
+  ASSERT_EQ(exec_->step(now()).kind, ExecEvent::Kind::StepOk);
+  ASSERT_TRUE(spin_until([&] {return !nav_srv_->goals.empty();}, [&] {exec_->step(now());}));
+}
+
+// 표시 없는 PICK 실패 (세우기 멈춤 등) → 예전대로 재고 불확실 FAULT
+TEST_F(ExecutorActions, PickFailWithoutTokenStillUncertain)
+{
+  start();
+  use_base_target();
+  exec_->set_steps({pick("P1")});
+  ASSERT_TRUE(spin_until([&] {return !arm_srv_->goals.empty();}, [&] {exec_->step(now());}));
+  arm_finish_without_step(0, false, "팔 작업 중단: 세우기 멈춤: 손끝이 쥐는 자리에서 멂");
+  const ExecEvent ev = exec_->step(now());
+  EXPECT_EQ(ev.kind, ExecEvent::Kind::Fault);
+  EXPECT_EQ(ev.code, "INVENTORY_UNCERTAIN");
+  EXPECT_TRUE(exec_->cargo().doubt().has_value());
+  EXPECT_TRUE(not_ready("INVENTORY_UNCERTAIN"));
+}
+
+// empty_grasp_skip false → EMPTY_GRASP 여도 예전대로 FAULT
+TEST_F(ExecutorActions, EmptyGraspSkipOffKeepsFault)
+{
+  start("", 30.0, {rclcpp::Parameter("empty_grasp_skip", false)});
+  use_base_target();
+  exec_->set_steps({pick("P1")});
+  ASSERT_TRUE(spin_until([&] {return !arm_srv_->goals.empty();}, [&] {exec_->step(now());}));
+  arm_finish_without_step(0, false, "EMPTY_GRASP 빈손");
+  const ExecEvent ev = exec_->step(now());
+  EXPECT_EQ(ev.kind, ExecEvent::Kind::Fault);
+  EXPECT_EQ(ev.code, "INVENTORY_UNCERTAIN");
+  EXPECT_TRUE(exec_->cargo().doubt().has_value());
+}
+
+// 빈손 결과 도착 → step() 전에 stop() (다른 FAULT) → 불확실 표시 안 함 (재고 그대로)
+TEST_F(ExecutorActions, EmptyGraspBeforeStopLeavesNoDoubt)
+{
+  start();
+  use_base_target();
+  exec_->set_steps({pick("P1")});
+  ASSERT_TRUE(spin_until([&] {return !arm_srv_->goals.empty();}, [&] {exec_->step(now());}));
+  arm_finish_without_step(0, false, "EMPTY_GRASP 빈손");
+  exec_->stop();
+  exec_->update(now());
+  EXPECT_FALSE(exec_->cargo().doubt().has_value());
+  EXPECT_FALSE(exec_->cargo().holding());
+  EXPECT_FALSE(not_ready("INVENTORY_UNCERTAIN"));
+}
+
+// 같은 경우 표시 없는 실패면 예전대로 불확실 표시
+TEST_F(ExecutorActions, PickFailBeforeStopMarksDoubt)
+{
+  start();
+  use_base_target();
+  exec_->set_steps({pick("P1")});
+  ASSERT_TRUE(spin_until([&] {return !arm_srv_->goals.empty();}, [&] {exec_->step(now());}));
+  arm_finish_without_step(0, false, "팔 작업 중단: 하드웨어 이상");
+  exec_->stop();
+  EXPECT_TRUE(exec_->cargo().doubt().has_value());
+}
+
+// STORE 넣기 걸림 → control 이 퍽을 박스에 되돌림 (결과 글 STORE_RETURNED_TO_BOX x y) → FAULT 아님, StepFailed + need_home,
+//   그리퍼 기록 비움 · 칸 그대로 · 불확실 표시 없음 (미션 dice_recover 가 다시 계획 · 두 번이면 건너뜀)
+TEST_F(ExecutorActions, StoreReturnedToBoxIsStepFailedWithEmptyGripper)
+{
+  start("P1");
+  exec_->set_steps({store("P1", "S1"), go(1.0)});
+  ASSERT_TRUE(spin_until([&] {return !arm_srv_->goals.empty();}, [&] {exec_->step(now());}));
+  arm_finish_without_step(0, false, "STORE_RETURNED_TO_BOX 0.2149 0.0000 · STORE 보정: 칸 넣기 걸림 → 퍽을 박스에 되돌려 놓음");
+  const ExecEvent ev = exec_->step(now());
+  ASSERT_EQ(ev.kind, ExecEvent::Kind::StepFailed);
+  EXPECT_EQ(ev.step.puck_id, "P1");
+  EXPECT_TRUE(ev.need_home);
+  EXPECT_NE(ev.detail.find("STORE_RETURNED_TO_BOX"), std::string::npos);
+  EXPECT_EQ(exec_->steps().size(), 2u);   // 재시도 안 끼움
+  EXPECT_FALSE(exec_->cargo().holding());
+  EXPECT_FALSE(slot("S1").has_value());
+  EXPECT_FALSE(exec_->cargo().doubt().has_value());
+  EXPECT_FALSE(not_ready("INVENTORY_UNCERTAIN"));
+  EXPECT_FALSE(not_ready("GRIPPER_RECORD"));
+}
+
+// store_return_replan false → 토큰이 있어도 예전대로 재고 불확실 FAULT (그리퍼 기록 그대로)
+TEST_F(ExecutorActions, StoreReturnedSwitchOffKeepsFault)
+{
+  start("P1", 30.0, {rclcpp::Parameter("store_return_replan", false)});
+  exec_->set_steps({store("P1", "S1")});
+  ASSERT_TRUE(spin_until([&] {return !arm_srv_->goals.empty();}, [&] {exec_->step(now());}));
+  arm_finish_without_step(0, false, "STORE_RETURNED_TO_BOX 0.2 0.0");
+  const ExecEvent ev = exec_->step(now());
+  EXPECT_EQ(ev.kind, ExecEvent::Kind::Fault);
+  EXPECT_EQ(ev.code, "INVENTORY_UNCERTAIN");
+  EXPECT_TRUE(exec_->cargo().holding());
+  EXPECT_TRUE(exec_->cargo().doubt().has_value());
+}
+
+// 토큰 없는 STORE 실패 (칸 안 · 쥔 채) → 예전대로 재고 불확실 FAULT
+TEST_F(ExecutorActions, StoreFailWithoutTokenStillUncertain)
+{
+  start("P1");
+  exec_->set_steps({store("P1", "S1")});
+  ASSERT_TRUE(spin_until([&] {return !arm_srv_->goals.empty();}, [&] {exec_->step(now());}));
+  arm_finish_without_step(0, false, "팔 동작 실패: 'release' 동작이 성공하지 못함");
+  const ExecEvent ev = exec_->step(now());
+  EXPECT_EQ(ev.kind, ExecEvent::Kind::Fault);
+  EXPECT_EQ(ev.code, "INVENTORY_UNCERTAIN");
+  EXPECT_TRUE(exec_->cargo().holding());
+}
+
+// 박스 되돌림 결과 도착 → step() 전에 stop() (다른 FAULT) → 그리퍼 비움 · 불확실 표시 없음
+TEST_F(ExecutorActions, StoreReturnedBeforeStopClearsGripper)
+{
+  start("P1");
+  exec_->set_steps({store("P1", "S1")});
+  ASSERT_TRUE(spin_until([&] {return !arm_srv_->goals.empty();}, [&] {exec_->step(now());}));
+  arm_finish_without_step(0, false, "STORE_RETURNED_TO_BOX 0.2149 0.0000 · STORE 보정");
+  exec_->stop();
+  exec_->update(now());
+  EXPECT_FALSE(exec_->cargo().holding());
+  EXPECT_FALSE(exec_->cargo().doubt().has_value());
+  EXPECT_FALSE(slot("S1").has_value());
 }

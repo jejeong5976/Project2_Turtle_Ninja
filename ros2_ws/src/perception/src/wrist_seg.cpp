@@ -3,6 +3,7 @@
 #include "perception/wrist_seg.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <numeric>
 #include <stdexcept>
@@ -188,11 +189,18 @@ cv::Size SegModel::input_size() const {return engine_->input_size();}
 
 std::vector<SegInstance> SegModel::operator()(const cv::Mat & bgr)
 {
+  using clk = std::chrono::steady_clock;
+  const auto ms = [](clk::time_point a, clk::time_point b) {return std::chrono::duration<double, std::milli>(b - a).count();};
+  const auto t0 = clk::now();
   const Letterbox lb = letterbox(bgr, engine_->input_size(), chw_);
+  const auto t1 = clk::now();
   engine_->infer(chw_, outs_);
+  const auto t2 = clk::now();
   out_.det.swap(outs_[idet_]);       // swap = 버퍼 재사용 (move 면 다음 장마다 수 MB 를 다시 할당)
   out_.proto.swap(outs_[iproto_]);
-  return postprocess(out_, lb, bgr.size(), engine_->names(), conf_, iou_);
+  auto res = postprocess(out_, lb, bgr.size(), engine_->names(), conf_, iou_);
+  timing_ = {ms(t0, t1), ms(t1, t2), engine_->last_gpu_ms(), ms(t2, clk::now())};
+  return res;
 }
 #endif  // PERCEPTION_HAVE_TRT
 

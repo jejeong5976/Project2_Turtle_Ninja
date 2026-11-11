@@ -369,6 +369,58 @@ TEST(InventoryPolicy, DoubtOnlyWhenRiskyTaskWasSent)
   }
 }
 
+// 빈손 확인은 PICK 이 수락 뒤 실패 + 결과 글에 EMPTY_GRASP 일 때만 (맨 앞 · ArmRunner "팔 작업 중단: " 뒤 모두)
+TEST(InventoryPolicy, EmptyGraspOnlyForFailedPickWithToken)
+{
+  EXPECT_TRUE(empty_grasp_confirmed(kArmPick, ArmEnd::Failed, "EMPTY_GRASP 빈손: 그리퍼가 -0.0010 m 까지 닫힘"));
+  EXPECT_TRUE(empty_grasp_confirmed(kArmPick, ArmEnd::Failed, "팔 작업 중단: EMPTY_GRASP 빈손"));
+  EXPECT_FALSE(empty_grasp_confirmed(kArmPick, ArmEnd::Failed, "팔 작업 중단: 빈손: 그리퍼가 닫힘"));   // 표시 없음 → 예전대로 불확실
+  EXPECT_FALSE(empty_grasp_confirmed(kArmPick, ArmEnd::Failed, ""));
+  EXPECT_FALSE(empty_grasp_confirmed(kArmPick, ArmEnd::Unknown, "EMPTY_GRASP"));    // 결과 모름 · 시간 초과
+  EXPECT_FALSE(empty_grasp_confirmed(kArmPick, ArmEnd::Mismatch, "EMPTY_GRASP"));
+  EXPECT_FALSE(empty_grasp_confirmed(kArmPick, ArmEnd::Rejected, "EMPTY_GRASP"));
+  for (const uint8_t t : {kArmStore, kArmRetrieve, kArmPlace, kArmLookRack, kArmHome, kArmLook}) {   // PICK 만
+    EXPECT_FALSE(empty_grasp_confirmed(t, ArmEnd::Failed, "EMPTY_GRASP")) << int(t);
+  }
+}
+
+// STORE 박스 되돌림 (control store_recover): STORE 수락 뒤 실패 + 결과 글에 STORE_RETURNED_TO_BOX x y 일 때만
+TEST(InventoryPolicy, StoreReturnedOnlyForFailedStoreWithTokenAndNumbers)
+{
+  double x = 0.0, y = 0.0;
+  EXPECT_TRUE(store_returned_confirmed(kArmStore, ArmEnd::Failed, "STORE_RETURNED_TO_BOX 0.2149 -0.0312 · STORE 보정: 칸 넣기 걸림", &x, &y));
+  EXPECT_DOUBLE_EQ(x, 0.2149);
+  EXPECT_DOUBLE_EQ(y, -0.0312);
+  EXPECT_TRUE(store_returned_confirmed(kArmStore, ArmEnd::Failed, "EMPTY_GRASP: 팔 작업 중단: 빈손 · STORE_RETURNED_TO_BOX 0.2 0.0"));
+  EXPECT_FALSE(store_returned_confirmed(kArmStore, ArmEnd::Failed, "팔 동작 실패: 'release' 동작이 성공하지 못함"));   // 표시 없음 → 불확실
+  EXPECT_FALSE(store_returned_confirmed(kArmStore, ArmEnd::Failed, "STORE_RETURNED_TO_BOX"));         // 숫자 없음
+  EXPECT_FALSE(store_returned_confirmed(kArmStore, ArmEnd::Failed, "STORE_RETURNED_TO_BOX nan 0.1"));
+  EXPECT_FALSE(store_returned_confirmed(kArmStore, ArmEnd::Unknown, "STORE_RETURNED_TO_BOX 0.2 0.0"));   // 결과 모름
+  EXPECT_FALSE(store_returned_confirmed(kArmStore, ArmEnd::Succeeded, "STORE_RETURNED_TO_BOX 0.2 0.0"));
+  for (const uint8_t t : {kArmPick, kArmRetrieve, kArmPlace, kArmLookRack, kArmHome}) {   // STORE 만
+    EXPECT_FALSE(store_returned_confirmed(t, ArmEnd::Failed, "STORE_RETURNED_TO_BOX 0.2 0.0")) << int(t);
+  }
+}
+
+TEST(InventoryPolicy, StoreReturnedClearsGripperOnlyForThatPuck)
+{
+  Cargo c({"R1", "R2"});
+  ASSERT_TRUE(c.on_pick(item("7")));
+  std::string state, err;
+  EXPECT_FALSE(apply_store_returned(c, "8", &state, &err)) << "다른 퍽";
+  EXPECT_TRUE(c.holding());
+  EXPECT_FALSE(err.empty());
+  ASSERT_TRUE(apply_store_returned(c, "7", &state, &err)) << err;
+  EXPECT_FALSE(c.holding());
+  EXPECT_EQ(state, "on_field");
+  EXPECT_FALSE(c.slots()[0].second.has_value());
+  EXPECT_FALSE(c.slots()[1].second.has_value());
+  EXPECT_FALSE(c.doubt().has_value());
+  EXPECT_FALSE(apply_store_returned(c, "7", &state, &err)) << "그리퍼 빔 (두 번 반영 안 함)";
+  std::string pre;
+  EXPECT_TRUE(arm_preflight_ok(c, kArmPick, "7", "", &pre)) << pre << " — 다시 집을 수 있음";
+}
+
 TEST(InventoryPolicy, DoubtKeepsLastConfirmedRecordAndFirstCause)
 {
   Cargo c = store_doubt();
@@ -684,6 +736,29 @@ TEST(Health, FaultsWhenRecoveriesUsedUp)
     EXPECT_EQ(m.update(false, t + 1.6), Health::Ok);
   }
   EXPECT_EQ(m.update(true, 30.0), Health::Fault);     // 세 번째 → 자동 해제 안 함
+}
+
+// 실행기 위치 감시 = ConditionMonitor(0.0, loc_max_recoveries, loc_fault_s)
+//   기본 3: 짧은 끊김 3 번까지 넘기고 4 번째에 FAULT (11-10 밤 미션 두 번). -1: 횟수 제한 없음, loc_fault_s 넘게 이어질 때만 FAULT
+TEST(Health, LocMonitorRecoveriesParam)
+{
+  ConditionMonitor def(0.0, 3, 5.0);
+  ConditionMonitor unl(0.0, -1, 5.0);
+  for (int i = 0; i < 3; ++i) {
+    const double t = i * 10.0;
+    EXPECT_EQ(def.update(true, t), Health::Waiting);
+    EXPECT_EQ(def.update(false, t + 1.0), Health::Ok);   // 회복 대기 0 s → 좋아지면 바로 해제
+  }
+  EXPECT_EQ(def.update(true, 30.0), Health::Fault);     // 4 번째 끊김
+
+  for (int i = 0; i < 50; ++i) {
+    const double t = i * 10.0;
+    EXPECT_EQ(unl.update(true, t), Health::Waiting) << i;
+    EXPECT_EQ(unl.update(true, t + 4.0), Health::Waiting) << i;   // loc_fault_s 안
+    EXPECT_EQ(unl.update(false, t + 4.5), Health::Ok) << i;
+  }
+  EXPECT_EQ(unl.update(true, 600.0), Health::Waiting);
+  EXPECT_EQ(unl.update(true, 605.5), Health::Fault);   // 끊김이 loc_fault_s 넘게 이어지면 그대로 FAULT
 }
 
 TEST(Health, LocalizationHealthLevels)

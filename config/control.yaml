@@ -27,8 +27,8 @@ control_master:
                        "store_S3_d50=0.9", "store_S3_d30=0.9", "store_S3_d30_low=0.9", "store_S3_d40_tilt10=0.9", "store_S3_d40_tilt20=0.9", "store_S3_d40_tilt30=0.9", "retrieve_S3_full=0.9",
                        "store_S8_d50=0.9", "store_S8_d30=0.9", "store_S8_d30_low=0.9", "store_S8_d40_tilt10=0.9", "store_S8_d40_tilt20=0.9", "store_S8_d40_tilt30=0.9", "retrieve_S8_full=0.9"]
     path_stand_speed_dps: 62.5     # 받침 근처 (접기 · 펴기) 구간
-    path_speed_dps: 150.0          # 빈 공간 최고 속도
-    path_accel_dps2: 375.0         # 가속 · 감속 (짧은 구간도 실제로 빨라지게 속도와 같이 올림)
+    path_speed_dps: 112.0          # 빈 공간 최고 속도
+    path_accel_dps2: 280.0         # 가속 · 감속 (짧은 구간도 실제로 빨라지게 속도와 같이 올림)
     # 미션 시간 줄이기: 빈손 그리퍼 동작은 팔을 멈추지 않고 (PICK 퍽 위로 가며 열기 · STORE 놓은 뒤 받침 쪽 가며 닫기),
     #   퍽을 쥐거나 놓을 때만 그리퍼를 기다림 (gripper_time_s 1.2 → 0.7)
     gripper_on_the_way: true
@@ -49,7 +49,7 @@ control_master:
     hw_bad_hold_s: 0.1             # [s] 하드웨어는 0.05 s 넘게 못 읽은 모터를 NaN 으로 냄 (measure_max_age_s)
     # 보드 2장: 보드 상태를 controller_manager 에 직접 물음 — 하나라도 active 가 아니면 STOP
     hw_component_hz: 5.0           # [Hz] 묻는 빈도 (응답 대기 중인 요청은 하나만)
-    hw_component_timeout_s: 1.0    # [s] 이만큼 답이 없으면 "모름" = 이상 (0 이하 = 보드 상태 안 봄)
+    hw_component_timeout_s: 4.0    # [s] 이만큼 답이 없으면 "모름" = 이상 (0 이하 = 보드 상태 안 봄)
     # 측정을 볼 관절. 기본 = 주행 8 + 팔 6 전부. 책상 시험에서 모터 일부만 쓰면 그 관절만 남길 것
     hw_watch_joints: [drive_fl_joint, drive_fr_joint, drive_rl_joint, drive_rr_joint,
                       steer_fl_joint, steer_fr_joint, steer_rl_joint, steer_rr_joint,
@@ -81,7 +81,7 @@ control_master:
     #   손목 인지 깊이 평균이 퍽 중심을 앞으로 · 왼쪽으로 밀어 잡음 (태그와 비교 9.6 · 1.7 mm). 실물에서 집어 S12 에 넣기까지 된 값
     #   실행 중 바꾸기: ros2 param set /control_master pick_offset_x_mm <값>
     #   ⚠ 주석 ("−22 로 가니 더 직진 쪽 = 방향 반대였음") 과 주석 ("+x = 앞") 이 서로 반대로 읽힘 → +x 가 실제로 어느 쪽인지 실물에서 +1 mm 로 확인할 것
-    pick_offset_x_mm: 0.0                 # 11-10 11:5x 카메라 받침 URDF 보정 (camfix_1150) 뒤 0 — 그 전 +4 는 카메라 오차를 메움. 그 전:  실물: 뒤를 잡음 → −2 → +1 (062d12c) → +4 (d1e2767, 3 mm 더 앞). 임시 — 팔 원인 확정 뒤 −2 로 원복 (base_link +x = 로봇 앞). 실물: 카메라로 본 선 퍽을 직진 쪽으로 1 cm 더 쥠 → -12 에서 +10 (-22 로 가니 더 직진 쪽 = 방향 반대였음)
+    pick_offset_x_mm: -0.5                 # 11-10 11:5x 카메라 받침 URDF 보정 (camfix_1150) 뒤 0 — 그 전 +4 는 카메라 오차를 메움. 그 전:  실물: 뒤를 잡음 → −2 → +1 (062d12c) → +4 (d1e2767, 3 mm 더 앞). 임시 — 팔 원인 확정 뒤 −2 로 원복 (base_link +x = 로봇 앞). 실물: 카메라로 본 선 퍽을 직진 쪽으로 1 cm 더 쥠 → -12 에서 +10 (-22 로 가니 더 직진 쪽 = 방향 반대였음)
     pick_offset_y_mm: 0.0   # 11-10 카메라 받침 URDF 보정 뒤 0 (그 전 −3.5)
     # 윗면 태그로 잰 퍽 (인지 중심 2 mm 안) 은 팔 쪽 치우침만 — 실물에서 태그 퍽을 집어 맞춘 값 (몸쪽 17 mm)
     pick_offset_tagged_x_mm: 0.0          # 11-10 카메라 받침 URDF 보정 뒤 0. 그 전 10: 실물: 태그 선 퍽을 뒤에 쥠 → 4 → 10 (S12 넣기 됨). 그 전: −2 → +1 → +4
@@ -103,7 +103,7 @@ control_master:
     # 수직 손이 안 닿는 먼 퍽: 손을 10° 씩 이만큼까지 바깥으로 기울여 쥠 (박스 끝 모서리 0.32 m 는 40°). 기울여 쥔 퍽은 다시 잡기로 세움
     pick_max_tilt_deg: 40.0
     # 다시 잡을 자리 탐색 시간 예산 [s] (11-09 실물: 19 곳 IK 로 10 s 계획 → motion_mode 끊겨 미션 FAULT). 넘으면 그 퍽 거절 = 미션이 건너뜀. 0 이하 = 예산 없음
-    regrasp_search_s: 0.8
+    regrasp_search_s: 4.0
     # 내려놓을 자리 (다시 쥐기 · 먼 자리 PLACE) |y| 상한 [m] = 박스 반폭 0.1025 − 퍽 반폭 0.0174 − 여유 0.01 (11-09: 좌우 ±8 cm 후보가 박스 밖)
     regrasp_max_abs_y: 0.075
     store_offset_x_mm: 0.0
@@ -116,7 +116,7 @@ control_master:
     store_offset:
       # 새 적재함 · 카메라 회전을 고친 뒤 실물: 오른쪽 4 칸 (S4 · S7 · S9 · S12) 은 로봇 앞으로 놓임 (스캔으로 잰 칸은 칸 표와 x 3.4 mm 안 → 팔 쪽 차이)
       #   S12 는 칸 근처 합계 (-10, +2.5) mm 에서 들어감 (그때 접근축 1° 한도로 -20 의 50 % 만 옮겨짐). 나머지는 x 를 -10 mm 로 시작해 실물로 맞출 것
-      S12: [5.0, 1.0, -10.0]  # 11-10 11:3x 실물: 바르게 쥔 퍽은 [−4, −2, −10] 못 들어감 · 손 뒤로 8.7 mm 쥔 퍽 (퍽이 손 안에서 앞) 은 들어가고 오른쪽 3 → 앞 9 · 왼쪽 3. 그 전: [−7, −2] 뒤로 감. 그 전 실물: [−10.6, −4.3] 은 뒤 · 왼쪽 (S2 쪽) 모서리에 2 mm 걸림 (세운 퍽) → [−5, −2] 로 들어감 → 11-10 09:4x 실물: 뒤로 2 mm 더
+      S12: [3.0, 1.0, -10.0]  # 11-10 11:3x 실물: 바르게 쥔 퍽은 [−4, −2, −10] 못 들어감 · 손 뒤로 8.7 mm 쥔 퍽 (퍽이 손 안에서 앞) 은 들어가고 오른쪽 3 → 앞 9 · 왼쪽 3. 그 전: [−7, −2] 뒤로 감. 그 전 실물: [−10.6, −4.3] 은 뒤 · 왼쪽 (S2 쪽) 모서리에 2 mm 걸림 (세운 퍽) → [−5, −2] 로 들어감 → 11-10 09:4x 실물: 뒤로 2 mm 더
       S9: [0.7, -2.0]     #  실물, 선 퍽 (pick det) 성공: 칸 근처 합계 (-6.7, +8.0). 세운 퍽으로는 (-11.7, +3.0) 에서 들어갔음
       S4: [2.0, -10.0]    #  실물 선 퍽으로 맞춤 (오른쪽 앞 대각선), 다시 4 mm 앞 · 3 mm 오른쪽
       S7: [-8.0, 1.5, -10.0]  # 11-10 15:1x 실물: 뒤 · 왼쪽 (S1 · S2 쪽) 으로 4 mm 넘침 → 반대로 (+2.2, −3.4). 그 전 [−10, 5, −10]:  실물 선 퍽 성공 [-10, 0] → 오후: 오른쪽으로 치우침 → S12 쪽 (왼쪽) 5 mm · 10 mm 더 깊게
@@ -145,15 +145,15 @@ control_master:
       S10: [4.0, 0.5, -10.0]
       S11: [2.0, 1.0, -10.0]
     retrieve_lift_clear_mm: 32.0   # RETRIEVE: 쥔 뒤 칸 안에서 곧게 이만큼 올리고 나감 (퍽 바닥이 칸 테두리 28 mm 위로). 11-10 실물: 깊게 쥔 R12 를 꺼낼 때 칸을 긁음. 0 = 끔 (기록 경로 그대로)
-    store_lift_clear_mm: 10.0   # STORE 놓은 뒤 칸 안에서 곧게 올림 (0 = 끔)
+    store_lift_clear_mm: 30.0   # STORE 놓은 뒤 칸 안에서 곧게 올림 (0 = 끔)
     retrieve_offset:
       S12: [0.0, 4.0, -17.0]   # 11-10 14:4x 실물: 정면 쪽 그리퍼가 걸림 → 정면으로 2 mm. 14:2x: 빼기는 위만 살짝 쥠 → 7 mm 더 깊게 (모델: 손끝이 칸 테두리 위 7 mm 이상). 그 전: 실물: [−8, −5] 는 위를 쥐고 뒤 → 10 mm 깊게 · 직진 6 · 왼쪽 7 mm (칸 위 멈춤 켜고 [−5, 2] 로 넣은 퍽에서 맞춤) → 11-10 09:4x 실물: 빨강 원기둥 왼쪽 2 mm 더
       S7: [-10.0, 10.0, -17.0]  # 11-10 14:2x 실물: 빼기는 위만 살짝 쥠 → 7 mm 더 깊게 (모델: 손끝이 칸 테두리 위 7 mm 이상). 그 전:  실물: 박스 반대쪽 4 mm (−15 · −25 는 너무 멀리) · 왼쪽 3 mm · 1 cm 더 깊게 → 11-09: STORE S7 을 왼쪽 5 mm 로 바꾼 만큼 (놓는 점 y −118.1 · 잡는 점 −125.1) 왼쪽 5 → 8 → 잡는 점이 앞 14.6 · 오른쪽 2 mm (계산, 실물: 앞 · 오른쪽으로 감) → 뒤 6 (11-07 −15 는 너무 뒤) · 왼쪽 2
       S3: [0.0, 0.0, -14.0]    # 11-10 14:2x 실물: 빼기는 위만 살짝 쥠 → 7 mm 더 깊게 (모델: 손끝이 칸 테두리 위 7 mm 이상). 그 전:  실물: 7 mm 더 깊게 쥐기
       S6: [0.0, 0.0, -12.0]    # 11-10 14:2x 실물: 빼기는 위만 살짝 쥠 → 7 mm 더 깊게 (모델: 손끝이 칸 테두리 위 7 mm 이상). 그 전:  실물: 5 mm 더 깊게 쥐기
-      S9: [2.0, 2.0, -10.0]    # 11-10 14:2x 실물: 빼기는 위만 살짝 쥠 → 7 mm 더 깊게 (모델: 손끝이 칸 테두리 위 7 mm 이상). 그 전:  실물: 직진 (박스) 쪽 2 mm · 3 mm 더 깊게
+      S9: [-3.0, 2.0, -10.0]    # 11-10 14:2x 실물: 빼기는 위만 살짝 쥠 → 7 mm 더 깊게 (모델: 손끝이 칸 테두리 위 7 mm 이상). 그 전:  실물: 직진 (박스) 쪽 2 mm · 3 mm 더 깊게
       S10: [0.0, 0.0, -17.0]  # 11-10 14:2x 실물: 빼기는 위만 살짝 쥠 → 7 mm 더 깊게 (모델: 손끝이 칸 테두리 위 7 mm 이상). 그 전:  실물: 자리 맞음 · 10 mm 더 깊게 쥐기
-      S11: [4.0, 3.0, -12.0]   # 11-10 14:2x 실물: 빼기는 위만 살짝 쥠 → 7 mm 더 깊게 (모델: 손끝이 칸 테두리 위 7 mm 이상). 그 전:  실물: 직진 (박스) 쪽 4 · 왼쪽 3 · 5 mm 더 깊게 쥐기
+      S11: [6.0, 3.0, -12.0]   # 11-10 14:2x 실물: 빼기는 위만 살짝 쥠 → 7 mm 더 깊게 (모델: 손끝이 칸 테두리 위 7 mm 이상). 그 전:  실물: 직진 (박스) 쪽 4 · 왼쪽 3 · 5 mm 더 깊게 쥐기
       S8: [4.0, 7.0, -17.0]   # 11-10 14:2x 실물: 빼기는 위만 살짝 쥠 → 7 mm 더 깊게 (모델: 손끝이 칸 테두리 위 7 mm 이상). 그 전:  실물: 왼쪽 3 cm → 오후: 오른쪽으로 23 mm 되돌림 · 직진 (박스) 쪽 4 mm · 10 mm 더 깊게
       S4: [-7.0, 2.0, -7.0]    # 11-10 14:2x 실물: 빼기는 위만 살짝 쥠 → 7 mm 더 깊게 (모델: 손끝이 칸 테두리 위 7 mm 이상). 그 전:  실물: 오른쪽으로 8 mm · 뒤로 4 mm 더, 다시 뒤 (프로파일 쪽) 3 mm
       S1: [0.0, 0.0, -20.0]   # 실물: −20 은 칸 근처를 너무 낮게 지남, −10 은 위를 쥠 → −15 로 잘 잡음
@@ -169,7 +169,7 @@ control_master:
     storeheld_over_look: true   # LOOK_RACK 뒤 관찰 자세여도 store_look_<칸> 대신 새 경로. false = 관찰 자세면 store_look_<칸> 그대로
     # 쥔 퍽 손 안 위치 (손목 카메라, rack_tag_node 를 띄워야 잼): false = STORE 때 로그만, true = 기준과 차이만큼 칸 근처 경로를 옮김
     #   기준: STORE 가 잘 들어간 PICK 뒤 (넣기 전, 기준점에서) ros2 service call /control_master/save_held_reference std_srvs/srv/Trigger
-    held_correct: false
+    held_correct: true
     place_held_correct: false   # 같은 보정을 PLACE 바로 놓기에도 (다시 쥐는 먼 자리는 안 함). 켜기: ros2 param set /control_master place_held_correct true
     # 손목 카메라가 손목에서 돈 만큼 손목 검출을 되돌림 (camera_drift_node 의 /wrist_cam/drift, 아래 camera_drift_node 설명)
     wrist_cam_drift_correct: true
@@ -185,7 +185,7 @@ control_master:
     park_center: [0.1008, 0.00115]   # 그리퍼 받침 중심 [m, base_link] (URDF).: 0.0958 로 옮겼더니 밀기 · 다시 쥐기까지 뒤로 가 세운 퍽을 침 → 되돌림 (넣는 자리만 park_end_inset_mm 로)
     park_floor_z: 0.1365             # 받침 바닥 윗면 [m, base_link]
     park_tilt_deg: 45.0              # 넣을 때 손 기울임 (안 되면 5° 씩 40 까지). 받침 위에서 가까운 퍽은 50° 까지, 기울여 쥔 먼 퍽은 40° 까지 IK
-    park_grasp_offset_mm: 25.0       # 누운 퍽을 중심에서 끝 쪽으로 옮겨 쥠. 실물: 손가락 면 반쯤만 퍽 앞 끝에 걸쳐야 세워짐 → 25 에서 30, 다시 1 cm 더 (40) · 실물: 오늘 바꾼 값들로는 한 번도 안 서서 (92b9e1a) 값으로 되돌림 → 성공 · 실물: 쥐고 넣을 때 손이 너무 앞 → 7 mm 줄임 (18) ·: 18 에서 세우기가 달라져 25 로 되돌림
+    park_grasp_offset_mm: 30.0       # 누운 퍽을 중심에서 끝 쪽으로 옮겨 쥠. 실물: 손가락 면 반쯤만 퍽 앞 끝에 걸쳐야 세워짐 → 25 에서 30, 다시 1 cm 더 (40) · 실물: 오늘 바꾼 값들로는 한 번도 안 서서 (92b9e1a) 값으로 되돌림 → 성공 · 실물: 쥐고 넣을 때 손이 너무 앞 → 7 mm 줄임 (18) ·: 18 에서 세우기가 달라져 25 로 되돌림
     park_insert_clear_mm: 4.0        # 놓을 때 퍽 가장 낮은 모서리 ↔ 받침 바닥 (실물: 2 면 넣다 걸려 밀려 나옴, 20 이면 떨어지며 뒤로 넘어감)
     park_end_inset_mm: -3.0          # 아래 끝면 중심 = 받침 중심에서 J1 쪽으로 이만큼 (음수 = 바깥). 실물 (받침 넓힌 뒤): 4 면 팔 쪽 벽에 걸려 -3,: 들어갔다 안 들어갔다 해서 2 mm 더 앞 (-5), 오후: 넣는 자리가 앞 → 5 mm 뒤 (0) · 실물: 오늘 바꾼 값들로는 한 번도 안 서서 (92b9e1a) 값으로 되돌림 → 성공
     park_push_h_mm: 25.0             # 미는 손끝 높이 (받침 바닥 위)
@@ -214,7 +214,7 @@ control_master:
     park_insert_from_back_mm: 0.0    #  넣기 출발을 이만큼 뒤 (S12 쪽) 에서 → 뒤 위에서 앞 아래로 대각선으로 들어감
     # 당기며 놓기 (그 자리에서 놓지 말고 몸 쪽으로 슬슬 당기며 놓기, 손은 올리지 말고): 넣는 점에서 손가락만 살짝 풀고 (park_loose_grip_m),
     #   같은 높이 · 기울임으로 J1 쪽 (뒤) 으로 이만큼 곧게 당긴 끝에서 놓음 (밀기 속도). 0 = 그 자리에서 놓음
-    park_release_pull_mm: 10.0       # 넣는 점에서 같은 높이로 몸 (J1) 쪽으로 이만큼 끌고 놓기. 실물: 그립 0.006 이면 그 자리에 떨굼 → park_loose_grip_m 0.005 로 쥔 채 10 mm (이렇게 가자)
+    park_release_pull_mm: 14.0       # 넣는 점에서 같은 높이로 몸 (J1) 쪽으로 이만큼 끌고 놓기. 실물: 그립 0.006 이면 그 자리에 떨굼 → park_loose_grip_m 0.005 로 쥔 채 10 mm (이렇게 가자)
     park_release_pull_dz_mm: 0.0     # 당기는 동안 위아래 (− = 내려가며 밀어 넣기)
     park_release_pull_steps: 3
     park_release_up_mm: 0.0          # 넣는 끝점을 손등 (손목 카메라 달린) 쪽으로 이만큼, 손 축에 수직 — 넣으면서 같이 (놓기 전 손목을 카메라 쪽 위로 5 mm, 나눠서 말고) · 실물: 오늘 바꾼 값들로는 한 번도 안 서서 (92b9e1a) 값으로 되돌림 → 성공
@@ -228,7 +228,7 @@ control_master:
     #   (regrasp_min_x · regrasp_max_abs_y 안, 시간 예산 regrasp_search_s, 긴축 = J1 반지름 방향) 에 내려놓고 거기서 지금의 받침 세우기 그대로
     #   (한 PICK 안에서, 다시 보기 없이 놓은 자리를 믿음). 가까운 자리의 경로 · 값은 바뀌지 않음. 끄기: ros2 param set /control_master park_relocate false
     park_relocate: true
-    park_box_regrip: false           # 세운 퍽을 박스 위에 내려놓고 박스 퍽처럼 50 mm 로 다시 쥠 (+약 6 s). 받침 30 mm 그대로면 칸에 13 mm 낮게 들어감 (J4 범위, 11-09 S4). false = 예전
+    park_box_regrip: true           # 세운 퍽을 박스 위에 내려놓고 박스 퍽처럼 50 mm 로 다시 쥠 (+약 6 s). 받침 30 mm 그대로면 칸에 13 mm 낮게 들어감 (J4 범위, 11-09 S4). false = 예전
     park_table_fallback: true        # 받침 · 옮겨 놓기 다 안 되는 먼 누운 퍽 → 강화학습 세우기 표 (팔을 멀리 뻗음). false = 거절
     park_near_max_r_m: 0.24          # 가까운 자리 = J1 (팔 모델 j1_xy) 에서 이 거리 안 [m]. 실물로 된 (0.225, −0.050) 은 안, 안 된 (0.272, −0.055) 부터는 밖이 되게 (약 0.23 ↔ 0.28)
     # LOOK_RACK (퍽 쥔 채 칸 위 관찰 → 칸 바닥 태그 측정 → STORE) 측정의 카메라 치우침 [x, y] mm = 적재함이 제자리일 때 로그의
@@ -236,6 +236,7 @@ control_master:
     look_rack_bias_mm: [0.0, 0.0]
     # LOOK slot left · right: LOOK 자세에서 J1 만 이만큼 돌려 박스 옆 끝 (y ±0.07 넘는 퍽) 을 봄 [°, left = +]. slot "" 이 되돌림
     look_side_deg: 18.0
+    look_side_tilt_deg: 6.0
     pick_end_at_staging: false       # PICK 뒤 박스 위 기준점 (y +38 mm) 안 감 — STORE 는 집은 자리에서 칸 경로 실제 시작점으로 바로
     place_far_regrasp: true          # 먼 자리 PLACE: 가까운 빈 자리에 내려놓고 손을 기울여 다시 쥔 뒤 놓기
     # 먼 자리 다시 쥐기의 열기를 팔을 멈추지 않고 (내려놓은 뒤 빈손으로 다시 쥘 자리 위로 가며, PICK 미리 열기와 같음) — 한 번에 약 1.1 s (모델).
@@ -263,7 +264,7 @@ control_master:
     #   위 → 0.3 s 멈춤 → 쥐기 → 닫기 (팔 멈춤, 빈손 검사) → 들기, 그 뒤는 지금 PICK 과 같은 마무리. 쥔 깊이 · 기울임을 기록해 STORE 가 storeheld 경로를 고름
     farpick_dir: ""              # 표 폴더. "" = standup_paths_file 과 같은 폴더의 farpick/. 파일이 없으면 경고만 (기능 끔)
     farpick_mode: auto           # auto = 선 퍽 PICK 에서 이웃이 면 사이 farpick_touch_mm 안이거나 · 지금 계획이 거절될 때 먼저 시도 (손만 기울이면 되는 퍽은 기울여 쥐고 다시 쥠) (안 되면 지금 흐름), always = 표에 맞는 칸이 있으면 늘, off = 안 씀
-    farpick_face_tol_deg: 90.0    # 11-10 12:2x: 끔 (90) — 기울인 손도 손가락을 면에 맞춤 (arm_kinematics pick_poses) → 표 (손목 76° 돌림) 안 씀. 그 전 10: 손을 기울여야 하는 네모가 닫힘축 (접선) 과 이만큼 넘게 틀어지면 먼 퍽 표 먼저 (기울인 손은 손목을 못 돌려 모서리를 침, 11-10 실물 18.8°)
+    farpick_face_tol_deg: 0.0    # 11-10 12:2x: 끔 (90) — 기울인 손도 손가락을 면에 맞춤 (arm_kinematics pick_poses) → 표 (손목 76° 돌림) 안 씀. 그 전 10: 손을 기울여야 하는 네모가 닫힘축 (접선) 과 이만큼 넘게 틀어지면 먼 퍽 표 먼저 (기울인 손은 손목을 못 돌려 모서리를 침, 11-10 실물 18.8°)
     farpick_nbr_max_m: 0.06      # 목표 퍽 중심에서 이 안의 가장 가까운 이웃 방향으로 표를 고름 (없으면 nbr_none)
     farpick_max_gap_mm: 12.0     # 표 칸과 잰 퍽 차이 한도 (칸 → 퍽으로 경로 전체를 옮김), 넘으면 그 표 안 씀
     farpick_max_gap_deg: 8.0     # 네모 면 방향 차이 한도 (90° 주기, 원기둥은 안 봄)
@@ -271,7 +272,7 @@ control_master:
     farpick_regrasp: true        # 표로 기울여 쥔 퍽 → 가까운 빈 자리에 세워 내려놓고 수직 손으로 50 mm 다시 쥠 (11-10 10:05 실물: 22 mm · 27° 로 대각 넣기 실패). false = 쥔 그대로 STORE (store_<칸>_d40_tilt)
     farpick_regrasp_tilt_dev: 5.0  # 표로 쥔 기울임 (예 27°) 과 내려놓는 손 기울임 (10° 단계) 차 허용 [°]. 11-10 10:25: 0.5 면 놓을 자세가 없어 예전 흐름으로 감
     regrasp_put_clear_mm: 8.0      # 다시 쥐기 전 내려놓을 때 퍽 바닥을 박스 윗면 위 8 mm 에서 놓음 (11-10: 2 mm 면 눌러서 손가락 안쪽 대각선이 퍽을 밈). 주사위 PLACE 는 그대로
-    regrasp_offset_mm: [0.0, 0.0]   # 세워 놓은 퍽을 수직으로 다시 쥐는 점 [앞, 왼쪽] mm (실행 중 ros2 param set 가능). 11-10: 2 mm 앞 쥠은 한 번만 → 0
+    regrasp_offset_mm: [-7.0, 0.0]   # 세워 놓은 퍽을 수직으로 다시 쥐는 점 [앞, 왼쪽] mm (실행 중 ros2 param set 가능). 11-10: 2 mm 앞 쥠은 한 번만 → 0
     pick_prefer_tangent: true      # 이웃 없는 선 퍽: 손목을 덜 돌리는 닫힘 방향 먼저 (11-10: 혼자 있는 네모를 손목 +79° 로 쥐어 돌림 보정 11 mm 가 들어가 옆으로 비켜 쥠)
     # 쥐기 (닫기) 뒤 빈손 문턱 [m]: 그리퍼 실측이 이보다 더 닫혔으면 퍽을 못 쥔 것 → PICK (받침 세우기 · 보통 집기 · 다시 쥐기) 을 쥐기 높이 위 점까지만 올리고 실패로 끝
     #   (11-09 21:4x 실물: 누운 퍽 끝을 놓쳐 빈손으로 받침 넣기 · 꽂기를 끝까지 해 팔이 퍽 · 박스를 침, 두 번). 값 = 끝까지 닫힘 gripper_close −0.0016 과
@@ -305,6 +306,25 @@ control_master:
     still_linear: 0.01             # [m/s] /odom 이 이보다 느리면 "멈춤"
     still_angular: 0.05            # [rad/s]
     odom_timeout_s: 0.5            # /odom 의 측정 시각이 이만큼 오래되면 "멈췄는지 모름" → 팔 시작 안 함
+    look_near_tilt_deg: 10.0   # 11-11 추가
+    rack_fit_persist: false   # 11-11 추가
+    fail_fold_s: 3.0   # 11-11 추가
+    hw_status_optional: true   # 11-11 추가
+    regrasp_visual: true   # 11-11 추가
+    grasp_width_check: true   # 11-11 추가
+    grasp_retry_max: 1   # 11-11 추가
+    store_close_rise_mm: 50.0   # 11-11 추가
+    store_close_side_mm: 40.0   # 11-11 추가
+    lyingpick_use: true   # 11-11 추가
+    lyingpick_dz_mm: 0.0   # 11-11 추가
+    lyingpick_hover_mm: 4.0   # 11-11 추가
+    store_match_grip_extra_mm: -5.0   # 11-11 추가
+    grasp_width_cylinder_mm: 33.5   # 11-11 추가
+    store_contact_current_a: 0.55   # 11-11 추가
+    store_contact_retry: false   # 11-11 추가
+    store_contact_err_deg: 2.0   # 11-11 추가
+    store_contact_height_mm: 3.0   # 11-11 추가
+    store_recover: true   # 11-11 추가
 
 # 손목 카메라 홈 사진 보정 (manipulation camera_drift_node) — 팔이 홈에 멈출 때마다 기준 사진 (config/camera_home_ref.png, 잘 될 때)
 #   과 비교해 카메라가 손목에서 돈 만큼 /wrist_cam/drift → control_master 가 손목 검출을 되돌림 (wrist_cam_drift_correct)

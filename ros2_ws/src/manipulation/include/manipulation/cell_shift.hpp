@@ -49,6 +49,26 @@ bool store_lift_clear(const ArmModel & m, ArmPath & path, const Eigen::Vector2d 
 //   첫 점 (출발 자세, path_actions 가 끊지 않는 점) 은 뺌. 놓는 점이 없거나 그런 점이 없으면 −1
 int store_settle_index(const ArmModel & m, const ArmPath & path, double up_m);
 
+// store_* 경로: 첫 놓는 점 (release) 뒤 첫 닫기 (grip close, 빈손으로 가며 닫기) 를 늦춤 (control_master store_close_rise_mm · store_close_side_mm)
+//   11-10 실물: 손끝이 퍽 윗면 40 mm 아래를 쥐고 있어, 칸에 덜 내려가 걸린 퍽은 store_lift_clear 10 mm 만 올라와도 손가락이 아직 퍽 옆
+//   → 거기서 닫으면 퍽을 다시 집어 끌어올림. 새 닫는 점 = 원래 닫는 점부터 손끝이 놓는 점보다 rise_m 이상 높거나 수평 side_m 이상
+//   벗어난 첫 점 (원래 점이 이미 그러면 그대로, 앞으로 당기지 않음). rise_m · side_m 이 0 이하면 그 조건은 안 봄, 둘 다면 그대로
+//   손끝 = 팀 명령 rad → 팔 모델 (store_settle_index 와 같음). 그리퍼 값 (grip · grip_on_way · grip_early) 만 옮기고 점 · 속도 · 멈춤은 그대로
+//   끝 점: 접기 경로 첫 점 (P0_복귀 — lazy_fold 가 여기서 자르고, 그 뒤는 그리퍼 동작이 없어야 잘림) 바로 앞, P0_복귀 가 없으면 끝 앞 점,
+//     그 사이 다른 그리퍼 점이 있으면 그 앞. 끝 점 · 마지막 점에서 닫으면 path_actions 가 멈춤 + 그리퍼 기다림으로 만듦 (시간 늘고
+//     받침 경로의 마지막 동작이 그리퍼가 됨). 그 끝 점까지 조건을 만족하는 점이 없으면 그 끝 점에서 닫음 (capped)
+struct StoreCloseMove
+{
+  int release{-1};        // 첫 놓는 점
+  int from{-1};           // 원래 닫는 점 (놓은 뒤 첫 close). −1 = 없음
+  int to{-1};             // 새 닫는 점 (= from 이면 그대로)
+  bool capped{false};     // 조건을 만족하는 점이 없어 끝 점에서 닫음
+  double from_dz_mm{0.0}, from_dxy_mm{0.0};   // 원래 닫는 점 손끝 − 놓는 점 손끝 (높이 · 수평 거리)
+  double to_dz_mm{0.0}, to_dxy_mm{0.0};       // 새 닫는 점
+};
+// 옮겼으면 true. 놓는 점 · 그 뒤 닫기가 없거나 그 점 관절 수가 5 가 아니면 false (경로 그대로, mv.from 으로 구분)
+bool store_delay_close(const ArmModel & m, ArmPath & path, double rise_m, double side_m, StoreCloseMove & mv);
+
 // ---- 새 칸 경로 (storeheld, 11-10: config/arm_paths.yaml store_<칸>_d50 · _d30 · _d30_low · _d40_tilt10 · 20 · 30 · retrieve_<칸>_full) ----
 // 경로 이름 → 칸 (store_S7 · retrieve_S7 · store_look_S7 · look_rack_S7 · store_S7_d30 · retrieve_S7_full → "S7"). 칸 경로가 아니면 ""
 std::string path_cell(const std::string & name);

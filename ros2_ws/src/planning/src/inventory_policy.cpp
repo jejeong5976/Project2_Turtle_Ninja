@@ -1,6 +1,9 @@
 // inventory_policy.cpp — 재고 불확실 판정 · 정합 구현, 설명은 inventory_policy.hpp
 
 #include "planning/inventory_policy.hpp"
+
+#include <cmath>
+#include <cstdio>
 #include "planning/types.hpp"
 
 namespace planning
@@ -25,6 +28,39 @@ bool inventory_doubt_after(uint8_t task, ArmEnd end)
 {
   return arm_task_risks_inventory(task) &&
          (end == ArmEnd::Failed || end == ArmEnd::Unknown || end == ArmEnd::Mismatch);
+}
+
+bool empty_grasp_confirmed(uint8_t task, ArmEnd end, const std::string & message)
+{
+  return task == kArmPick && end == ArmEnd::Failed && message.find(kEmptyGraspToken) != std::string::npos;
+}
+
+bool store_returned_confirmed(uint8_t task, ArmEnd end, const std::string & message, double * x, double * y)
+{
+  if (task != kArmStore || end != ArmEnd::Failed) {return false;}
+  const auto at = message.find(kStoreReturnedToken);
+  if (at == std::string::npos) {return false;}
+  double a = 0.0, b = 0.0;
+  if (std::sscanf(message.c_str() + at + std::string(kStoreReturnedToken).size(), " %lf %lf", &a, &b) != 2 || !std::isfinite(a) ||
+    !std::isfinite(b))
+  {
+    return false;
+  }
+  if (x) {*x = a;}
+  if (y) {*y = b;}
+  return true;
+}
+
+bool apply_store_returned(Cargo & cargo, const std::string & puck_id, std::string * puck_state, std::string * error)
+{
+  const auto & g = cargo.gripper();
+  if (puck_id.empty() || !g || g->puck_id != puck_id) {
+    set_error(error, "그리퍼 기록이 퍽 " + puck_id + " 이 아님 (" + (g ? g->puck_id : std::string("빔")) + ")");
+    return false;
+  }
+  cargo.clear_gripper();
+  if (puck_state) {*puck_state = "on_field";}
+  return true;
 }
 
 CargoDoubt make_doubt(const Cargo & cargo, uint8_t task, const std::string & puck_id, const std::string & slot,

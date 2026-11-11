@@ -65,6 +65,27 @@ bool arm_task_risks_inventory(uint8_t task);
 // 이 끝난 모양이면 재고가 불확실한가 (= 자동 재시도 · 재계획 금지)
 bool inventory_doubt_after(uint8_t task, ArmEnd end);
 
+// control 이 PICK 빈손을 그리퍼 실측으로 확인했다는 결과 글 표시 (보통 맨 앞, ArmRunner 가 "팔 작업 중단: " 을 앞에 붙여도 찾음)
+//   control 약속: 퍽이 박스에 남는 닫기의 빈손에서만 붙임 = 박스 첫 쥐기 · 박스 안 옮겨 놓고 다시 쥐기 (re_grasp 등)
+//   받침 세우기 다시 쥐기 (park_ 닫기, park_re_down) 빈손은 토큰 금지: 퍽이 로봇 위 받침에 있음 → 토큰 없이 예전대로
+//   FAULT INVENTORY_UNCERTAIN (사람 확인). 실행기는 어느 닫기였는지 모름 → 이 약속을 control 이 지켜야 함
+inline constexpr const char * kEmptyGraspToken = "EMPTY_GRASP";
+
+// PICK 이 수락 뒤 빈손 확인으로 끝남 (결과 글에 EMPTY_GRASP) → 퍽은 박스에 그대로 · 그리퍼 빔 = 재고 확실
+//   실행기 empty_grasp_skip 이 켜졌을 때만 씀 → 재고 불확실 대신 그 퍽 건너뜀. 그 밖 작업 · 끝난 모양 · 표시 없는 실패는 false
+//   (받침 다시 쥐기 빈손은 control 이 토큰을 안 붙임 → 여기 false → 불확실 FAULT, 위 약속)
+bool empty_grasp_confirmed(uint8_t task, ArmEnd end, const std::string & message);
+
+// control 이 STORE 넣기 걸림 뒤 쥔 퍽을 박스에 되돌려 놓았다는 결과 글 표시 (store_recover, 11-11):
+//   "STORE_RETURNED_TO_BOX x y" — 내려놓은 자리 base_link [m]. 손은 빔 (control 이 쥔 상태를 지움), 퍽은 박스 그 자리
+//   control 약속: 퍽을 박스에 내려놓고 (열고) 다시 쥐기 전에 끝난 STORE 에서만 붙임 (칸 안 · 쥔 채 실패는 토큰 없음 → 예전대로 불확실 FAULT)
+inline constexpr const char * kStoreReturnedToken = "STORE_RETURNED_TO_BOX";
+// STORE 가 수락 뒤 실패로 끝났고 결과 글에 토큰 + 숫자 두 개가 있으면 true (x · y = base_link 자리). 그 밖은 false
+bool store_returned_confirmed(uint8_t task, ArmEnd end, const std::string & message, double * x = nullptr, double * y = nullptr);
+// 그 퍽을 그리퍼 기록에서 지움 (박스로 되돌아감). 그리퍼 기록 = 그 퍽일 때만 (아니면 false + error, 재고 그대로)
+//   puck_state = 퍽 기록부에 넣을 상태 (on_field). 불확실 표시는 안 건드림
+bool apply_store_returned(Cargo & cargo, const std::string & puck_id, std::string * puck_state, std::string * error = nullptr);
+
 // 불확실 표시 만들기. item = 그때 기록상 그 퍽 (PICK 이면 pick_item, STORE · PLACE · LOOK_RACK = 그리퍼, RETRIEVE = 그 칸)
 CargoDoubt make_doubt(const Cargo & cargo, uint8_t task, const std::string & puck_id, const std::string & slot,
   const CargoItem & pick_item, const std::string & step_name, const std::string & reason);

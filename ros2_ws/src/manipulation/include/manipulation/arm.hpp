@@ -184,6 +184,15 @@ public:
   LateGoal on_goal_response(unsigned gen, bool accepted, double now_s);
   // 재생기의 결과 (ok = 성공). 포기한 세대면 무시
   void on_result(unsigned gen, bool ok);
+  // 논리 대기 (모터 궤적 없음, regrasp_visual) 를 끝내며 남은 계획을 tail 로 바꿈. 받아들인 지금 세대의 대기일 때만,
+  //   취소 · 실패 · fail_now 상태면 안 바꿈 (false → 원래 계획 · 원래 처리). 늦은 옛 답은 세대가 달라 무시됨
+  bool replace_after_wait(unsigned gen, std::vector<ArmAction> tail);
+  // 방금 SEND 로 내준 동작 앞에 동작을 끼움 (grasp_guard 다시 쥐기 · 다시 넣기): 보내는 중인 동작 자리를 pre[0] 로 바꾸고
+  //   pre[1..] 뒤에 원래 동작을 둠 → 호출한 쪽은 원래 동작 대신 pre[0] 을 보냄. SEND 직후 (보내는 중 · 결과 전) 가 아니면 false
+  bool insert_before_sent(std::vector<ArmAction> pre);
+  // 방금 SEND 로 내준 동작부터 끝까지를 tail 로 바꿈 (store_recover: 칸 안에서 놓지 않고 들어 나와 박스에서 다시 쥐기 · 박스에 되돌리기)
+  //   → 호출한 쪽은 원래 동작 대신 tail[0] 을 보냄. SEND 직후 (보내는 중 · 받아들여지기 전) 가 아니거나 tail 이 비면 false (그대로)
+  bool replace_from_sent(std::vector<ArmAction> tail);
 
   // 주기마다. arm_may_move = 지금 팔 차례(ARM)인가 (MotionArbiter 가 정함)
   //   fold_confirmed = FoldCheck::confirmed(now) — VERIFY 단계에서만 봄 (VERIFY_START 이후의 측정만 인정)
@@ -223,6 +232,23 @@ private:
   std::string forced_why_;
   unsigned gen_{0};           // 보낸 궤적마다 1 씩. 포기 · 취소하면 또 1 → 늦은 답을 구분
 };
+
+// 실패 뒤 자동 접기 (control_master fail_fold_s, 순수 → test_arm.cpp)
+//   11-10 실물: PICK 이 빈손으로 멈춘 뒤 팔이 박스 위에 뻗은 채 약 65 s → 관절 2 과부하 (Hardware Error) 로 팔 보드 전체 멈춤
+//   ① 시계 시작 (팔 작업이 끝날 때): 실패 (ABORTED) · HOME 이 아님 (같은 HOME 을 또 안 함) · fail_fold_s > 0 · 그때 하드웨어 정상
+//      취소 (CANCELED) · 성공은 시작 안 함 (취소는 planning 이 다음을 정함)
+//   ② 접기 직전 (fail_fold_s 동안 새 팔 작업 없음): 빈 문자열 = 접음, 아니면 안 하는 이유 (로그)
+bool fail_fold_arm(ArmEnd end, bool home_task, double fail_fold_s, bool hw_ok);
+struct FailFoldState
+{
+  bool folded{false};        // 이미 접힘 실측 확인
+  bool carrying{false};      // 퍽을 쥔 채 (PICK · RETRIEVE 성공 뒤, STORE · PLACE 실패 뒤)
+  bool half_closed{false};   // 그리퍼 실측이 반쯤 닫힘 (퍽을 쥐었을 수 있음)
+  bool empty_grasp{false};   // 이번 작업에서 빈손 확인이 걸림 (손이 빈 것이 확실)
+  bool step_mode{false};     // 구분 동작 (park_step) 작업이었음 — 사람이 보는 중
+  bool park_left{false};     // 받침 안 다시 쥐기 (park_ 닫기) 가 빈손 — 퍽이 로봇 위 받침 (HOME 자리) 에 남았을 수 있음
+};
+std::string fail_fold_block(const FailFoldState & s);
 
 // ============================================================================
 // ④ 접힘 실측 확인 (FoldCheck) — R1
@@ -282,6 +308,13 @@ public:
   void observe_components(double now_s, bool all_active, const std::string & detail);
   bool healthy(double now_s) const;
   std::string status(double now_s) const;   // 로그용
+  // 보드 상태 없이 (control_master hw_status_optional, 11-10 실물: DDS 로 list_hardware_components 를 끝내 못 찾아
+  //   컨트롤러 · 관절 측정이 멀쩡한데 팔 작업을 계속 거절): 보드 상태를 한 번도 못 받았거나, 서비스가 지금 안 보이고 마지막 답이 정상이면
+  //   ② 관절 측정 + 팔 · 그리퍼 재생기 (JTC) 준비로만 판단. 받은 답이 이상이면 지금처럼 이상 (보이는 서비스가 답을 안 줘도 지금처럼)
+  void set_components_optional(bool on) {comp_optional_ = on;}
+  void set_components_reachable(bool on) {comp_reachable_ = on;}   // 서비스가 지금 보이나
+  void set_controllers_ready(bool on) {ctrl_ready_ = on;}          // 팔 · 그리퍼 재생기 액션 서버 준비
+  bool components_waived(double now_s) const;                      // 지금 보드 상태 대신 관절 측정으로 보는 중
 private:
   double state_timeout_s_, bad_hold_s_, component_timeout_s_;
   bool have_{false};
@@ -290,6 +323,7 @@ private:
   bool comp_have_{false}, comp_ok_{false};
   double comp_stamp_{0.0};
   std::string comp_detail_{"보드 상태를 아직 못 받음"};
+  bool comp_optional_{false}, comp_reachable_{true}, ctrl_ready_{false};
   bool components_ok(double now_s) const;
 };
 

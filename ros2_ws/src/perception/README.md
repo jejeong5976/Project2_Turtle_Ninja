@@ -18,6 +18,7 @@
 
 - `header.stamp` = 촬영 시각 그대로, `header.frame_id` = 배포판 URDF 이름 (광각 `birdeye_camera_optical_frame`, 손목 `d435_color_optical_frame`)
 - 퍽 ID = AprilTag 0–11 만. 장소 태그(12–14)는 퍽 ID 로 안 붙임 (`common.hpp` `is_puck_tag`)
+- 손목 태그 다시 찾기 (`wrist.tag_rescue`, 기본 켬): 1차 (분할 상자 + 24 px, aruco) 에서 태그를 못 받고 묶음 ID 도 없는 퍽만 넓힌 상자 (+48 px) 를 퍽마다 AprilTag 3 (있으면) → CLAHE → aruco 로 다시 봄. 태그 중심이 그 퍽 마스크 (8 px 여유) 안일 때만, 태그 하나는 퍽 하나에만 (`wrist_tag_rescue.hpp`)
 - 손목은 TF 를 못 구하면 발행 안 함 (위쪽 없이 내면 긴축이 틀림 → planning 이 검출 끊김으로 앎)
 
 ## 구조
@@ -37,6 +38,7 @@ perception/
 │   ├── wrist_seg.hpp               # 손목: letterbox · 출력 해석 · 마스크 + 실행 (SegModel)
 │   ├── wrist_pose.hpp              # 손목: 마스크 + 깊이 → 퍽 자세
 │   ├── wrist_tracker.hpp           # 손목: 여러 장 확정
+│   ├── wrist_tag_rescue.hpp        # 손목: 태그 못 붙인 퍽만 넓힌 상자 · AprilTag 3 로 다시 찾기
 │   └── wrist_rack.hpp              # 손목: 적재함 컵 바닥 태그 → 칸 중심 · yaw + 다수결
 ├── src/
 │   ├── perception_node.cpp         # 노드 조립 · 서비스 · main (MultiThreadedExecutor 3 스레드)
@@ -45,12 +47,13 @@ perception/
 │   ├── barcode.{hpp,cpp}           # 바코드 판독기 (zxing) + 단계: 다수결 · 발행 (카메라 콜백 안에서)
 │   ├── msg_utils.hpp               # planning 메시지 규칙 (NaN · 0 쿼터니언 · ID · 신호등 상수)
 │   └── (include 헤더와 같은 이름의 .cpp)
-└── test/  test_wide · test_barcode · test_common · test_wrist_pose · test_wrist_seg · test_wrist_rack
+└── test/  test_wide · test_barcode · test_common · test_wrist_pose · test_wrist_seg · test_wrist_rack · test_wrist_tag_rescue
 ```
 
 | 대상 | 내용 | 빌드 조건 |
 |---|---|---|
-| `perception_core` | ROS 없음: `common` · `wide_detector` · `wide_tag_reader` · `traffic_light` · `wrist_pose` · `wrist_tracker` · `wrist_seg` · `wrist_rack` | 항상 (개발 PC 테스트) |
+| `perception_core` | ROS 없음: `common` · `wide_detector` · `wide_tag_reader` · `traffic_light` · `wrist_pose` · `wrist_tracker` · `wrist_seg` · `wrist_rack` · `wrist_box` · `wrist_tag_rescue` | 항상 (개발 PC 테스트) |
+| ↳ AprilTag 3 부분 | `apriltag` 패키지 (`ros-$ROS_DISTRO-apriltag`, manipulation `rack_tag_node` 와 같은 것) 있으면 `PERCEPTION_HAVE_APRILTAG` → 태그 다시 찾기에 AprilTag 3. 없으면 aruco 만 (경고) | apriltag 있을 때 |
 | ↳ TensorRT 부분 | `trt_engine.cpp` 추가 + `PERCEPTION_HAVE_TRT` → `BoxDetector` · `SegModel` 구현이 켜짐 | TensorRT 있을 때 (Jetson) |
 | `perception_barcode` | `barcode` (판독기 + 단계, ROS · zxing 씀) | 항상 (개발 PC 테스트) |
 | `perception_node` | 노드 · 파이프라인 3개 | TensorRT 있을 때 |
@@ -135,6 +138,7 @@ colcon test --packages-select perception && colcon test-result --verbose
 | `test_common` | 다수결 · 퍽 태그 ID · 메시지 규칙 (NaN · 0 쿼터니언 · ID · 색/모양 · 신호등 상수) | 6 개 통과 |
 | `test_wrist_pose` | 손목 기하 · 확정 (합성 점군) | 15 개 통과 |
 | `test_wrist_seg` | 합성 출력으로 분할 전후처리 · 출력 모양 판정 | 3 개 통과 |
+| `test_wrist_tag_rescue` | 실제 36h11 로 그린 퍽 윗면 합성 영상: AprilTag 3 모서리 순서 · 화소 규약, 주인 퍽 규칙, 기울고 작은 태그, 합친 상자의 CLAHE 건너뜀, 상자 경계 잘림, 옆 퍽 태그 안 뺏음, 시간 한도, 묶음 ID 기억 · 못 찾은 퍽 쉼 (끝까지), truncated 퍽 통과, 처리 시간. `TAG_SWEEP=1` 이면 격자 탐색 (1차 대비 성공 · 틀린 ID 표) | 12 개 통과 (+ 탐색 2 개 건너뜀) |
 | TensorRT 코드 · 노드 | 개발 PC 엔 TensorRT 없음 → `-DPERCEPTION_HAVE_TRT -fsyntax-only` 로 문법만 확인 (`trt_engine.cpp` 제외) | Jetson 에서 빌드 · 실행 확인 필요 |
 
 ## 주의 · 남은 것

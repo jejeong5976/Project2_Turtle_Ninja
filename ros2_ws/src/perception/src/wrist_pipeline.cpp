@@ -46,6 +46,18 @@ WristPipeline::WristPipeline(
   auto & n = node;
   const auto model = n.declare_parameter<std::string>("wrist.model", "");
   const auto conf = n.declare_parameter<double>("wrist.conf", 0.5);
+  conf_ = static_cast<float>(conf);
+  // 쥔 퍽 재기 (wrist_held.hpp, 11-11): 기본 꺼짐. wrist.held.enable 은 장마다 읽음 (ros2 param set /perception wrist.held.enable true)
+  n.declare_parameter<bool>("wrist.held.enable", false);
+  held_p_.conf = static_cast<float>(n.declare_parameter<double>("wrist.held.conf", held_p_.conf));
+  held_p_.roi_x0 = static_cast<int>(n.declare_parameter<int>("wrist.held.roi_x0", held_p_.roi_x0));
+  held_p_.roi_y0 = static_cast<int>(n.declare_parameter<int>("wrist.held.roi_y0", held_p_.roi_y0));
+  held_p_.min_area_px = static_cast<int>(n.declare_parameter<int>("wrist.held.min_area_px", held_p_.min_area_px));
+  held_p_.right_touch_px = static_cast<int>(n.declare_parameter<int>("wrist.held.right_touch_px", held_p_.right_touch_px));
+  held_p_.finger_y = static_cast<int>(n.declare_parameter<int>("wrist.held.finger_y", held_p_.finger_y));
+  held_p_.top_ref_x = static_cast<int>(n.declare_parameter<int>("wrist.held.top_ref_x", held_p_.top_ref_x));
+  held_pub_ = node.create_publisher<interfaces::msg::DetectionArray>(
+    n.declare_parameter<std::string>("wrist.held.topic", "/held_puck/image"), 10);
   const auto iou = n.declare_parameter<double>("wrist.iou", 0.7);
   const auto window = n.declare_parameter<int>("wrist.window", 5);
   const auto min_hits = n.declare_parameter<int>("wrist.min_hits", 3);
@@ -62,6 +74,28 @@ WristPipeline::WristPipeline(
   n.declare_parameter<bool>("wrist.tag_centre", true);
   tag_roi_ = n.declare_parameter<bool>("wrist.tag_roi", true);
   tag_roi_pad_px_ = static_cast<int>(n.declare_parameter<int>("wrist.tag_roi_pad_px", 24));
+  // 태그 다시 찾기 (wrist_tag_rescue.hpp): 1차에서 태그를 못 받은 퍽만 넓힌 상자 · AprilTag 3. 켜고 끄기는 장마다 읽음
+  n.declare_parameter<bool>("wrist.tag_rescue", true);
+  {
+    pw::TagRescueParams rp;
+    rp.pad_px = static_cast<int>(n.declare_parameter<int>("wrist.tag_rescue_pad_px", rp.pad_px));
+    rp.margin_px = static_cast<int>(n.declare_parameter<int>("wrist.tag_rescue_margin_px", rp.margin_px));
+    rp.apriltag3 = n.declare_parameter<bool>("wrist.tag_rescue_apriltag3", rp.apriltag3);
+    rp.aruco = n.declare_parameter<bool>("wrist.tag_rescue_aruco", rp.aruco);
+    rp.clahe = n.declare_parameter<bool>("wrist.tag_rescue_clahe", rp.clahe);
+    rp.at3_max_hamming = static_cast<int>(n.declare_parameter<int>("wrist.tag_rescue_max_hamming", rp.at3_max_hamming));
+    rp.at3_min_margin = n.declare_parameter<double>("wrist.tag_rescue_min_margin", rp.at3_min_margin);
+    rp.budget_ms = n.declare_parameter<double>("wrist.tag_rescue_budget_ms", rp.budget_ms);
+    const auto retry = n.declare_parameter<int>("wrist.tag_rescue_retry_frames", 4);
+    rescuer_ = std::make_unique<pw::TagRescuer>(rp);
+    rescue_cool_ = pw::RescueCooldown(static_cast<int>(retry), match_m);
+    std::string ms;
+    for (const auto & m : rescuer_->methods()) {ms += (ms.empty() ? "" : " → ") + m;}
+    RCLCPP_INFO(node.get_logger(), "[wrist] 태그 다시 찾기 %s: %s, 상자 +%d px, 마스크 여유 %d px, 한 장 %.0f ms, 못 찾으면 %d 장 쉼%s",
+      n.get_parameter("wrist.tag_rescue").as_bool() ? "켬" : "끔", ms.c_str(), rp.pad_px, rp.margin_px, rp.budget_ms,
+      static_cast<int>(retry),
+      pw::apriltag3_available() ? "" : " (AprilTag 3 없이 빌드: sudo apt install ros-$ROS_DISTRO-apriltag 후 perception 다시 빌드)");
+  }
   publish_debug_ = n.declare_parameter<bool>("wrist.publish_debug", false);
   const auto color_topic = n.declare_parameter<std::string>("wrist.color_topic", "/camera/camera/color/image_raw");
   const auto depth_topic = n.declare_parameter<std::string>(
@@ -207,6 +241,7 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
   if (reset_req_ != reset_done_) {
     reset_done_ = reset_req_;
     tracker_.reset();
+    rescue_cool_.reset();
     last_R_.reset();
   }
   if (!enabled_ || !seg_) {return;}
@@ -253,7 +288,7 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
   if (last_R_) {
     const double move = (t - last_t_).norm();
     const double rot = std::acos(std::clamp(((last_R_->transpose() * R).trace() - 1.0) / 2.0, -1.0, 1.0)) * 180.0 / M_PI;
-    if (move > reset_move_m_ || rot > reset_rot_deg_) {tracker_.reset();}
+    if (move > reset_move_m_ || rot > reset_rot_deg_) {tracker_.reset(); rescue_cool_.reset();}
   }
   last_R_ = R;
   last_t_ = t;
@@ -261,17 +296,31 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
   // 분할 → 자세 → 거르기 → 확정
   const auto t_s0 = std::chrono::steady_clock::now();
   std::vector<pw::SegInstance> inst;
+  const bool held_on = node_.get_parameter("wrist.held.enable").as_bool();
+  seg_->set_conf(held_on ? std::min(conf_, held_p_.conf) : conf_);   // 쥔 퍽은 가까워 신뢰도가 낮음 (0.2–0.9)
   try {
     inst = (*seg_)(bgr);
   } catch (const std::exception & e) {
     RCLCPP_ERROR_THROTTLE(node_.get_logger(), *node_.get_clock(), 5000, "[wrist] 추론 실패: %s", e.what());
     return;
   }
+  if (held_on) {
+    publish_held(color, pw::measure_held(inst, held_p_));
+    // 일반 검출은 wrist.conf 그대로 (NMS 는 높은 점수부터라 낮춘 문턱이 높은 점수 결과를 안 바꿈)
+    inst.erase(std::remove_if(inst.begin(), inst.end(), [this](const pw::SegInstance & s) {return s.conf < conf_;}), inst.end());
+  }
   const auto t_seg = std::chrono::steady_clock::now();
   st.seg = std::chrono::duration<double, std::milli>(t_seg - t_s0).count();
+  {
+    const auto & sp = seg_->last_timing();
+    st.seg_pre = sp.pre;
+    st.seg_infer = sp.infer;
+    st.seg_gpu = sp.gpu;
+    st.seg_post = sp.post;
+  }
   std::vector<pw::TagPose> tags;
+  cv::Mat gray;
   if (!inst.empty()) {
-    cv::Mat gray;
     cv::cvtColor(bgr, gray, cv::COLOR_BGR2GRAY);
     if (tag_roi_) {   // 퍽 태그는 퍽 위에만 있음 → 분할 상자 둘레만 (전체 영상 두 번 = 장당 약 17 ms, Jetson)
       std::vector<cv::Rect> rois;
@@ -289,8 +338,10 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
   const auto t_tag = std::chrono::steady_clock::now();
   st.tags = std::chrono::duration<double, std::milli>(t_tag - t_seg).count();
   std::vector<pw::RawPuck> raws;
+  std::vector<int> raw_of(inst.size(), -1);   // inst 번호 → raws 번호 (태그 다시 찾기용)
   const bool tag_centre = node_.get_parameter("wrist.tag_centre").as_bool();
-  for (const auto & s : inst) {
+  for (size_t k = 0; k < inst.size(); ++k) {
+    const auto & s = inst[k];
     auto p = pw::puck_pose(s.mask, depth, K, tags, &up, min_rise_m_, tag_centre, &st.pose_parts);
     if (!p) {continue;}
     pw::RawPuck r;
@@ -299,10 +350,35 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
     r.info = pw::parse_kind(s.kind);
     r.conf = s.conf;
     r.reject = pw::reject_reason(r.pose);
+    raw_of[k] = static_cast<int>(raws.size());
     raws.push_back(std::move(r));
   }
   st.pose = ms_since(t_tag);
   st.pucks = static_cast<int>(inst.size());
+
+  // 태그 다시 찾기: 1차에서 태그 못 받고 묶음 ID 도 없는 퍽만 (없으면 검출 안 함)
+  pw::RescueStats rs;
+  std::vector<std::pair<pw::TagPose, std::string>> rescued;   // 확인 그림 · 로그용
+  if (!inst.empty() && rescuer_ && node_.get_parameter("wrist.tag_rescue").as_bool()) {
+    const auto t_r0 = std::chrono::steady_clock::now();
+    const int got = pw::rescue_raw_pucks(*rescuer_, gray, depth, K, up, inst, raw_of, raws, tags, tracker_,
+        min_rise_m_, tag_centre, &rescue_cool_, &rs, &st.pose_parts);
+    st.rescue = ms_since(t_r0);
+    st.rescue_runs = rs.rois > 0 ? 1 : 0;
+    st.rescue_rois = rs.rois;
+    st.rescued = got;
+    st.rescue_need = rs.need;
+    for (size_t k = 0; k < inst.size() && k < rs.how.size(); ++k) {
+      if (rs.how[k].empty() || raw_of[k] < 0) {continue;}
+      const auto & r = raws[static_cast<size_t>(raw_of[k])];
+      if (!r.pose.tag) {continue;}
+      rescued.emplace_back(*r.pose.tag, rs.how[k]);
+      RCLCPP_INFO_THROTTLE(node_.get_logger(), *node_.get_clock(), 1000,
+        "[wrist] 태그 다시 찾음: ID %d (%s) · 퍽 상자 (%d, %d)–(%d, %d) %s%s", r.pose.tag->id, rs.how[k].c_str(),
+        r.pose.bbox[0], r.pose.bbox[1], r.pose.bbox[2], r.pose.bbox[3], r.kind.c_str(),
+        r.reject.empty() ? "" : (" · 거름 " + r.reject).c_str());
+    }
+  }
   const auto t_trk = std::chrono::steady_clock::now();
   const auto dets = tracker_.update(raws);
   st.track = ms_since(t_trk);
@@ -332,7 +408,7 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
     out.detections.push_back(std::move(m));
   }
   det_pub_->publish(out);
-  if (publish_debug_ && debug_pub_->get_subscription_count() > 0) {publish_debug(color, bgr, K, raws, dets);}
+  if (publish_debug_ && debug_pub_->get_subscription_count() > 0) {publish_debug(color, bgr, K, raws, dets, tags, rs, rescued);}
 
   // 처리 시간: 단계별로 더해 두고 report_timing 이 5 s 마다 평균
   st.pub = ms_since(t_pub);
@@ -342,6 +418,10 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
   tm_.conv += st.conv;
   tm_.tf += st.tf;
   tm_.seg += st.seg;
+  tm_.seg_pre += st.seg_pre;
+  tm_.seg_infer += st.seg_infer;
+  tm_.seg_gpu += st.seg_gpu;
+  tm_.seg_post += st.seg_post;
   tm_.tags += st.tags;
   tm_.tag_runs += st.tag_runs;
   tm_.pose += st.pose;
@@ -350,9 +430,44 @@ void WristPipeline::on_frame(const Image::ConstSharedPtr & color, const Image::C
   tm_.pose_parts.ring += st.pose_parts.ring;
   tm_.pose_parts.refine += st.pose_parts.refine;
   tm_.track += st.track;
+  tm_.rescue += st.rescue;
+  tm_.rescue_runs += st.rescue_runs;
+  tm_.rescue_rois += st.rescue_rois;
+  tm_.rescued += st.rescued;
+  tm_.rescue_need += st.rescue_need;
   tm_.pub += st.pub;
   tm_.all += st.all;
   last_counts_ = {inst.size(), raws.size(), dets.size()};
+}
+
+// 쥔 퍽 잰 값 → /held_puck/image (못 재면 빈 배열 — 받는 쪽이 켜져 있음 · 장 시각을 앎). 칸 뜻은 wrist_pipeline.hpp 머리말
+void WristPipeline::publish_held(const Image::ConstSharedPtr & color, const pw::HeldMeasure & m)
+{
+  interfaces::msg::DetectionArray out;
+  out.header = color->header;
+  out.header.frame_id = frame_id_;
+  if (m.ok) {
+    interfaces::msg::Detection d;
+    d.header = out.header;
+    d.kind = "held_image";
+    const auto info = pw::parse_kind(m.kind);
+    d.label = info.color;
+    d.shape = info.shape;
+    d.confidence = m.conf;
+    d.pose.position.x = m.top_y;
+    d.pose.position.y = m.left_x;
+    d.pose.position.z = m.bottom_y;
+    d.pose.orientation.x = m.top_deg;
+    d.pose.orientation.y = m.left_deg;
+    d.pose.orientation.z = m.area;
+    d.pose.orientation.w = 0.0;
+    d.yaw_known = std::isfinite(m.left_deg);
+    for (int k = 0; k < 4; ++k) {d.bbox[k] = static_cast<float>(m.bbox[k]);}
+    out.detections.push_back(std::move(d));
+  } else {
+    RCLCPP_DEBUG_THROTTLE(node_.get_logger(), *node_.get_clock(), 2000, "[wrist] 쥔 퍽 못 잼: %s", m.why.c_str());
+  }
+  held_pub_->publish(out);
 }
 
 // 5 s 마다: 들어온 장 (컬러 · 깊이 · 짝) Hz + on_frame 단계별 평균 [ms] + on_box · on_rack · 짝 콜백 전체
@@ -372,19 +487,22 @@ void WristPipeline::report_timing()
     };
   const auto la = q3(lat_ms_), pd = q3(pair_dt_ms_);
   RCLCPP_INFO(node_.get_logger(),
-    "[wrist] 자세 퍽당 ms: 점 %.1f · 모양 %.1f · 고리 %.1f · 보정 %.1f | 촬영→처리 시작 ms 중앙 %.0f · 95%% %.0f · 최대 %.0f | "
-    "컬러·깊이 시각 차 ms 중앙 %.1f · 95%% %.1f · 최대 %.1f",
+    "[wrist] 분할 장당 ms: 전처리 %.1f · 추론 %.1f (GPU %.1f) · 후처리 %.1f | 자세 퍽당 ms: 점 %.1f · 모양 %.1f · 고리 %.1f · 보정 %.1f | "
+    "촬영→처리 시작 ms 중앙 %.0f · 95%% %.0f · 최대 %.0f | 컬러·깊이 시각 차 ms 중앙 %.1f · 95%% %.1f · 최대 %.1f",
+    m.seg_pre / f, m.seg_infer / f, m.seg_gpu / f, m.seg_post / f,
     m.pose_parts.points / pk, m.pose_parts.shape / pk, m.pose_parts.ring / pk, m.pose_parts.refine / pk,
     la[0], la[1], la[2], pd[0], pd[1], pd[2]);
   lat_ms_.clear();
   pair_dt_ms_.clear();
   RCLCPP_INFO(node_.get_logger(),
     "[wrist] %.1f s: 입력 컬러 %.1f Hz · 깊이 %.1f Hz · 짝 %.1f Hz · 처리 %.1f Hz | 장당 ms: 변환 %.1f · TF %.1f · 분할 %.1f · "
-    "태그 %.1f (회당 %.1f) · 자세 %.1f (퍽당 %.1f) · 확정 %.1f · 발행 %.1f = 전체 %.1f | 박스 %.1f ms × %d | "
+    "태그 %.1f (회당 %.1f) · 자세 %.1f (퍽당 %.1f) · 다시 찾기 %.1f (회당 %.1f × %d, 상자 %d · 붙임 %d · 대상 %d) · 확정 %.1f · "
+    "발행 %.1f = 전체 %.1f | 박스 %.1f ms × %d | "
     "적재함 %.1f ms × %d | 짝 콜백 %.1f ms | 이번 장 분할 %zu · 자세 %zu · 확정 %zu",
     dt, nc / dt, nd / dt, ns / dt, m.frames / dt, m.conv / f, m.tf / f, m.seg / f, m.tags / f,
     m.tag_runs > 0 ? m.tags / m.tag_runs : 0.0, m.pose / f,
-    m.pucks > 0 ? m.pose / m.pucks : 0.0, m.track / f, m.pub / f, m.all / f, m.box_runs > 0 ? m.box / m.box_runs : 0.0,
+    m.pucks > 0 ? m.pose / m.pucks : 0.0, m.rescue / f, m.rescue_runs > 0 ? m.rescue / m.rescue_runs : 0.0, m.rescue_runs,
+    m.rescue_rois, m.rescued, m.rescue_need, m.track / f, m.pub / f, m.all / f, m.box_runs > 0 ? m.box / m.box_runs : 0.0,
     m.box_runs, m.rack_runs > 0 ? m.rack / m.rack_runs : 0.0, m.rack_runs, ns > 0 ? m.sync_cb / ns : 0.0,
     last_counts_[0], last_counts_[1], last_counts_[2]);
   tm_ = Timing{};
@@ -625,15 +743,37 @@ void WristPipeline::publish_rack_debug(
 // 확인용 그림: 마스크 윤곽(색) · 거른 퍽 빨간 X + 이유 · 확정 퍽 흰 상자 + 긴축 화살표
 void WristPipeline::publish_debug(
   const Image::ConstSharedPtr & color, const cv::Mat & bgr, const pw::Intrinsics & K,
-  const std::vector<pw::RawPuck> & raws, const std::vector<pw::PuckDetection> & dets)
+  const std::vector<pw::RawPuck> & raws, const std::vector<pw::PuckDetection> & dets,
+  const std::vector<pw::TagPose> & tags, const pw::RescueStats & rs,
+  const std::vector<std::pair<pw::TagPose, std::string>> & rescued)
 {
   cv::Mat vis = bgr.clone();
   auto proj = [&K](const pw::Vec3 & P) {
       return cv::Point(static_cast<int>(K.fx * P.x() / P.z() + K.cx), static_cast<int>(K.fy * P.y() / P.z() + K.cy));
     };
+  // 태그: 1차 (aruco) 초록 t<ID> · 다시 찾기 자홍 R<ID> + 방법 · 다시 찾기 넓힌 상자 자홍 얇은 사각
+  auto poly = [&vis](const pw::TagPose & t, const cv::Scalar & c) {
+      for (int i = 0; i < 4; ++i) {
+        cv::line(vis, cv::Point(t.corners[i]), cv::Point(t.corners[(i + 1) % 4]), c, 1);
+      }
+    };
+  for (const auto & t : tags) {
+    poly(t, {0, 255, 0});
+    cv::putText(vis, "t" + std::to_string(t.id), cv::Point(t.corners[1]) + cv::Point(2, 0), cv::FONT_HERSHEY_SIMPLEX, 0.4,
+      {0, 255, 0}, 1);
+  }
+  for (const auto & roi : rs.roi_rects) {cv::rectangle(vis, roi, {255, 0, 255}, 1);}
+  for (const auto & [t, how] : rescued) {
+    poly(t, {255, 0, 255});
+    cv::putText(vis, "R" + std::to_string(t.id) + " " + how, cv::Point(t.corners[1]) + cv::Point(2, 0),
+      cv::FONT_HERSHEY_SIMPLEX, 0.4, {255, 0, 255}, 1);
+  }
   for (const auto & r : raws) {
     const auto & b = r.pose.bbox;
     cv::rectangle(vis, cv::Point(b[0], b[1]), cv::Point(b[2], b[3]), color_of(r.info.color), 1);
+    // 이번 장 태그 ID (분할 상자 왼쪽 위): 없으면 t?
+    cv::putText(vis, r.pose.tag ? "t" + std::to_string(r.pose.tag->id) : std::string("t?"), cv::Point(b[0], b[1] - 3),
+      cv::FONT_HERSHEY_SIMPLEX, 0.4, r.pose.tag ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 165, 255), 1);
     if (!r.reject.empty()) {
       cv::line(vis, cv::Point(b[0], b[1]), cv::Point(b[2], b[3]), {0, 0, 255}, 1);
       cv::line(vis, cv::Point(b[0], b[3]), cv::Point(b[2], b[1]), {0, 0, 255}, 1);

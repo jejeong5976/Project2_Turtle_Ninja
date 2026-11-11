@@ -2,8 +2,10 @@
 
 #include "manipulation/standup_table.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -125,6 +127,179 @@ bool standup_retarget(const ArmModel & m, const Q5 & q_table, const StandupRetar
   }
   out.fail = buf;
   return false;
+}
+
+std::string lyingpick_table_path(const std::string & param, const std::string & standup_file)
+{
+  if (!param.empty()) {return param;}
+  if (standup_file.empty()) {return "";}
+  return (std::filesystem::path(standup_file).parent_path() / "lyingpick" / "lyingpick_paths_ok75.txt").string();
+}
+
+LyingPickChoice choose_lyingpick(const std::vector<StandupPath> & table, double x, double y, double axis_deg, double max_dist_mm, double max_deg)
+{
+  LyingPickChoice c;
+  double best_any = std::numeric_limits<double>::infinity(), best_ok = best_any;
+  LyingPickChoice any;   // 가장 가까운 줄의 차 (한도 안 줄이 없을 때 로그)
+  for (size_t i = 0; i < table.size(); ++i) {
+    const auto & p = table[i];
+    if (std::abs(p.side - kLyingPickSide) > 1e-4) {continue;}
+    const double dx = x - p.x, dy = y - p.y;
+    const double da = std::remainder(axis_deg - p.axis_deg, 180.0);   // 긴축은 180° 마다 같음
+    const double d = std::pow(dx / 0.0075, 2) + std::pow(dy / 0.01, 2) + std::pow(da / 7.5, 2);
+    const double dist = std::hypot(dx, dy) * 1000.0;
+    if (d < best_any) {
+      best_any = d;
+      any.nearest = static_cast<int>(i);
+      any.dx = dx;
+      any.dy = dy;
+      any.dyaw_deg = da;
+      any.dist_mm = dist;
+    }
+    if (dist <= max_dist_mm && std::abs(da) <= max_deg && d < best_ok) {
+      best_ok = d;
+      c.row = static_cast<int>(i);
+      c.dx = dx;
+      c.dy = dy;
+      c.dyaw_deg = da;
+      c.dist_mm = dist;
+    }
+  }
+  c.nearest = any.nearest;
+  if (c.row < 0) {
+    c.dx = any.dx;
+    c.dy = any.dy;
+    c.dyaw_deg = any.dyaw_deg;
+    c.dist_mm = any.dist_mm;
+  }
+  return c;
+}
+
+bool lyingpick_path(const ArmModel & m, const StandupPath & e, const StandupRetarget & rt, double held_kg, double dt_s, bool early_open,
+  LyingPickPath & out, std::string & why, const Eigen::Vector3d & shift, const LyingHover & hover)
+{
+  out = LyingPickPath{};
+  const int n = static_cast<int>(e.q.size());
+  if (e.release < 1 || e.release + 1 >= n) {
+    why = "닫는 점 번호 " + std::to_string(e.release) + " 가 이상함 (점 " + std::to_string(n) + " 개, 앞 · 뒤 점이 있어야 함)";
+    return false;
+  }
+  auto table_q = [&](int i) {
+      Ticks tt;
+      for (int j = 0; j < 5; ++j) {tt[j] = e.q[static_cast<size_t>(i)][static_cast<size_t>(j)];}
+      return ticks_to_q(m, tt);
+    };
+  const bool shifted = shift.squaredNorm() > 0.0;
+  const Eigen::Vector3d tip_close = shifted ? arm_grip(m, table_q(e.release)).tip : Eigen::Vector3d::Zero();
+  int gap = 1;   // 건너뛴 점만큼 다음 점까지 시간을 늘림 (farpick_plan · standup_plan 과 같음)
+  bool closed = false;
+  for (int i = 1; i < n; ++i) {
+    const Q5 qt = table_q(i);
+    RetargetResult rr;
+    const bool held = i >= e.release;
+    StandupRetarget r = rt;
+    if (shifted) {   // 퍽 근처 구간만 더 옮김 (닫기 전은 닫는 점 손끝에서 거리로 들어감, 닫은 뒤는 다)
+      double w = 1.0;
+      if (!held) {
+        const double d = (arm_grip(m, qt).tip - tip_close).norm();
+        w = std::clamp((kLyingShiftOut - d) / (kLyingShiftOut - kLyingShiftIn), 0.0, 1.0);
+      }
+      r.to += w * shift.head<2>();
+      r.dz += w * shift.z();
+    }
+    if (!standup_retarget(m, qt, r, false, rr)) {
+      if (i == e.release) {why = "닫는 점을 실제 퍽으로 옮긴 자세 (IK) 가 없음 — " + rr.fail; return false;}
+      ++out.skipped;
+      ++gap;
+      continue;
+    }
+    PathNode nd;
+    nd.q = ticks_to_command(m, q_to_ticks(m, encoder_goal_q(m, rr.q, held ? held_kg : 0.0)));
+    if (out.nodes.empty()) {   // 첫 점: 위로 가며 엶 (pick_path 의 above 와 같은 grip_early), 속도 시간표
+      if (i == e.release) {why = "닫기 전 점이 전부 IK 안 됨"; return false;}
+      nd.grip = "open";
+      nd.grip_early = early_open;
+    } else {
+      nd.dt_s = dt_s * gap;   // 표 점 간격 그대로
+    }
+    if (i == e.release && hover.hover_m > 0.0) {   // 닫는 점 위 멈춤 → 곧게 내려옴
+      StandupRetarget rh = r;
+      rh.dz += hover.hover_m;
+      RetargetResult hr;
+      if (standup_retarget(m, qt, rh, false, hr)) {
+        const Eigen::Vector3d tip_c = arm_grip(m, rr.q).tip;
+        double cut_dt = 0.0;   // 뺀 표 점 시간은 멈춤 점까지 가는 시간에 더함
+        while (!out.nodes.empty() && out.nodes.size() > 1 && (arm_grip(m, out.q.back()).tip - tip_c).norm() < hover.hover_m + 0.003) {
+          cut_dt += out.nodes.back().dt_s;
+          out.nodes.pop_back();
+          out.q.pop_back();
+        }
+        PathNode hn;
+        hn.name = "lp_in_hover";
+        hn.q = ticks_to_command(m, q_to_ticks(m, encoder_goal_q(m, hr.q, 0.0)));
+        hn.dt_s = std::max(nd.dt_s + cut_dt, dt_s);
+        hn.stop = true;
+        hn.hold_s = std::max(0.0, hover.hover_s);
+        out.nodes.push_back(hn);
+        out.q.push_back(hr.q);
+        nd.dt_s = std::max(hover.descend_s, dt_s);
+      }
+    }
+    if (i == e.release) {   // 닫는 점: 일반 닫기 (팔 멈춤), 빈손 확인의 위 점 = 다음 점
+      nd.name = "reloc_grasp";
+      nd.grip = "close";
+      out.q_close = rr.q;
+      closed = true;
+    } else {
+      nd.name = (closed ? "lp" : "lp_in") + std::to_string(i);
+    }
+    gap = 1;
+    out.nodes.push_back(nd);
+    out.q.push_back(rr.q);
+  }
+  if (!closed || out.nodes.back().grip == "close") {why = "닫는 점 뒤 점이 전부 IK 안 됨"; return false;}
+  out.nodes.back().name = "reloc_lift";
+  out.nodes.back().stop = true;   // 시간 맞춘 구간은 들어 올린 자세에서 끝 (farpick far_lift 와 같음)
+  return true;
+}
+
+Eigen::Vector2d lying_recenter_shift(const Grip & g, const Eigen::Vector2d & tip_off)
+{
+  Eigen::Vector2d c = g.close.head<2>();
+  if (c.norm() < 0.3) {return Eigen::Vector2d::Zero();}   // 닫힘축이 거의 수직 = 수평 어긋남을 닫힘으로 못 나눔
+  c.normalize();
+  return -tip_off.dot(c) * c;
+}
+
+bool lyingpick_free_node(const std::string & name)
+{
+  return name.rfind("lp_in", 0) == 0;
+}
+
+namespace
+{
+// 손 좌표 (접근축 a, b = a × 닫힘축 — 닫힘축은 a 에 수직으로 맞춤)
+void hand_axes(const Grip & g, Eigen::Vector3d & a, Eigen::Vector3d & b)
+{
+  a = g.app.normalized();
+  const Eigen::Vector3d c = (g.close - g.close.dot(a) * a).normalized();
+  b = a.cross(c);
+}
+}  // namespace
+
+Eigen::Vector2d held_center_in_hand(const Grip & g, const Eigen::Vector3d & center)
+{
+  Eigen::Vector3d a, b;
+  hand_axes(g, a, b);
+  const Eigen::Vector3d o = center - g.tip;
+  return {o.dot(a), o.dot(b)};
+}
+
+Eigen::Vector3d held_center_at(const Grip & g, const Eigen::Vector2d & in_hand)
+{
+  Eigen::Vector3d a, b;
+  hand_axes(g, a, b);
+  return g.tip + in_hand.x() * a + in_hand.y() * b;
 }
 
 }  // namespace manipulation

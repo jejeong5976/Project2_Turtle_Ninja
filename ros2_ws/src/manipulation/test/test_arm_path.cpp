@@ -10,6 +10,8 @@
 #include <vector>
 
 #include "manipulation/arm_path.hpp"
+#include "manipulation/cell_shift.hpp"
+#include "arm_kin_data.hpp"
 
 using manipulation::ArmPath;
 using manipulation::PathNode;
@@ -417,4 +419,195 @@ TEST(RealPaths, RetrieveAndLookStartWithUnfold)
     EXPECT_EQ(p.nodes.size(), n0 - (unfold.nodes.size() - 1)) << nm;
   }
 }
+
+// 빈손 되돌아가기 (control_master empty_retreat_path) 의 끝: P0 에서 바로 간 PICK 은 P0 (= fold 첫 점) 로 되돌아와 fold 로 받침
+TEST(RealPaths, EmptyRetreatEndsAtP0ThenFold)
+{
+  ArmPath unfold, fold;
+  ASSERT_TRUE(load_path("unfold", unfold));
+  ASSERT_TRUE(load_path("fold", fold));
+  fold.ends_home = true;
+  ArmPath pick = unfold;
+  const auto & p0 = unfold.nodes.back().q;
+  auto at = [&](double dj2, double dj3) {std::vector<double> q = p0; q[1] += dj2; q[2] += dj3; return q;};
+  pick.nodes.push_back({"above", at(0.30, -0.20), false, 0.0, "open", false});
+  pick.nodes.push_back({"down", at(0.35, -0.20), false, 15.0, "", false});
+  pick.nodes.push_back({"grasp", at(0.38, -0.20), false, 15.0, "close", false});
+  pick.nodes.push_back({"up", at(0.35, -0.20), false, 15.0, "", false});
+  pick.nodes.push_back({"lift", at(0.30, -0.20), false, 15.0, "", false});
+  ASSERT_TRUE(manipulation::skip_unfold(pick, unfold));
+  const std::size_t up = pick.nodes.size() - 2;
+  std::string dummy;
+  const std::vector<std::string> free_names{"above", "lift"};
+  const auto r = manipulation::retrace_nodes(pick.nodes, up, free_names,
+    [&](const PathNode & n) {return manipulation::path_start_ok(fold, n.q, 0.15, dummy);});
+  ASSERT_EQ(r.size(), 3u);
+  EXPECT_EQ(r.back().name, "P0");
+  ArmPath back{"empty_retreat", r, true};
+  back.nodes.insert(back.nodes.end(), fold.nodes.begin() + 1, fold.nodes.end());
+  const auto acts = manipulation::path_actions(back, PathTiming{}, manipulation::GripperValues{}, r.front().q);
+  ASSERT_FALSE(acts.empty());
+  EXPECT_EQ(acts.back().pose, "home");
+}
+
+// 실제 store_S1 … S12: 놓은 뒤 닫기 늦추기 (store_close_rise_mm 50 · store_close_side_mm 40) 는 조건을 맞춘 점 (끝 점 아님) 으로,
+//   접기 (P0_복귀) 앞 · 가며 닫기 그대로 (동작 수 · 시간 같음). 0 / 0 은 그대로
+TEST(RealPaths, StoreCloseLaterStaysBeforeFold)
+{
+  const auto m = kin_data::model();
+  for (int c = 1; c <= 12; ++c) {
+    const std::string nm = "store_S" + std::to_string(c);
+    ArmPath p;
+    ASSERT_TRUE(load_path(nm, p)) << nm;
+    p.ends_home = true;
+    bool released = false;
+    for (auto & n : p.nodes) {   // control_master gripper_on_the_way 와 같이
+      if (n.grip == "release") {released = true;} else if (released && n.grip == "close") {n.grip_on_way = true;}
+    }
+    const ArmPath before = p;
+    manipulation::StoreCloseMove mv;
+    ArmPath z = p;
+    EXPECT_FALSE(manipulation::store_delay_close(m, z, 0.0, 0.0, mv)) << nm;
+    ASSERT_GT(mv.from, mv.release) << nm;
+    EXPECT_EQ(z.nodes[mv.from].grip, "close") << nm;
+    manipulation::store_delay_close(m, p, 0.050, 0.040, mv);
+    ASSERT_GE(mv.to, mv.from) << nm;
+    EXPECT_FALSE(mv.capped) << nm;
+    EXPECT_TRUE(mv.to_dz_mm >= 50.0 || mv.to_dxy_mm >= 40.0) << nm << " dz " << mv.to_dz_mm << " dxy " << mv.to_dxy_mm;
+    int fold = -1;
+    for (std::size_t i = 0; i < p.nodes.size(); ++i) {if (p.nodes[i].name == "P0_복귀") {fold = static_cast<int>(i);}}
+    ASSERT_GT(fold, 0) << nm;
+    EXPECT_LT(mv.to, fold) << nm;
+    EXPECT_EQ(p.nodes[mv.to].grip, "close") << nm;
+    EXPECT_TRUE(p.nodes[mv.to].grip_on_way) << nm;
+    const auto a0 = manipulation::path_actions(before, PathTiming{}, manipulation::GripperValues{});
+    const auto a1 = manipulation::path_actions(p, PathTiming{}, manipulation::GripperValues{});
+    ASSERT_EQ(a0.size(), a1.size()) << nm;
+    double t0 = 0.0, t1 = 0.0;
+    for (std::size_t i = 0; i < a0.size(); ++i) {t0 += a0[i].duration_s; t1 += a1[i].duration_s;}
+    EXPECT_NEAR(t0, t1, 1e-9) << nm;
+    EXPECT_EQ(a1.back().pose, "home") << nm;
+  }
+}
 #endif
+
+// ============================================================================ 빈손 쥐기 뒤 온 길로 되돌아가기 (retrace_nodes)
+namespace
+{
+using manipulation::retrace_nodes;
+const std::vector<std::string> kFree{"above", "lift", "reloc_above", "reloc_lift", "reloc_put_above", "reloc_put_clear",
+  "re_above", "re_lift", "re_place_above", "re_place_clear"};
+
+bool same_q(const std::vector<double> & a, const std::vector<double> & b)
+{
+  if (a.size() != b.size()) {return false;}
+  for (std::size_t j = 0; j < a.size(); ++j) {if (std::fabs(a[j] - b[j]) > 1e-9) {return false;}}
+  return true;
+}
+
+// 결과의 이웃 두 점 (a → b) 이 모두 지나온 구간 (b → a) 을 거꾸로 간 것인가
+bool only_reversed_segments(const std::vector<PathNode> & path, const std::vector<PathNode> & r)
+{
+  for (std::size_t k = 1; k < r.size(); ++k) {
+    bool found = false;
+    for (std::size_t i = 0; i + 1 < path.size() && !found; ++i) {
+      found = same_q(path[i].q, r[k].q) && same_q(path[i + 1].q, r[k - 1].q);
+    }
+    if (!found) {return false;}
+  }
+  return true;
+}
+
+// PICK 경로 모양 (pick_path): 출발 → 퍽 위 (above) → 내림 (down) → 쥐기 (닫기) → 올림 (up = down 자세) → 들기 (lift = above 자세)
+std::vector<PathNode> pick_nodes(const PathNode & start)
+{
+  return {start, node("above", {10, 20, 30, 40, 0}, false, "open"), node("down", {10, 25, 30, 40, 0}, false, "", false, 15.0),
+    node("grasp", {10, 28, 30, 40, 0}, false, "close", false, 15.0), node("up", {10, 25, 30, 40, 0}, false, "", false, 15.0),
+    node("lift", {10, 20, 30, 40, 0}, false, "", false, 15.0), node("staging", {0, 5, 5, 5, 0})};
+}
+}  // namespace
+
+TEST(EmptyRetreat, PickFromP0GoesUpThenBackToP0)
+{
+  const PathNode p0 = node("P0", {0, 0, 0, 0, 0});
+  const auto path = pick_nodes(p0);
+  auto exit = [&](const PathNode & n) {return same_q(n.q, p0.q);};
+  const auto r = retrace_nodes(path, 4, kFree, exit);   // 4 = up (빈손으로 멈춘 점)
+  ASSERT_EQ(r.size(), 3u);
+  EXPECT_EQ(r[0].name, "up");
+  EXPECT_EQ(r[1].name, "above") << "내려가 쥐었다 올라온 고리 (grasp · down) 는 뺌";
+  EXPECT_EQ(r[2].name, "P0");
+  EXPECT_TRUE(only_reversed_segments(path, r));
+  EXPECT_DOUBLE_EQ(r[1].speed_dps, 15.0) << "up → above = 지나온 above → down 구간 속도 (퍽 근처 느리게)";
+  EXPECT_DOUBLE_EQ(r[2].speed_dps, 0.0) << "above → P0 = 지나온 P0 → above 구간 속도 (기본)";
+  for (const auto & n : r) {EXPECT_TRUE(n.grip.empty()) << n.name << ": 되돌아갈 때 그리퍼 안 움직임";}
+}
+
+// 11-10 22:0x 실물 (누운 퍽 옮겨 놓은 뒤 받침 세우기 PICK, 두 번째 쥐기에서 빈손): 옮겨 놓기 · 첫 쥐기 고리를 빼고 높은 점만 거꾸로 → P0
+TEST(EmptyRetreat, RelocatePickSkipsDescentsAndUsesOnlyTraversedSegments)
+{
+  const PathNode p0 = node("P0", {0, 0, 0, 0, 0});
+  std::vector<PathNode> path{p0,
+    node("reloc_above", {20, 20, 30, 40, 0}, false, "open"), node("reloc_down", {20, 25, 30, 40, 0}, false, "", false, 15.0),
+    node("reloc_grasp", {20, 28, 30, 40, 0}, false, "close", false, 15.0), node("reloc_up", {20, 25, 30, 40, 0}, false, "", false, 15.0),
+    node("reloc_lift", {20, 20, 30, 40, 0}, false, "", false, 15.0),
+    node("reloc_put_above", {15, 22, 30, 40, 0}, false, "", true, 15.0), node("reloc_put_down", {15, 26, 30, 40, 0}, false, "", false, 15.0),
+    node("reloc_put", {15, 28, 30, 40, 0}, false, "open", false, 15.0), node("reloc_put_up", {15, 26, 30, 40, 0}, false, "", false, 15.0),
+    node("reloc_put_clear", {15, 22, 30, 40, 0}, false, "", false, 15.0),
+    node("above", {16, 21, 31, 40, 0}, false, "open"), node("down", {16, 25, 31, 40, 0}, false, "", false, 15.0),
+    node("grasp", {16, 28, 31, 40, 0}, false, "close", false, 15.0), node("up", {16, 25, 31, 40, 0}, false, "", false, 15.0),
+    node("lift", {16, 21, 31, 40, 0}, false, "", false, 15.0), node("park_pull1", {30, 30, 30, 30, 0})};
+  auto exit = [&](const PathNode & n) {return same_q(n.q, p0.q);};
+  const auto r = retrace_nodes(path, 14, kFree, exit);   // 14 = up
+  ASSERT_EQ(r.size(), 5u);
+  EXPECT_EQ(r[1].name, "above");
+  EXPECT_EQ(r[2].name, "reloc_put_clear");
+  EXPECT_EQ(r[3].name, "reloc_lift");
+  EXPECT_EQ(r[4].name, "P0");
+  EXPECT_TRUE(only_reversed_segments(path, r)) << "모든 구간이 지나온 구간 (거꾸로)";
+  for (const auto & n : r) {
+    EXPECT_FALSE(n.stop) << n.name;
+    EXPECT_DOUBLE_EQ(n.hold_s, 0.0) << n.name;
+    EXPECT_EQ(n.name.find("down"), std::string::npos) << "내림 점을 다시 지나지 않음";
+    EXPECT_EQ(n.name.find("grasp"), std::string::npos) << "쥐는 점으로 다시 내려가지 않음";
+  }
+  // 첫 쥐기에서 빈손이면: reloc_up → reloc_above → P0
+  const auto r1 = retrace_nodes(path, 4, kFree, exit);
+  ASSERT_EQ(r1.size(), 3u);
+  EXPECT_EQ(r1[1].name, "reloc_above");
+  EXPECT_EQ(r1[2].name, "P0");
+}
+
+TEST(EmptyRetreat, LookStartAndUnknownSegments)
+{
+  const PathNode look = node("look", {0, -10, 40, 60, 0});
+  const auto path = pick_nodes(look);
+  // LOOK 에서 바로 퍽 위로 간 PICK → 퍽 위 → LOOK (home_from_look 은 control_master 가 붙임)
+  const auto r = retrace_nodes(path, 4, kFree, [&](const PathNode & n) {return same_q(n.q, look.q);});
+  ASSERT_EQ(r.size(), 3u);
+  EXPECT_EQ(r.back().name, "look");
+  // 끝점 (검사된 복귀 경로가 있는 자세) 이 없으면 빈 목록
+  EXPECT_TRUE(retrace_nodes(path, 4, kFree, [](const PathNode &) {return false;}).empty());
+  // 모르는 점 (받침 세우기 등) 을 지나야 하면 빈 목록 → control_master 는 지금 HOME 규칙대로
+  std::vector<PathNode> park = path;
+  park.insert(park.begin() + 1, node("park_press1", {5, 5, 5, 5, 0}));
+  EXPECT_TRUE(retrace_nodes(park, 5, kFree, [&](const PathNode & n) {return same_q(n.q, look.q);}).empty());
+  // 고리로 안 빠지는 쥐는 점 (up ≠ down) → 쥐는 점을 지나야 함 → 빈 목록 (다시 내려가지 않음)
+  std::vector<PathNode> odd = path;
+  odd[4].q[1] += 0.01;
+  EXPECT_TRUE(retrace_nodes(odd, 4, kFree, [&](const PathNode & n) {return same_q(n.q, look.q);}).empty());
+  EXPECT_TRUE(retrace_nodes(path, 99, kFree, [](const PathNode &) {return true;}).empty());
+}
+
+TEST(EmptyRetreat, ActionsEndHomeWithoutGripper)
+{
+  const PathNode p0 = node("P0", {0, 0, 0, 0, 0});
+  const auto path = pick_nodes(p0);
+  const auto r = retrace_nodes(path, 4, kFree, [&](const PathNode & n) {return same_q(n.q, p0.q);});
+  ArmPath back{"empty_retreat", r, true};
+  back.nodes.push_back(node("home", {0, -60, 60, 50, 0}, true));   // fold 의 나머지 (P0 다음부터)
+  const auto acts = manipulation::path_actions(back, PathTiming{}, manipulation::GripperValues{}, r.front().q);
+  ASSERT_FALSE(acts.empty());
+  for (const auto & a : acts) {EXPECT_FALSE(a.is_gripper);}
+  EXPECT_EQ(acts.back().pose, "home") << "끝 = 받침 → 접힘 실측 확인 뒤 주행 허용";
+}

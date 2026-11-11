@@ -134,7 +134,17 @@ void find_tags(const cv::Mat & gray, std::vector<std::vector<cv::Point2f>> & cor
 
 std::vector<TagPose> tags_from_corners(
   const std::vector<std::vector<cv::Point2f>> & corners, const std::vector<int> & ids,
-  const Intrinsics & K, const cv::Mat & dist);
+  const Intrinsics & K, const cv::Mat & dist)
+{
+  std::vector<TagPose> out;
+  for (size_t k = 0; k < ids.size(); ++k) {
+    if (!is_puck_tag(ids[k]) || corners[k].size() != 4) {continue;}   // 장소 태그 등은 안 씀 (퍽 축 보정은 퍽 태그만)
+    std::array<cv::Point2f, 4> c;
+    for (int i = 0; i < 4; ++i) {c[i] = corners[k][i];}
+    if (auto t = tag_pose_from_corners(ids[k], c, K, dist)) {out.push_back(std::move(*t));}
+  }
+  return out;
+}
 }  // namespace
 
 std::vector<TagPose> detect_tags(const cv::Mat & gray, const Intrinsics & K, const cv::Mat & dist)
@@ -187,42 +197,34 @@ std::vector<TagPose> detect_tags_in(
   return tags_from_corners(corners, ids, K, dist);
 }
 
-namespace
-{
-std::vector<TagPose> tags_from_corners(
-  const std::vector<std::vector<cv::Point2f>> & corners, const std::vector<int> & ids,
-  const Intrinsics & K, const cv::Mat & dist)
+std::optional<TagPose> tag_pose_from_corners(
+  int id, const std::array<cv::Point2f, 4> & corners, const Intrinsics & K, const cv::Mat & dist)
 {
   const cv::Matx33d Kc(K.fx, 0, K.cx, 0, K.fy, K.cy, 0, 0, 1);
   const cv::Mat D = dist.empty() ? cv::Mat::zeros(1, 5, CV_64F) : dist;
-  std::vector<TagPose> out;
-  for (size_t k = 0; k < ids.size(); ++k) {
-    if (!is_puck_tag(ids[k])) {continue;}   // 장소 태그 등은 안 씀 (퍽 축 보정은 퍽 태그만)
-    const float h = static_cast<float>(kPuckTagSideM / 2);   // 회전만 쓰므로 크기는 결과 회전에 영향 없음
-    const std::vector<cv::Point3f> obj{{-h, h, 0}, {h, h, 0}, {h, -h, 0}, {-h, -h, 0}};
-    std::vector<cv::Mat> rvecs, tvecs;
-    const int n = cv::solvePnPGeneric(obj, corners[k], Kc, D, rvecs, tvecs, false, cv::SOLVEPNP_IPPE_SQUARE);
-    if (n <= 0) {continue;}
-    TagPose t;
-    t.id = ids[k];
-    for (int i = 0; i < 4; ++i) {t.corners[i] = corners[k][i];}
-    for (int i = 0; i < n; ++i) {
-      cv::Mat Rm;
-      cv::Rodrigues(rvecs[i], Rm);
-      Mat3 R;
-      for (int r = 0; r < 3; ++r) {
-        for (int c = 0; c < 3; ++c) {R(r, c) = Rm.at<double>(r, c);}
-      }
-      const Vec3 tv(tvecs[i].at<double>(0), tvecs[i].at<double>(1), tvecs[i].at<double>(2));
-      t.alts.emplace_back(R, tv);
+  const float h = static_cast<float>(kPuckTagSideM / 2);   // 회전만 쓰므로 크기는 결과 회전에 영향 없음
+  const std::vector<cv::Point3f> obj{{-h, h, 0}, {h, h, 0}, {h, -h, 0}, {-h, -h, 0}};
+  const std::vector<cv::Point2f> img(corners.begin(), corners.end());
+  std::vector<cv::Mat> rvecs, tvecs;
+  const int n = cv::solvePnPGeneric(obj, img, Kc, D, rvecs, tvecs, false, cv::SOLVEPNP_IPPE_SQUARE);
+  if (n <= 0) {return std::nullopt;}
+  TagPose t;
+  t.id = id;
+  t.corners = corners;
+  for (int i = 0; i < n; ++i) {
+    cv::Mat Rm;
+    cv::Rodrigues(rvecs[i], Rm);
+    Mat3 R;
+    for (int r = 0; r < 3; ++r) {
+      for (int c = 0; c < 3; ++c) {R(r, c) = Rm.at<double>(r, c);}
     }
-    t.R = t.alts[0].first;
-    t.t = t.alts[0].second;
-    out.push_back(std::move(t));
+    const Vec3 tv(tvecs[i].at<double>(0), tvecs[i].at<double>(1), tvecs[i].at<double>(2));
+    t.alts.emplace_back(R, tv);
   }
-  return out;
+  t.R = t.alts[0].first;
+  t.t = t.alts[0].second;
+  return t;
 }
-}  // namespace
 
 TagPose refine_tag_with_depth(TagPose t, const cv::Mat1f & depth_m, const Intrinsics & K)
 {

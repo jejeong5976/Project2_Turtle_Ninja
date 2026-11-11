@@ -134,6 +134,36 @@ void ArmRunner::on_result(unsigned gen, bool ok)
   accepted_ = false;
 }
 
+bool ArmRunner::replace_after_wait(unsigned gen, std::vector<ArmAction> tail)
+{
+  if (!active_ || !busy_ || !accepted_ || gen != gen_ || cancel_requested_ || forced_ || failed_ || tail.empty()) {return false;}
+  plan_.resize(idx_);
+  plan_.insert(plan_.end(), tail.begin(), tail.end());
+  busy_ = false;
+  accepted_ = false;
+  ++gen_;   // 끝낸 논리 대기의 늦은 답 무효화
+  return true;
+}
+
+bool ArmRunner::insert_before_sent(std::vector<ArmAction> pre)
+{
+  if (!active_ || !busy_ || accepted_ || pre.empty() || idx_ == 0 || idx_ > plan_.size()) {return false;}
+  ArmAction sent = plan_[idx_ - 1];
+  plan_[idx_ - 1] = pre.front();
+  pre.erase(pre.begin());
+  pre.push_back(sent);
+  plan_.insert(plan_.begin() + static_cast<std::ptrdiff_t>(idx_), pre.begin(), pre.end());
+  return true;
+}
+
+bool ArmRunner::replace_from_sent(std::vector<ArmAction> tail)
+{
+  if (!active_ || !busy_ || accepted_ || tail.empty() || idx_ == 0 || idx_ > plan_.size()) {return false;}
+  plan_.resize(idx_ - 1);
+  plan_.insert(plan_.end(), tail.begin(), tail.end());
+  return true;
+}
+
 std::vector<ArmCommand> ArmRunner::tick(double now_s, bool arm_may_move, bool fold_confirmed)
 {
   std::vector<ArmCommand> out;
@@ -272,6 +302,22 @@ std::string ArmRunner::current_phase() const
   return idx_ > 0 && idx_ <= plan_.size() ? plan_[idx_ - 1].phase : std::string("시작");
 }
 
+// ============================================================================ 실패 뒤 자동 접기 (fail_fold_s)
+bool fail_fold_arm(ArmEnd end, bool home_task, double fail_fold_s, bool hw_ok)
+{
+  return end == ArmEnd::ABORTED && !home_task && std::isfinite(fail_fold_s) && fail_fold_s > 0.0 && hw_ok;
+}
+
+std::string fail_fold_block(const FailFoldState & s)
+{
+  if (s.folded) {return "이미 접혀 있음";}
+  if (s.carrying) {return "퍽을 쥔 채 (STORE · PLACE 로 끝내거나 사람이 퍽을 빼고 HOME)";}
+  if (s.half_closed && !s.empty_grasp) {return "그리퍼가 반쯤 닫힘 — 퍽을 쥐었을 수 있음 (사람이 보고 HOME)";}
+  if (s.step_mode) {return "구분 동작 (park_step) 작업이었음 — 사람이 보고 HOME";}
+  if (s.park_left) {return "받침 안 다시 쥐기가 빈손 — 퍽이 받침 (HOME 자리) 에 남았을 수 있음 (사람이 받침을 보고 HOME)";}
+  return "";
+}
+
 }  // namespace manipulation
 
 namespace manipulation
@@ -375,9 +421,15 @@ bool HardwareWatch::components_ok(double now_s) const
          now_s >= comp_stamp_ && now_s - comp_stamp_ <= component_timeout_s_;
 }
 
+bool HardwareWatch::components_waived(double now_s) const
+{
+  if (!comp_optional_ || !ctrl_ready_ || components_ok(now_s)) {return false;}
+  return !comp_have_ || (!comp_reachable_ && comp_ok_);   // 못 받음 · 안 보임만. 받은 답이 이상이면 그대로 이상
+}
+
 bool HardwareWatch::healthy(double now_s) const
 {
-  if (!components_ok(now_s)) {return false;}
+  if (!components_ok(now_s) && !components_waived(now_s)) {return false;}
   if (!have_ || !std::isfinite(now_s) || !std::isfinite(last_stamp_) ||
       now_s < last_stamp_ || now_s - last_stamp_ > state_timeout_s_) {return false;}
   return bad_since_ < 0.0 || last_stamp_ - bad_since_ < bad_hold_s_;
@@ -386,7 +438,7 @@ bool HardwareWatch::healthy(double now_s) const
 std::string HardwareWatch::status(double now_s) const
 {
   char buf[96];
-  if (!components_ok(now_s)) {
+  if (!components_ok(now_s) && !components_waived(now_s)) {
     if (!comp_have_) {return "보드 상태(controller_manager)를 아직 못 받음";}
     if (now_s - comp_stamp_ > component_timeout_s_) {
       std::snprintf(buf, sizeof(buf), "보드 상태 답이 %.1f s 동안 없음", now_s - comp_stamp_);

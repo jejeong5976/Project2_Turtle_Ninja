@@ -19,7 +19,7 @@ const char * const kHelp =
   "짧게  h home · l look · b barcode · s5 store S5 · r5 retrieve S5 · p x y pick · pl place (집은 자리) · g B1 접고 이동\n"
   "      x 모두 취소 · ! estop (F9) · c check · m 이름 mark · n 메모 note · ? help · q quit · Tab 자동 완성 · ↑↓ 기록\n"
   "화면  0 쪽에서 번호 + Enter = 쪽 · 2 3 5 6 7 쪽에서 번호 = 그 쪽 동작 · Esc · 0 = 전체 요약 · ←/→ = 옆 쪽 · PgUp/PgDn\n"
-  "팔    home [force] · look · barcode · store <칸> · retrieve <칸> (칸 = S5 또는 5)\n"
+  "팔    home [force] · look [left|right|far|near|rack] · barcode · store <칸> · retrieve <칸> (칸 = S5 또는 5)\n"
   "      pick x y [z] [yaw°] · place x y [z] [yaw°] (base_link m, z 0 = 박스 위 기본 높이) · arm <TASK> …\n"
   "      place (인자 없음) = 마지막으로 성공한 PICK 목표 그대로 다시 놓기 (그 뒤 PLACE · STORE 가 성공했으면 거절)\n"
   "      lazy_fold: STORE · PLACE 는 P0 에서 끝 (바퀴 잠금 유지, 다음 팔 작업은 바로) → 주행 전 home (fold 경로로 접음)\n"
@@ -130,9 +130,9 @@ bool parse_arm(const std::vector<std::string> & tok, const Names & names, Comman
     out.task = t == "look" ? ArmTask::Goal::LOOK : ArmTask::Goal::LOOK_BARCODE;
     // look rack = 빈 손 적재함 스캔 (control_master 경로 rack_scan, 받침에서 시작해 받침으로 끝남)
     if (t == "look" && tok.size() == 2 && lower(tok[1]) == "rack") {out.slot = "rack"; return true;}
-    // look left · right = 박스 옆 끝 보기 (LOOK 자세에서 J1 만 ±look_side_deg), 그 자세에서 pick det 가능
-    if (t == "look" && tok.size() == 2 && (lower(tok[1]) == "left" || lower(tok[1]) == "right")) {out.slot = lower(tok[1]); return true;}
-    if (tok.size() != 1) {err = t == "look" ? "look [rack|left|right]" : t + " 는 인자 없음"; return false;}
+    // look left · right · far · near = 보기 변형, 그 자세에서 pick det 가능
+    if (t == "look" && tok.size() == 2 && (lower(tok[1]) == "left" || lower(tok[1]) == "right" || lower(tok[1]) == "far" || lower(tok[1]) == "near")) {out.slot = lower(tok[1]); return true;}
+    if (tok.size() != 1) {err = t == "look" ? "look [rack|left|right|far|near]" : t + " 는 인자 없음"; return false;}
     return true;
   }
   if (t == "store" || t == "retrieve") {

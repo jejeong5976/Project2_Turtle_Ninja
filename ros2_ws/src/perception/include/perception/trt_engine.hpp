@@ -55,6 +55,7 @@ public:
 
   // input: 1 × 3 × H × W float32 (CHW). outs[i] = outputs()[i] 의 값
   void infer(const std::vector<float> & input, std::vector<std::vector<float>> & outs);
+  float last_gpu_ms() const;                           // 마지막 infer 의 GPU 계산 시간 [ms] (enqueue 앞뒤 CUDA event, 복사 빼고)
 
 private:
   struct Impl;

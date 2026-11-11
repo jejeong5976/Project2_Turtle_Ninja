@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -82,5 +83,14 @@ bool path_start_ok(const ArmPath & path, const std::vector<double> & q_now, doub
 bool cut_fold_tail(ArmPath & path, const ArmPath & fold);
 bool skip_unfold(ArmPath & path, const ArmPath & unfold);
 bool p0_distinct(const ArmPath & fold, const ArmPath & unfold, double tol);
+
+// 빈손 쥐기 뒤 온 길로 되돌아가기 (control_master 의 HOME · 실패 뒤 자동 접기): nodes[0..from] 을 거꾸로 지나되
+//   같은 자세로 돌아온 고리 (내려가 쥐고 올라온 구간 · 옮겨 놓고 올라온 구간) 는 뺌 → 결과의 이웃 두 점은 모두 실제로 지나온 구간 (거꾸로)
+//   구간 속도 · 받침 표시는 지나올 때 그 구간 그대로, 그리퍼 · 멈춤 · 시간 맞춤은 뺌 (손은 빈 채 닫혀 있음)
+//   결과 = [nodes[from], …, 끝점] — 끝점 = is_exit 가 true 인 첫 점 (검사된 복귀 경로가 있는 자세: P0 · LOOK 등)
+//   그 전에 이름이 free_names 에 없는 점이 나오거나 끝점이 없으면 빈 목록 (모르는 구간은 거꾸로 안 감)
+std::vector<PathNode> retrace_nodes(const std::vector<PathNode> & nodes, std::size_t from,
+  const std::vector<std::string> & free_names, const std::function<bool(const PathNode &)> & is_exit,
+  double same_tol = 1e-6);
 
 }  // namespace manipulation

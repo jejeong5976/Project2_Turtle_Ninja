@@ -49,6 +49,7 @@ perception:
       timeout: 1.0                       # 이 시간 동안 못 찾으면 다수결 비움. 못 찾은 영상 자체는 바로 UNKNOWN + visible=false
 
     wrist:                               # 손목 D435, realsense2_camera align_depth.enable:=true
+      tag_rescue: true   # 11-11 추가
       model: ""                          # 손목 .engine, launch 인자 wrist_model:= 로 줌
       conf: 0.5                          # 분할 신뢰도 기준, Python wrist_detector.SEG_CONF 와 같음
       iou: 0.7                           # one2many head NMS, ultralytics 기본

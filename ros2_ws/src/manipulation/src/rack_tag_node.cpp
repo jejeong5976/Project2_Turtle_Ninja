@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <cstdlib>
 #include <deque>
 #include <fstream>
@@ -150,6 +151,8 @@ public:
     pub_ = create_publisher<interfaces::msg::DetectionArray>("/rack_tags/detections", 10);
     held_max_dist_m_ = declare_parameter<double>("held_max_dist_m", 0.15);   // 카메라에서 이보다 가까운 퍽 태그 = 쥔 퍽
     wrist_frame_ = declare_parameter<std::string>("wrist_frame", "wrist_link");
+    declare_parameter<bool>("held_fresh", false);   // 정지·재투영 검사한 별도 측정, 기존 토픽은 그대로 둠
+    held_fresh_pub_ = create_publisher<interfaces::msg::DetectionArray>("/held_puck/tag_fresh", 10);
     held_pub_ = create_publisher<interfaces::msg::DetectionArray>("/held_puck/tag", 10);
     // 영상 구독 QoS: reliable (기본, 인지 노드 image_qos 와 같음) | best_effort (큰 영상은 조각이 빠지면 장째 없어짐). camera_info 는 best_effort
     const auto qos_name = declare_parameter<std::string>("image_qos", "reliable");
@@ -235,8 +238,9 @@ private:
 
   // 왜곡 푼 모서리 4 개 (정규 좌표) → 태그 중심 [m, 카메라 좌표] (PnP, 정사각 태그). held_max_dist_m 안이면 true
   //   모서리 순서는 검출기마다 (AprilTag 반시계 · OpenCV aruco 시계) 달라서 두 순서 중 재투영 오차가 작은 쪽
-  bool held_tag(const std::vector<cv::Point2f> & n, double size, Eigen::Vector3d & c, Eigen::Matrix3d & R) const
+  bool held_tag(const std::vector<cv::Point2f> & n, double size, Eigen::Vector3d & c, Eigen::Matrix3d & R, double & rms) const
   {
+    rms = std::numeric_limits<double>::infinity();
     const float h = static_cast<float>(size / 2.0);
     const std::vector<cv::Point3f> obj{{-h, h, 0.0f}, {h, h, 0.0f}, {h, -h, 0.0f}, {-h, -h, 0.0f}};   // SOLVEPNP_IPPE_SQUARE 순서
     double best = 1e9;
@@ -247,10 +251,11 @@ private:
       if (!cv::solvePnP(obj, img, cv::Mat::eye(3, 3, CV_64F), cv::Mat(), rvec, tvec, false, cv::SOLVEPNP_IPPE_SQUARE)) {continue;}
       std::vector<cv::Point2f> back;
       cv::projectPoints(obj, rvec, tvec, cv::Mat::eye(3, 3, CV_64F), cv::Mat(), back);
-      double e = 0.0;
-      for (int j = 0; j < 4; ++j) {e += cv::norm(back[j] - img[j]);}
+      double e = 0.0, e2 = 0.0;
+      for (int j = 0; j < 4; ++j) {const double v=cv::norm(back[j] - img[j]); e += v; e2 += v*v;}
       if (e < best && tvec.at<double>(2) > 0.0) {
         best = e;
+        rms = std::sqrt(e2/4.0);   // 해 선택은 기존과 같고, 새 토픽만 RMS 검사함
         c = Eigen::Vector3d(tvec.at<double>(0), tvec.at<double>(1), tvec.at<double>(2));
         cv::Mat Rm;
         cv::Rodrigues(rvec, Rm);
@@ -261,7 +266,7 @@ private:
   }
 
   void publish_held(const builtin_interfaces::msg::Time & stamp, const std::string & cam, int id, const Eigen::Vector3d & c,
-    const Eigen::Matrix3d & Rc)
+    const Eigen::Matrix3d & Rc, bool fresh)
   {
     geometry_msgs::msg::TransformStamped tf;
     try {
@@ -292,6 +297,10 @@ private:
     d.pose.orientation.w = qt.w();
     m.detections.push_back(d);
     held_pub_->publish(m);
+    if (fresh && w.allFinite() && qt.coeffs().allFinite()) {
+      m.detections.front().kind = "held_tag_fresh";
+      held_fresh_pub_->publish(m);
+    }
     RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000, "쥔 퍽 태그 %d: 카메라에서 %.0f mm · 손목 좌표 (%.1f, %.1f, %.1f) mm", id,
       c.norm() * 1000.0, w.x() * 1000.0, w.y() * 1000.0, w.z() * 1000.0);
   }
@@ -343,6 +352,8 @@ private:
     interfaces::msg::DetectionArray out;
     out.header.stamp = msg->header.stamp;
     out.header.frame_id = base_frame_;
+    const bool fresh_enabled=get_parameter("held_fresh").as_bool();
+    const double focal=std::max(info->k[0],info->k[4]);
     bool held_seen = false;
     for (size_t k = 0; k < ids.size(); ++k) {
       const bool puck = puck_ids_.count(ids[k]) > 0;
@@ -358,8 +369,10 @@ private:
       for (int j = 0; j < 4; ++j) {cn[j] = Eigen::Vector2d(n[j].x, n[j].y);}
       Eigen::Vector3d held;
       Eigen::Matrix3d held_R;
-      if (puck && held_tag(n, cfg_puck_.tag_size_m, held, held_R)) {
-        publish_held(msg->header.stamp, cam, ids[k], held, held_R);
+      double held_rms;
+      if (puck && held_tag(n, cfg_puck_.tag_size_m, held, held_R, held_rms)) {
+        publish_held(msg->header.stamp, cam, ids[k], held, held_R,
+          fresh_enabled && still && std::isfinite(held_rms) && focal>0.0 && held_rms*focal<=1.0);
         held_seen = true;
         continue;
       }
@@ -408,10 +421,12 @@ private:
         std::vector<cv::Point2f> n;
         Eigen::Vector3d held;
         Eigen::Matrix3d held_R;
+        double held_rms;
         if (puck_ids_.count(i2[k]) && c2[k].size() == 4 && undistort(*info, c2[k], n) && n.size() == 4 &&
-          held_tag(n, cfg_puck_.tag_size_m, held, held_R))
+          held_tag(n, cfg_puck_.tag_size_m, held, held_R, held_rms))
         {
-          publish_held(msg->header.stamp, cam, i2[k], held, held_R);
+          publish_held(msg->header.stamp, cam, i2[k], held, held_R,
+            fresh_enabled && still && std::isfinite(held_rms) && focal>0.0 && held_rms*focal<=1.0);
           break;
         }
       }
@@ -678,7 +693,7 @@ private:
   cv::Ptr<cv::CLAHE> clahe_;
   double held_max_dist_m_{0.15};
   std::string wrist_frame_;
-  rclcpp::Publisher<interfaces::msg::DetectionArray>::SharedPtr held_pub_;
+  rclcpp::Publisher<interfaces::msg::DetectionArray>::SharedPtr held_pub_, held_fresh_pub_;
 #ifdef RACK_TAG_HAVE_APRILTAG
   apriltag_family_t * at_fam_{nullptr};
   apriltag_detector_t * at_det_{nullptr};

@@ -30,7 +30,7 @@ from launch_ros.substitutions import FindPackageShare
 
 LIDAR_POSE = ["lidar_front_x", "lidar_front_y", "lidar_front_z", "lidar_front_yaw",
               "lidar_rear_x", "lidar_rear_y", "lidar_rear_z", "lidar_rear_yaw"]
-ROBOT_ARGS = ["hardware", "hardware_map", "opencr_port", "opencr_ports", "arm", "use_rviz"] + LIDAR_POSE
+ROBOT_ARGS = ["hardware", "hardware_map", "opencr_port", "opencr_ports", "arm", "use_rviz", "enforce_command_limits"] + LIDAR_POSE
 LIDAR_DEFAULTS = {"lidar_front_x": "0.1145", "lidar_front_y": "0.0", "lidar_front_z": "0.060", "lidar_front_yaw": "3.141592653589793",
                   "lidar_rear_x": "-0.1145", "lidar_rear_y": "0.0", "lidar_rear_z": "0.060", "lidar_rear_yaw": "0.0"}
 
@@ -128,6 +128,8 @@ def generate_launch_description():
         DeclareLaunchArgument("opencr_port", default_value="auto"),
         DeclareLaunchArgument("opencr_ports", default_value="auto"),
         DeclareLaunchArgument("use_rviz", default_value="false", choices=["true", "false"], description="로봇 모델 rviz (bringup)"),
+        DeclareLaunchArgument("enforce_command_limits", default_value="true", choices=["true", "false"],
+                              description="false = 관절 명령 한계 끔 (bringup robot.launch.py, arm:=false 일 때만)"),
         DeclareLaunchArgument("slam_rviz", default_value="false", choices=["true", "false"], description="지도 · 스캔 rviz (rviz/slam_view.rviz)"),
         *[DeclareLaunchArgument(k, default_value=v) for k, v in LIDAR_DEFAULTS.items()],
         DeclareLaunchArgument("robot", default_value="true", choices=["true", "false"], description="false = 로봇 bringup 안 띄움 (bag 재생 · 시뮬 · 이미 떠 있을 때)"),

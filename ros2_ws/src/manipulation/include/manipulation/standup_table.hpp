@@ -13,6 +13,7 @@
 #include <Eigen/Dense>
 
 #include "manipulation/arm_kinematics.hpp"
+#include "manipulation/arm_path.hpp"
 
 namespace manipulation
 {
@@ -69,5 +70,61 @@ struct RetargetResult
 };
 
 bool standup_retarget(const ArmModel & m, const Q5 & q_table, const StandupRetarget & r, bool scale, RetargetResult & out);
+
+// 먼 누운 네모 퍽 가운데 쥐기 표 (config/lyingpick/lyingpick_paths_ok75.txt, 11-10 밤 강화학습 lyingpick_res — farpick 과 같은 형식,
+//   load_standup_table 로 읽음): side = 0.060 (누운 네모), axis = 긴축 [°] (180° 주기), release = 닫는 점. control_master park_or_relocate_plan ① 쥐기
+constexpr double kLyingPickSide = 0.060;
+
+// 표 파일: param 이 있으면 그것, 없으면 standup_paths_file 과 같은 폴더의 lyingpick/lyingpick_paths_ok75.txt (farpick_dir 과 같은 규칙), 둘 다 없으면 ""
+std::string lyingpick_table_path(const std::string & param, const std::string & standup_file);
+
+struct LyingPickChoice
+{
+  int row{-1};       // 고른 줄 (한도 안 줄이 없으면 -1)
+  int nearest{-1};   // 한도와 상관없이 가장 가까운 줄 (로그, side 0.060 줄이 없으면 -1)
+  double dx{0.0}, dy{0.0}, dyaw_deg{0.0};   // 실제 − 표 (row 가 없으면 nearest 기준), 긴축 차는 180° 주기 (−90 … 90)
+  double dist_mm{0.0};
+};
+
+// 누운 퍽 (x, y, 긴축 axis_deg) 에 쓸 줄: side 0.060 줄 중 거리 max_dist_mm · 긴축 차 max_deg 안에서 가장 가까운 것
+//   (가까움 = nearest_standup 과 같은 (dx / 7.5 mm)² + (dy / 10 mm)² + (d각 / 7.5°)²)
+LyingPickChoice choose_lyingpick(const std::vector<StandupPath> & table, double x, double y, double axis_deg, double max_dist_mm, double max_deg);
+
+// 표 한 줄 → 옮기기 쥐기 경로 점 (farpick_plan 과 같은 변환): 점 1 … 끝을 standup_retarget (덜 뻗기 없음) → 처짐 앞먹임 (닫는 점부터 held_kg) → 팀 명령.
+//   점 1 = 위로 가며 엶 (open, grip_early = early_open) · 속도 시간표, 그 뒤 = 표 간격 dt_s (건너뛴 점만큼 길게).
+//   이름: 닫기 전 "lp_in<i>" (빈손으로 내려온 길 — 빈손 되돌아가기가 거꾸로 감, lyingpick_free_node) · 닫는 점 "reloc_grasp" (close) ·
+//   닫은 뒤 "lp<i>" · 마지막 "reloc_lift" (멈춤). IK 안 되는 점은 건너뜀 (닫는 점 · 닫은 뒤 전부가 안 되면 실패). 첫 점 (LOOK) 은 안 넣음
+//   shift [m, base_link (x, y, z)]: 퍽 근처 구간만 손끝을 그만큼 더 옮김 (실물 맞춤 lyingpick_dxy_mm · lyingpick_dz_mm, 자세 방향 그대로 IK 다시).
+//     닫기 전 점은 표 손끝이 닫는 점 손끝에서 kLyingShiftIn 안이면 다, kLyingShiftOut 밖이면 0, 사이는 직선 (표 정해진 쥐기의 중간 50 · 위 80 mm —
+//     위 점까지는 표 그대로, 내려가며 들어감). 닫는 점부터 끝 (들기) 까지 다 — 쥔 채 들기 시작에서 손끝이 튀지 않게
+struct LyingPickPath
+{
+  std::vector<PathNode> nodes;
+  std::vector<Q5> q;  // 점마다 실제 자세 (처짐 앞먹임 전, nodes 와 같은 순서)
+  Q5 q_close{};      // 닫는 점 실제 자세 (처짐 앞먹임 전)
+  int skipped{0};
+};
+constexpr double kLyingShiftIn = 0.050, kLyingShiftOut = 0.080;
+// 닫기 전 멈춤 (hover): hover_m > 0 이면 닫는 점 바로 위 hover_m [m] (같은 손 방향, 수직) 에서 멈춰 hover_s 기다린 뒤 descend_s 동안 곧게 내려와 닫음
+//   (닫는 점 손끝에서 hover_m + 3 mm 안의 표 점은 뺌 — 기울인 손이 비스듬히 끝까지 내려오며 퍽 옆면을 스치지 않게). 0 = 표 그대로
+struct LyingHover
+{
+  double hover_m{0.0};
+  double hover_s{0.0};
+  double descend_s{0.0};
+};
+bool lyingpick_path(const ArmModel & m, const StandupPath & e, const StandupRetarget & rt, double held_kg, double dt_s, bool early_open,
+  LyingPickPath & out, std::string & why, const Eigen::Vector3d & shift = Eigen::Vector3d::Zero(), const LyingHover & hover = LyingHover{});
+
+// 빈손 되돌아가기가 지나가도 되는 표 점 (닫기 전, 빈손으로 내려온 길)
+bool lyingpick_free_node(const std::string & name);
+
+// 쥔 퍽 중심의 손 안 자리 [m]: (접근축 성분, b = 접근축 × 닫힘축 성분). 닫힘축 성분은 손가락이 닫히며 0 으로 봄
+//   (표 보정이 퍽 가운데에서 긴축 쪽으로 비켜 쥐면 그만큼 손 안에 남음 → 내려놓은 퍽 중심 = held_center_at)
+Eigen::Vector2d held_center_in_hand(const Grip & g, const Eigen::Vector3d & center);
+// 표 쥐기 손가락 사이 가운데 맞춤: 닫는 점 손끝이 퍽 중심에서 tip_off [m, base xy] 어긋났을 때, 닫힘축 (수평 성분) 방향 어긋남만 되돌리는 xy 옮김.
+//   긴축 방향 (닫힘축에 수직) 은 그대로 (표가 고른 쥐는 자리). 닫힘축이 거의 수직이면 0
+Eigen::Vector2d lying_recenter_shift(const Grip & g, const Eigen::Vector2d & tip_off);
+Eigen::Vector3d held_center_at(const Grip & g, const Eigen::Vector2d & in_hand);
 
 }  // namespace manipulation

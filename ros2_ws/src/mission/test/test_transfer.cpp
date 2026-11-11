@@ -666,6 +666,487 @@ TEST(DiceSteps, BoxStopsUseFinalApproach)
   for (const auto & s : collect_steps(a, {1})) {EXPECT_DOUBLE_EQ(s.approach_m, 0.0);}
 }
 
+// 옆 보기: 박스 Plan 에서 퍽이 side_look_expected 보다 적으면 LOOK right → 기다리기 → LOOK left → 같은 Plan
+TEST(DiceSteps, SideLookWhenPucksMissing)
+{
+  DiceMap a;
+  ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
+  const auto steps = collect_steps(a, {1, 2, 6, 3, 4, 5});
+  const Step & front = steps[4];   // arm:LOOK:B2
+  const Step & plan = steps[5];    // plan:collect:B2
+  ASSERT_TRUE(is_custom(plan, kPlanCollectBox));
+  EXPECT_FALSE(is_side_look(front));   // 앞 LOOK 은 slot "" 그대로
+  EXPECT_TRUE(front.slot.empty());
+
+  const SideLookConfig cfg;   // 기본 = 켬, 2 개, right → left
+  const auto more = side_look_steps(plan, 1, cfg);
+  ASSERT_EQ(more.size(), 4u);
+  EXPECT_EQ(more[0].type, StepType::Arm);
+  EXPECT_EQ(more[0].arm_task, kArmLook);
+  EXPECT_EQ(more[0].slot, "right");   // control_master / robot_cli 와 같은 글자
+  EXPECT_EQ(box_of(more[0]), 2);
+  EXPECT_EQ(place_of(more[0]), -1);
+  EXPECT_EQ(more[0].name, "arm:LOOK:B2:right");
+  EXPECT_TRUE(is_custom(more[1], kLookDwell));
+  EXPECT_EQ(box_of(more[1]), 2);
+  EXPECT_EQ(more[2].arm_task, kArmLook);
+  EXPECT_EQ(more[2].slot, "left");
+  EXPECT_TRUE(is_custom(more[3], kPlanCollectBox));   // 같은 Plan 다시
+  EXPECT_EQ(box_of(more[3]), 2);
+  EXPECT_EQ(more[3].name, "plan:collect:B2:side");
+  for (const auto & s : more) {
+    EXPECT_NE(s.type, StepType::Navigate);   // 같은 정차 안 (dice_recover 의 정차 구간이 그대로)
+    if (s.type == StepType::Arm) {
+      EXPECT_TRUE(is_side_look(s));
+      EXPECT_TRUE(is_look_task(s.arm_task));   // 실행기: LOOK 류 = 펴진 채 → 다음 이동 전 HOME
+      EXPECT_TRUE(s.puck_id.empty());          // 다시 보기 LOOK 아님
+    }
+  }
+  EXPECT_EQ(side_look_steps(plan, 0, cfg).size(), 4u);   // 하나도 못 봄
+
+  // 2 개 이상 보면 아무것도 안 끼움 (예전과 같음)
+  EXPECT_TRUE(side_look_steps(plan, 2, cfg).empty());
+  EXPECT_TRUE(side_look_steps(plan, 3, cfg).empty());
+  // 끄면 안 함
+  SideLookConfig off = cfg;
+  off.enabled = false;
+  EXPECT_TRUE(side_look_steps(plan, 0, off).empty());
+  // 기대 수 바꿈
+  SideLookConfig three = cfg;
+  three.expected = 3;
+  EXPECT_EQ(side_look_steps(plan, 2, three).size(), 4u);
+  SideLookConfig zero = cfg;
+  zero.expected = 0;
+  EXPECT_TRUE(side_look_steps(plan, 0, zero).empty());
+
+  // 마지막 박스 = 배달 Plan 도 같은 Plan 다시
+  const auto last = side_look_steps(steps[17], 1, cfg);
+  ASSERT_EQ(last.size(), 4u);
+  EXPECT_TRUE(is_custom(last.back(), kPlanDelivery));
+  EXPECT_EQ(box_of(last.back()), 5);
+  EXPECT_EQ(last[0].name, "arm:LOOK:B5:right");
+
+  // 순서 · 글자: right · left 만 (rack = 적재함 스캔 경로라 절대 안 보냄), 한쪽만이면 기다리기 없음
+  SideLookConfig one = cfg;
+  one.order = {"left"};
+  const auto l = side_look_steps(plan, 1, one);
+  ASSERT_EQ(l.size(), 2u);
+  EXPECT_EQ(l[0].slot, "left");
+  EXPECT_TRUE(is_custom(l[1], kPlanCollectBox));
+  SideLookConfig bad = cfg;
+  bad.order = {"rack", "Right", ""};
+  EXPECT_TRUE(side_look_steps(plan, 0, bad).empty());
+  SideLookConfig mixed = cfg;
+  mixed.order = {"left", "rack", "right"};
+  const auto m = side_look_steps(plan, 0, mixed);
+  ASSERT_EQ(m.size(), 4u);
+  EXPECT_EQ(m[0].slot, "left");
+  EXPECT_EQ(m[2].slot, "right");
+
+  // 박스 Plan 이 아니면 안 함 (LOOK · 재검증 · 지금 자리 재계획)
+  EXPECT_TRUE(side_look_steps(front, 0, cfg).empty());
+  Step here = steps[17];
+  box_of(here) = -1;
+  EXPECT_TRUE(side_look_steps(here, 0, cfg).empty());
+  const auto ver = verify_steps({{0, 1, 2}}, a);
+  EXPECT_TRUE(side_look_steps(ver[2], 0, cfg).empty());
+}
+
+// PICK 빈손 (EMPTY_GRASP) 뒤 같은 박스 Plan 다시 앞에 끼울 앞 LOOK: 이동 전까지 뒤로 찾음, 옆 보기 · 다른 박스 LOOK 은 안 씀
+TEST(DiceSteps, BoxRelookAfterEmptyGrasp)
+{
+  DiceMap a;
+  ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
+  const auto steps = collect_steps(a, {1, 2, 6, 3, 4, 5});
+  // B2 정차: [3] 이동 → [4] LOOK:B2 → [5] Plan → 옆 보기 LOOK right · 기다리기 · LOOK left → PICK
+  std::vector<Step> st(steps.begin(), steps.begin() + 6);
+  ASSERT_EQ(st[3].type, StepType::Navigate);
+  const auto side = side_look_steps(st[5], 0, SideLookConfig{});
+  ASSERT_EQ(side.size(), 4u);
+  st.insert(st.end(), side.begin(), side.end() - 1);
+  Step pick;
+  pick.type = StepType::Arm;
+  pick.arm_task = kArmPick;
+  pick.puck_id = "P7";
+  st.push_back(pick);
+  const std::size_t at = st.size() - 1;
+
+  const auto lk = box_relook_step(st, at, 2, "P7");
+  ASSERT_TRUE(lk.has_value());
+  EXPECT_EQ(lk->type, StepType::Arm);
+  EXPECT_EQ(lk->arm_task, kArmLook);
+  EXPECT_EQ(box_of(*lk), 2);
+  EXPECT_EQ(place_of(*lk), -1);
+  EXPECT_TRUE(lk->slot.empty());          // 앞 LOOK (옆 보기 아님)
+  EXPECT_FALSE(is_side_look(*lk));
+  EXPECT_EQ(lk->puck_id, "P7");           // 다시 보기 LOOK → 미션이 옆 보기 상태를 안 되돌림
+  EXPECT_EQ(lk->name, "arm:LOOK:B2(빈손 뒤 다시 보기:P7)");
+
+  EXPECT_FALSE(box_relook_step(st, at, 1, "P7").has_value());   // B1 LOOK 은 이동 너머 (앞 정차)
+  EXPECT_FALSE(box_relook_step(st, 4, 2, "P7").has_value());    // 앞 LOOK 보다 앞 = 이동뿐
+  EXPECT_FALSE(box_relook_step(st, at, 0, "P7").has_value());   // 박스 번호 잘못
+  EXPECT_FALSE(box_relook_step(st, at, 7, "P7").has_value());
+  EXPECT_EQ(box_relook_step(st, at, 2, "")->puck_id, "?");      // ID 없어도 다시 보기 LOOK
+  EXPECT_EQ(box_relook_step(st, st.size() + 5, 2, "P7")->name, lk->name);   // at 이 목록 밖이어도 끝에서 찾음
+
+  // 실행기 다시 보기 LOOK (이름 · puck_id 붙음) 이 앞에 있어도 같은 앞 LOOK 자세 · 새 이름
+  Step prev = st[4];
+  prev.puck_id = "P3";
+  prev.name += "(다시 보기:P3)";
+  st.insert(st.begin() + static_cast<std::ptrdiff_t>(at), prev);
+  const auto lk2 = box_relook_step(st, at + 1, 2, "P7");
+  ASSERT_TRUE(lk2.has_value());
+  EXPECT_EQ(lk2->puck_id, "P7");
+  EXPECT_EQ(lk2->name, "arm:LOOK:B2(빈손 뒤 다시 보기:P7)");
+}
+
+// 관측 구간 (look_started_) · 옆 보기 상태를 새로 잡는 LOOK = 새 정차 앞 LOOK 만
+//   빈손 뒤 다시 보기 · 실행기 다시 보기 · 옆 보기 LOOK 은 그대로 둠 → 옆에서만 본 퍽이 Plan 다시에 남음
+TEST(DiceSteps, RelookKeepsBoxLookWindow)
+{
+  DiceMap a;
+  ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
+  const auto steps = collect_steps(a, {1, 2, 6, 3, 4, 5});
+  std::vector<Step> st(steps.begin(), steps.begin() + 6);
+  ASSERT_EQ(st[4].arm_task, kArmLook);
+  ASSERT_EQ(box_of(st[4]), 2);
+  EXPECT_TRUE(starts_box_look(st[4]));            // 새 정차 앞 LOOK
+  for (const auto & s : side_look_steps(st[5], 0, SideLookConfig{})) {
+    if (is_side_look(s)) {EXPECT_FALSE(starts_box_look(s));}   // 옆 보기 LOOK
+  }
+  const auto lk = box_relook_step(st, st.size(), 2, "P7");
+  ASSERT_TRUE(lk.has_value());
+  EXPECT_FALSE(starts_box_look(*lk));             // 빈손 뒤 다시 보기 LOOK
+  const auto lk_noid = box_relook_step(st, st.size(), 2, "");
+  ASSERT_TRUE(lk_noid.has_value());
+  EXPECT_FALSE(starts_box_look(*lk_noid));        // ID 없어도 ("?") 그대로
+  Step ex = st[4];
+  ex.puck_id = "P3";                              // 실행기 다시 보기 LOOK (insert_relook)
+  EXPECT_FALSE(starts_box_look(ex));
+  EXPECT_FALSE(starts_box_look(st[5]));           // Plan (팔 아님)
+  EXPECT_FALSE(starts_box_look(st[3]));           // 이동
+  Step bad = st[4];
+  box_of(bad) = 0;                                // 박스 번호 없음
+  EXPECT_FALSE(starts_box_look(bad));
+}
+
+// 옆 보기 slot near · far (control_master LOOK slot: J3 +look_near_tilt_deg · J4 −look_far_tilt_deg) 도 받음
+//   관측 구간을 안 바꾸고 (starts_box_look 거짓), 빈손 뒤 다시 보기는 그 너머 앞 LOOK 을 찾음
+TEST(DiceSteps, SideLookAcceptsNearFar)
+{
+  for (const char * ok : {"right", "left", "near", "far"}) {EXPECT_TRUE(is_side_slot(ok)) << ok;}
+  for (const char * no : {"", "rack", "Near", "front", "barcode"}) {EXPECT_FALSE(is_side_slot(no)) << no;}
+
+  DiceMap a;
+  ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
+  const auto steps = collect_steps(a, {1, 2, 6, 3, 4, 5});
+  SideLookConfig cfg;
+  cfg.order = {"left", "near"};   // 노드 기본 side_look_order
+  const auto more = side_look_steps(steps[5], 1, cfg);
+  ASSERT_EQ(more.size(), 4u);
+  EXPECT_EQ(more[0].slot, "left");
+  EXPECT_TRUE(is_custom(more[1], kLookDwell));
+  EXPECT_EQ(more[2].slot, "near");
+  EXPECT_EQ(more[2].name, "arm:LOOK:B2:near");
+  EXPECT_TRUE(is_side_look(more[2]));
+  EXPECT_FALSE(starts_box_look(more[2]));   // 관측 구간 · 옆 보기 상태 그대로
+  EXPECT_FALSE(is_pick_relook(more[2]));
+  EXPECT_TRUE(is_custom(more[3], kPlanCollectBox));
+  cfg.order = {"far"};
+  const auto far = side_look_steps(steps[5], 0, cfg);
+  ASSERT_EQ(far.size(), 2u);
+  EXPECT_EQ(far[0].slot, "far");
+  EXPECT_TRUE(is_side_look(far[0]));
+
+  // 빈손 뒤 다시 보기: near 옆 보기를 건너뛰고 그 정차 앞 LOOK
+  std::vector<Step> st(steps.begin(), steps.begin() + 6);
+  st.insert(st.end(), more.begin(), more.end() - 1);
+  const auto lk = box_relook_step(st, st.size(), 2, "P7");
+  ASSERT_TRUE(lk.has_value());
+  EXPECT_TRUE(lk->slot.empty());
+}
+
+// LOOK 자세 구간 (LOOK 성공 ~ 다음 팔 작업) 안에서 찍힌 퍽 → 본 slot. 구간 밖 (팔이 움직이는 중) · ID 없는 관측은 안 씀
+TEST(DiceSteps, PuckViewsFromLookWindows)
+{
+  const std::vector<LookWindow> w{{"", 10.0, 12.0}, {"left", 13.0, 15.0}, {"near", 16.0, -1.0}};
+  const std::vector<SeenAt> seen{
+    {"P1", 10.5}, {"P1", 11.0}, {"P1", 13.5},   // 앞 · left
+    {"P2", 12.5},                               // 움직이는 중 → 안 씀
+    {"P2", 14.0},                               // left 만
+    {"P3", 20.0},                               // near (아직 그 자세)
+    {"", 11.0},                                 // ID 없음
+    {"P4", 9.0}};                               // 앞 LOOK 전
+  const auto v = puck_views(w, seen);
+  ASSERT_EQ(v.count("P1"), 1u);
+  EXPECT_EQ(v.at("P1"), (std::vector<std::string>{"", "left"}));
+  EXPECT_EQ(v.at("P2"), (std::vector<std::string>{"left"}));
+  EXPECT_EQ(v.at("P3"), (std::vector<std::string>{"near"}));
+  EXPECT_EQ(v.count("P4"), 0u);
+  EXPECT_EQ(v.count(""), 0u);
+  EXPECT_EQ(relook_slot(v, "P1"), "");       // 앞에서 봄 → 앞 LOOK
+  EXPECT_EQ(relook_slot(v, "P2"), "left");   // 옆에서만 → 그 slot
+  EXPECT_EQ(relook_slot(v, "P3"), "near");
+  EXPECT_EQ(relook_slot(v, "P9"), "");       // 기록 없음 → 앞 LOOK
+}
+
+namespace
+{
+// B2 정차 앞 LOOK 뒤 Plan 이 끼울 집기 단계 (P1 → STORE → P2 → STORE)
+std::vector<Step> b2_pick_steps(bool rack_look = false)
+{
+  std::vector<ArmAction> acts;
+  for (const auto & [id, slot] : std::vector<std::pair<std::string, std::string>>{{"P1", "S1"}, {"P2", "S2"}}) {
+    ArmAction p;
+    p.op = ArmOp::Pick;
+    p.puck_id = id;
+    p.box = 2;
+    acts.push_back(p);
+    ArmAction s;
+    s.op = ArmOp::Store;
+    s.puck_id = id;
+    s.slot = slot;
+    acts.push_back(s);
+  }
+  return arm_steps(acts, rack_look, false);
+}
+
+bool is_pick_of(const Step & s, const std::string & id)
+{
+  return s.type == StepType::Arm && s.arm_task == kArmPick && s.puck_id == id;
+}
+}  // namespace
+
+// PICK 앞 다시 보기: 박스 LOOK 바로 뒤 첫 퍽은 그대로, STORE 뒤 (P0) 둘째 퍽은 앞 LOOK 다시 → 기다리기 → PICK
+TEST(DiceSteps, PickRelookAfterStore)
+{
+  DiceMap a;
+  ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
+  const auto steps = collect_steps(a, {1, 2, 6, 3, 4, 5});
+  const Step & front = steps[4];   // arm:LOOK:B2
+  ASSERT_TRUE(starts_box_look(front));
+  const PuckViews views{{"P1", {""}}, {"P2", {""}}};
+
+  const auto out = with_pick_relooks(b2_pick_steps(), front, views);
+  ASSERT_EQ(out.size(), 6u);
+  EXPECT_TRUE(is_pick_of(out[0], "P1"));      // 첫 퍽: 앞 LOOK 자세에서 바로
+  EXPECT_EQ(out[1].arm_task, kArmStore);
+  const Step & lk = out[2];                   // 둘째 퍽: STORE 뒤 → 다시 보기
+  EXPECT_EQ(lk.type, StepType::Arm);
+  EXPECT_EQ(lk.arm_task, kArmLook);
+  EXPECT_EQ(box_of(lk), 2);
+  EXPECT_EQ(place_of(lk), -1);
+  EXPECT_TRUE(lk.slot.empty());               // 앞에서 본 퍽 → 앞 LOOK
+  EXPECT_TRUE(lk.puck_id.empty());            // 실행기 다시 보기 기다림 (relook_wait_s 거절) 안 씀
+  EXPECT_EQ(lk.target, Target::None);
+  EXPECT_TRUE(is_pick_relook(lk));
+  EXPECT_FALSE(is_side_look(lk));
+  EXPECT_FALSE(starts_box_look(lk));          // 관측 구간 look_started_ · 옆 보기 상태 그대로
+  EXPECT_EQ(lk.name, "arm:LOOK:B2(집기 전 다시 보기:P2)");
+  Step copied = lk;                           // 실행기 insert_relook 복사본 (puck_id 붙음) → 예전 다시 보기 LOOK 처리
+  copied.puck_id = "P2";
+  EXPECT_FALSE(is_pick_relook(copied));
+  EXPECT_FALSE(starts_box_look(copied));
+  EXPECT_TRUE(is_custom(out[3], kRelookDwell));
+  EXPECT_EQ(box_of(out[3]), 2);
+  EXPECT_EQ(out[3].puck_id, "P2");
+  EXPECT_TRUE(is_pick_of(out[4], "P2"));
+  EXPECT_EQ(out[5].arm_task, kArmStore);
+  for (const auto & s : out) {EXPECT_NE(s.type, StepType::Navigate);}   // 같은 정차 안
+
+  // LOOK_RACK 이 STORE 앞에 있어도 같음 (PICK 바로 앞 팔 단계 = STORE)
+  const auto rk = with_pick_relooks(b2_pick_steps(true), front, views);
+  ASSERT_EQ(rk.size(), 8u);
+  EXPECT_TRUE(is_pick_of(rk[0], "P1"));
+  EXPECT_EQ(rk[1].arm_task, kArmLookRack);
+  EXPECT_TRUE(is_pick_relook(rk[3]));
+  EXPECT_TRUE(is_custom(rk[4], kRelookDwell));
+  EXPECT_TRUE(is_pick_of(rk[5], "P2"));
+
+  // 기록 없는 퍽 = 앞에서 본 것으로 봄 (같은 결과)
+  EXPECT_EQ(with_pick_relooks(b2_pick_steps(), front, {}).size(), 6u);
+  // 앞 자세를 모름 (HOME 뒤 · 이동 뒤) → 첫 퍽도 다시 보기
+  const auto cold = with_pick_relooks(b2_pick_steps(), std::nullopt, views);
+  ASSERT_EQ(cold.size(), 8u);
+  EXPECT_TRUE(is_pick_relook(cold[0]));
+  Step home;
+  home.type = StepType::Arm;
+  home.arm_task = kArmHome;
+  EXPECT_TRUE(is_pick_relook(with_pick_relooks(b2_pick_steps(), home, views)[0]));
+  // 다른 박스 LOOK 자세 → 다시 보기
+  Step other = front;
+  box_of(other) = 3;
+  EXPECT_TRUE(is_pick_relook(with_pick_relooks(b2_pick_steps(), other, views)[0]));
+  // 실행기 · 빈손 뒤 다시 보기 LOOK (puck_id 있음) 도 같은 앞 LOOK 자세
+  const auto again = box_relook_step(std::vector<Step>(steps.begin(), steps.begin() + 6), 6, 2, "P9");
+  ASSERT_TRUE(again.has_value());
+  EXPECT_TRUE(is_pick_of(with_pick_relooks(b2_pick_steps(), *again, views)[0], "P1"));
+}
+
+// 옆 보기로만 본 퍽은 그 slot 으로 다시 봄. 마지막 옆 보기 자세가 그 퍽을 봤으면 첫 퍽은 그대로
+TEST(DiceSteps, PickRelookSideOnlyPuck)
+{
+  DiceMap a;
+  ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
+  const auto steps = collect_steps(a, {1, 2, 6, 3, 4, 5});
+  SideLookConfig cfg;
+  cfg.order = {"left", "near"};
+  const auto side = side_look_steps(steps[5], 1, cfg);
+  ASSERT_EQ(side.size(), 4u);
+  const Step & near = side[2];   // 마지막 옆 보기 = 지금 팔 자세
+  ASSERT_EQ(near.slot, "near");
+  const Step & front = steps[4];
+
+  // P1 near 에서만, P2 앞 · left
+  const PuckViews views{{"P1", {"near"}}, {"P2", {"", "left"}}};
+  const auto out = with_pick_relooks(b2_pick_steps(), near, views);
+  ASSERT_EQ(out.size(), 6u);
+  EXPECT_TRUE(is_pick_of(out[0], "P1"));      // near 자세가 P1 을 봄 → 그대로
+  EXPECT_TRUE(is_pick_relook(out[2]));
+  EXPECT_TRUE(out[2].slot.empty());           // P2 는 앞에서도 봄 → 앞 LOOK
+  EXPECT_TRUE(is_pick_of(out[4], "P2"));
+
+  // 앞 LOOK 자세에서 near 에서만 본 P1 → near 로 다시 보기 (옆 보기 LOOK 이지만 관측 구간 그대로)
+  const auto f = with_pick_relooks(b2_pick_steps(), front, views);
+  ASSERT_EQ(f.size(), 8u);
+  const Step & lk = f[0];
+  EXPECT_TRUE(is_pick_relook(lk));
+  EXPECT_EQ(lk.slot, "near");
+  EXPECT_TRUE(is_side_look(lk));
+  EXPECT_FALSE(starts_box_look(lk));
+  EXPECT_EQ(lk.name, "arm:LOOK:B2:near(집기 전 다시 보기:P1)");
+  EXPECT_TRUE(is_custom(f[1], kRelookDwell));
+  EXPECT_EQ(f[1].puck_id, "P1");
+  EXPECT_TRUE(is_pick_of(f[2], "P1"));
+  EXPECT_TRUE(is_pick_relook(f[4]));
+  EXPECT_TRUE(f[4].slot.empty());
+
+  // 마지막 옆 보기 (near) 가 앞에서만 본 퍽 → 앞 LOOK 으로 다시 보기 (그 자세에선 안 보였을 수 있음)
+  const PuckViews front_only{{"P1", {""}}, {"P2", {""}}};
+  const auto n = with_pick_relooks(b2_pick_steps(), near, front_only);
+  ASSERT_EQ(n.size(), 8u);
+  EXPECT_TRUE(is_pick_relook(n[0]));
+  EXPECT_TRUE(n[0].slot.empty());
+
+  // PICK 앞 다시 보기 LOOK 을 빈손 뒤 다시 보기가 복사해도 표시는 안 물려받음
+  std::vector<Step> st(steps.begin(), steps.begin() + 6);
+  Step rl = f[4];   // 앞 슬롯 다시 보기
+  st.push_back(rl);
+  const auto eg = box_relook_step(st, st.size(), 2, "P2");
+  ASSERT_TRUE(eg.has_value());
+  EXPECT_FALSE(is_pick_relook(*eg));
+  EXPECT_EQ(eg->puck_id, "P2");
+}
+
+// 배달 단계: 이동 → 박스 LOOK 뒤 첫 퍽은 그대로, 이어 하는 마지막 박스는 지금 팔 자세부터
+TEST(DiceSteps, PickRelookTransferSteps)
+{
+  DiceMap a;
+  ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
+  TransferPlan plan;
+  Stop here;   // 마지막 박스 B5 에서 이어서 (이동 없음)
+  here.node = 5;
+  here.move = false;
+  ArmAction p;
+  p.op = ArmOp::Pick;
+  p.box = 5;
+  p.puck_id = "P1";
+  ArmAction st;
+  st.op = ArmOp::Store;
+  st.slot = "S1";
+  st.puck_id = "P1";
+  here.actions = {p, st};
+  Stop b3;   // B3 로 가서 LOOK → 두 개
+  b3.node = 3;
+  b3.move = true;
+  ArmAction look;
+  look.op = ArmOp::Look;
+  look.box = 3;
+  ArmAction p2 = p, p3 = p, s2 = st, s3 = st;
+  p2.box = p3.box = 3;
+  p2.puck_id = s2.puck_id = "P2";
+  p3.puck_id = s3.puck_id = "P3";
+  s2.slot = "S2";
+  s3.slot = "S3";
+  b3.actions = {look, p2, s2, p3, s3};
+  plan.stops = {here, b3};
+  const auto steps = transfer_steps(plan, a);
+  ASSERT_EQ(steps.size(), 8u);
+
+  const PuckViews views{{"P1", {""}}, {"P2", {""}}, {"P3", {""}}};
+  Step b5_look;   // 마지막 박스 앞 LOOK (COLLECT 목록의 지금 팔 자세)
+  b5_look.type = StepType::Arm;
+  b5_look.arm_task = kArmLook;
+  box_of(b5_look) = 5;
+  const auto out = with_pick_relooks(steps, b5_look, views);
+  // [PICK P1, STORE] [이동 B3, LOOK B3, PICK P2, STORE, 다시 보기 LOOK, 기다리기, PICK P3, STORE]
+  ASSERT_EQ(out.size(), 10u);
+  EXPECT_TRUE(is_pick_of(out[0], "P1"));
+  EXPECT_EQ(out[2].type, StepType::Navigate);
+  EXPECT_TRUE(starts_box_look(out[3]));       // 그 정차 LOOK (새 관측 구간)
+  EXPECT_TRUE(is_pick_of(out[4], "P2"));
+  EXPECT_TRUE(is_pick_relook(out[6]));
+  EXPECT_EQ(box_of(out[6]), 3);
+  EXPECT_TRUE(is_custom(out[7], kRelookDwell));
+  EXPECT_TRUE(is_pick_of(out[8], "P3"));
+  int relooks = 0;
+  for (const auto & s : out) {relooks += is_pick_relook(s) ? 1 : 0;}
+  EXPECT_EQ(relooks, 1);
+
+  // 지금 자리에서 다시 계획 (서 있지 않음) → 첫 퍽도 다시 보기
+  EXPECT_TRUE(is_pick_relook(with_pick_relooks(steps, std::nullopt, views)[0]));
+}
+
+// 정차마다 한 번: 첫 Plan 이 옆 보기를 끼우면 두 번째 (합친) Plan 은 모자라도 그대로 계획, 다시 안 끼움
+TEST(DiceSteps, SideLookOncePerStop)
+{
+  DiceMap a;
+  ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
+  const auto steps = collect_steps(a, {1, 2, 6, 3, 4, 5});
+  const Step & plan = steps[5];
+  const SideLookConfig cfg;
+
+  SideLookState st = SideLookState::Unchecked;
+  const auto first = side_look_on_plan(st, plan, 1, cfg);
+  EXPECT_EQ(first.size(), 4u);
+  EXPECT_EQ(st, SideLookState::Pending);
+  EXPECT_TRUE(side_look_on_plan(st, first.back(), 1, cfg).empty());   // 옆에서도 못 봄 → 본 만큼 계획
+  EXPECT_EQ(st, SideLookState::Done);
+  EXPECT_TRUE(side_look_on_plan(st, plan, 0, cfg).empty());   // 복구 Plan (집기 실패 뒤 등) 도 다시 안 함
+  EXPECT_EQ(st, SideLookState::Done);
+
+  // 처음부터 2 개 보이면 바로 Done (옆 보기 없이 계획)
+  st = SideLookState::Unchecked;
+  EXPECT_TRUE(side_look_on_plan(st, plan, 2, cfg).empty());
+  EXPECT_EQ(st, SideLookState::Done);
+  EXPECT_TRUE(side_look_on_plan(st, plan, 1, cfg).empty());   // 그 뒤 복구 Plan 에서 모자라도 안 함 (실패 처리 그대로)
+
+  // 꺼짐: 언제나 바로 계획
+  SideLookConfig off = cfg;
+  off.enabled = false;
+  st = SideLookState::Unchecked;
+  EXPECT_TRUE(side_look_on_plan(st, plan, 0, off).empty());
+  EXPECT_EQ(st, SideLookState::Done);
+}
+
+// 실행기가 Plan 성공 뒤 끼우는 모양 그대로: 옆 보기는 그 정차 안, 다음 이동 전에 끝남
+TEST(DiceSteps, SideLookStaysInsideStop)
+{
+  DiceMap a;
+  ASSERT_TRUE(load_dice_map(TEST_DICE_MAP, a));
+  auto steps = collect_steps(a, {1, 2, 6});
+  const auto more = side_look_steps(steps[5], 1, SideLookConfig{});
+  steps.insert(steps.begin() + 6, more.begin(), more.end());   // insert_after_current = Plan 바로 뒤
+  std::vector<std::string> names;
+  for (const auto & s : steps) {names.push_back(s.name);}
+  const std::vector<std::string> want{
+    "nav:B1", "arm:LOOK:B1", "plan:collect:B1",
+    "nav:B2", "arm:LOOK:B2", "plan:collect:B2",
+    "arm:LOOK:B2:right", "wait:B2:right", "arm:LOOK:B2:left", "plan:collect:B2:side",
+    "nav:B6", "arm:LOOK:B6", "plan:delivery:B6"};
+  EXPECT_EQ(names, want);
+}
+
 TEST(DiceSteps, Q1CollectThenDeliverSteps)
 {
   // 노드와 같은 순서로 순수 계산만: 박스 5 곳 수집 (collect_box_actions → Cargo 반영) → 마지막 박스에서 계획 → 단계

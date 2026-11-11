@@ -322,3 +322,16 @@ TEST(Command, Complete)
   EXPECT_TRUE(complete_candidates("drive 0", kNames).empty());
   EXPECT_GT(complete_candidates("", kNames).size(), 10u);
 }
+
+TEST(Command, LookVariants)
+{
+  Command c;
+  for (const auto slot : {"left", "right", "far", "near"}) {
+    ASSERT_TRUE(parse(std::string("look ") + slot, c));
+    EXPECT_EQ(c.task, ArmTask::Goal::LOOK); EXPECT_EQ(c.slot, slot);
+  }
+  ASSERT_TRUE(parse("arm LOOK FAR", c)); EXPECT_EQ(c.slot, "far");
+  ASSERT_TRUE(parse("l near", c)); EXPECT_EQ(c.slot, "near");
+  ASSERT_TRUE(parse("look", c)); EXPECT_TRUE(c.slot.empty());
+  EXPECT_FALSE(parse("look far 5", c)); EXPECT_FALSE(parse("look nearer", c)); EXPECT_FALSE(parse("barcode far", c));
+}

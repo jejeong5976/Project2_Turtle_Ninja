@@ -80,6 +80,15 @@ std::vector<SegInstance> postprocess(
   const SegOutputs & o, const Letterbox & lb, cv::Size orig, const std::vector<std::string> & names,
   float conf, float iou = 0.7f, int max_det = 300);
 
+// SegModel 한 번 부를 때 단계별 시간 [ms] (계측용)
+struct SegTiming
+{
+  double pre = 0;    // letterbox · CHW float 변환 (CPU)
+  double infer = 0;  // TrtEngine::infer 전체 (입력 복사 + GPU + 출력 복사 + 동기화)
+  double gpu = 0;    // 그중 GPU 계산만 (CUDA event)
+  double post = 0;   // 디코딩 · NMS · 마스크 (CPU)
+};
+
 // 엔진 + 전처리 · 후처리. 출력이 검출 (3 차원) · 마스크 원형 (4 차원) 2 개가 아니면 예외
 class SegModel
 {
@@ -88,15 +97,20 @@ public:
   ~SegModel();
 
   std::vector<SegInstance> operator()(const cv::Mat & bgr);
+  const SegTiming & last_timing() const {return timing_;}   // 마지막 호출의 단계별 시간
 
   const std::vector<std::string> & names() const;
   cv::Size input_size() const;   // (w, h)
+  // 신뢰도 문턱 (장마다 바꿈: 쥔 퍽 재기 wrist.held 가 켜지면 held.conf 로 낮춤 — 일반 검출은 부르는 쪽이 wrist.conf 로 다시 거름)
+  void set_conf(float conf) {conf_ = conf;}
+  float conf() const {return conf_;}
 
 private:
   std::unique_ptr<TrtEngine> engine_;
   int idet_{-1}, iproto_{-1};
   float conf_, iou_;
   std::vector<float> chw_;
+  SegTiming timing_;
   std::vector<std::vector<float>> outs_;
   SegOutputs out_;
 };

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "manipulation/cell_shift.hpp"
+#include "manipulation/grasp_guard.hpp"
 #include "arm_kin_data.hpp"
 
 using manipulation::ArmPath;
@@ -370,4 +371,220 @@ TEST(CellShift, RetrieveLiftClearStillKeysOnClose)
   ArmPath s0 = store_path();
   EXPECT_FALSE(manipulation::retrieve_lift_clear(m, s0, kCellS9, 0.020, raised, why));
   EXPECT_NE(why.find("쥐는 점 (close) 없음"), std::string::npos) << why;
+}
+
+// ---- STORE 놓은 뒤 닫기 늦추기 (store_delay_close) ----
+namespace
+{
+// 놓는 점 (kInCell) 손끝을 칸 → 팔 J1 쪽 수평 side_mm · 위 up_mm 옮긴 자세 (손끝 위치 우선 감쇠 최소제곱, 접근축은 덜 맞춤).
+//   손끝 계산만 보는 시험이라 관절 범위는 안 봄 (kInCell 은 J4 범위 끝이라 tip_offset_command 는 40 mm 넘게 못 올림). 0.1 mm 안 못 맞추면 빈 목록
+std::vector<double> at_mm(const manipulation::ArmModel & m, double side_mm, double up_mm)
+{
+  using V5 = Eigen::Matrix<double, 5, 1>;
+  using F6 = Eigen::Matrix<double, 6, 1>;
+  auto feat = [&](const V5 & c) {
+      const manipulation::Grip g = manipulation::arm_grip(m, manipulation::team_to_model_q(m, std::vector<double>(c.data(), c.data() + 5)));
+      F6 f;
+      f << g.tip * 1000.0 * 10.0, g.app * 10.0;
+      return f;
+    };
+  const Eigen::Vector2d to_j1 = (m.j1_xy - tip(m, kInCell).head<2>()).normalized();   // 칸 → 팔 J1 쪽 (빠져나오는 쪽)
+  const V5 c0 = Eigen::Map<const V5>(kInCell.data());
+  F6 goal = feat(c0);
+  goal.head<3>() += Eigen::Vector3d(to_j1.x() * side_mm, to_j1.y() * side_mm, up_mm) * 10.0;
+  V5 c = c0;
+  for (int it = 0; it < 50; ++it) {
+    const F6 f = feat(c);
+    Eigen::Matrix<double, 6, 5> J;
+    for (int j = 0; j < 5; ++j) {
+      V5 e = c;
+      e[j] += 1e-6;
+      J.col(j) = (feat(e) - f) / 1e-6;
+    }
+    c += (J.transpose() * J + 1e-3 * Eigen::Matrix<double, 5, 5>::Identity()).ldlt().solve(J.transpose() * (goal - f));
+  }
+  if ((feat(c) - goal).head<3>().norm() > 1.0) {return {};}   // 손끝 0.1 mm
+  return std::vector<double>(c.data(), c.data() + 5);
+}
+
+// 기록 경로 모양: 들기 → 칸 안 놓기 → 곧게 10 mm (store_lift_clear) → 15 mm 닫기 (out_cell) → 30 · 45 mm → 옆 20 · 45 mm (높이 25)
+//   → 그 위 60 mm → (10 점) → P0_복귀 → 받침_복귀
+ArmPath store_close_path(const manipulation::ArmModel & m)
+{
+  ArmPath p{"store_S9", {}, true};
+  p.nodes.push_back(node("lift_real", kLift));                    // 0
+  p.nodes.push_back(node("in_cell", kInCell, false, "release"));  // 1
+  p.nodes.push_back(node("store_lift_clear", at_mm(m, 0, 10)));   // 2
+  p.nodes.push_back(node("out_cell", at_mm(m, 0, 15), false, "close"));   // 3
+  p.nodes.push_back(node("u30", at_mm(m, 0, 30)));                // 4
+  p.nodes.push_back(node("u45", at_mm(m, 0, 45)));                // 5
+  p.nodes.push_back(node("s20", at_mm(m, 20, 25)));               // 6
+  p.nodes.push_back(node("s45", at_mm(m, 45, 25)));               // 7
+  p.nodes.push_back(node("u60", at_mm(m, 45, 60)));               // 8
+  const auto top = p.nodes.back().q.size() == 5 ? p.nodes.back().q : kP0;   // 못 풀었으면 아래 all5 가 잡음
+  for (int i = 1; i <= 10; ++i) {p.nodes.push_back(node("b" + std::to_string(i), lerp(top, kP0, i / 11.0)));}   // 9 .. 18
+  p.nodes.push_back(node("P0_복귀", kP0, true));                  // 19
+  p.nodes.push_back(node("받침_복귀", kRest, true));              // 20
+  return p;
+}
+
+bool all5(const ArmPath & p)
+{
+  for (const auto & n : p.nodes) {
+    if (n.q.size() != 5) {return false;}
+  }
+  return true;
+}
+
+int close_at(const ArmPath & p)
+{
+  int k = -1;
+  for (size_t i = 0; i < p.nodes.size(); ++i) {
+    if (p.nodes[i].grip == "close") {
+      EXPECT_EQ(k, -1) << "닫기가 둘";
+      k = static_cast<int>(i);
+    }
+  }
+  return k;
+}
+}  // namespace
+
+// 0 / 0 = 지금 그대로 (닫기 out_cell · 점 · 그리퍼 값 하나도 안 바뀜), 결과는 false
+TEST(StoreDelayClose, ZeroZeroKeepsPath)
+{
+  const auto m = kin_data::model();
+  ArmPath p = store_close_path(m);
+  ASSERT_TRUE(all5(p)) << "손끝 옮긴 자세를 못 풂";
+  p.nodes[3].grip_on_way = true;
+  const ArmPath before = p;
+  manipulation::StoreCloseMove mv;
+  EXPECT_FALSE(manipulation::store_delay_close(m, p, 0.0, 0.0, mv));
+  EXPECT_EQ(mv.release, 1);
+  EXPECT_EQ(mv.from, 3);
+  EXPECT_EQ(mv.to, 3);
+  EXPECT_NEAR(mv.from_dz_mm, 15.0, 0.5);
+  ASSERT_EQ(p.nodes.size(), before.nodes.size());
+  for (size_t i = 0; i < p.nodes.size(); ++i) {
+    EXPECT_EQ(p.nodes[i].q, before.nodes[i].q);
+    EXPECT_EQ(p.nodes[i].grip, before.nodes[i].grip);
+    EXPECT_EQ(p.nodes[i].grip_on_way, before.nodes[i].grip_on_way);
+  }
+  EXPECT_FALSE(manipulation::store_delay_close(m, p, -1.0, std::nan(""), mv));   // 0 이하 · NaN 도 안 봄
+  EXPECT_EQ(close_at(p), 3);
+}
+
+// 50 / 40: 10 mm 위 (store_lift_clear) · 15 mm 닫기 · 30 · 45 mm 는 안 되고 옆 45 mm (s45) 첫 점으로 — 그리퍼 값만 옮기고 점은 그대로
+TEST(StoreDelayClose, MovesToFirstPointHighOrAside)
+{
+  const auto m = kin_data::model();
+  ArmPath p = store_close_path(m);
+  ASSERT_TRUE(all5(p));
+  p.nodes[3].grip_on_way = true;
+  const ArmPath before = p;
+  manipulation::StoreCloseMove mv;
+  ASSERT_TRUE(manipulation::store_delay_close(m, p, 0.050, 0.040, mv));
+  EXPECT_EQ(mv.from, 3);
+  EXPECT_EQ(mv.to, 7);
+  EXPECT_FALSE(mv.capped);
+  EXPECT_NEAR(mv.to_dxy_mm, 45.0, 0.5);
+  EXPECT_NEAR(mv.to_dz_mm, 25.0, 0.5);
+  EXPECT_EQ(close_at(p), 7);
+  EXPECT_TRUE(p.nodes[7].grip_on_way);
+  EXPECT_TRUE(p.nodes[3].grip.empty());
+  EXPECT_FALSE(p.nodes[3].grip_on_way);
+  for (size_t i = 0; i < p.nodes.size(); ++i) {
+    EXPECT_EQ(p.nodes[i].q, before.nodes[i].q) << p.nodes[i].name;
+    EXPECT_EQ(p.nodes[i].stop, before.nodes[i].stop) << p.nodes[i].name;
+  }
+  EXPECT_EQ(p.nodes[1].grip, "release");
+  // 높이만 (옆 0 = 안 봄): 60 mm 위 (u60) · 옆만 (높이 0): s45
+  ArmPath h = before;
+  ASSERT_TRUE(manipulation::store_delay_close(m, h, 0.050, 0.0, mv));
+  EXPECT_EQ(close_at(h), 8);
+  EXPECT_NEAR(mv.to_dz_mm, 60.0, 0.5);
+  ArmPath s = before;
+  ASSERT_TRUE(manipulation::store_delay_close(m, s, 0.0, 0.040, mv));
+  EXPECT_EQ(close_at(s), 7);
+  // 원래 닫는 점이 이미 조건을 맞추면 그대로 (앞으로 당기지 않음)
+  ArmPath k = before;
+  EXPECT_FALSE(manipulation::store_delay_close(m, k, 0.010, 0.0, mv));
+  EXPECT_EQ(close_at(k), 3);
+}
+
+// 조건을 맞추는 점이 없으면 접기 (P0_복귀) 바로 앞 점에서 닫음 → lazy_fold 자르기 (cut_fold_tail) 그대로 되고 끝 점이 그리퍼가 아님.
+//   그 사이 다른 그리퍼 점이 있으면 그 앞까지
+TEST(StoreDelayClose, CapsBeforeFoldAndNextGrip)
+{
+  const auto m = kin_data::model();
+  const ArmPath base = store_close_path(m);
+  ASSERT_TRUE(all5(base));
+  ArmPath p = base;
+  manipulation::StoreCloseMove mv;
+  ASSERT_TRUE(manipulation::store_delay_close(m, p, 1.0, 0.0, mv));   // 1 m 위는 없음
+  EXPECT_TRUE(mv.capped);
+  EXPECT_EQ(close_at(p), 18);
+  EXPECT_EQ(p.nodes[19].name, "P0_복귀");
+  const ArmPath fold{"fold", {base.nodes[19], base.nodes[20]}, true};
+  ArmPath cut = p;
+  EXPECT_TRUE(manipulation::cut_fold_tail(cut, fold));
+  EXPECT_EQ(cut.nodes.back().name, "P0_복귀");
+  // P0_복귀 가 없는 경로: 끝 앞 점
+  ArmPath nf = base;
+  nf.nodes[19].name = "p0";
+  ASSERT_TRUE(manipulation::store_delay_close(m, nf, 1.0, 0.0, mv));
+  EXPECT_EQ(mv.to, 19);
+  // 다음 그리퍼 점 (두 번째 닫기) 앞까지만
+  ArmPath g = base;
+  g.nodes[6].grip = "close";
+  ASSERT_TRUE(manipulation::store_delay_close(m, g, 0.050, 0.040, mv));
+  EXPECT_TRUE(mv.capped);
+  EXPECT_EQ(mv.to, 5);
+  EXPECT_EQ(g.nodes[5].grip, "close");
+  EXPECT_EQ(g.nodes[6].grip, "close");
+  // 놓기 · 닫기 없음 → 그대로
+  ArmPath nr = base;
+  nr.nodes[1].grip.clear();
+  EXPECT_FALSE(manipulation::store_delay_close(m, nr, 0.050, 0.040, mv));
+  EXPECT_EQ(mv.from, -1);
+  EXPECT_EQ(close_at(nr), 3);
+  ArmPath nc = base;
+  nc.nodes[3].grip.clear();
+  EXPECT_FALSE(manipulation::store_delay_close(m, nc, 0.050, 0.040, mv));
+  EXPECT_EQ(mv.from, -1);
+}
+
+// 가며 닫기 (grip_on_way, control_master gripper_on_the_way): 늦춰도 동작 수 · 시간 그대로, 닫는 시각만 늦어짐 · 받침 경로 마지막은 팔 동작 (home)
+TEST(StoreDelayClose, OnTheWayCloseKeepsTiming)
+{
+  const auto m = kin_data::model();
+  ArmPath p = store_close_path(m);
+  ASSERT_TRUE(all5(p));
+  p.nodes[3].grip_on_way = true;
+  const manipulation::PathTiming t;
+  const manipulation::GripperValues g;
+  const auto a0 = manipulation::path_actions(p, t, g);
+  manipulation::StoreCloseMove mv;
+  ASSERT_TRUE(manipulation::store_delay_close(m, p, 0.050, 0.040, mv));
+  const auto a1 = manipulation::path_actions(p, t, g);
+  ASSERT_EQ(a0.size(), a1.size());
+  ASSERT_EQ(a1.size(), 3u);   // 놓는 점까지 · 놓기 (그리퍼) · 받침까지 (가며 닫기)
+  for (size_t i = 0; i < a0.size(); ++i) {
+    EXPECT_EQ(a0[i].is_gripper, a1[i].is_gripper);
+    EXPECT_NEAR(a0[i].duration_s, a1[i].duration_s, 1e-9);
+  }
+  EXPECT_GT(a0[2].side_grip_t, 0.0);
+  EXPECT_GT(a1[2].side_grip_t, a0[2].side_grip_t);
+  EXPECT_LT(a1[2].side_grip_t, a1[2].duration_s);
+  EXPECT_NEAR(a1[2].side_grip, g.close, 1e-12);
+  EXPECT_EQ(a1.back().pose, "home");
+  EXPECT_FALSE(a1.back().is_gripper);
+  // 끝 점까지 밀려도 (접기 앞 점) 가며 닫기 그대로
+  ArmPath c = store_close_path(m);
+  c.nodes[3].grip_on_way = true;
+  ASSERT_TRUE(manipulation::store_delay_close(m, c, 1.0, 0.0, mv));
+  const auto a2 = manipulation::path_actions(c, t, g);
+  ASSERT_EQ(a2.size(), 3u);
+  EXPECT_NEAR(a2[2].duration_s, a0[2].duration_s, 1e-9);
+  EXPECT_GT(a2[2].side_grip_t, a1[2].side_grip_t);
+  EXPECT_LT(a2[2].side_grip_t, a2[2].duration_s);
 }

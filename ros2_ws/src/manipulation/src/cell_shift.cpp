@@ -240,6 +240,64 @@ int store_settle_index(const ArmModel & m, const ArmPath & path, double up_m)
   return -1;
 }
 
+bool store_delay_close(const ArmModel & m, ArmPath & path, double rise_m, double side_m, StoreCloseMove & mv)
+{
+  mv = StoreCloseMove{};
+  const bool use_rise = rise_m > 0.0, use_side = side_m > 0.0;   // NaN · 0 이하 = 그 조건 안 봄
+  const int n = static_cast<int>(path.nodes.size());
+  for (int i = 0; i < n && mv.release < 0; ++i) {
+    if (path.nodes[i].grip == "release") {mv.release = i;}
+  }
+  if (mv.release < 0 || path.nodes[mv.release].q.size() != 5) {return false;}
+  for (int i = mv.release + 1; i < n && mv.from < 0; ++i) {
+    if (path.nodes[i].grip == "close") {mv.from = i;}
+  }
+  if (mv.from < 0) {return false;}
+  mv.to = mv.from;
+  const Eigen::Vector3d rel = grip_of_cmd(m, Eigen::Map<const V5>(path.nodes[mv.release].q.data())).tip;
+  auto off = [&](int i, double & dz_mm, double & dxy_mm) {
+      if (path.nodes[i].q.size() != 5) {return false;}
+      const Eigen::Vector3d d = grip_of_cmd(m, Eigen::Map<const V5>(path.nodes[i].q.data())).tip - rel;
+      dz_mm = d.z() * 1000.0;
+      dxy_mm = d.head<2>().norm() * 1000.0;
+      return true;
+    };
+  if (!off(mv.from, mv.from_dz_mm, mv.from_dxy_mm)) {return false;}
+  mv.to_dz_mm = mv.from_dz_mm;
+  mv.to_dxy_mm = mv.from_dxy_mm;
+  if (!use_rise && !use_side) {return false;}
+  int last = n - 2;   // 끝 점은 안 씀 (path_actions 가 끝 점 그리퍼를 멈춤 + 기다림으로)
+  const int fold = find_node(path, "P0_복귀");
+  if (fold > mv.from) {last = std::min(last, fold - 1);}
+  for (int i = mv.from + 1; i <= last; ++i) {
+    if (!path.nodes[i].grip.empty()) {last = i - 1; break;}   // 다음 그리퍼 점 (닫기 · 열기) 순서는 그대로
+  }
+  if (last <= mv.from) {return false;}   // 옮길 자리 없음 → 그대로
+  int to = -1;
+  double dz = 0.0, dxy = 0.0;
+  for (int i = mv.from; i <= last && to < 0; ++i) {
+    if (off(i, dz, dxy) && ((use_rise && dz >= rise_m * 1000.0) || (use_side && dxy >= side_m * 1000.0))) {to = i;}
+  }
+  if (to < 0) {
+    to = last;
+    mv.capped = true;
+    if (!off(to, dz, dxy)) {dz = dxy = std::nan("");}
+  }
+  mv.to = to;
+  mv.to_dz_mm = dz;
+  mv.to_dxy_mm = dxy;
+  if (to == mv.from) {return false;}
+  PathNode & a = path.nodes[mv.from];
+  PathNode & b = path.nodes[to];
+  b.grip = a.grip;
+  b.grip_on_way = a.grip_on_way;
+  b.grip_early = a.grip_early;
+  a.grip.clear();
+  a.grip_on_way = false;
+  a.grip_early = false;
+  return true;
+}
+
 std::string path_cell(const std::string & name)
 {
   std::string rest;

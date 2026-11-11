@@ -287,4 +287,48 @@ bool p0_distinct(const ArmPath & fold, const ArmPath & unfold, double tol)
   return false;
 }
 
+std::vector<PathNode> retrace_nodes(const std::vector<PathNode> & nodes, std::size_t from,
+  const std::vector<std::string> & free_names, const std::function<bool(const PathNode &)> & is_exit, double same_tol)
+{
+  if (from >= nodes.size()) {return {};}
+  auto same = [same_tol](const PathNode & a, const PathNode & b) {
+      if (a.q.empty() || a.q.size() != b.q.size()) {return false;}
+      for (std::size_t j = 0; j < a.q.size(); ++j) {
+        if (!std::isfinite(a.q[j]) || !std::isfinite(b.q[j]) || std::fabs(a.q[j] - b.q[j]) > same_tol) {return false;}
+      }
+      return true;
+    };
+  auto plain_node = [](PathNode n) {   // 손은 빈 채 닫혀 있음 → 그리퍼 · 멈춤 · 시간 맞춤 없이 지나감
+      n.grip.clear();
+      n.stop = false;
+      n.hold_s = 0.0;
+      n.dt_s = 0.0;
+      n.grip_on_way = false;
+      n.grip_early = false;
+      return n;
+    };
+  // ① 거꾸로 + 고리 빼기: 이미 지난 (남긴) 자세와 같은 점이 또 나오면 그 사이 (고리) 를 버리고 그 자세에서 이어 감
+  std::vector<PathNode> kept{plain_node(nodes[from])};
+  for (std::size_t i = from; i-- > 0;) {
+    std::size_t loop = kept.size();
+    for (std::size_t k = 0; k < kept.size(); ++k) {
+      if (same(kept[k], nodes[i])) {loop = k; break;}
+    }
+    if (loop < kept.size()) {kept.resize(loop + 1); continue;}
+    PathNode n = plain_node(nodes[i]);
+    n.speed_dps = nodes[i + 1].speed_dps;   // 거꾸로 가는 구간 (→ nodes[i]) = 지나온 구간 nodes[i] → nodes[i + 1] 의 속도 · 받침 표시
+    n.stand = nodes[i + 1].stand;
+    kept.push_back(n);
+  }
+  // ② 끝점 (검사된 복귀 경로가 있는 자세) 까지. 그 전에는 아는 빈 공간 점 (퍽 위 · 들어 올린 점) 만
+  for (std::size_t k = 1; k < kept.size(); ++k) {
+    if (is_exit(kept[k])) {
+      kept.resize(k + 1);
+      return kept;
+    }
+    if (std::find(free_names.begin(), free_names.end(), kept[k].name) == free_names.end()) {return {};}
+  }
+  return {};
+}
+
 }  // namespace manipulation

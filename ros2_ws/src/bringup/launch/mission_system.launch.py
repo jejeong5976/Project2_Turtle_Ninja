@@ -29,7 +29,7 @@ import os
 
 from ament_index_python.packages import PackageNotFoundError, get_package_prefix, get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, OpaqueFunction, SetEnvironmentVariable
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, OpaqueFunction, SetEnvironmentVariable, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
@@ -109,9 +109,13 @@ def make(context):
             "hardware_map": arg("hardware_map") or share("bringup", "config", "hardware_map.yaml")}
     out.append(include("navigation", "slam.launch.py", slam))
 
+    # 2 ~ 5 는 stage2_delay_s 뒤에 띄움 (11-10 밤: 다 같이 켜면 스포너 · control_master 가 controller_manager 서비스를 못 찾는 일이 잦음
+    #   → 로봇 · 컨트롤러가 먼저 뜬 뒤 무거운 카메라 · 인지 · Nav2 · mission). 0 = 예전처럼 한꺼번에
+    late = []
+
     # 2. 카메라 · 인지 (nav · mission 은 아래에서 한 번만)
     if on("wrist_cam") or on("wide_cam") or on("perception"):
-        out.append(include("bringup", "bringup.launch.py", {
+        late.append(include("bringup", "bringup.launch.py", {
             "dds_transport": arg("dds_transport"), "wrist_cam": arg("wrist_cam"), "wide_cam": arg("wide_cam"),
             "wide_device": arg("wide_device"), "perception": arg("perception"),
             "wide_model": os.path.expanduser(arg("wide_model")), "wrist_model": os.path.expanduser(arg("wrist_model")),
@@ -120,7 +124,7 @@ def make(context):
 
     # 3. Nav2 (localization = slam 고정: map → odom 은 slam_toolbox 하나)
     if on("nav"):
-        out.append(include("navigation", "nav2.launch.py", {
+        late.append(include("navigation", "nav2.launch.py", {
             "localization": "slam", "map": "", "local_planner": arg("local_planner"),   # map = AMCL 용, 위 posegraph 경로가 새지 않게
             "dock": arg("dock"),
             "dock_vmax": arg("dock_vmax"), "dock_tol": arg("dock_tol"), "mission_hold": arg("mission_hold"),
@@ -133,11 +137,17 @@ def make(context):
             mission["params"] = os.path.expanduser(arg("planning_params"))
         if arg("dice_map"):
             mission["dice_map"] = os.path.expanduser(arg("dice_map"))
-        out.append(include("mission", "mission.launch.py", mission))
+        late.append(include("mission", "mission.launch.py", mission))
 
     # 5. 적재함 칸 태그 (빈손 LOOK slot:=rack 보정 때만)
     if on("rack_tags"):
-        out.append(include("bringup", "rack_tags.launch.py", {}))
+        late.append(include("bringup", "rack_tags.launch.py", {"held_fresh": arg("held_fresh")}))
+    delay = float(arg("stage2_delay_s") or "0")
+    if delay > 0.0 and late:
+        out.append(LogInfo(msg=f"mission_system: 카메라 · 인지 · Nav2 · mission 은 {delay:.0f} s 뒤 (로봇 · 컨트롤러 먼저)"))
+        out.append(TimerAction(period=delay, actions=late))
+    else:
+        out += late
     return out
 
 
@@ -146,6 +156,7 @@ def generate_launch_description():
     A = DeclareLaunchArgument
     return LaunchDescription([
         # 로봇 · SLAM
+        A("stage2_delay_s", default_value="20", description="카메라 · 인지 · Nav2 · mission 을 이만큼 뒤에 띄움 [s] (컨트롤러 먼저). 0 = 한꺼번에"),
         A("hardware", default_value="mock", choices=["mock", "opencr"], description="mock = 가짜 모터 / opencr = 실물"),
         A("opencr_ports", default_value="auto", description="실물 보드 'bus_drive=<주행>,bus_arm=<팔>' (run_robot.sh 가 채움)"),
         A("hardware_map", default_value="", description="비우면 전체 hardware_map.yaml (팔 포함). drive_only 는 안 됨"),
@@ -180,6 +191,7 @@ def generate_launch_description():
         A("mission", default_value="true", choices=["true", "false"]),
         A("planning_params", default_value="", description="비우면 레포 config/planning.yaml"),
         A("dice_map", default_value="", description="비우면 레포 maps/dice_map.yaml (arena5 전용 표 등)"),
+        A("held_fresh", default_value="false", choices=["true", "false"], description="선택: 쥔 퍽 신선한 측정 (rack_tags 필요)"),
         A("rack_tags", default_value="false", choices=["true", "false"], description="rack_tag_node (적재함 보정 때만)"),
         OpaqueFunction(function=make),
     ])
