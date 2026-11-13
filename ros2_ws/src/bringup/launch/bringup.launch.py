@@ -33,8 +33,8 @@ import os
 
 from ament_index_python.packages import PackageNotFoundError, get_package_prefix, get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import (DeclareLaunchArgument, GroupAction, IncludeLaunchDescription, LogInfo, OpaqueFunction,
-                            SetEnvironmentVariable)
+from launch.actions import (DeclareLaunchArgument, ExecuteProcess, GroupAction, IncludeLaunchDescription, LogInfo,
+                            OpaqueFunction, SetEnvironmentVariable, TimerAction)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -95,7 +95,11 @@ def make(context):
                 "camera_name": "wide_cam", "frame_id": "birdeye_camera_optical_frame",
                 "camera_info_url": "file://" + share("bringup", "config", "camera_wide.yaml"),
                 "..image_raw.compressed.jpeg_quality": quality,   # 이름이 '..' 로 시작함 (ros2 param list 로 확인)
+                "brightness": -1,                                 # usb_cam 이 밝기를 안 건드림 (기본 50 → 화면이 날아감), 아래 v4l2-ctl 이 정함
             }]))
+        # 광각 밝기 고정: usb_cam 은 음수 밝기를 안 넣어서 켜지고 3 s 뒤 v4l2-ctl 로 직접 (11-13 실물: +50 날아감, −20 신호 판정 정상)
+        out.append(TimerAction(period=3.0, actions=[ExecuteProcess(
+            cmd=["v4l2-ctl", "-d", dev, "-c", f"brightness={arg('wide_brightness')}"], output="screen")]))
 
     # perception: 설정 = config/perception.yaml (bringup share), 엔진 경로만 인자로
     if on("perception"):
@@ -135,6 +139,7 @@ def generate_launch_description():
         DeclareLaunchArgument("wrist_cam", default_value="true", description="손목 D435 realsense2_camera"),
         DeclareLaunchArgument("wide_cam", default_value="true", description="광각 Arducam usb_cam"),
         DeclareLaunchArgument("wide_device", default_value=WIDE_BY_ID, description="광각 장치 (by-id 경로, 실제 장치로 풀어 넘김)"),
+        DeclareLaunchArgument("wide_brightness", default_value="-20", description="광각 밝기 (v4l2-ctl, −64~64)"),
         DeclareLaunchArgument("perception", default_value="true"),
         DeclareLaunchArgument("wide_model", default_value=os.path.join(home, "models", "best_wide.engine"),
                               description="광각 TensorRT 엔진 (544×960), 옆에 같은 이름 .names.txt"),
