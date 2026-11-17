@@ -20,8 +20,8 @@ Isaac 시험 = sim/robot_sim/rl/tasks/local_planner/deploy/run_isaac_dock.sh (�
   을 받아 같은 목표로 정책 명령을 계산 → --shadow_topic (기본 cmd_vel_rl_shadow) 에만 냄 (collision_monitor · /cmd_vel 로 안 감).
   --log_csv 면 매 주기 시각 · 자세 · 정책 명령 · MPPI 명령 (/cmd_vel_nav) · 목표 거리 · 최소 스캔 기록. 정책 last_cmd 는 자기 명령이라 MPPI 주행과는 열린 고리 비교
 실행: 시스템 Lyrical 파이썬 (npz 정책) 또는 Isaac 파이썬 (pt 정책) + 시스템 Lyrical rclpy
-  python3 rl/tasks/local_planner/deploy/local_planner_node.py --policy <exported/policy_N.npz> --cfg <run>/cfg.json [--shadow --log_csv rl_shadow.csv]
-  PYTHONPATH=/opt/ros/lyrical/lib/python3.12/site-packages:<em·lark> ~/pa-course/IsaacLab-6.2/.venv/bin/python rl/tasks/local_planner/deploy/local_planner_node.py --policy <exported/policy.pt> --cfg <run>/cfg.json
+  python3 local_planner_node.py --policy <policy.npz> --cfg <cfg.json> [--shadow --log_csv rl_shadow.csv]
+  PYTHONPATH=/opt/ros/lyrical/lib/python3.12/site-packages:<em·lark> <Isaac 파이썬> local_planner_node.py --policy <policy.pt> --cfg <cfg.json>
 """
 import argparse
 import json
@@ -143,7 +143,7 @@ class LocalPlanner(Node):
         self.dock_body = np.array([float(v) for v in a.dock_body_half.split(',')])
         self.dock_block_n = a.dock_block_n
         self.box_reject_n = a.box_reject_n
-        # 목표가 지도 장애물 (박스를 지도에 넣고 매핑 = arena5) 이라 planner 가 경로를 못 내면: 목표를 보는 방향 반대로 0.05 m 씩
+        # 목표가 지도 장애물 (박스를 지도에 넣고 매핑한 경우) 이라 planner 가 경로를 못 내면: 목표를 보는 방향 반대로 0.05 m 씩
         #   goal_back_m 까지 물려 계획하고 끝에 '물린 점 → 목표' 직선을 붙임 (박스 정면으로 들어옴). planner tolerance 를 키우는 것 대신
         #   (tolerance 는 아무 방향 가까운 빈 칸으로 끝내 박스 옆 · 비스듬히 들어옴)
         self.goal_back_m, self.goal_back = a.goal_back_m, None

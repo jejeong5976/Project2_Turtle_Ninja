@@ -1,0 +1,182 @@
+{
+ "env": {
+  "num_envs": 8192,
+  "device": "cuda",
+  "compile": true,
+  "seed": 1,
+  "path_bank": "/home/jje5976/Desktop/physical_ai/projects/Project2_Turtle_Ninja/sim/robot_sim/rl/data/local_planner_nav2/path_bank_navfn.npz",
+  "dice_legs": "/home/jje5976/Desktop/physical_ai/projects/Project2_Turtle_Ninja/sim/robot_sim/rl/data/local_planner_nav2/dice_legs_navfn.npz",
+  "maps_dir": "/home/jje5976/Desktop/physical_ai/projects/Project2_Turtle_Ninja/sim/robot_sim/rl/data/maps",
+  "swerve_yaml": "/home/jje5976/Desktop/physical_ai/projects/Project2_Turtle_Ninja/sim/robot_sim/rl/data/team_swerve.yaml",
+  "split": 0,
+  "dice_prob": 0.4,
+  "ctrl_dt": 0.01,
+  "decimation": 5,
+  "vmax": 0.255,
+  "wmax": 0.5,
+  "amax": 0.5,
+  "awmax": 2.0,
+  "path_obs_points": 16,
+  "path_obs_spacing": 0.1,
+  "history": 4,
+  "lidar_rays": 36,
+  "lidar_max": 3.0,
+  "lidar_obs_clip": 2.0,
+  "lidar_model": "real",
+  "lidar_occlusion": "/home/jje5976/Desktop/physical_ai/projects/Project2_Turtle_Ninja/sim/robot_sim/rl/data/local_planner_nav2/lidar_occlusion.npz",
+  "lidar_beam_stride": 2,
+  "rot_limit": true,
+  "rot_clear_lo": 0.24,
+  "rot_clear_hi": 0.32,
+  "rot_wz_lo": 0.25,
+  "approach_limit": true,
+  "approach_v0": 0.02,
+  "approach_k": 0.5,
+  "start_speed_prob": 0.0,
+  "start_speed": [
+   0.05,
+   0.2
+  ],
+  "start_speed_min_len": 0.15,
+  "box_dynamic": false,
+  "box_shift_prob": 0.7,
+  "box_shift_xy": 0.06,
+  "box_shift_yaw_deg": 10.0,
+  "lidar_body_half": [
+   0.17,
+   0.19
+  ],
+  "proj_back": 0.1,
+  "proj_fwd": 0.5,
+  "collide_half": 0.15,
+  "footprint_half": 0.16,
+  "stop_zone": 0.02,
+  "stop_zone_goal_exempt": 0.4,
+  "stop_zone_start_exempt": 0.3,
+  "footprint_per_side": 12,
+  "init_pos_std": 0.01,
+  "dice_start_yaw_noise_deg": 5.0,
+  "random_steer_prob": 0.2,
+  "timeout_slack_s": 15.0,
+  "goal_pos_tol": [
+   0.05,
+   0.03,
+   0.02
+  ],
+  "goal_yaw_tol_deg": [
+   6.0,
+   3.0,
+   2.0
+  ],
+  "goal_lin_vel": 0.02,
+  "goal_ang_vel": 0.05,
+  "goal_hold_s": 0.3,
+  "fail_dev": 0.6,
+  "people_prob": [
+   0.0,
+   0.3,
+   0.5
+  ],
+  "max_people": 2,
+  "people_r": [
+   0.12,
+   0.18
+  ],
+  "people_offset": [
+   0.28,
+   0.45
+  ],
+  "curriculum": true,
+  "curriculum_start": 0,
+  "curriculum_success": 0.85,
+  "curriculum_window": 2000
+ },
+ "dr": {
+  "steer_rate_levels": [
+   2.4,
+   4.8
+  ],
+  "steer_rate_scale": [
+   0.8,
+   1.1
+  ],
+  "tau_steer": [
+   0.05,
+   0.15
+  ],
+  "tau_wheel": [
+   0.02,
+   0.06
+  ],
+  "tau_body": [
+   0.02,
+   0.08
+  ],
+  "slip": [
+   0.9,
+   1.0
+  ],
+  "cmd_delay_ticks": [
+   0,
+   3
+  ],
+  "obs_delay_ticks": [
+   0,
+   4
+  ],
+  "noise_steer": 0.005,
+  "noise_lin_vel": 0.005,
+  "noise_ang_vel": 0.02,
+  "lidar_noise": 0.01,
+  "lidar_dropout": 0.02,
+  "map_err_pos": 0.015,
+  "map_err_yaw_deg": 1.0,
+  "map_jump_every_s": 2.0,
+  "map_jump_prob": 0.3,
+  "map_jump_pos": 0.01,
+  "map_jump_yaw_deg": 0.5
+ },
+ "reward": {
+  "progress": 5.0,
+  "time": 0.01,
+  "goal_pos": 2.0,
+  "goal_yaw": 0.5,
+  "goal_zone": 0.5,
+  "goal_yaw_far": 2.0,
+  "goal_yaw_near": 0.8,
+  "clearance": 0.05,
+  "clear_margin": 0.06,
+  "deviation": 0.02,
+  "action_rate": 0.01,
+  "steer_travel": 0.02,
+  "stall": 0.05,
+  "stall_goal_dist": 0.05,
+  "stall_speed": 0.02,
+  "stall_grace_s": 0.5,
+  "stall_person_dist": 0.6,
+  "action_bound": 0.05,
+  "rot_cost": 0.02,
+  "rot_cap_excess": 0.1,
+  "rot_near": 0.0,
+  "rot_near_dist": 0.3,
+  "steer_near_mult": 3.0,
+  "steer_near_dist": 0.3,
+  "hold_cmd": 0.05,
+  "hold_dist": 0.03,
+  "success": 20.0,
+  "collision": 20.0,
+  "lost": 10.0
+ },
+ "train": {
+  "max_iterations": 1500,
+  "num_steps_per_env": 64,
+  "save_interval": 200,
+  "experiment_name": "local_planner_nf5",
+  "run_name": "nf5",
+  "std_range": [
+   0.05,
+   0.8
+  ]
+ },
+ "paths": "navfn"
+}

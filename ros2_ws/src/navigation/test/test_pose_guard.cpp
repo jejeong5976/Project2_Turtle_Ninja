@@ -31,7 +31,7 @@ TEST(PoseGuard, HealthyIsLevelZero)
 TEST(PoseGuard, StaleMapOdomStops)
 {
   auto m = healthy();
-  m.map_odom_age = 1.5;   // SLAM 이 멈춰 옛 TF 만 남음 → 지도 맞음이 높아도 정지
+  m.map_odom_age = 1.5;   // SLAM 이 멈춰 지난 TF 만 남음 → 지도 맞음이 높아도 정지
   EXPECT_EQ(navigation::evaluate(m).level, 2);
 }
 
@@ -58,6 +58,18 @@ TEST(PoseGuard, BigJumpAcceptedOnlyWithGoodMatch)
   m.jump_m = 0.30;
   EXPECT_EQ(navigation::evaluate(m).level, 1);
   m.match = 0.70;
+  EXPECT_EQ(navigation::evaluate(m).level, 2);
+}
+
+// 5 개 중앙값엔 고치기 전 낮은 값이 남음 → 큰 보정은 고친 뒤 잰 맞음으로 판정
+TEST(PoseGuard, BigJumpJudgedByMatchAfterJump)
+{
+  auto m = healthy();
+  m.jump_m = 0.30;
+  m.match = 0.70;                 // 중앙값 = 고치기 전 값들
+  m.match_since_jump = 0.97;      // 고친 뒤 = 지도와 맞음
+  EXPECT_EQ(navigation::evaluate(m).level, 1);
+  m.match_since_jump = 0.70;      // 고친 뒤에도 안 맞음
   EXPECT_EQ(navigation::evaluate(m).level, 2);
 }
 
@@ -94,4 +106,23 @@ TEST(WallDistance, CapsAndCountsCells)
   EXPECT_EQ(d[1], 1);
   EXPECT_EQ(d[2], 2);
   EXPECT_EQ(d[6], 3);   // cap
+}
+
+TEST(MapCell, RotatedOriginUsesSameOccupiedCell)
+{
+  // 같은 벽 칸 중심을 origin 자세로 map 에 놓아도 셀은 변하지 않는다.
+  for (const double yaw : {0.0, 0.7, -1.3, M_PI / 2}) {
+    const double x = 1.2 + std::cos(yaw) * 0.275 - std::sin(yaw) * 0.425;
+    const double y = -0.8 + std::sin(yaw) * 0.275 + std::cos(yaw) * 0.425;
+    const auto cell = navigation::map_cell(x, y, 1.2, -0.8, yaw, 0.05);
+    EXPECT_EQ(cell.first, 5);
+    EXPECT_EQ(cell.second, 8);
+  }
+}
+
+TEST(MapCell, NegativeCoordinatesStayOutside)
+{
+  const auto cell = navigation::map_cell(0.001, -0.001, 0.0, 0.0, M_PI / 2, 0.025);
+  EXPECT_EQ(cell.first, -1);
+  EXPECT_EQ(cell.second, -1);
 }
