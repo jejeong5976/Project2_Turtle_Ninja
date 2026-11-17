@@ -1,0 +1,2143 @@
+{
+  "manifest_version": 1,
+  "package": "mechanical/robot",
+  "source": {
+    "application": "Autodesk Fusion (Fusion 360)",
+    "project": "Default Project",
+    "design": "TB3_WafflePi_Swerve_V3_Final",
+    "version": 10,
+    "version_description": "Removed from FL2: USB2LSD module, its 3x3 plate (2 copies), 2 rivet+pin sets, and the 2 rivets left from the Bluetooth module",
+    "design_units": "mm",
+    "export_date": "2026-11-17",
+    "export_timezone": "+09:00"
+  },
+  "prepared_by": {
+    "tool": "Claude (AI assistant) driving the Fusion API; custom scripts for drawings, DXF and packaging",
+    "note": "Preparer of the exports, not a design author."
+  },
+  "coordinate_system": {
+    "assembly": "right-handed, millimetres; origin at the centre of the chassis decks; +Y = robot forward, -X = robot left, +Z = up; ground (wheel contact) at Z = -72 mm",
+    "parts": "each part STEP is in its own component frame; placement_in_assembly gives the transform into the assembly frame"
+  },
+  "design_authors": [
+    {
+      "author": "Haemin Kim",
+      "parts": [
+        "A1_Rack_8cell",
+        "A2_Rack_4cell",
+        "A3_Park_Stand",
+        "A4_Arm_Bracket",
+        "A5_MastCam_Base",
+        "A6_MastCam_Ring",
+        "A7_MastCam_Frame"
+      ]
+    }
+  ],
+  "files": [
+    {
+      "path": "mechanical/robot/step/robot_assembly.step",
+      "type": "STEP (AP214)",
+      "source_component": "root component of TB3_WafflePi_Swerve_V3_Final (all visible components)",
+      "source_version": 10,
+      "author": null,
+      "design_author_note": "not specified for the complete assembly",
+      "units": "mm",
+      "coordinate_frame": "assembly frame: origin at deck centre, +Y forward, -X left, +Z up, ground at Z = -72 mm",
+      "contents": {
+        "tight_bounding_box_mm": [
+          -144.999982,
+          -132.773503,
+          -71.999982,
+          144.999982,
+          362.6,
+          567.178524
+        ],
+        "overall_size_mm": [
+          289.999964,
+          495.373503,
+          639.178506
+        ],
+        "solid_instances": 2373,
+        "shell_instances": 3552,
+        "face_instances": 136011,
+        "unique_nonassembly_shape_definitions": 481,
+        "counts_note": "OpenCascade import counts; includes legitimate surface geometry and repeated instances. These are not Fusion body/occurrence counts."
+      },
+      "size_bytes": 96393876,
+      "sha256": "97683cb6c83dc0614efc9228637fac1d1b04c62ec4129bdbae65b507eef88030",
+      "local_validation": {
+        "kernel": "OpenCascade 8.0.1",
+        "shape_valid": true,
+        "solid_count": 2373,
+        "shell_count": 3552,
+        "face_count": 136011,
+        "tight_bbox_mm": [
+          -144.9999817754007,
+          -132.77350269192857,
+          -71.9999817754111,
+          144.9999817754007,
+          362.6000000000117,
+          567.178524293153
+        ]
+      },
+      "source_fusion_contents": {
+        "occurrences": 2049,
+        "bodies": 3492,
+        "distinct_components": 448,
+        "bounding_box_mm": [
+          -145.0,
+          -132.77,
+          -72.0,
+          145.0,
+          362.6,
+          569.05
+        ],
+        "solid_volume_mm3": 2843414.3
+      },
+      "local_revision": "r3: A5 and PR30_IPL_01 topology repaired; hierarchy and component identities retained"
+    },
+    {
+      "path": "mechanical/robot/step/parts/A1_Rack_8cell.step",
+      "type": "STEP (AP214)",
+      "source_component": "A1_Rack_8cell",
+      "source_occurrence": "Accessories_20261117 (STEP import):1+A1_Rack_8cell:1",
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "coordinate_frame": "part frame (the component origin in Fusion); see placement_in_assembly",
+      "bounding_box_part_frame_mm": [
+        -21.751,
+        -21.751,
+        -8.0,
+        201.751,
+        66.751,
+        22.0
+      ],
+      "volume_mm3": 112575.38,
+      "bounding_box_in_assembly_mm": [
+        -136.524889,
+        -121.751489,
+        91.4998,
+        -48.022311,
+        101.751089,
+        121.4998
+      ],
+      "placement_in_assembly": {
+        "matrix_row_major_mm": [
+          [
+            -0.0,
+            -1.0,
+            0.0,
+            -69.7736
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0,
+            -100.0002
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            99.4998
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "note": "assembly = R * part + t; rotation part is unitless, translation column in mm"
+      },
+      "step_header_author": "FILE_NAME.author and FILE_DESCRIPTION set to the design author by post-processing the header (the Fusion exporter leaves them blank)",
+      "in_robot_assembly": true,
+      "size_bytes": 272512,
+      "sha256": "8d2a0002f150de2ce9517492c6a3caa1f46a99cffdc14eebbecdd0edf0a8e616",
+      "local_validation": {
+        "kernel": "OpenCascade 8.0.1",
+        "shape_valid": true,
+        "solid_count": 1,
+        "shell_count": 1,
+        "face_count": 208,
+        "tight_bbox_mm": [
+          -21.751288694035768,
+          -21.751288694035704,
+          -8.0000001,
+          201.751288694036,
+          66.7512886940358,
+          22.000000000000043
+        ],
+        "volume_mm3": 112575.42716120296
+      },
+      "source_fusion_bounding_box_in_assembly_mm": [
+        -136.525,
+        -121.751,
+        91.5,
+        -48.022,
+        101.751,
+        121.5
+      ],
+      "bounding_box_method": "tight geometric bounds of the exported STEP transformed by placement_in_assembly; translations in mm"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/A1_Rack_8cell.pdf",
+      "type": "PDF drawing",
+      "source_component": "A1_Rack_8cell",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "sheet": "A3 landscape, 1 sheet",
+      "scale": "1:2",
+      "size_bytes": 386863,
+      "sha256": "a94ee2939438e1086e5f3bc7ec0d28e4b8f95385c72936ac354fa3f89e4742b3"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/A1_Rack_8cell_profile.dxf",
+      "type": "DXF (R12 ASCII)",
+      "source_component": "A1_Rack_8cell",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "description": "outline of the largest planar face of the part (outer loop on layer OUTLINE, inner loops on layer HOLES), 1:1",
+      "face": {
+        "area_mm2": 17003.72,
+        "normal_part_frame": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "dxf_x_axis_part_frame": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "dxf_y_axis_part_frame": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "dxf_origin_part_frame_mm": [
+          90.0,
+          22.5,
+          -8.0
+        ]
+      },
+      "extent_mm": [
+        216.0,
+        81.0
+      ],
+      "entities": {
+        "LINE": 19,
+        "ARC": 9,
+        "CIRCLE": 3
+      },
+      "size_bytes": 3239,
+      "sha256": "f7e474a2cfc6c441132bef3a0706d6cb5cb0099d362516bdd75b1e983a5c3c2a",
+      "extent_measurement": "entity geometry including extrema within arc sweeps; mm"
+    },
+    {
+      "path": "mechanical/robot/step/parts/A2_Rack_4cell.step",
+      "type": "STEP (AP214)",
+      "source_component": "A2_Rack_4cell",
+      "source_occurrence": "Accessories_20261117 (STEP import):1+A2_Rack_4cell:1",
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "coordinate_frame": "part frame (the component origin in Fusion); see placement_in_assembly",
+      "bounding_box_part_frame_mm": [
+        78.0,
+        -204.751,
+        -8.0,
+        201.751,
+        -116.249,
+        22.0
+      ],
+      "volume_mm3": 59530.09,
+      "bounding_box_in_assembly_mm": [
+        48.022111,
+        -22.0002,
+        91.4998,
+        136.524689,
+        101.751089,
+        121.4998
+      ],
+      "placement_in_assembly": {
+        "matrix_row_major_mm": [
+          [
+            -0.0,
+            -1.0,
+            0.0,
+            -68.2266
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0,
+            -100.0002
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            99.4998
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "note": "assembly = R * part + t; rotation part is unitless, translation column in mm"
+      },
+      "step_header_author": "FILE_NAME.author and FILE_DESCRIPTION set to the design author by post-processing the header (the Fusion exporter leaves them blank)",
+      "in_robot_assembly": true,
+      "size_bytes": 139522,
+      "sha256": "10ae61a665b4db782fadef2bdab781c778212ede5648d5a942324efc64bd5f3c",
+      "local_validation": {
+        "kernel": "OpenCascade 8.0.1",
+        "shape_valid": true,
+        "solid_count": 1,
+        "shell_count": 1,
+        "face_count": 108,
+        "tight_bbox_mm": [
+          77.99999999999999,
+          -204.751288694036,
+          -8.0,
+          201.751288694036,
+          -116.248711305964,
+          22.000000000000256
+        ],
+        "volume_mm3": 59530.092345655845
+      },
+      "source_fusion_bounding_box_in_assembly_mm": [
+        48.022,
+        -22.0,
+        91.5,
+        136.525,
+        101.751,
+        121.5
+      ],
+      "bounding_box_method": "tight geometric bounds of the exported STEP transformed by placement_in_assembly; translations in mm"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/A2_Rack_4cell.pdf",
+      "type": "PDF drawing",
+      "source_component": "A2_Rack_4cell",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "sheet": "A3 landscape, 1 sheet",
+      "scale": "1:1",
+      "size_bytes": 380781,
+      "sha256": "cb6571b6d32b634e5dd763cad25a47db8b345b4da7ca061ea9230b88ff1a456b"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/A2_Rack_4cell_profile.dxf",
+      "type": "DXF (R12 ASCII)",
+      "source_component": "A2_Rack_4cell",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "description": "outline of the largest planar face of the part (outer loop on layer OUTLINE, inner loops on layer HOLES), 1:1",
+      "face": {
+        "area_mm2": 9511.54,
+        "normal_part_frame": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "dxf_x_axis_part_frame": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "dxf_y_axis_part_frame": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "dxf_origin_part_frame_mm": [
+          138.0,
+          -160.5,
+          -8.0
+        ]
+      },
+      "extent_mm": [
+        120.0,
+        81.0
+      ],
+      "entities": {
+        "LINE": 11,
+        "ARC": 7,
+        "CIRCLE": 2
+      },
+      "size_bytes": 2149,
+      "sha256": "78c9fee33480446ef078b55b32e4912811832bf2d747d718ae1344daf82f37b9",
+      "extent_measurement": "entity geometry including extrema within arc sweeps; mm"
+    },
+    {
+      "path": "mechanical/robot/step/parts/A3_Park_Stand.step",
+      "type": "STEP (AP214)",
+      "source_component": "A3_Park_Stand",
+      "source_occurrence": "Accessories_20261117 (STEP import):1+A3_Park_Stand:1",
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "coordinate_frame": "part frame (the component origin in Fusion); see placement_in_assembly",
+      "bounding_box_part_frame_mm": [
+        -25.0,
+        -25.0,
+        -15.0,
+        25.0,
+        25.0,
+        15.0
+      ],
+      "volume_mm3": 28290.96,
+      "bounding_box_in_assembly_mm": [
+        -25.0,
+        78.0,
+        91.4998,
+        25.0,
+        128.0,
+        121.4998
+      ],
+      "placement_in_assembly": {
+        "matrix_row_major_mm": [
+          [
+            -0.0,
+            -1.0,
+            0.0,
+            0.0
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0,
+            103.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            106.4998
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "note": "assembly = R * part + t; rotation part is unitless, translation column in mm"
+      },
+      "step_header_author": "FILE_NAME.author and FILE_DESCRIPTION set to the design author by post-processing the header (the Fusion exporter leaves them blank)",
+      "in_robot_assembly": true,
+      "size_bytes": 22133,
+      "sha256": "2da65ebf070cb2e7f5ddb220b96a283abf79a280b4adc34f2225c0c1d3fdc083",
+      "local_validation": {
+        "kernel": "OpenCascade 8.0.1",
+        "shape_valid": true,
+        "solid_count": 1,
+        "shell_count": 1,
+        "face_count": 17,
+        "tight_bbox_mm": [
+          -25.000000000000007,
+          -25.0,
+          -15.0,
+          25.000000000000007,
+          25.0,
+          15.0
+        ],
+        "volume_mm3": 28290.955773018908
+      },
+      "source_fusion_bounding_box_in_assembly_mm": [
+        -25.0,
+        78.0,
+        91.5,
+        25.0,
+        128.0,
+        121.5
+      ],
+      "bounding_box_method": "tight geometric bounds of the exported STEP transformed by placement_in_assembly; translations in mm"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/A3_Park_Stand.pdf",
+      "type": "PDF drawing",
+      "source_component": "A3_Park_Stand",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "sheet": "A3 landscape, 1 sheet",
+      "scale": "2:1",
+      "size_bytes": 225319,
+      "sha256": "93e83bb9c89344f0c44bf6190c8f87847f777887d785f128adaed9fd1f2e696d"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/A3_Park_Stand_profile.dxf",
+      "type": "DXF (R12 ASCII)",
+      "source_component": "A3_Park_Stand",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "description": "outline of the largest planar face of the part (outer loop on layer OUTLINE, inner loops on layer HOLES), 1:1",
+      "face": {
+        "area_mm2": 2474.87,
+        "normal_part_frame": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "dxf_x_axis_part_frame": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "dxf_y_axis_part_frame": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "dxf_origin_part_frame_mm": [
+          0.0,
+          0.0,
+          -15.0
+        ]
+      },
+      "extent_mm": [
+        50.0,
+        50.0
+      ],
+      "entities": {
+        "LINE": 4,
+        "CIRCLE": 2
+      },
+      "size_bytes": 843,
+      "sha256": "8ca835956b16c65d43e72af71572abc323faa845d824cb79c4b6d1e30c54f676",
+      "extent_measurement": "entity geometry including extrema within arc sweeps; mm"
+    },
+    {
+      "path": "mechanical/robot/step/parts/A4_Arm_Bracket.step",
+      "type": "STEP (AP214)",
+      "source_component": "A4_Arm_Bracket",
+      "source_occurrence": "Accessories_20261117 (STEP import):1+Manipulator <1>:1+A4_Arm_Bracket:1",
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "coordinate_frame": "part frame (the component origin in Fusion); see placement_in_assembly",
+      "bounding_box_part_frame_mm": [
+        -42.0,
+        -16.75,
+        -15.0,
+        42.0,
+        16.75,
+        49.0
+      ],
+      "volume_mm3": 21992.5,
+      "bounding_box_in_assembly_mm": [
+        -42.0,
+        239.0,
+        306.8,
+        42.0,
+        272.5,
+        370.8
+      ],
+      "placement_in_assembly": {
+        "matrix_row_major_mm": [
+          [
+            1.0,
+            0.0,
+            -0.0,
+            -0.0
+          ],
+          [
+            -0.0,
+            1.0,
+            0.0,
+            255.75
+          ],
+          [
+            -0.0,
+            0.0,
+            1.0,
+            321.8
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "note": "assembly = R * part + t; rotation part is unitless, translation column in mm"
+      },
+      "step_header_author": "FILE_NAME.author and FILE_DESCRIPTION set to the design author by post-processing the header (the Fusion exporter leaves them blank)",
+      "in_robot_assembly": true,
+      "size_bytes": 63500,
+      "sha256": "41f2da34a3be6834fc5b22dbcda43f2dc5a8a18e37dc514e9dd922ad6f2c7928",
+      "local_validation": {
+        "kernel": "OpenCascade 8.0.1",
+        "shape_valid": true,
+        "solid_count": 1,
+        "shell_count": 1,
+        "face_count": 43,
+        "tight_bbox_mm": [
+          -42.0,
+          -16.75,
+          -15.0,
+          42.0,
+          16.75000000000001,
+          49.00000000000003
+        ],
+        "volume_mm3": 21992.50205675888
+      },
+      "source_fusion_bounding_box_in_assembly_mm": [
+        -42.0,
+        239.0,
+        306.8,
+        42.0,
+        272.5,
+        370.8
+      ],
+      "bounding_box_method": "tight geometric bounds of the exported STEP transformed by placement_in_assembly; translations in mm"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/A4_Arm_Bracket.pdf",
+      "type": "PDF drawing",
+      "source_component": "A4_Arm_Bracket",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "sheet": "A3 landscape, 1 sheet",
+      "scale": "1.5:1",
+      "size_bytes": 202710,
+      "sha256": "633441b314949a94c2bafdd606f042d0ed9fc81ae516a0cc90fe4699f9f8e0a9"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/A4_Arm_Bracket_profile.dxf",
+      "type": "DXF (R12 ASCII)",
+      "source_component": "A4_Arm_Bracket",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "description": "outline of the largest planar face of the part (outer loop on layer OUTLINE, inner loops on layer HOLES), 1:1",
+      "face": {
+        "area_mm2": 2548.48,
+        "normal_part_frame": [
+          0.0,
+          -0.866,
+          0.5
+        ],
+        "dxf_x_axis_part_frame": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "dxf_y_axis_part_frame": [
+          -0.0,
+          0.5,
+          0.866
+        ],
+        "dxf_origin_part_frame_mm": [
+          -0.0,
+          -4.626,
+          28.0
+        ]
+      },
+      "extent_mm": [
+        84.0,
+        48.4974
+      ],
+      "entities": {
+        "LINE": 6,
+        "ARC": 4,
+        "CIRCLE": 2
+      },
+      "size_bytes": 1426,
+      "sha256": "09c3a4824be1fc786547e9ee533ee76b29b58b8df647cbb230c4200d7d25ca22",
+      "extent_measurement": "entity geometry including extrema within arc sweeps; mm"
+    },
+    {
+      "path": "mechanical/robot/step/parts/A5_MastCam_Base.step",
+      "type": "STEP (AP214)",
+      "source_component": "A5_MastCam_Base",
+      "source_occurrence": "Accessories_20261117 (STEP import):1+A5_MastCam_Base:1",
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "coordinate_frame": "part frame (the component origin in Fusion); see placement_in_assembly",
+      "bounding_box_part_frame_mm": [
+        -22.5,
+        -22.5,
+        -13.0,
+        22.5,
+        22.5,
+        18.0
+      ],
+      "volume_mm3": 14885.989092,
+      "bounding_box_in_assembly_mm": [
+        77.5,
+        -119.5,
+        515.4998,
+        122.5,
+        -74.5,
+        546.4998
+      ],
+      "placement_in_assembly": {
+        "matrix_row_major_mm": [
+          [
+            -1.0,
+            -0.0,
+            -0.0,
+            100.0
+          ],
+          [
+            0.0,
+            -1.0,
+            -0.0,
+            -97.0
+          ],
+          [
+            -0.0,
+            -0.0,
+            1.0,
+            528.4998
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "note": "assembly = R * part + t; rotation part is unitless, translation column in mm"
+      },
+      "step_header_author": "FILE_NAME.author and FILE_DESCRIPTION set to the design author by post-processing the header (the Fusion exporter leaves them blank)",
+      "in_robot_assembly": true,
+      "size_bytes": 57963,
+      "sha256": "d6caad8a89872c23b3a1609ba160cd31170fc2697e4afe6c56f46231a5d3c992",
+      "local_validation": {
+        "kernel": "OpenCascade 8.0.1",
+        "shape_valid": true,
+        "solid_count": 1,
+        "shell_count": 1,
+        "face_count": 39,
+        "tight_bbox_mm": [
+          -22.5000001,
+          -22.5000001,
+          -13.0,
+          22.5000001,
+          22.5000001,
+          18.0000001
+        ],
+        "volume_mm3": 14885.989091636735
+      },
+      "source_fusion_bounding_box_in_assembly_mm": [
+        77.5,
+        -119.5,
+        515.5,
+        122.5,
+        -74.5,
+        546.5
+      ],
+      "bounding_box_method": "tight geometric bounds of the exported STEP transformed by placement_in_assembly; translations in mm",
+      "source_fusion_volume_mm3": 14886.29,
+      "local_revision": "r3 topology repair; native source version remains 10"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/A5_MastCam_Base.pdf",
+      "type": "PDF drawing",
+      "source_component": "A5_MastCam_Base",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "sheet": "A3 landscape, 1 sheet",
+      "scale": "2:1",
+      "size_bytes": 282716,
+      "sha256": "66e78bab7e382d663ff11a2c1800226b85e882035ba94793ba6fdf5fed6b27d5",
+      "local_revision": "r3: corrected measured dimensions/facts and revision notes; original shaded views retained"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/A5_MastCam_Base_profile.dxf",
+      "type": "DXF (R12 ASCII)",
+      "source_component": "A5_MastCam_Base",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "description": "outline of the largest planar face of the part (outer loop on layer OUTLINE, inner loops on layer HOLES), 1:1",
+      "face": {
+        "area_mm2": 986.55,
+        "normal_part_frame": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "dxf_x_axis_part_frame": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "dxf_y_axis_part_frame": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "dxf_origin_part_frame_mm": [
+          -0.0,
+          -13.5,
+          -13.0
+        ]
+      },
+      "extent_mm": [
+        45.0,
+        45.0
+      ],
+      "entities": {
+        "CIRCLE": 1,
+        "ARC": 1,
+        "LINE": 7
+      },
+      "size_bytes": 1118,
+      "sha256": "d1c683e5a6f1ccbe58578c4339daa798409657736b7a637ad450b3cdd38c9b8b",
+      "extent_measurement": "entity geometry including extrema within arc sweeps; mm"
+    },
+    {
+      "path": "mechanical/robot/step/parts/A6_MastCam_Ring.step",
+      "type": "STEP (AP214)",
+      "source_component": "A6_MastCam_Ring",
+      "source_occurrence": "Accessories_20261117 (STEP import):1+A6_MastCam_Ring:1",
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "coordinate_frame": "part frame (the component origin in Fusion); see placement_in_assembly",
+      "bounding_box_part_frame_mm": [
+        -22.5,
+        -22.5,
+        -11.0,
+        45.0,
+        22.5,
+        4.5
+      ],
+      "volume_mm3": 8320.99,
+      "bounding_box_in_assembly_mm": [
+        77.500001,
+        -119.499999,
+        517.499801,
+        122.499999,
+        -53.007164,
+        532.9998
+      ],
+      "placement_in_assembly": {
+        "matrix_row_major_mm": [
+          [
+            -0.271072,
+            -0.962559,
+            -0.0,
+            100.0
+          ],
+          [
+            0.962559,
+            -0.271072,
+            -0.0,
+            -97.0
+          ],
+          [
+            0.0,
+            -0.0,
+            1.0,
+            528.4998
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "note": "assembly = R * part + t; rotation part is unitless, translation column in mm"
+      },
+      "step_header_author": "FILE_NAME.author and FILE_DESCRIPTION set to the design author by post-processing the header (the Fusion exporter leaves them blank)",
+      "in_robot_assembly": true,
+      "size_bytes": 24870,
+      "sha256": "cd63aa7e481fa8cbcd7bd7f2a28668f14c9b8a1b50eab387179030ab8f9b1b0b",
+      "local_validation": {
+        "kernel": "OpenCascade 8.0.1",
+        "shape_valid": true,
+        "solid_count": 1,
+        "shell_count": 1,
+        "face_count": 18,
+        "tight_bbox_mm": [
+          -22.5,
+          -22.5,
+          -11.0,
+          45.0,
+          22.5,
+          4.5
+        ],
+        "volume_mm3": 8320.991854200644
+      },
+      "source_fusion_bounding_box_in_assembly_mm": [
+        66.144,
+        -124.757,
+        517.5,
+        127.757,
+        -47.586,
+        533.0
+      ],
+      "bounding_box_method": "tight geometric bounds of the exported STEP transformed by placement_in_assembly; translations in mm"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/A6_MastCam_Ring.pdf",
+      "type": "PDF drawing",
+      "source_component": "A6_MastCam_Ring",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "sheet": "A3 landscape, 1 sheet",
+      "scale": "2:1",
+      "size_bytes": 208809,
+      "sha256": "287d7166235099b5e41bd57c29f36befc8af80bad55c7256ce1eb29b358dc716"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/A6_MastCam_Ring_profile.dxf",
+      "type": "DXF (R12 ASCII)",
+      "source_component": "A6_MastCam_Ring",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "description": "outline of the largest planar face of the part (outer loop on layer OUTLINE, inner loops on layer HOLES), 1:1",
+      "face": {
+        "area_mm2": 620.7,
+        "normal_part_frame": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "dxf_x_axis_part_frame": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "dxf_y_axis_part_frame": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "dxf_origin_part_frame_mm": [
+          30.375,
+          -0.0,
+          0.5
+        ]
+      },
+      "extent_mm": [
+        63.75,
+        45.0
+      ],
+      "entities": {
+        "LINE": 9,
+        "ARC": 1,
+        "CIRCLE": 1
+      },
+      "size_bytes": 1335,
+      "sha256": "fd39aa462912eab43b6288c75e609837163af6ba4587a4491e3257ce4303c91c",
+      "extent_measurement": "entity geometry including extrema within arc sweeps; mm"
+    },
+    {
+      "path": "mechanical/robot/step/parts/A7_MastCam_Frame.step",
+      "type": "STEP (AP214)",
+      "source_component": "A7_MastCam_Frame",
+      "source_occurrence": "Accessories_20261117 (STEP import):1+A7_MastCam_Frame:1",
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "coordinate_frame": "part frame (the component origin in Fusion); see placement_in_assembly",
+      "bounding_box_part_frame_mm": [
+        35.0,
+        -12.5,
+        -9.5,
+        67.623,
+        25.5,
+        38.679
+      ],
+      "volume_mm3": 7206.35,
+      "bounding_box_in_assembly_mm": [
+        58.946079,
+        -67.105479,
+        516.712174,
+        101.678112,
+        -28.714262,
+        567.178525
+      ],
+      "placement_in_assembly": {
+        "matrix_row_major_mm": [
+          [
+            0.135536,
+            0.962559,
+            -0.234755,
+            71.395
+          ],
+          [
+            -0.48128,
+            0.271072,
+            0.833601,
+            -37.8498
+          ],
+          [
+            0.866025,
+            0.0,
+            0.5,
+            491.1513
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "note": "assembly = R * part + t; rotation part is unitless, translation column in mm"
+      },
+      "step_header_author": "FILE_NAME.author and FILE_DESCRIPTION set to the design author by post-processing the header (the Fusion exporter leaves them blank)",
+      "in_robot_assembly": true,
+      "size_bytes": 59482,
+      "sha256": "d5a029f92b86d330914be75aeb8bd6213febe55ab3e43fed573832c7a034a296",
+      "local_validation": {
+        "kernel": "OpenCascade 8.0.1",
+        "shape_valid": true,
+        "solid_count": 1,
+        "shell_count": 1,
+        "face_count": 38,
+        "tight_bbox_mm": [
+          35.0,
+          -12.5000001,
+          -9.5000001,
+          67.6225953641916,
+          25.5000001,
+          38.67867492503032
+        ],
+        "volume_mm3": 7206.3519297439725
+      },
+      "source_fusion_bounding_box_in_assembly_mm": [
+        55.027,
+        -81.703,
+        516.712,
+        107.336,
+        -15.54,
+        569.054
+      ],
+      "bounding_box_method": "tight geometric bounds of the exported STEP transformed by placement_in_assembly; translations in mm"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/A7_MastCam_Frame.pdf",
+      "type": "PDF drawing",
+      "source_component": "A7_MastCam_Frame",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "sheet": "A3 landscape, 1 sheet",
+      "scale": "1.5:1",
+      "size_bytes": 234777,
+      "sha256": "a6d955e99d7e22e0bb8bbd64afab872528fe4b656ced63121dc485a96dd659e4"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/A7_MastCam_Frame_profile.dxf",
+      "type": "DXF (R12 ASCII)",
+      "source_component": "A7_MastCam_Frame",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": "Haemin Kim",
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "description": "outline of the largest planar face of the part (outer loop on layer OUTLINE, inner loops on layer HOLES), 1:1",
+      "face": {
+        "area_mm2": 882.31,
+        "normal_part_frame": [
+          0.866,
+          0.0,
+          -0.5
+        ],
+        "dxf_x_axis_part_frame": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "dxf_y_axis_part_frame": [
+          0.5,
+          -0.0,
+          0.866
+        ],
+        "dxf_origin_part_frame_mm": [
+          48.31,
+          6.5,
+          1.478
+        ]
+      },
+      "extent_mm": [
+        38.0,
+        46.25
+      ],
+      "entities": {
+        "LINE": 14,
+        "ARC": 4,
+        "POLYLINE": 1,
+        "CIRCLE": 4
+      },
+      "size_bytes": 2908,
+      "sha256": "9785a246902953ed3d16441ce39bbdd062419da1b67ca2a5d74453d34ee5489e",
+      "extent_measurement": "entity geometry including extrema within arc sweeps; mm"
+    },
+    {
+      "path": "mechanical/robot/step/parts/Profile_Holder_v2.step",
+      "type": "STEP (AP214)",
+      "source_component": "Profile_Holder_v2 (printed PETG)",
+      "source_occurrence": "Mast_Assembly:1+Profile_Holder_v2 (printed PETG):1",
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "coordinate_frame": "part frame (the component origin in Fusion); see placement_in_assembly",
+      "bounding_box_part_frame_mm": [
+        -30.0,
+        -30.0,
+        0.0,
+        30.0,
+        30.0,
+        63.0
+      ],
+      "volume_mm3": 35460.25,
+      "bounding_box_in_assembly_mm": [
+        70.0,
+        -127.0,
+        91.51,
+        130.0,
+        -67.0,
+        154.51
+      ],
+      "placement_in_assembly": {
+        "matrix_row_major_mm": [
+          [
+            -0.0,
+            -1.0,
+            0.0,
+            100.0
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0,
+            -97.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            91.51
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "note": "assembly = R * part + t; rotation part is unitless, translation column in mm"
+      },
+      "design_author_note": "not specified",
+      "in_robot_assembly": true,
+      "size_bytes": 234917,
+      "sha256": "4628d31d7efe8300e7d417a1302bcc7b5f600bbd1d18676a5cf82e2a525a20ab",
+      "local_validation": {
+        "kernel": "OpenCascade 8.0.1",
+        "shape_valid": true,
+        "solid_count": 1,
+        "shell_count": 1,
+        "face_count": 208,
+        "tight_bbox_mm": [
+          -30.0,
+          -30.0,
+          0.0,
+          30.0,
+          30.0,
+          63.0
+        ],
+        "volume_mm3": 35460.25161857796
+      },
+      "source_fusion_bounding_box_in_assembly_mm": [
+        70.0,
+        -127.0,
+        91.51,
+        130.0,
+        -67.0,
+        154.51
+      ],
+      "bounding_box_method": "tight geometric bounds of the exported STEP transformed by placement_in_assembly; translations in mm"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/Profile_Holder_v2.pdf",
+      "type": "PDF drawing",
+      "source_component": "Profile_Holder_v2 (printed PETG)",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "sheet": "A3 landscape, 1 sheet",
+      "scale": "1:1",
+      "design_author_note": "not specified",
+      "size_bytes": 481607,
+      "sha256": "007dae749a6f5b77dbc0fa290ff30ee678c60d3bab111024cd0bed3c26c166de"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/Profile_Holder_v2_profile.dxf",
+      "type": "DXF (R12 ASCII)",
+      "source_component": "Profile_Holder_v2 (printed PETG)",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "description": "outline of the largest planar face of the part (outer loop on layer OUTLINE, inner loops on layer HOLES), 1:1",
+      "face": {
+        "area_mm2": 2997.63,
+        "normal_part_frame": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "dxf_x_axis_part_frame": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "dxf_y_axis_part_frame": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "dxf_origin_part_frame_mm": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "extent_mm": [
+        60.0,
+        60.0
+      ],
+      "entities": {
+        "ARC": 4,
+        "LINE": 4,
+        "CIRCLE": 28
+      },
+      "design_author_note": "not specified",
+      "size_bytes": 2955,
+      "sha256": "e90f52a9acec9e44ac89467376413620364975c5e72474e615baf12ad62f2552",
+      "extent_measurement": "entity geometry including extrema within arc sweeps; mm"
+    },
+    {
+      "path": "mechanical/robot/step/parts/sixth_brkt_wrist_roll_adapter.step",
+      "type": "STEP (AP214)",
+      "source_component": "sixth_brkt (wrist roll adapter)",
+      "source_occurrence": "OM-X:1+sixth_brkt (wrist roll adapter):1",
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "coordinate_frame": "part frame (the component origin in Fusion); see placement_in_assembly",
+      "bounding_box_part_frame_mm": [
+        -26.75,
+        -17.75,
+        -5.0,
+        26.75,
+        17.75,
+        8.0
+      ],
+      "volume_mm3": 11696.16,
+      "bounding_box_in_assembly_mm": [
+        -17.75,
+        236.0,
+        269.25,
+        17.75,
+        249.0,
+        322.75
+      ],
+      "placement_in_assembly": {
+        "matrix_row_major_mm": [
+          [
+            -0.0,
+            1.0,
+            -0.0,
+            0.0
+          ],
+          [
+            -0.0,
+            -0.0,
+            -1.0,
+            244.0
+          ],
+          [
+            -1.0,
+            -0.0,
+            0.0,
+            296.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "note": "assembly = R * part + t; rotation part is unitless, translation column in mm"
+      },
+      "design_author_note": "not specified",
+      "in_robot_assembly": true,
+      "size_bytes": 123026,
+      "sha256": "76378880377d78ae851bd04d6b14f2b662591fc9cb0d90144efe3fe12fd713c1",
+      "local_validation": {
+        "kernel": "OpenCascade 8.0.1",
+        "shape_valid": true,
+        "solid_count": 1,
+        "shell_count": 1,
+        "face_count": 84,
+        "tight_bbox_mm": [
+          -26.750000000000007,
+          -17.750000000000004,
+          -5.0,
+          26.750000000000004,
+          17.750000000000004,
+          8.000000002483024
+        ],
+        "volume_mm3": 11696.157293056855
+      },
+      "source_fusion_bounding_box_in_assembly_mm": [
+        -17.75,
+        236.0,
+        269.25,
+        17.75,
+        249.0,
+        322.75
+      ],
+      "bounding_box_method": "tight geometric bounds of the exported STEP transformed by placement_in_assembly; translations in mm"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/sixth_brkt_wrist_roll_adapter.pdf",
+      "type": "PDF drawing",
+      "source_component": "sixth_brkt (wrist roll adapter)",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "sheet": "A3 landscape, 1 sheet",
+      "scale": "2.5:1",
+      "design_author_note": "not specified",
+      "size_bytes": 276528,
+      "sha256": "21eab230e32b533d78894ce8b2d269679e4b5a8ed5fc20ffaebb5332976a4d77"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/sixth_brkt_wrist_roll_adapter_profile.dxf",
+      "type": "DXF (R12 ASCII)",
+      "source_component": "sixth_brkt (wrist roll adapter)",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "description": "outline of the largest planar face of the part (outer loop on layer OUTLINE, inner loops on layer HOLES), 1:1",
+      "face": {
+        "area_mm2": 1375.0,
+        "normal_part_frame": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "dxf_x_axis_part_frame": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "dxf_y_axis_part_frame": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "dxf_origin_part_frame_mm": [
+          -12.625,
+          11.402,
+          5.0
+        ]
+      },
+      "extent_mm": [
+        53.5,
+        35.5
+      ],
+      "entities": {
+        "LINE": 20,
+        "CIRCLE": 4,
+        "ARC": 4
+      },
+      "design_author_note": "not specified",
+      "size_bytes": 3017,
+      "sha256": "a489f91944052257549175c75d49aa36512aa7860c2919d034c8bbe2e6baf9da",
+      "extent_measurement": "entity geometry including extrema within arc sweeps; mm"
+    },
+    {
+      "path": "mechanical/robot/step/parts/Leader_Grip_Body.step",
+      "type": "STEP (AP214)",
+      "source_component": "Leader_Grip_Body (printed, leader arm only)",
+      "source_occurrence": "OM-X:1+Leader_Arm_Gripper (leader arm only, hide for follower):1+Leader_Grip_Body (printed, leader arm only):1",
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "coordinate_frame": "part frame (the component origin in Fusion); see placement_in_assembly",
+      "bounding_box_part_frame_mm": [
+        -20.65,
+        -53.246,
+        -123.0,
+        32.0,
+        6.0,
+        34.0
+      ],
+      "volume_mm3": 89107.89,
+      "bounding_box_in_assembly_mm": [
+        -20.65,
+        226.754952,
+        161.0,
+        32.0,
+        286.0,
+        318.0
+      ],
+      "placement_in_assembly": {
+        "matrix_row_major_mm": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            280.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            284.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "note": "assembly = R * part + t; rotation part is unitless, translation column in mm"
+      },
+      "design_author_note": "not specified",
+      "in_robot_assembly": false,
+      "note": "Leader-arm part. Not contained in robot_assembly.step (hidden in the design). bounding_box_in_assembly_mm and placement_in_assembly give where it sits in the Fusion design, on the gripper servo of the modelled arm, where it overlaps follower-arm parts.",
+      "size_bytes": 209543,
+      "sha256": "9dae6c977495a13c4d92e4f8c8aeb98d071a6d4b92066f85bb9a5386485050a8",
+      "local_validation": {
+        "kernel": "OpenCascade 8.0.1",
+        "shape_valid": true,
+        "solid_count": 1,
+        "shell_count": 1,
+        "face_count": 102,
+        "tight_bbox_mm": [
+          -20.650000100000007,
+          -53.24504785028488,
+          -123.00000010000001,
+          32.00000010000001,
+          6.000000100000024,
+          34.0000001
+        ],
+        "volume_mm3": 89109.54712307303
+      },
+      "source_fusion_bounding_box_in_assembly_mm": [
+        -20.65,
+        226.754,
+        161.0,
+        32.0,
+        286.0,
+        318.0
+      ],
+      "bounding_box_method": "tight geometric bounds of the exported STEP transformed by placement_in_assembly; translations in mm"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/Leader_Grip_Body.pdf",
+      "type": "PDF drawing",
+      "source_component": "Leader_Grip_Body (printed, leader arm only)",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "sheet": "A3 landscape, 1 sheet",
+      "scale": "1:2",
+      "design_author_note": "not specified",
+      "size_bytes": 241087,
+      "sha256": "95aebf5e4714b3f3210a24eb2b3cdffceb31e9859915b925291fee82a018b0b9"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/Leader_Grip_Body_profile.dxf",
+      "type": "DXF (R12 ASCII)",
+      "source_component": "Leader_Grip_Body (printed, leader arm only)",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "description": "outline of the largest planar face of the part (outer loop on layer OUTLINE, inner loops on layer HOLES), 1:1",
+      "face": {
+        "area_mm2": 1469.78,
+        "normal_part_frame": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "dxf_x_axis_part_frame": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "dxf_y_axis_part_frame": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "dxf_origin_part_frame_mm": [
+          -20.65,
+          -19.382,
+          -1.896
+        ]
+      },
+      "extent_mm": [
+        32.1,
+        57.3208
+      ],
+      "entities": {
+        "LINE": 6,
+        "CIRCLE": 4
+      },
+      "design_author_note": "not specified",
+      "size_bytes": 1231,
+      "sha256": "cce3e940f49babe5ab8fb5959c2a1bd894be2b458b57e63945f2460bfde96cca",
+      "extent_measurement": "entity geometry including extrema within arc sweeps; mm"
+    },
+    {
+      "path": "mechanical/robot/step/parts/Leader_Grip_Ring_A.step",
+      "type": "STEP (AP214)",
+      "source_component": "Leader_Grip_Ring_A (printed, on horn)",
+      "source_occurrence": "OM-X:1+Leader_Arm_Gripper (leader arm only, hide for follower):1+Leader_Grip_Ring_A (printed, on horn):1",
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "coordinate_frame": "part frame (the component origin in Fusion); see placement_in_assembly",
+      "bounding_box_part_frame_mm": [
+        -15.5,
+        -7.0,
+        -68.0,
+        15.5,
+        7.2,
+        15.5
+      ],
+      "volume_mm3": 8974.18,
+      "bounding_box_in_assembly_mm": [
+        -15.5,
+        273.0,
+        216.0,
+        15.5,
+        287.2,
+        299.5
+      ],
+      "placement_in_assembly": {
+        "matrix_row_major_mm": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            280.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            284.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "note": "assembly = R * part + t; rotation part is unitless, translation column in mm"
+      },
+      "design_author_note": "not specified",
+      "in_robot_assembly": false,
+      "note": "Leader-arm part. Not contained in robot_assembly.step (hidden in the design). bounding_box_in_assembly_mm and placement_in_assembly give where it sits in the Fusion design, on the gripper servo of the modelled arm, where it overlaps follower-arm parts.",
+      "size_bytes": 453560,
+      "sha256": "f31ffd14c6ec2591172fff941be6cebbb5d99715070740c7ddb2c11233d5923c",
+      "local_validation": {
+        "kernel": "OpenCascade 8.0.1",
+        "shape_valid": true,
+        "solid_count": 1,
+        "shell_count": 1,
+        "face_count": 294,
+        "tight_bbox_mm": [
+          -15.5,
+          -7.0000001,
+          -68.0000001,
+          15.5,
+          7.2000001000000005,
+          15.5
+        ],
+        "volume_mm3": 8974.135267905758
+      },
+      "source_fusion_bounding_box_in_assembly_mm": [
+        -15.5,
+        273.0,
+        216.0,
+        15.5,
+        287.2,
+        299.5
+      ],
+      "bounding_box_method": "tight geometric bounds of the exported STEP transformed by placement_in_assembly; translations in mm"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/Leader_Grip_Ring_A.pdf",
+      "type": "PDF drawing",
+      "source_component": "Leader_Grip_Ring_A (printed, on horn)",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "sheet": "A3 landscape, 1 sheet",
+      "scale": "1.5:1",
+      "design_author_note": "not specified",
+      "size_bytes": 293250,
+      "sha256": "0aaf8cd26cf2b864f3b626d3246410818b1943da12c462af38802d9eb833c521"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/Leader_Grip_Ring_A_profile.dxf",
+      "type": "DXF (R12 ASCII)",
+      "source_component": "Leader_Grip_Ring_A (printed, on horn)",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "description": "outline of the largest planar face of the part (outer loop on layer OUTLINE, inner loops on layer HOLES), 1:1",
+      "face": {
+        "area_mm2": 1120.74,
+        "normal_part_frame": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "dxf_x_axis_part_frame": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "dxf_y_axis_part_frame": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "dxf_origin_part_frame_mm": [
+          0.0,
+          7.2,
+          -26.25
+        ]
+      },
+      "extent_mm": [
+        31.0,
+        83.5
+      ],
+      "entities": {
+        "ARC": 4,
+        "LINE": 2,
+        "CIRCLE": 6
+      },
+      "design_author_note": "not specified",
+      "size_bytes": 1361,
+      "sha256": "bec1ec5a5dfc6014818e54d946ea79d6e58bff58ecf66a081ac98cabbd60c022",
+      "extent_measurement": "entity geometry including extrema within arc sweeps; mm"
+    },
+    {
+      "path": "mechanical/robot/step/parts/Leader_Grip_Ring_B.step",
+      "type": "STEP (AP214)",
+      "source_component": "Leader_Grip_Ring_B (printed, geared)",
+      "source_occurrence": "OM-X:1+Leader_Arm_Gripper (leader arm only, hide for follower):1+Leader_Grip_Ring_B (printed, geared):1",
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "coordinate_frame": "part frame (the component origin in Fusion); see placement_in_assembly",
+      "bounding_box_part_frame_mm": [
+        12.071,
+        -7.0,
+        -68.0,
+        39.929,
+        8.3,
+        13.997
+      ],
+      "volume_mm3": 9236.19,
+      "bounding_box_in_assembly_mm": [
+        12.070993,
+        273.0,
+        216.0,
+        39.929007,
+        288.3,
+        297.997177
+      ],
+      "placement_in_assembly": {
+        "matrix_row_major_mm": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            280.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            284.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "note": "assembly = R * part + t; rotation part is unitless, translation column in mm"
+      },
+      "design_author_note": "not specified",
+      "in_robot_assembly": false,
+      "note": "Leader-arm part. Not contained in robot_assembly.step (hidden in the design). bounding_box_in_assembly_mm and placement_in_assembly give where it sits in the Fusion design, on the gripper servo of the modelled arm, where it overlaps follower-arm parts.",
+      "size_bytes": 445357,
+      "sha256": "3111d6ee8cdfa78f93d0777f6d73c9578bd2ba4c7eb90f35f99b123387f3465c",
+      "local_validation": {
+        "kernel": "OpenCascade 8.0.1",
+        "shape_valid": true,
+        "solid_count": 1,
+        "shell_count": 1,
+        "face_count": 286,
+        "tight_bbox_mm": [
+          12.0709933002267,
+          -7.0000001,
+          -68.0000001,
+          39.9290066997733,
+          8.3000001,
+          13.9971774025317
+        ],
+        "volume_mm3": 9236.136992279335
+      },
+      "source_fusion_bounding_box_in_assembly_mm": [
+        12.071,
+        273.0,
+        216.0,
+        39.929,
+        288.3,
+        297.997
+      ],
+      "bounding_box_method": "tight geometric bounds of the exported STEP transformed by placement_in_assembly; translations in mm"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/Leader_Grip_Ring_B.pdf",
+      "type": "PDF drawing",
+      "source_component": "Leader_Grip_Ring_B (printed, geared)",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "sheet": "A3 landscape, 1 sheet",
+      "scale": "1.5:1",
+      "design_author_note": "not specified",
+      "size_bytes": 257358,
+      "sha256": "cb915d2f822c3418e45df89176fcb020f745f15530c23c42c73d59d175672932"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/Leader_Grip_Ring_B_profile.dxf",
+      "type": "DXF (R12 ASCII)",
+      "source_component": "Leader_Grip_Ring_B (printed, geared)",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "description": "outline of the largest planar face of the part (outer loop on layer OUTLINE, inner loops on layer HOLES), 1:1",
+      "face": {
+        "area_mm2": 781.62,
+        "normal_part_frame": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "dxf_x_axis_part_frame": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "dxf_y_axis_part_frame": [
+          -0.0,
+          0.0,
+          1.0
+        ],
+        "dxf_origin_part_frame_mm": [
+          26.0,
+          0.1,
+          -14.559
+        ]
+      },
+      "extent_mm": [
+        27.858,
+        57.112412
+      ],
+      "entities": {
+        "LINE": 269,
+        "ARC": 3,
+        "CIRCLE": 1
+      },
+      "design_author_note": "not specified",
+      "size_bytes": 27614,
+      "sha256": "40bc3775720a1fb518308bde429bd5e309a11f138dafd18c5b0297b0df477460",
+      "extent_measurement": "entity geometry including extrema within arc sweeps; mm"
+    },
+    {
+      "path": "mechanical/robot/step/parts/Leader_Grip_Pivot_Washer.step",
+      "type": "STEP (AP214)",
+      "source_component": "Leader_Grip_Pivot_Washer (printed)",
+      "source_occurrence": "OM-X:1+Leader_Arm_Gripper (leader arm only, hide for follower):1+Leader_Grip_Pivot_Washer (printed):1",
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "coordinate_frame": "part frame (the component origin in Fusion); see placement_in_assembly",
+      "bounding_box_part_frame_mm": [
+        21.0,
+        8.4,
+        -5.0,
+        31.0,
+        9.6,
+        5.0
+      ],
+      "volume_mm3": 86.86,
+      "bounding_box_in_assembly_mm": [
+        21.0,
+        288.4,
+        279.0,
+        31.0,
+        289.6,
+        289.0
+      ],
+      "placement_in_assembly": {
+        "matrix_row_major_mm": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            280.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            284.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "note": "assembly = R * part + t; rotation part is unitless, translation column in mm"
+      },
+      "design_author_note": "not specified",
+      "in_robot_assembly": false,
+      "note": "Leader-arm part. Not contained in robot_assembly.step (hidden in the design). bounding_box_in_assembly_mm and placement_in_assembly give where it sits in the Fusion design, on the gripper servo of the modelled arm, where it overlaps follower-arm parts.",
+      "size_bytes": 7614,
+      "sha256": "8d14bfbe0485b757409e59e32c19ddd8602c63862668399dfecab866bac41e59",
+      "local_validation": {
+        "kernel": "OpenCascade 8.0.1",
+        "shape_valid": true,
+        "solid_count": 1,
+        "shell_count": 1,
+        "face_count": 4,
+        "tight_bbox_mm": [
+          21.0,
+          8.4,
+          -5.0,
+          31.0,
+          9.6,
+          5.0
+        ],
+        "volume_mm3": 86.85875368947018
+      },
+      "source_fusion_bounding_box_in_assembly_mm": [
+        21.0,
+        288.4,
+        279.0,
+        31.0,
+        289.6,
+        289.0
+      ],
+      "bounding_box_method": "tight geometric bounds of the exported STEP transformed by placement_in_assembly; translations in mm"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/Leader_Grip_Pivot_Washer.pdf",
+      "type": "PDF drawing",
+      "source_component": "Leader_Grip_Pivot_Washer (printed)",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "sheet": "A3 landscape, 1 sheet",
+      "scale": "5:1",
+      "design_author_note": "not specified",
+      "size_bytes": 163718,
+      "sha256": "14ec2f61c8f8533e648d0e2d9d6eba8e5bf7237581446bf606d2d6223cb2eb0c"
+    },
+    {
+      "path": "mechanical/robot/drawings/parts/Leader_Grip_Pivot_Washer_profile.dxf",
+      "type": "DXF (R12 ASCII)",
+      "source_component": "Leader_Grip_Pivot_Washer (printed)",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": null,
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "description": "outline of the largest planar face of the part (outer loop on layer OUTLINE, inner loops on layer HOLES), 1:1",
+      "face": {
+        "area_mm2": 72.38,
+        "normal_part_frame": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "dxf_x_axis_part_frame": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "dxf_y_axis_part_frame": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "dxf_origin_part_frame_mm": [
+          24.2,
+          9.6,
+          0.0
+        ]
+      },
+      "extent_mm": [
+        10.0,
+        10.0
+      ],
+      "entities": {
+        "CIRCLE": 2
+      },
+      "design_author_note": "not specified",
+      "size_bytes": 477,
+      "sha256": "939e7d7587b44f106c94cb917c7d20aa150b47ca74473d988f173cce5a243ccf",
+      "extent_measurement": "entity geometry including extrema within arc sweeps; mm"
+    },
+    {
+      "path": "mechanical/robot/step/leader_arm_gripper.step",
+      "type": "STEP (AP214)",
+      "source_component": "Leader_Arm_Gripper (leader arm only, hide for follower)",
+      "source_occurrence": "OM-X:1+Leader_Arm_Gripper (leader arm only, hide for follower):1",
+      "source_version": 10,
+      "author": null,
+      "design_author_note": "not specified",
+      "units": "mm",
+      "in_robot_assembly": false,
+      "coordinate_frame": "frame of Leader_Grip_Body: origin at the centre of the gripper servo horn face, +Y out of the horn",
+      "built_from": "the four exported part STEP files, placed with their relative transforms from the Fusion design (the group is hidden in the design, so Fusion would not export it directly)",
+      "contents": {
+        "parts": [
+          "Leader_Grip_Body (printed, leader arm only)",
+          "Leader_Grip_Ring_A (printed, on horn)",
+          "Leader_Grip_Ring_B (printed, geared)",
+          "Leader_Grip_Pivot_Washer (printed)"
+        ],
+        "bodies": 4,
+        "bounding_box_mm": [
+          -20.65,
+          -53.245048,
+          -123.0,
+          39.929007,
+          9.6,
+          34.0
+        ],
+        "solid_volume_mm3": 107406.433778,
+        "measurement_note": "tight STEP bounds and adaptive closed-solid volume integration, OpenCascade 8.0.1"
+      },
+      "size_bytes": 1156200,
+      "sha256": "e5e8121180ee2c6a8fc80b032af38946cb86cfb93d809659e07a079ec927bde4",
+      "local_validation": {
+        "kernel": "OpenCascade 8.0.1",
+        "shape_valid": true,
+        "solid_count": 4,
+        "shell_count": 4,
+        "face_count": 686,
+        "tight_bbox_mm": [
+          -20.6500001,
+          -53.24504785028488,
+          -123.0000001,
+          39.9290066997733,
+          9.6,
+          34.0000001
+        ],
+        "volume_mm3": 107406.43377848655
+      },
+      "source_fusion_contents": {
+        "parts": [
+          "Leader_Grip_Body (printed, leader arm only)",
+          "Leader_Grip_Ring_A (printed, on horn)",
+          "Leader_Grip_Ring_B (printed, geared)",
+          "Leader_Grip_Pivot_Washer (printed)"
+        ],
+        "bodies": 4,
+        "bounding_box_mm": [
+          -20.66,
+          -53.441,
+          -123.012,
+          39.949,
+          9.62,
+          34.01
+        ],
+        "solid_volume_mm3": 107403.6
+      }
+    },
+    {
+      "path": "mechanical/robot/drawings/robot_assembly.pdf",
+      "type": "PDF drawing",
+      "source_component": "root component (assembly overview)",
+      "source_drawing": null,
+      "source_version": 10,
+      "author": null,
+      "design_author_note": "not specified for the complete assembly",
+      "units": "mm",
+      "drawing_status": "newly created draft",
+      "requires_review": true,
+      "sheet": "A3 landscape, 2 sheets",
+      "scale": "1:5",
+      "size_bytes": 1888317,
+      "sha256": "bf2d75c9089d364657d9e5b5a3d3663a80be2a1c6b7b57b3c83c816c608e06d5",
+      "local_revision": "r3: corrected measured dimensions/facts and revision notes; original shaded views retained"
+    },
+    {
+      "path": "mechanical/robot/VALIDATION_REPORT.txt",
+      "type": "Local revision and validation report",
+      "source_version": 10,
+      "author": null,
+      "local_revision": "r3",
+      "size_bytes": 3277,
+      "sha256": "58be0bc9da161533c508c4bcab7ca8bac911ebfcee62f6e0d547d45db16fff30"
+    },
+    {
+      "path": "mechanical/robot/validation.json",
+      "type": "Independent CAD validation results",
+      "source_version": 10,
+      "author": null,
+      "local_revision": "r3",
+      "size_bytes": 73698,
+      "sha256": "a1884595dcaa593d7a06b9716c632ef8e5ba2b800f9061d865fd2c537fe69be3"
+    }
+  ],
+  "local_revision": {
+    "revision": "r3",
+    "date": "2026-11-17",
+    "source_fusion_version": 10,
+    "native_fusion_source_modified": false,
+    "method": "Local STEP topology repairs, independent OpenCascade validation, corrected measured extents and revised draft annotations.",
+    "repairs": [
+      "A5: split collapsed notch vertex and reconnect incident edges, keeping existing curves and surfaces.",
+      "PR30_IPL_01: partition six disconnected coplanar circular regions into separate faces and correct boundary orientation; all original edge geometry and vertex coordinates retained."
+    ],
+    "units": "mm",
+    "validation_file": "mechanical/robot/validation.json"
+  }
+}

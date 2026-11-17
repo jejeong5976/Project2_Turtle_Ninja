@@ -1,0 +1,3948 @@
+{
+  "revision": {
+    "revision": "r3",
+    "date": "2026-11-17",
+    "source_fusion_version": 10,
+    "native_fusion_source_modified": false,
+    "method": "Local STEP topology repairs, independent OpenCascade validation, corrected measured extents and revised draft annotations.",
+    "repairs": [
+      "A5: split collapsed notch vertex and reconnect incident edges, keeping existing curves and surfaces.",
+      "PR30_IPL_01: partition six disconnected coplanar circular regions into separate faces and correct boundary orientation; all original edge geometry and vertex coordinates retained."
+    ],
+    "units": "mm",
+    "validation_file": "mechanical/robot/validation.json"
+  },
+  "source_archive": {
+    "filename": "TurtleNinja_mechanical_robot_20261117_v10_r2.zip",
+    "sha256": "2c553fdde085ccbdb79a079c0ab38ca01ea2cfb7c4d23acc73789cf4af50f9ea"
+  },
+  "step_validation_OpenCascade_8_0_1": [
+    {
+      "file": "Leader_Grip_Pivot_Washer.step",
+      "valid": true,
+      "solids": 1,
+      "shells": 1,
+      "faces": 4,
+      "tight_bbox_mm": [
+        21.0,
+        8.4,
+        -5.0,
+        31.0,
+        9.6,
+        5.0
+      ],
+      "volume_mm3": 86.85875368947018,
+      "volume_integration_error_estimate": 2.5699607051508274e-16,
+      "placed_tight_bbox_mm": [
+        21.0,
+        288.4,
+        279.0,
+        31.0,
+        289.6,
+        289.0
+      ]
+    },
+    {
+      "file": "A3_Park_Stand.step",
+      "valid": true,
+      "solids": 1,
+      "shells": 1,
+      "faces": 17,
+      "tight_bbox_mm": [
+        -25.000000000000007,
+        -25.0,
+        -15.0,
+        25.000000000000007,
+        25.0,
+        15.0
+      ],
+      "volume_mm3": 28290.955773018908,
+      "volume_integration_error_estimate": 8.398850304492919e-16,
+      "placed_tight_bbox_mm": [
+        -25.0,
+        78.0,
+        91.4998,
+        25.0,
+        128.0,
+        121.4998
+      ]
+    },
+    {
+      "file": "A6_MastCam_Ring.step",
+      "valid": true,
+      "solids": 1,
+      "shells": 1,
+      "faces": 18,
+      "tight_bbox_mm": [
+        -22.5,
+        -22.5,
+        -11.0,
+        45.0,
+        22.5,
+        4.5
+      ],
+      "volume_mm3": 8320.991854200644,
+      "volume_integration_error_estimate": 7.803472344684078e-16,
+      "placed_tight_bbox_mm": [
+        77.50000106751256,
+        -119.49999893248744,
+        517.499800521895,
+        122.49999893248744,
+        -53.00716395637989,
+        532.9997997864975
+      ]
+    },
+    {
+      "file": "A5_MastCam_Base.step",
+      "valid": true,
+      "solids": 1,
+      "shells": 1,
+      "faces": 39,
+      "tight_bbox_mm": [
+        -22.5000001,
+        -22.5000001,
+        -13.0,
+        22.5000001,
+        22.5000001,
+        18.0000001
+      ],
+      "volume_mm3": 14885.989091636735,
+      "volume_integration_error_estimate": 7.684482106103788e-14,
+      "placed_tight_bbox_mm": [
+        77.4999999,
+        -119.5000001,
+        515.4998,
+        122.5000001,
+        -74.4999999,
+        546.4998001
+      ]
+    },
+    {
+      "file": "A7_MastCam_Frame.step",
+      "valid": true,
+      "solids": 1,
+      "shells": 1,
+      "faces": 38,
+      "tight_bbox_mm": [
+        35.0,
+        -12.5000001,
+        -9.5000001,
+        67.6225953641916,
+        25.5000001,
+        38.67867492503032
+      ],
+      "volume_mm3": 7206.3519297439725,
+      "volume_integration_error_estimate": 1.465801031726176e-11,
+      "placed_tight_bbox_mm": [
+        58.94607850580649,
+        -67.1054785346249,
+        516.7121743161546,
+        101.6781116415133,
+        -28.714261517542624,
+        567.1785252673162
+      ]
+    },
+    {
+      "file": "A4_Arm_Bracket.step",
+      "valid": true,
+      "solids": 1,
+      "shells": 1,
+      "faces": 43,
+      "tight_bbox_mm": [
+        -42.0,
+        -16.75,
+        -15.0,
+        42.0,
+        16.75000000000001,
+        49.00000000000003
+      ],
+      "volume_mm3": 21992.50205675888,
+      "volume_integration_error_estimate": 9.996898203263915e-16,
+      "placed_tight_bbox_mm": [
+        -42.0,
+        239.0,
+        306.8,
+        42.0,
+        272.5,
+        370.80000000000007
+      ]
+    },
+    {
+      "file": "sixth_brkt_wrist_roll_adapter.step",
+      "valid": true,
+      "solids": 1,
+      "shells": 1,
+      "faces": 84,
+      "tight_bbox_mm": [
+        -26.750000000000007,
+        -17.750000000000004,
+        -5.0,
+        26.750000000000004,
+        17.750000000000004,
+        8.000000002483024
+      ],
+      "volume_mm3": 11696.157293056855,
+      "volume_integration_error_estimate": 1.5476139885286194e-15,
+      "placed_tight_bbox_mm": [
+        -17.750000000000004,
+        235.99999999751697,
+        269.25,
+        17.750000000000004,
+        249.0,
+        322.75
+      ]
+    },
+    {
+      "file": "A2_Rack_4cell.step",
+      "valid": true,
+      "solids": 1,
+      "shells": 1,
+      "faces": 108,
+      "tight_bbox_mm": [
+        77.99999999999999,
+        -204.751288694036,
+        -8.0,
+        201.751288694036,
+        -116.248711305964,
+        22.000000000000256
+      ],
+      "volume_mm3": 59530.092345655845,
+      "volume_integration_error_estimate": 2.2105450601314724e-15,
+      "placed_tight_bbox_mm": [
+        48.02211130596398,
+        -22.000200000000017,
+        91.4998,
+        136.524688694036,
+        101.75108869403599,
+        121.49980000000025
+      ]
+    },
+    {
+      "file": "Leader_Grip_Body.step",
+      "valid": true,
+      "solids": 1,
+      "shells": 1,
+      "faces": 102,
+      "tight_bbox_mm": [
+        -20.650000100000007,
+        -53.24504785028488,
+        -123.00000010000001,
+        32.00000010000001,
+        6.000000100000024,
+        34.0000001
+      ],
+      "volume_mm3": 89109.54712307303,
+      "volume_integration_error_estimate": 8.1356109499393e-08,
+      "placed_tight_bbox_mm": [
+        -20.650000100000007,
+        226.75495214971514,
+        160.9999999,
+        32.00000010000001,
+        286.0000001,
+        318.0000001
+      ]
+    },
+    {
+      "file": "Profile_Holder_v2.step",
+      "valid": true,
+      "solids": 1,
+      "shells": 1,
+      "faces": 208,
+      "tight_bbox_mm": [
+        -30.0,
+        -30.0,
+        0.0,
+        30.0,
+        30.0,
+        63.0
+      ],
+      "volume_mm3": 35460.25161857796,
+      "volume_integration_error_estimate": 4.078747116359755e-15,
+      "placed_tight_bbox_mm": [
+        70.0,
+        -127.0,
+        91.51,
+        130.0,
+        -67.0,
+        154.51
+      ]
+    },
+    {
+      "file": "A1_Rack_8cell.step",
+      "valid": true,
+      "solids": 1,
+      "shells": 1,
+      "faces": 208,
+      "tight_bbox_mm": [
+        -21.751288694035768,
+        -21.751288694035704,
+        -8.0000001,
+        201.751288694036,
+        66.7512886940358,
+        22.000000000000043
+      ],
+      "volume_mm3": 112575.42716120296,
+      "volume_integration_error_estimate": 3.277808622063068e-13,
+      "placed_tight_bbox_mm": [
+        -136.52488869403578,
+        -121.75148869403577,
+        91.4997999,
+        -48.022311305964294,
+        101.75108869403599,
+        121.49980000000004
+      ]
+    },
+    {
+      "file": "Leader_Grip_Ring_B.step",
+      "valid": true,
+      "solids": 1,
+      "shells": 1,
+      "faces": 286,
+      "tight_bbox_mm": [
+        12.0709933002267,
+        -7.0000001,
+        -68.0000001,
+        39.9290066997733,
+        8.3000001,
+        13.9971774025317
+      ],
+      "volume_mm3": 9236.136992279335,
+      "volume_integration_error_estimate": 3.5140954470500534e-10,
+      "placed_tight_bbox_mm": [
+        12.0709933002267,
+        272.9999999,
+        215.9999999,
+        39.9290066997733,
+        288.30000010000003,
+        297.9971774025317
+      ]
+    },
+    {
+      "file": "Leader_Grip_Ring_A.step",
+      "valid": true,
+      "solids": 1,
+      "shells": 1,
+      "faces": 294,
+      "tight_bbox_mm": [
+        -15.5,
+        -7.0000001,
+        -68.0000001,
+        15.5,
+        7.2000001000000005,
+        15.5
+      ],
+      "volume_mm3": 8974.135267905758,
+      "volume_integration_error_estimate": 3.562119855382214e-10,
+      "placed_tight_bbox_mm": [
+        -15.5,
+        272.9999999,
+        215.9999999,
+        15.5,
+        287.2000001,
+        299.5
+      ]
+    },
+    {
+      "file": "leader_arm_gripper.step",
+      "valid": true,
+      "solids": 4,
+      "shells": 4,
+      "faces": 686,
+      "tight_bbox_mm": [
+        -20.6500001,
+        -53.24504785028488,
+        -123.0000001,
+        39.9290066997733,
+        9.6,
+        34.0000001
+      ],
+      "volume_mm3": 107406.43377848655,
+      "volume_integration_error_estimate": 8.135607711782601e-08
+    },
+    {
+      "file": "robot_assembly.step",
+      "valid": true,
+      "solids": 2373,
+      "shells": 3552,
+      "faces": 136011,
+      "tight_bbox_mm": [
+        -144.9999817754007,
+        -132.77350269192857,
+        -71.9999817754111,
+        144.9999817754007,
+        362.6000000000117,
+        567.178524293153
+      ]
+    }
+  ],
+  "assembly_validation_OpenCascade_7_9_3": {
+    "kernel": "7.9.3",
+    "all_component_shapes_valid": true,
+    "definitions": 481,
+    "free_roots": 1,
+    "solids": 2373,
+    "shells": 3552,
+    "faces": 136011,
+    "tight_bbox_mm": [
+      -144.9999817754007,
+      -132.77350269192857,
+      -71.9999817754111,
+      144.9999817754007,
+      362.6000000000117,
+      567.178524293153
+    ]
+  },
+  "all_component_names_solid_counts_and_shell_counts_preserved": true,
+  "assembly_component_results": [
+    {
+      "name": "PHS_M3X8",
+      "solids": 1,
+      "shells": 1,
+      "faces": 23,
+      "valid": true
+    },
+    {
+      "name": "PHS_M3X8 (1)",
+      "solids": 0,
+      "shells": 1,
+      "faces": 1,
+      "valid": true
+    },
+    {
+      "name": "M_PR07_A01_BRACKET_2 (1)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 79,
+      "valid": true
+    },
+    {
+      "name": "PR30_IPL_01",
+      "solids": 1,
+      "shells": 1,
+      "faces": 1464,
+      "valid": true
+    },
+    {
+      "name": "NUT2_M3 (1)",
+      "solids": 0,
+      "shells": 1,
+      "faces": 1,
+      "valid": true
+    },
+    {
+      "name": "NUT2_M3",
+      "solids": 1,
+      "shells": 1,
+      "faces": 13,
+      "valid": true
+    },
+    {
+      "name": "PR07_ONE_RIVET_2",
+      "solids": 1,
+      "shells": 1,
+      "faces": 31,
+      "valid": true
+    },
+    {
+      "name": "M_PR07_A01_BRACKET_2",
+      "solids": 1,
+      "shells": 1,
+      "faces": 79,
+      "valid": true
+    },
+    {
+      "name": "M_PR07_A01_BRACKET_2 (2)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 79,
+      "valid": true
+    },
+    {
+      "name": "SUPPORT_HEX_M3_0XL45_FF",
+      "solids": 1,
+      "shells": 1,
+      "faces": 12,
+      "valid": true
+    },
+    {
+      "name": "SUPPORT_HEX_M3_0XL45_FF (2)",
+      "solids": 0,
+      "shells": 1,
+      "faces": 2,
+      "valid": true
+    },
+    {
+      "name": "SUPPORT_HEX_M3_0XL45_FF (1)",
+      "solids": 0,
+      "shells": 1,
+      "faces": 2,
+      "valid": true
+    },
+    {
+      "name": "PHS_M2_5X8",
+      "solids": 1,
+      "shells": 1,
+      "faces": 23,
+      "valid": true
+    },
+    {
+      "name": "50-37-5023",
+      "solids": 1,
+      "shells": 1,
+      "faces": 101,
+      "valid": true
+    },
+    {
+      "name": "PHS_M2_5X8 (1)",
+      "solids": 0,
+      "shells": 1,
+      "faces": 1,
+      "valid": true
+    },
+    {
+      "name": "NUT2_M2_5",
+      "solids": 0,
+      "shells": 1,
+      "faces": 1,
+      "valid": true
+    },
+    {
+      "name": "NUT2_M2_5 (1)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 13,
+      "valid": true
+    },
+    {
+      "name": "PR30_IBB_01",
+      "solids": 1,
+      "shells": 1,
+      "faces": 66,
+      "valid": true
+    },
+    {
+      "name": "PIN_S",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_S (1)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "________3-33153",
+      "solids": 1,
+      "shells": 1,
+      "faces": 124,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33091",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33134",
+      "solids": 1,
+      "shells": 1,
+      "faces": 68,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-WE-DD-L_PIN_-33142",
+      "solids": 1,
+      "shells": 1,
+      "faces": 25,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33077",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "_______-________4-33273",
+      "solids": 1,
+      "shells": 1,
+      "faces": 3,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33262",
+      "solids": 1,
+      "shells": 1,
+      "faces": 29,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33069",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "HEADERPIN-33301",
+      "solids": 1,
+      "shells": 1,
+      "faces": 22,
+      "valid": true
+    },
+    {
+      "name": "2-33199",
+      "solids": 1,
+      "shells": 1,
+      "faces": 12,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33076",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33099",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "PIN_HEADER_DOUBLE_ROW-_20_CONTA",
+      "solids": 1,
+      "shells": 1,
+      "faces": 537,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33051",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "PIN_S (6)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "50MIL_HEADER_BODY-33298",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (2)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33161",
+      "solids": 1,
+      "shells": 1,
+      "faces": 18,
+      "valid": true
+    },
+    {
+      "name": "_______-________2_1_-33211",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "_______-________8-33241",
+      "solids": 1,
+      "shells": 1,
+      "faces": 12,
+      "valid": true
+    },
+    {
+      "name": "2-33170",
+      "solids": 1,
+      "shells": 1,
+      "faces": 12,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33282",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33259",
+      "solids": 1,
+      "shells": 1,
+      "faces": 57,
+      "valid": true
+    },
+    {
+      "name": "3-33196",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "50MIL_HEADER_BODY-33149",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "PIN_B_2",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (4)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "50MIL_HEADER_BODY-33251",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33260",
+      "solids": 1,
+      "shells": 1,
+      "faces": 49,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33070",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_S (2)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "_____-________1-33165",
+      "solids": 1,
+      "shells": 1,
+      "faces": 82,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33150",
+      "solids": 1,
+      "shells": 1,
+      "faces": 108,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33088",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "SAR1",
+      "solids": 1,
+      "shells": 1,
+      "faces": 242,
+      "valid": true
+    },
+    {
+      "name": "PIN_B",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "1-33162",
+      "solids": 1,
+      "shells": 1,
+      "faces": 16,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33094",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "53047-0210",
+      "solids": 1,
+      "shells": 1,
+      "faces": 100,
+      "valid": true
+    },
+    {
+      "name": "3-33166",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_S (3)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33257",
+      "solids": 1,
+      "shells": 1,
+      "faces": 26,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (3)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "3-33158",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (5)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "_______-________2_4_-33270",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33053",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33144",
+      "solids": 1,
+      "shells": 1,
+      "faces": 49,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-8-VSON_5X6_U-33206",
+      "solids": 1,
+      "shells": 1,
+      "faces": 10,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33256",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33244",
+      "solids": 1,
+      "shells": 1,
+      "faces": 18,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-WE-DD-L_PIN_-33133",
+      "solids": 1,
+      "shells": 1,
+      "faces": 25,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33246",
+      "solids": 1,
+      "shells": 1,
+      "faces": 49,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33057",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "_______-________2_1_-33135",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-8-VSON_5X6_U-33209",
+      "solids": 1,
+      "shells": 1,
+      "faces": 10,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33072",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "_______-________3-33215",
+      "solids": 1,
+      "shells": 1,
+      "faces": 30,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (10)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "_______-________2_2_-33212",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (6)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33179",
+      "solids": 1,
+      "shells": 1,
+      "faces": 391,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33079",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33045",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33156",
+      "solids": 1,
+      "shells": 1,
+      "faces": 22,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-8-VSON_5X6_U-33108",
+      "solids": 1,
+      "shells": 1,
+      "faces": 10,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33056",
+      "solids": 1,
+      "shells": 1,
+      "faces": 91,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33068",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33157",
+      "solids": 1,
+      "shells": 1,
+      "faces": 68,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33048",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "_______-________3-33139",
+      "solids": 1,
+      "shells": 1,
+      "faces": 30,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33115",
+      "solids": 1,
+      "shells": 1,
+      "faces": 66,
+      "valid": true
+    },
+    {
+      "name": "3-33245",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_HEADER_DOUBLE_ROW-_6_CONTA",
+      "solids": 1,
+      "shells": 1,
+      "faces": 166,
+      "valid": true
+    },
+    {
+      "name": "PIN_S (7)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (11)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33254",
+      "solids": 1,
+      "shells": 1,
+      "faces": 1882,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33067",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "_______-________2_4_-33214",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-8-VSON_5X6_U-33204",
+      "solids": 1,
+      "shells": 1,
+      "faces": 31,
+      "valid": true
+    },
+    {
+      "name": "50MIL_HEADER_BODY-33255",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-WE-DD-L_PIN_-33131",
+      "solids": 1,
+      "shells": 1,
+      "faces": 24,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-8-VSON_5X6_U-33208",
+      "solids": 1,
+      "shells": 1,
+      "faces": 10,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-8-VSON_5X6_U-33105",
+      "solids": 1,
+      "shells": 1,
+      "faces": 50,
+      "valid": true
+    },
+    {
+      "name": "_____-________1-33216",
+      "solids": 1,
+      "shells": 1,
+      "faces": 8,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33276",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33291",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "_______-________2_3_-33137",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_S (8)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-8-VSON_5X6_U-33106",
+      "solids": 1,
+      "shells": 1,
+      "faces": 31,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33258",
+      "solids": 1,
+      "shells": 1,
+      "faces": 13,
+      "valid": true
+    },
+    {
+      "name": "PIN_S (4)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33178",
+      "solids": 1,
+      "shells": 1,
+      "faces": 49,
+      "valid": true
+    },
+    {
+      "name": "LUSTRO1",
+      "solids": 1,
+      "shells": 1,
+      "faces": 52,
+      "valid": true
+    },
+    {
+      "name": "_______-________2_2_-33268",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33110",
+      "solids": 1,
+      "shells": 1,
+      "faces": 58,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-WE-DD-L_PIN_-33128",
+      "solids": 1,
+      "shells": 1,
+      "faces": 24,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33112",
+      "solids": 1,
+      "shells": 1,
+      "faces": 52,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33288",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "_____-________1-33272",
+      "solids": 1,
+      "shells": 1,
+      "faces": 8,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33084",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33123",
+      "solids": 1,
+      "shells": 1,
+      "faces": 58,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (16)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (12)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (1)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33086",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33201",
+      "solids": 1,
+      "shells": 1,
+      "faces": 49,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33103",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "_______-________4-33141",
+      "solids": 1,
+      "shells": 1,
+      "faces": 3,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33122",
+      "solids": 1,
+      "shells": 1,
+      "faces": 81,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33087",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "________3-33233",
+      "solids": 1,
+      "shells": 1,
+      "faces": 124,
+      "valid": true
+    },
+    {
+      "name": "4-33155",
+      "solids": 1,
+      "shells": 1,
+      "faces": 12,
+      "valid": true
+    },
+    {
+      "name": "50MIL_HEADER_BODY-33289",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33074",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33064",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "_______-________7-33240",
+      "solids": 1,
+      "shells": 1,
+      "faces": 40,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-8-VSON_5X6_U-33111",
+      "solids": 1,
+      "shells": 1,
+      "faces": 10,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33274",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "2-33160",
+      "solids": 1,
+      "shells": 1,
+      "faces": 12,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33097",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33172",
+      "solids": 1,
+      "shells": 1,
+      "faces": 68,
+      "valid": true
+    },
+    {
+      "name": "1-33154",
+      "solids": 1,
+      "shells": 1,
+      "faces": 16,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33065",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "2-33247",
+      "solids": 1,
+      "shells": 1,
+      "faces": 12,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33230",
+      "solids": 1,
+      "shells": 1,
+      "faces": 68,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33114",
+      "solids": 1,
+      "shells": 1,
+      "faces": 68,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33203",
+      "solids": 1,
+      "shells": 1,
+      "faces": 91,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33129",
+      "solids": 1,
+      "shells": 1,
+      "faces": 68,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33286",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33277",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33168",
+      "solids": 1,
+      "shells": 1,
+      "faces": 73,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33227",
+      "solids": 1,
+      "shells": 1,
+      "faces": 68,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33184",
+      "solids": 1,
+      "shells": 1,
+      "faces": 49,
+      "valid": true
+    },
+    {
+      "name": "50MIL_HEADER_BODY-33231",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (13)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "1-33242",
+      "solids": 1,
+      "shells": 1,
+      "faces": 16,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33192",
+      "solids": 1,
+      "shells": 1,
+      "faces": 18,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-WE-DD-L_DECKEL_2",
+      "solids": 1,
+      "shells": 1,
+      "faces": 10,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33058",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "RADYUS2",
+      "solids": 1,
+      "shells": 1,
+      "faces": 34,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33152",
+      "solids": 1,
+      "shells": 1,
+      "faces": 61,
+      "valid": true
+    },
+    {
+      "name": "JACK_DEANS_MALE",
+      "solids": 1,
+      "shells": 1,
+      "faces": 34,
+      "valid": true
+    },
+    {
+      "name": "_______-________3-33271",
+      "solids": 1,
+      "shells": 1,
+      "faces": 30,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33292",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33073",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "_______-________2_2_-33136",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_S (5)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "_______-________2_3_-33269",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33071",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33047",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "PIN_S (9)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (14)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33279",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (17)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "4-33194",
+      "solids": 1,
+      "shells": 1,
+      "faces": 12,
+      "valid": true
+    },
+    {
+      "name": "_______-________2_4_-33138",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33261",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "_______-________2_1_-33267",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (18)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "50MIL_HEADER_BODY-33237",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-8-VSON_5X6_U-33219",
+      "solids": 1,
+      "shells": 1,
+      "faces": 10,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33062",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33081",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "022035025",
+      "solids": 1,
+      "shells": 1,
+      "faces": 60,
+      "valid": true
+    },
+    {
+      "name": "PIN_B_2 (1)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "_____-________1-33140",
+      "solids": 1,
+      "shells": 1,
+      "faces": 8,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33281",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "IMPORTED1-33207",
+      "solids": 1,
+      "shells": 1,
+      "faces": 43,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33239",
+      "solids": 1,
+      "shells": 1,
+      "faces": 49,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (19)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "50MIL_HEADER_BODY-33294",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33075",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (7)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-8-VSON_5X6_U-33109",
+      "solids": 1,
+      "shells": 1,
+      "faces": 10,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33055",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "BOSS-EXTRUDE3",
+      "solids": 1,
+      "shells": 1,
+      "faces": 25,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33253",
+      "solids": 1,
+      "shells": 1,
+      "faces": 29,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33238",
+      "solids": 1,
+      "shells": 1,
+      "faces": 11,
+      "valid": true
+    },
+    {
+      "name": "50MIL_HEADER_BODY-33224",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "50MIL_HEADER_BODY-33296",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33125",
+      "solids": 1,
+      "shells": 1,
+      "faces": 63,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-8-VSON_5X6_U-33107",
+      "solids": 1,
+      "shells": 1,
+      "faces": 10,
+      "valid": true
+    },
+    {
+      "name": "IMPORTED1-33180",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33085",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "CUT-EXTRUDE2",
+      "solids": 1,
+      "shells": 1,
+      "faces": 38,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33083",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33041",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33132",
+      "solids": 1,
+      "shells": 1,
+      "faces": 81,
+      "valid": true
+    },
+    {
+      "name": "_______-________2_3_-33213",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33285",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "1-33193",
+      "solids": 1,
+      "shells": 1,
+      "faces": 16,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (8)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "USER_LIBRARY-8-VSON_5X6_U-33202",
+      "solids": 1,
+      "shells": 1,
+      "faces": 50,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (15)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "PIN_B (9)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33163",
+      "solids": 1,
+      "shells": 1,
+      "faces": 47,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33263",
+      "solids": 1,
+      "shells": 1,
+      "faces": 42,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33173",
+      "solids": 1,
+      "shells": 1,
+      "faces": 64,
+      "valid": true
+    },
+    {
+      "name": "4-33243",
+      "solids": 1,
+      "shells": 1,
+      "faces": 12,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33102",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33265",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "MANIFOLD_SOLID_BREP_33236",
+      "solids": 1,
+      "shells": 1,
+      "faces": 58,
+      "valid": true
+    },
+    {
+      "name": "4-33164",
+      "solids": 1,
+      "shells": 1,
+      "faces": 12,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 1,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 15,
+      "valid": true
+    },
+    {
+      "name": "GROGU_MODULE_BOARD_ME",
+      "solids": 1,
+      "shells": 1,
+      "faces": 143,
+      "valid": true
+    },
+    {
+      "name": "080-1655-000_3",
+      "solids": 260,
+      "shells": 260,
+      "faces": 1560,
+      "valid": true
+    },
+    {
+      "name": "155-GROGU-000",
+      "solids": 1,
+      "shells": 1,
+      "faces": 25,
+      "valid": true
+    },
+    {
+      "name": "LEAFSPRING-P3767-CG",
+      "solids": 1,
+      "shells": 1,
+      "faces": 262,
+      "valid": true
+    },
+    {
+      "name": "095-0180-000-TS1",
+      "solids": 1,
+      "shells": 1,
+      "faces": 278,
+      "valid": true
+    },
+    {
+      "name": "M1_6_0_35PITX4MM_MACHINE",
+      "solids": 1,
+      "shells": 1,
+      "faces": 25,
+      "valid": true
+    },
+    {
+      "name": "3514_18",
+      "solids": 1,
+      "shells": 1,
+      "faces": 70,
+      "valid": true
+    },
+    {
+      "name": "3514-IMPELLER-J441-346-2_6",
+      "solids": 1,
+      "shells": 1,
+      "faces": 102,
+      "valid": true
+    },
+    {
+      "name": "WIRE_FAN_P3518",
+      "solids": 0,
+      "shells": 7,
+      "faces": 54,
+      "valid": true
+    },
+    {
+      "name": "600-13768-0000-A04",
+      "solids": 1,
+      "shells": 1,
+      "faces": 251,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 98,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 0,
+      "shells": 15,
+      "faces": 18,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 114,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 406,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 62,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 245,
+      "shells": 245,
+      "faces": 2022,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 4,
+      "shells": 8,
+      "faces": 278,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 5,
+      "shells": 5,
+      "faces": 2133,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 8,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 1718,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 8,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 1718,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 30,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 0,
+      "shells": 3,
+      "faces": 28,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 23,
+      "shells": 23,
+      "faces": 4486,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 13,
+      "shells": 13,
+      "faces": 484,
+      "valid": true
+    },
+    {
+      "name": "LL_VENDOR_DATECODE_TOP_SML",
+      "solids": 1,
+      "shells": 1,
+      "faces": 331,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 57,
+      "valid": true
+    },
+    {
+      "name": "MECH_RECT_01000X00790_HOLES_C_AF0",
+      "solids": 4,
+      "shells": 4,
+      "faces": 32,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 1,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 2,
+      "shells": 2,
+      "faces": 51,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 1,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 2,
+      "shells": 2,
+      "faces": 51,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 1,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 2,
+      "shells": 2,
+      "faces": 51,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 24,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 44,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 44,
+      "valid": true
+    },
+    {
+      "name": "LOGO_LABEL_699_PPID_0050X0050",
+      "solids": 1,
+      "shells": 1,
+      "faces": 189,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 159,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 28,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 58,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 58,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 102,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 102,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 102,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 34,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 34,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 12,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 19,
+      "shells": 19,
+      "faces": 1966,
+      "valid": true
+    },
+    {
+      "name": "FID_40_80SM",
+      "solids": 2,
+      "shells": 2,
+      "faces": 30,
+      "valid": true
+    },
+    {
+      "name": "LOGO_LABEL_PPID_0180X0050",
+      "solids": 1,
+      "shells": 1,
+      "faces": 207,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 26,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 29,
+      "valid": true
+    },
+    {
+      "name": "LTPT025C",
+      "solids": 1,
+      "shells": 1,
+      "faces": 3,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 3,
+      "shells": 3,
+      "faces": 2070,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 119,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 53,
+      "valid": true
+    },
+    {
+      "name": "MULTI_QFN020R_P050_0025X00_GREY",
+      "solids": 1,
+      "shells": 1,
+      "faces": 22,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 8,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 2,
+      "shells": 2,
+      "faces": 1717,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 32,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 136,
+      "valid": true
+    },
+    {
+      "name": "LTPT071C125D",
+      "solids": 1,
+      "shells": 1,
+      "faces": 3,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 279,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 51,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 51,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 105,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 238,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 26,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 26,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 48,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 3,
+      "shells": 3,
+      "faces": 37,
+      "valid": true
+    },
+    {
+      "name": "LOGO_SILK_HF_I0185X0120",
+      "solids": 1,
+      "shells": 1,
+      "faces": 30,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 34,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 24,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 60,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 44,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 197,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 149,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 91,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 106,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 106,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 106,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 105,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 105,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 68,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 68,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 68,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 68,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 68,
+      "valid": true
+    },
+    {
+      "name": "LTPT089C125D",
+      "solids": 1,
+      "shells": 1,
+      "faces": 3,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 48,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 986,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 26,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 121,
+      "valid": true
+    },
+    {
+      "name": "VTB_045CT071CB125D020P",
+      "solids": 1,
+      "shells": 1,
+      "faces": 3,
+      "valid": true
+    },
+    {
+      "name": "VSB_071C125D",
+      "solids": 1,
+      "shells": 1,
+      "faces": 3,
+      "valid": true
+    },
+    {
+      "name": "VST_071C125D",
+      "solids": 1,
+      "shells": 1,
+      "faces": 3,
+      "valid": true
+    },
+    {
+      "name": "155-0899-000",
+      "solids": 1,
+      "shells": 1,
+      "faces": 31,
+      "valid": true
+    },
+    {
+      "name": "375-0137-000",
+      "solids": 1,
+      "shells": 1,
+      "faces": 1377,
+      "valid": true
+    },
+    {
+      "name": "155-0900-000",
+      "solids": 1,
+      "shells": 1,
+      "faces": 19,
+      "valid": true
+    },
+    {
+      "name": "P4M8A_VA_20220418C_1",
+      "solids": 1,
+      "shells": 1,
+      "faces": 502,
+      "valid": true
+    },
+    {
+      "name": "L_2016_1",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "R0201_1",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "C0201_1",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "BGA234_055_750X1050_1",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "R0402_1XX",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "NAND_BGA272_1",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "DFN2X2-8_1",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "WLP6_050_156X106_1",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "L_MAMK2520_1",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "C0402_1XX",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "QFN6_2X2MM_1",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "XTAL-20X16_1",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "330-0266-000_MODULE_BOARD",
+      "solids": 1,
+      "shells": 1,
+      "faces": 33,
+      "valid": true
+    },
+    {
+      "name": "155-0576-000",
+      "solids": 1,
+      "shells": 1,
+      "faces": 32,
+      "valid": true
+    },
+    {
+      "name": "WIFI_ANTENNA_P3526",
+      "solids": 1,
+      "shells": 1,
+      "faces": 24,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 85,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 12,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 178,
+      "valid": true
+    },
+    {
+      "name": "COAXIAL_CABLE_WIFI_LEFT_P3526",
+      "solids": 1,
+      "shells": 1,
+      "faces": 15,
+      "valid": true
+    },
+    {
+      "name": "COAXIAL_CABLE_WIFI_P3526",
+      "solids": 1,
+      "shells": 1,
+      "faces": 13,
+      "valid": true
+    },
+    {
+      "name": "142-13526-1000-A01-SKU0000",
+      "solids": 1,
+      "shells": 1,
+      "faces": 20,
+      "valid": true
+    },
+    {
+      "name": "LOGO_SILK_180_I560",
+      "solids": 1,
+      "shells": 1,
+      "faces": 8,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 85,
+      "valid": true
+    },
+    {
+      "name": "SUPPORT_HEX_M3_0XL35_FF (3)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 12,
+      "valid": true
+    },
+    {
+      "name": "SUPPORT_HEX_M3_0XL35_FF (1) (1)",
+      "solids": 0,
+      "shells": 1,
+      "faces": 2,
+      "valid": true
+    },
+    {
+      "name": "SUPPORT_HEX_M3_0XL35_FF (2) (1)",
+      "solids": 0,
+      "shells": 1,
+      "faces": 2,
+      "valid": true
+    },
+    {
+      "name": "XM430_DUMMY (1)",
+      "solids": 1,
+      "shells": 9,
+      "faces": 262,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 0,
+      "shells": 8,
+      "faces": 8,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 82,
+      "valid": true
+    },
+    {
+      "name": "PHS_M2X4",
+      "solids": 0,
+      "shells": 1,
+      "faces": 1,
+      "valid": true
+    },
+    {
+      "name": "PHS_M2X4 (1)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 23,
+      "valid": true
+    },
+    {
+      "name": "DUMMY_DC12_3",
+      "solids": 1,
+      "shells": 1,
+      "faces": 227,
+      "valid": true
+    },
+    {
+      "name": "WBH_M2_5X12_8",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "DC12_A01_SPACER_RING_1_2",
+      "solids": 1,
+      "shells": 1,
+      "faces": 13,
+      "valid": true
+    },
+    {
+      "name": "DC12_A01_CVR_CABLE_5_1",
+      "solids": 1,
+      "shells": 1,
+      "faces": 116,
+      "valid": true
+    },
+    {
+      "name": "FHS-M2.5x14 (modelled, ISO 7046-1 form)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 5,
+      "valid": true
+    },
+    {
+      "name": "PR16_A01_TIRE_2",
+      "solids": 1,
+      "shells": 1,
+      "faces": 1458,
+      "valid": true
+    },
+    {
+      "name": "PR30_ISW_01",
+      "solids": 1,
+      "shells": 1,
+      "faces": 1324,
+      "valid": true
+    },
+    {
+      "name": "PHS-M2.5x20 (modelled: PHS_M2_5X16 head, shank extended to 20.0)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 22,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 0,
+      "shells": 33,
+      "faces": 66,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 2,
+      "shells": 6,
+      "faces": 273,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 0,
+      "shells": 8,
+      "faces": 8,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 67,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 0,
+      "shells": 41,
+      "faces": 82,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 5,
+      "faces": 301,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 0,
+      "shells": 4,
+      "faces": 4,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 102,
+      "valid": true
+    },
+    {
+      "name": "ILA-A01_OPEN",
+      "solids": 1,
+      "shells": 1,
+      "faces": 186,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 0,
+      "shells": 16,
+      "faces": 16,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 112,
+      "valid": true
+    },
+    {
+      "name": "ILA-A02_OPEN",
+      "solids": 1,
+      "shells": 1,
+      "faces": 186,
+      "valid": true
+    },
+    {
+      "name": "FR12_H104",
+      "solids": 1,
+      "shells": 1,
+      "faces": 112,
+      "valid": true
+    },
+    {
+      "name": "IRB-A01_OPEN",
+      "solids": 1,
+      "shells": 1,
+      "faces": 117,
+      "valid": true
+    },
+    {
+      "name": "IRB-A02_OPEN",
+      "solids": 1,
+      "shells": 1,
+      "faces": 117,
+      "valid": true
+    },
+    {
+      "name": "ICA-A01_OPEN",
+      "solids": 1,
+      "shells": 1,
+      "faces": 68,
+      "valid": true
+    },
+    {
+      "name": "IBL-A01_OPEN",
+      "solids": 1,
+      "shells": 1,
+      "faces": 133,
+      "valid": true
+    },
+    {
+      "name": "ILR-A01_OPEN",
+      "solids": 1,
+      "shells": 1,
+      "faces": 34,
+      "valid": true
+    },
+    {
+      "name": "PR33_IFB-A01",
+      "solids": 1,
+      "shells": 1,
+      "faces": 17,
+      "valid": true
+    },
+    {
+      "name": "COMPOUND",
+      "solids": 0,
+      "shells": 3,
+      "faces": 3,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 276,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 2,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 2,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 2,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 2,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 2,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 14,
+      "valid": true
+    },
+    {
+      "name": "PR33_SPD-A01",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 1,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 13,
+      "valid": true
+    },
+    {
+      "name": "SHELL",
+      "solids": 0,
+      "shells": 1,
+      "faces": 1,
+      "valid": true
+    },
+    {
+      "name": "SOLID",
+      "solids": 1,
+      "shells": 1,
+      "faces": 13,
+      "valid": true
+    },
+    {
+      "name": "DC12_A01_SPACER_RING",
+      "solids": 1,
+      "shells": 1,
+      "faces": 13,
+      "valid": true
+    },
+    {
+      "name": "sixth_brkt (wrist roll adapter)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 84,
+      "valid": true
+    },
+    {
+      "name": "Intel RealSense D435",
+      "solids": 2,
+      "shells": 2,
+      "faces": 20,
+      "valid": true
+    },
+    {
+      "name": "A4 side screws (2x M2.5x7, reused)",
+      "solids": 2,
+      "shells": 2,
+      "faces": 10,
+      "valid": true
+    },
+    {
+      "name": "Lidar_Mount_Reference",
+      "solids": 0,
+      "shells": 0,
+      "faces": 0,
+      "valid": true
+    },
+    {
+      "name": "Lidar_Front",
+      "solids": 1,
+      "shells": 1,
+      "faces": 27,
+      "valid": true
+    },
+    {
+      "name": "Lidar_Rear",
+      "solids": 1,
+      "shells": 1,
+      "faces": 27,
+      "valid": true
+    },
+    {
+      "name": "Profile_Holder_v2 (printed PETG)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 208,
+      "valid": true
+    },
+    {
+      "name": "Profile_2020_Tslot6_L450",
+      "solids": 1,
+      "shells": 1,
+      "faces": 51,
+      "valid": true
+    },
+    {
+      "name": "Mast_Fasteners (4x M3x16 + washer + nut)",
+      "solids": 16,
+      "shells": 16,
+      "faces": 48,
+      "valid": true
+    },
+    {
+      "name": "Arducam_mock (32x32 UVC, M12 lens, simplified)",
+      "solids": 12,
+      "shells": 12,
+      "faces": 49,
+      "valid": true
+    },
+    {
+      "name": "A7_MastCam_Frame",
+      "solids": 1,
+      "shells": 1,
+      "faces": 38,
+      "valid": true
+    },
+    {
+      "name": "A1_Rack_8cell",
+      "solids": 1,
+      "shells": 1,
+      "faces": 208,
+      "valid": true
+    },
+    {
+      "name": "A4_Arm_Bracket",
+      "solids": 1,
+      "shells": 1,
+      "faces": 43,
+      "valid": true
+    },
+    {
+      "name": "A5_MastCam_Base",
+      "solids": 1,
+      "shells": 1,
+      "faces": 39,
+      "valid": true
+    },
+    {
+      "name": "A3_Park_Stand",
+      "solids": 1,
+      "shells": 1,
+      "faces": 17,
+      "valid": true
+    },
+    {
+      "name": "A6_MastCam_Ring",
+      "solids": 1,
+      "shells": 1,
+      "faces": 18,
+      "valid": true
+    },
+    {
+      "name": "A2_Rack_4cell",
+      "solids": 1,
+      "shells": 1,
+      "faces": 108,
+      "valid": true
+    },
+    {
+      "name": "LB-012 LiPo 11.1V 1800mAh (mock box 88x35x26)",
+      "solids": 1,
+      "shells": 1,
+      "faces": 6,
+      "valid": true
+    }
+  ],
+  "dxf_validation": [
+    {
+      "file": "A1_Rack_8cell_profile.dxf",
+      "exact_extent_mm": [
+        216.0,
+        81.0
+      ],
+      "largest_endpoint_rounding_gap_mm": 0.0,
+      "open_ends_at_0.0001mm": 0
+    },
+    {
+      "file": "A2_Rack_4cell_profile.dxf",
+      "exact_extent_mm": [
+        120.0,
+        81.0
+      ],
+      "largest_endpoint_rounding_gap_mm": 0.0,
+      "open_ends_at_0.0001mm": 0
+    },
+    {
+      "file": "A3_Park_Stand_profile.dxf",
+      "exact_extent_mm": [
+        50.0,
+        50.0
+      ],
+      "largest_endpoint_rounding_gap_mm": 0.0,
+      "open_ends_at_0.0001mm": 0
+    },
+    {
+      "file": "A4_Arm_Bracket_profile.dxf",
+      "exact_extent_mm": [
+        84.0,
+        48.4974
+      ],
+      "largest_endpoint_rounding_gap_mm": 8.881784197001252e-16,
+      "open_ends_at_0.0001mm": 0
+    },
+    {
+      "file": "A5_MastCam_Base_profile.dxf",
+      "exact_extent_mm": [
+        45.0,
+        45.0
+      ],
+      "largest_endpoint_rounding_gap_mm": 4.249698680061035e-05,
+      "open_ends_at_0.0001mm": 0
+    },
+    {
+      "file": "A6_MastCam_Ring_profile.dxf",
+      "exact_extent_mm": [
+        63.75,
+        45.0
+      ],
+      "largest_endpoint_rounding_gap_mm": 3.2439129250290487e-06,
+      "open_ends_at_0.0001mm": 0
+    },
+    {
+      "file": "A7_MastCam_Frame_profile.dxf",
+      "exact_extent_mm": [
+        38.0,
+        46.25
+      ],
+      "largest_endpoint_rounding_gap_mm": 4.440892098500626e-16,
+      "open_ends_at_0.0001mm": 0
+    },
+    {
+      "file": "Leader_Grip_Body_profile.dxf",
+      "exact_extent_mm": [
+        32.1,
+        57.320800000000006
+      ],
+      "largest_endpoint_rounding_gap_mm": 0.0,
+      "open_ends_at_0.0001mm": 0
+    },
+    {
+      "file": "Leader_Grip_Pivot_Washer_profile.dxf",
+      "exact_extent_mm": [
+        10.0,
+        10.0
+      ],
+      "largest_endpoint_rounding_gap_mm": 0,
+      "open_ends_at_0.0001mm": 0
+    },
+    {
+      "file": "Leader_Grip_Ring_A_profile.dxf",
+      "exact_extent_mm": [
+        31.0,
+        83.5
+      ],
+      "largest_endpoint_rounding_gap_mm": 5.465899060381552e-06,
+      "open_ends_at_0.0001mm": 0
+    },
+    {
+      "file": "Leader_Grip_Ring_B_profile.dxf",
+      "exact_extent_mm": [
+        27.858,
+        57.11241249939677
+      ],
+      "largest_endpoint_rounding_gap_mm": 2.5845402615475973e-05,
+      "open_ends_at_0.0001mm": 0
+    },
+    {
+      "file": "Profile_Holder_v2_profile.dxf",
+      "exact_extent_mm": [
+        60.0,
+        60.0
+      ],
+      "largest_endpoint_rounding_gap_mm": 0.0,
+      "open_ends_at_0.0001mm": 0
+    },
+    {
+      "file": "sixth_brkt_wrist_roll_adapter_profile.dxf",
+      "exact_extent_mm": [
+        53.5,
+        35.5
+      ],
+      "largest_endpoint_rounding_gap_mm": 5.3787548690516774e-05,
+      "open_ends_at_0.0001mm": 0
+    }
+  ],
+  "step_repair_provenance": {
+    "assembly_original_records_modified": [
+      27367,
+      576255,
+      576256,
+      576300,
+      1606934
+    ],
+    "assembly_records_added": 117262,
+    "assembly_original_records_removed": 0,
+    "a5_repair": "split collapsed notch vertex and reconnect three incident edges; existing curves and surfaces retained",
+    "vendor_repair": "split six disconnected coplanar circular regions into separate faces and correct main-face wire orientation; remaining faces retained",
+    "vendor_appended_geometry_records": 117260,
+    "line_endings_preserved": true,
+    "native_fusion_modified": false
+  },
+  "vendor_repair_comparison": {
+    "shapes": [
+      {
+        "file": "PR30_IPL_01.brep",
+        "valid": false,
+        "bbox_mm": [
+          -4.773502691928233,
+          -9.000000100249999,
+          -68.77350269192856,
+          68.7735026919279,
+          3.3753812603732947e-06,
+          68.77350269192733
+        ],
+        "volume_mm3": 40034.507280210164,
+        "surface_area_mm2": 26812.355869127274,
+        "counts": {
+          "TopAbs_ShapeEnum.TopAbs_FACE": 1458,
+          "TopAbs_ShapeEnum.TopAbs_EDGE": 7604
+        }
+      },
+      {
+        "file": "PR30_split_True.brep",
+        "valid": true,
+        "bbox_mm": [
+          -4.773502691928233,
+          -9.000000100249999,
+          -68.77350269192856,
+          68.7735026919279,
+          3.3753812603732947e-06,
+          68.77350269192733
+        ],
+        "volume_mm3": 46884.78390168126,
+        "surface_area_mm2": 33664.66300984207,
+        "counts": {
+          "TopAbs_ShapeEnum.TopAbs_FACE": 1464,
+          "TopAbs_ShapeEnum.TopAbs_EDGE": 7604
+        }
+      }
+    ],
+    "vertex_coordinate_sets_equal_1e8": true
+  },
+  "limitations": [
+    "Native Fusion source was not modified or revalidated on this PC.",
+    "Kernel shape validity does not certify mechanical design, fit, tolerances or manufacturing suitability.",
+    "Vendor component interpretation changed from an invalid face to a coherent solid; its boundary geometry and envelope were retained. The original invalid volume is not a reliable baseline.",
+    "Original package disclosures about estimates, placeholder components, absent fasteners and camera hole-pattern mismatch remain applicable.",
+    "No aggregate robot material volume is asserted: the assembly includes surface models, repeated/coincident vendor geometry and simplified components."
+  ]
+}
