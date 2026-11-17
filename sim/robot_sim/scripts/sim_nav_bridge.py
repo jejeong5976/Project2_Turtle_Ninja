@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Isaac Lab 시뮬 <-> ROS 2 (Lyrical) 브리지: Nav2 를 시뮬 로봇에 붙여 시험.
 
-실행은 scripts/sim_nav_bridge.sh 로 (ROS 환경 + Isaac 파이썬). 경기장 = 발제 v5 주사위 경기장 (sim_core/dice_mission, 출발점에서 시작).
+실행은 scripts/sim_nav_bridge.sh 로 (ROS 환경 + Isaac 파이썬). 경기장 = 발제 주사위 경기장 (sim_core/dice_mission, 출발점에서 시작).
 내보내는 것 (use_sim_time 기준 /clock):
   /clock                      시뮬 시각 (물리 0.005 s × 4 = 0.02 s 마다)
-  /odom, TF odom -> base_link 정답 자세를 출발점 기준으로 (실물 swerve_controller 의 /odom 자리, 잡음 없음)
+  /odom, TF odom -> base_footprint 정답 자세를 출발점 기준으로 (실물 swerve_controller 의 /odom 자리, 잡음 없음)
   /joint_states               모든 관절 (robot_state_publisher 가 나머지 TF)
   /lidar_front/scan, /lidar_rear/scan   레이캐스트 라이다 (360 · 1°, 0.05–8 m, 프레임 base_scan_front/rear, URDF 그대로 = 바닥 위 60 mm)
                               자기 몸(바퀴 · 조향 모듈 · 차체 기둥 · 반대쪽 라이다)에 가린 빔은 돌아오지 않음(inf) 처리 (sim_core/lidar_self.py)
@@ -13,6 +13,16 @@
   /sim/traffic_light_truth    dice 신호등 정답 상태 std_msgs/String 'R' · 'Y' · 'G' · 'OFF' (10 Hz). scripts/fake_traffic_light.py 가 TrafficLight 로 바꿈
 받는 것: /cmd_vel (geometry_msgs/TwistStamped, Nav2 기본) -> 배포판 스워브 컨트롤러 (SwerveAction). 0.5 s 끊기면 정지.
         /sim/person (geometry_msgs/PointStamped, map xy) -> 시험용 '사람' 상자 (0.25 × 0.35 × 1.6 m, 고정) 를 그 자리에 세움. z < 0 이면 치움
+        /sim/overlay (std_msgs/String) -> 녹화 영상 둘째 줄 글자 (미션 단계 등, 영문)
+        /sim/puck (geometry_msgs/PointStamped, frame_id = 퍽 ID, map xyz = 퍽 중심) -> dice 퍽을 그 자리로 옮김 (선 자세). z < 0 이면 경기장 밖으로
+                                    (팔 없이 미션을 시험할 때 가짜 팔이 집기 · 놓기 결과를 화면에 맞추는 용도)
+        /sim/arm (std_msgs/String) -> 팔 자세 바로 옮김: TUCK · READY · LOOK_PUCK (turtleninja_maze_env 자세 이름)
+                                     또는 'q:J1,J2,J3,J4,J5' (rad, URDF, 그리퍼 열림) — LOOK 후보 시험용
+        /sim/teleport (geometry_msgs/PoseStamped, map xy + yaw) -> 로봇을 그 자리로 옮김 (odom 도 같이 뜀, AMCL 안 쓸 때만)
+--wrist 면 손목 D435 를 realsense2_camera 와 같은 이름으로 (perception config/perception.yaml wrist.* 기본값):
+  /camera/camera/color/image_raw (rgb8) · /camera/camera/aligned_depth_to_color/image_raw (16UC1 mm, 0 = 없음) ·
+  /camera/camera/color/camera_info, frame_id = d435_color_optical_frame (URDF, TF 는 robot_state_publisher)
+  /sim/pucks_truth (visualization_msgs/MarkerArray, odom 프레임, id = 퍽 ID, ns = 색_모양) 퍽 중심 정답 (2 Hz, 평가용)
 """
 import argparse
 import math
@@ -30,13 +40,16 @@ parser.add_argument('--real', action='store_true', help='실제 배경 · 천장
 parser.add_argument('--no_realtime', action='store_true', help='실제 시간 맞춤 끄기 (기본은 시뮬 시각 = 벽시계)')
 parser.add_argument('--scan_every', type=int, default=5, help='라이다 발행 간격 [스텝] (5 = 10 Hz)')
 parser.add_argument('--signal_delay', type=float, default=5.0, help='dice: 시작 몇 초 뒤 신호등 점멸 (문제 파일 순서, view_dice 와 같음). 음수면 점멸 안 함')
+parser.add_argument('--wrist', action='store_true', help='손목 D435 컬러 · 정렬 깊이 · camera_info 를 ROS 로 발행 + 퍽 정답')
+parser.add_argument('--wrist_every', type=int, default=5, help='손목 영상 발행 간격 [스텝] (5 = 10 Hz)')
+parser.add_argument('--real_speed', action='store_true', help='몸 속도 · 가속 한계를 실물 config/controllers.yaml swerve_controller 값으로 (기본 = 학습용 하드웨어 끝 0.26 m/s · 1.675 rad/s)')
 parser.add_argument('--record', default=None, help='녹화 mp4 경로: 고정 카메라로 시뮬 시각 기준 영상 저장 (창 필요 없음)')
 parser.add_argument('--record_view', default='-0.3,-1.2,2.4,-0.3,-2.6,0.0', help='녹화 카메라 위치 x,y,z,바라볼 점 x,y,z (map)')
 parser.add_argument('--record_secs', type=float, default=60.0, help='녹화 길이 [시뮬 s] (끝나면 파일 닫음)')
 parser.add_argument('--record_fps', type=int, default=25)
 add_launcher_args(parser)
 args = parser.parse_args()
-if args.camera or args.record:
+if args.camera or args.record or args.wrist:
     args.enable_cameras = True
 
 import torch
@@ -54,9 +67,16 @@ else:
 cfg.scene.num_envs = 1
 if args.real:
     tme.use_real_look(cfg)
+if args.real_speed:
+    tme.use_real_speed_limits(cfg)
+    b = cfg.actions.base
+    print(f'[bridge] 실물 속도 한계: {b.max_linear} m/s · {b.max_angular} rad/s, 가속 {b.max_linear_accel} · {b.max_angular_accel}', flush=True)
 if args.camera:
     tme.add_birdeye_camera(cfg, width=1280, height=720)
-    tme.add_wrist_d435(cfg, data_types=('rgb',))
+    if not args.wrist:
+        tme.add_wrist_d435(cfg, data_types=('rgb',))
+if args.wrist:
+    tme.add_wrist_d435(cfg, data_types=('rgb', 'distance_to_image_plane'))
 # 시험용 '사람': 바닥에 선 고정 상자. 처음엔 경기장 밖에 두고 /sim/person 으로 옮김. 라이다가 맞히도록 레이캐스트 대상에 추가
 import isaaclab.sim as sim_utils
 from isaaclab.assets import RigidObjectCfg
@@ -93,11 +113,12 @@ RANGE_MIN, RANGE_MAX = 0.05, tme.LIDAR_MAX_M
 from sim_core.lidar_self import SelfOcclusion
 SELF = SelfOcclusion(tme.ROBOT_URDF)
 STEER_NAMES = [f'steer_{m}_joint' for m in ('fl', 'fr', 'rl', 'rr')]
+BASE = 'base_footprint'   # 로봇 루트 프레임 (실물 swerve_controller 의 odom -> base_footprint 와 같음)
 
 
 def scan_offset(side):
-    """base_link 기준 base_scan_<side> (위치, 회전행렬) = URDF 그대로."""
-    t, R = tme.urdf_link_pose(tme.ROBOT_URDF, f'base_scan_{side}')
+    """로봇 루트 (BASE) 기준 base_scan_<side> (위치, 회전행렬) = URDF 그대로."""
+    t, R = tme.urdf_link_pose(tme.ROBOT_URDF, f'base_scan_{side}', root=BASE)
     return torch.tensor(t, dtype=torch.float32), torch.tensor(R, dtype=torch.float32)
 
 
@@ -106,7 +127,8 @@ with launch_simulation(cfg, args):
     import omni.usd
     stage = omni.usd.get_context().get_stage()
     tme.apply_robot_real_colors(stage)
-    crank = tme.add_crank_visuals(stage)
+    if args.camera or args.wrist:
+        tme.hide_wrist_camera_body(stage)
     if args.real:
         # 실제 겉모습 = view_dice / view_maze --real 과 같음: 천장 조명 + 벽판 유광 반사 (실제 영상 반사율 0.13 에 맞춘 굴절률 2.6, 거칠기 0.08)
         from pxr import Sdf
@@ -136,13 +158,14 @@ with launch_simulation(cfg, args):
     # ---- ROS (시스템 Lyrical rclpy) ----
     import rclpy
     from builtin_interfaces.msg import Time
-    from geometry_msgs.msg import PointStamped, PoseWithCovarianceStamped, TransformStamped, TwistStamped
+    from geometry_msgs.msg import PointStamped, PoseStamped, PoseWithCovarianceStamped, TransformStamped, TwistStamped
     from nav_msgs.msg import Odometry
     from rclpy.node import Node
     from rclpy.qos import QoSProfile, ReliabilityPolicy
     from rosgraph_msgs.msg import Clock
     from std_msgs.msg import String
-    from sensor_msgs.msg import JointState, LaserScan
+    from sensor_msgs.msg import CameraInfo, Image, JointState, LaserScan
+    from visualization_msgs.msg import Marker, MarkerArray
     from tf2_msgs.msg import TFMessage
 
     rclpy.init()
@@ -166,6 +189,20 @@ with launch_simulation(cfg, args):
     node.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', lambda m: amcl_ok.__setitem__(0, True), 10)
     person_req = []
     node.create_subscription(PointStamped, '/sim/person', lambda m: person_req.append((m.point.x, m.point.y, m.point.z)), 10)
+    puck_req = []
+    overlay = ['']
+    node.create_subscription(String, '/sim/overlay', lambda m: overlay.__setitem__(0, m.data), 10)
+    node.create_subscription(PointStamped, '/sim/puck',
+                             lambda m: puck_req.append((m.header.frame_id, m.point.x, m.point.y, m.point.z)), 10)
+    arm_req, tele_req = [], []
+    node.create_subscription(String, '/sim/arm', lambda m: arm_req.append(m.data.strip()), 10)
+    node.create_subscription(PoseStamped, '/sim/teleport', lambda m: tele_req.append(
+        (m.pose.position.x, m.pose.position.y, 2 * math.atan2(m.pose.orientation.z, m.pose.orientation.w))), 10)
+    if args.wrist:
+        pub_color = node.create_publisher(Image, '/camera/camera/color/image_raw', 5)
+        pub_depth = node.create_publisher(Image, '/camera/camera/aligned_depth_to_color/image_raw', 5)
+        pub_info = node.create_publisher(CameraInfo, '/camera/camera/color/camera_info', 5)
+        pub_truth = node.create_publisher(MarkerArray, '/sim/pucks_truth', 5)
     cm_state = ['']                                                   # 녹화 글자용: 비상 정지 상태
     try:
         from nav2_msgs.msg import CollisionMonitorState
@@ -180,7 +217,7 @@ with launch_simulation(cfg, args):
     names = list(robot.joint_names)
     term = env.action_manager.get_term('base')
     offs = {s: tuple(v.to(dev) for v in scan_offset(s)) for s in ('front', 'rear')}
-    # 자기 몸 가림: 라이다별 빔 방향 (base_link 기준) · 원점, 고정 부분 가림 거리는 한 번만 계산
+    # 자기 몸 가림: 라이다별 빔 방향 (BASE 기준) · 원점, 고정 부분 가림 거리는 한 번만 계산
     import numpy as np
     beam_scan = -math.pi + np.arange(N_BEAMS) * 2 * math.pi / N_BEAMS
     occ = {}
@@ -191,6 +228,17 @@ with launch_simulation(cfg, args):
         skip = (f'lidar_{s_}_link',)
         occ[s_] = (o_, a_, skip, SELF.ray_hits(o_, a_, SELF.segments({}, skip, moving=False)))
     steer_ids = robot.find_joints(STEER_NAMES, preserve_order=True)[0]
+    ARM_NAMES = tme.ARM_JOINTS
+    arm_ids = robot.find_joints(ARM_NAMES, preserve_order=True)[0]
+    finger_ids = robot.find_joints(tme.FINGERS, preserve_order=True)[0]
+    ARM_POSES = {'TUCK': tme.TUCK_POSE, 'READY': tme.READY_POSE, 'LOOK_PUCK': tme.LOOK_PUCK_POSE}
+    ids0 = torch.tensor([0], device=dev)
+
+    def set_joints(ids, vals):
+        q = torch.tensor([vals], device=dev, dtype=torch.float32)
+        robot.write_joint_position_to_sim_index(position=q, joint_ids=ids, env_ids=ids0)
+        robot.write_joint_velocity_to_sim_index(velocity=torch.zeros_like(q), joint_ids=ids, env_ids=ids0)
+        robot.actuators.target_command.set_position_index(value=q, joint_ids=ids, env_ids=ids0)
     person = env.scene['person']
     act = torch.zeros(1, env.action_manager.total_action_dim, device=dev)
     dt = cfg.sim.dt * cfg.decimation
@@ -200,7 +248,7 @@ with launch_simulation(cfg, args):
         return Time(sec=ns // 1_000_000_000, nanosec=ns % 1_000_000_000)
 
     def pose_now():
-        """env 원점 기준 base_link (위치 (3,), 쿼터니언 (x, y, z, w))"""
+        """env 원점 기준 로봇 루트 BASE (위치 (3,), 쿼터니언 (x, y, z, w))"""
         return robot.data.root_pos_w.torch[0] - org, robot.data.root_quat_w.torch[0]
 
     env.reset()
@@ -222,8 +270,8 @@ with launch_simulation(cfg, args):
         data = env.scene[f'lidar_{side}'].data
         hits = data.ray_hits_w.torch[0] if hasattr(data.ray_hits_w, 'torch') else data.ray_hits_w[0]
         ok = torch.isfinite(hits).all(-1)
-        rel = quat_apply(quat_inv(q_w)[None].expand(hits.shape[0], 4), hits - so)   # base_link 축
-        rel = rel @ R                                               # base_scan 축 (R = base_link <- scan)
+        rel = quat_apply(quat_inv(q_w)[None].expand(hits.shape[0], 4), hits - so)   # BASE 축
+        rel = rel @ R                                               # base_scan 축 (R = BASE <- scan)
         ang = torch.atan2(rel[:, 1], rel[:, 0])
         rng = torch.hypot(rel[:, 0], rel[:, 1])
         ok &= (rng >= RANGE_MIN) & (rng <= RANGE_MAX)
@@ -244,6 +292,48 @@ with launch_simulation(cfg, args):
         m.ranges = ranges.tolist()
         return m
 
+    K_D435 = [tme.D435_K['fx'], 0.0, tme.D435_K['cx'], 0.0, tme.D435_K['fy'], tme.D435_K['cy'], 0.0, 0.0, 1.0]
+    puck_meta = {p['id']: f"{p['color']}_{p['shape']}" for p in dm.MISSION['pucks']} if args.arena == 'dice' else {}
+
+    def pub_wrist(ts, qi):
+        """손목 D435 컬러 · 정렬 깊이 (같은 렌더 = 같은 stamp) + camera_info, 2 Hz 로 퍽 정답 (odom)"""
+        cam = env.scene['wrist_d435']
+        w, h = tme.D435_SIZE
+        rgb = cam.data.output['rgb'][0, ..., :3].cpu().numpy().astype(np.uint8)
+        dep = cam.data.output['distance_to_image_plane'][0, ..., 0].cpu().numpy()
+        dep = np.where(np.isfinite(dep) & (dep > 0) & (dep < 10), np.round(dep * 1000), 0).astype(np.uint16)
+        for pub, enc, arr, step_ in ((pub_color, 'rgb8', rgb, w * 3), (pub_depth, '16UC1', dep, w * 2)):
+            im = Image()
+            im.header.stamp, im.header.frame_id = ts, tme.D435_COLOR_FRAME
+            im.height, im.width, im.encoding, im.is_bigendian, im.step = h, w, enc, 0, step_
+            im.data = arr.tobytes()
+            pub.publish(im)
+        ci = CameraInfo()
+        ci.header.stamp, ci.header.frame_id = ts, tme.D435_COLOR_FRAME
+        ci.height, ci.width, ci.distortion_model = h, w, 'plumb_bob'
+        ci.d = [0.0] * 5
+        ci.k = K_D435
+        ci.r = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+        ci.p = [K_D435[0], 0.0, K_D435[2], 0.0, 0.0, K_D435[4], K_D435[5], 0.0, 0.0, 0.0, 1.0, 0.0]
+        pub_info.publish(ci)
+        if step % (args.wrist_every * 5) == 0 and puck_meta:
+            ma = MarkerArray()
+            for pid, kind in puck_meta.items():
+                obj = env.scene[f'puck_{pid:02d}']
+                pw = obj.data.root_pos_w.torch[0] - org
+                po_ = quat_apply(qi[None], (pw - p0)[None])[0]
+                qo_ = quat_mul(qi[None], obj.data.root_quat_w.torch[0][None])[0]
+                mk = Marker()
+                mk.header.stamp, mk.header.frame_id = ts, 'odom'
+                mk.ns, mk.id, mk.type, mk.action = kind, pid, Marker.CYLINDER, Marker.ADD
+                (mk.pose.position.x, mk.pose.position.y, mk.pose.position.z) = (float(v) for v in po_)
+                (mk.pose.orientation.x, mk.pose.orientation.y, mk.pose.orientation.z, mk.pose.orientation.w) = (float(v) for v in qo_)
+                mk.scale.x = mk.scale.y = 0.03
+                mk.scale.z = 0.06
+                mk.color.a, mk.color.g = 0.5, 1.0
+                ma.markers.append(mk)
+            pub_truth.publish(ma)
+
     with torch.inference_mode():
         while env.sim.is_running() if hasattr(env.sim, 'is_running') else True:
             rclpy.spin_once(node, timeout_sec=0.0)
@@ -255,12 +345,52 @@ with launch_simulation(cfg, args):
                 pose[0, :3] += org
                 person.write_root_pose_to_sim_index(root_pose=pose, env_ids=torch.tensor([0], device=dev))
                 print(f'[bridge] 사람 -> ({px:.2f}, {py:.2f})', flush=True)
+            while puck_req:                                           # 퍽 옮기기 (가짜 팔, map = env 원점 기준)
+                pid, px, py, pz = puck_req.pop(0)
+                try:
+                    obj = env.scene[f'puck_{int(pid):02d}']
+                except (KeyError, ValueError):
+                    print(f'[bridge] 모르는 퍽 {pid!r}', flush=True)
+                    continue
+                if pz < 0:                                            # 집음 · 실음 = 경기장 밖 (ID 마다 다른 자리)
+                    px, py, pz = 6.0 + 0.1 * int(pid), 6.0, 0.03
+                pose = torch.tensor([[px, py, pz + 0.002, 0.0, 0.0, 0.0, 1.0]], device=dev)
+                pose[0, :3] += org
+                ids0 = torch.tensor([0], device=dev)
+                obj.write_root_pose_to_sim_index(root_pose=pose, env_ids=ids0)
+                obj.write_root_velocity_to_sim_index(root_velocity=torch.zeros(1, 6, device=dev), env_ids=ids0)
+            while arm_req:                                            # 팔 자세 바로 옮김 (control 없이 손목 카메라 시험)
+                name = arm_req.pop(0)
+                if name.startswith('q:'):
+                    try:
+                        qv = [float(v) for v in name[2:].split(',')]
+                        assert len(qv) == 5
+                    except (ValueError, AssertionError):
+                        print(f'[bridge] 팔 관절값은 q:J1,J2,J3,J4,J5 ({name!r})', flush=True)
+                        continue
+                    set_joints(arm_ids, qv)
+                    set_joints(finger_ids, [0.0, 0.0])
+                    print(f'[bridge] 팔 -> {qv}', flush=True)
+                    continue
+                if name not in ARM_POSES:
+                    print(f'[bridge] 모르는 팔 자세 {name!r} (TUCK · READY · LOOK_PUCK)', flush=True)
+                    continue
+                pz = ARM_POSES[name]
+                set_joints(arm_ids, [pz[j] for j in ARM_NAMES])
+                set_joints(finger_ids, [tme.TUCK_POSE.get(n, 0.0) if name == 'TUCK' else 0.0 for n in tme.FINGERS])
+                print(f'[bridge] 팔 -> {name}', flush=True)
+            while tele_req:                                           # 로봇 옮기기 (map = env 원점 기준)
+                tx, ty, tyaw = tele_req.pop(0)
+                pose = torch.tensor([[tx, ty, tme.SPAWN_Z, 0.0, 0.0, math.sin(tyaw / 2), math.cos(tyaw / 2)]], device=dev)
+                pose[0, :3] += org
+                robot.write_root_pose_to_sim_index(root_pose=pose, env_ids=ids0)
+                robot.write_root_velocity_to_sim_index(root_velocity=torch.zeros(1, 6, device=dev), env_ids=ids0)
+                print(f'[bridge] 로봇 -> ({tx:.3f}, {ty:.3f}, {math.degrees(tyaw):.1f}°)', flush=True)
             vx, vy, wz = last_cmd['v'] if sim_t - last_cmd['t'] < 0.5 else (0.0, 0.0, 0.0)
             act[0, 0], act[0, 1], act[0, 2] = vx / term.cfg.max_linear, vy / term.cfg.max_linear, wz / term.cfg.max_angular
             if player is not None:
                 player.update(sim_t)
             env.step(act)
-            tme.update_crank_visuals(crank, robot)
             step += 1
             sim_t += dt
             ts = stamp(sim_t)
@@ -273,18 +403,18 @@ with launch_simulation(cfg, args):
             v_b = robot.data.root_lin_vel_b.torch[0]
             w_b = robot.data.root_ang_vel_b.torch[0]
             od = Odometry()
-            od.header.stamp, od.header.frame_id, od.child_frame_id = ts, 'odom', 'base_link'
+            od.header.stamp, od.header.frame_id, od.child_frame_id = ts, 'odom', BASE
             (od.pose.pose.position.x, od.pose.pose.position.y, od.pose.pose.position.z) = (float(v) for v in po)
             (od.pose.pose.orientation.x, od.pose.pose.orientation.y, od.pose.pose.orientation.z, od.pose.pose.orientation.w) = (float(v) for v in qo)
             od.twist.twist.linear.x, od.twist.twist.linear.y, od.twist.twist.angular.z = float(v_b[0]), float(v_b[1]), float(w_b[2])
             pub_odom.publish(od)
             tf = TransformStamped()
-            tf.header.stamp, tf.header.frame_id, tf.child_frame_id = ts, 'odom', 'base_link'
+            tf.header.stamp, tf.header.frame_id, tf.child_frame_id = ts, 'odom', BASE
             tf.transform.translation.x, tf.transform.translation.y, tf.transform.translation.z = (float(v) for v in po)
             tf.transform.rotation = od.pose.pose.orientation
             pub_tf.publish(TFMessage(transforms=[tf]))
             gt = Odometry()
-            gt.header.stamp, gt.header.frame_id, gt.child_frame_id = ts, 'map', 'base_link'
+            gt.header.stamp, gt.header.frame_id, gt.child_frame_id = ts, 'map', BASE
             (gt.pose.pose.position.x, gt.pose.pose.position.y, gt.pose.pose.position.z) = (float(v) for v in p_w)
             (gt.pose.pose.orientation.x, gt.pose.pose.orientation.y, gt.pose.pose.orientation.z, gt.pose.pose.orientation.w) = (float(v) for v in q_w)
             pub_gt.publish(gt)
@@ -299,6 +429,8 @@ with launch_simulation(cfg, args):
             if step % args.scan_every == 0:
                 for s in ('front', 'rear'):
                     pub_scan[s].publish(make_scan(s, p_w, q_w, sim_t))
+            if args.wrist and step % args.wrist_every == 0:
+                pub_wrist(ts, qi)
             if not amcl_ok[0] and sim_t - last_init >= 1.0:
                 ip = PoseWithCovarianceStamped()
                 ip.header.stamp, ip.header.frame_id = ts, 'map'
@@ -312,8 +444,10 @@ with launch_simulation(cfg, args):
                 img = cv2.cvtColor(img.astype('uint8'), cv2.COLOR_RGB2BGR)
                 sp = float(robot.data.root_lin_vel_b.torch[0, :2].norm())
                 cv2.putText(img, f't {sim_t:5.1f} s   speed {sp:.2f} m/s', (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+                if overlay[0]:
+                    cv2.putText(img, overlay[0], (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
                 if cm_state[0]:
-                    cv2.putText(img, f'collision_monitor: {cm_state[0]}', (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.0,
+                    cv2.putText(img, f'collision_monitor: {cm_state[0]}', (20, 120), cv2.FONT_HERSHEY_SIMPLEX, 1.0,
                                 (0, 0, 255) if cm_state[0] == 'STOP' else (0, 200, 255), 2)
                 cv2.imwrite(str(rec_dir / f'{rec[0]:05d}.jpg'), img, [cv2.IMWRITE_JPEG_QUALITY, 92])
                 rec[0] += 1

@@ -7,7 +7,7 @@ Isaac Lab 3.0 (Isaac Sim 6.2) 에서 로봇·실제 미로·퍽/바코드/신호
 **Isaac Lab 3.0** 이 설치되어 있어야 한다. 아래 `ISAACLAB_PY` 는 각자 설치한 Isaac Lab 파이썬 경로로 바꿀 것
 
 ```bash
-export ISAACLAB_PY=~/IsaacLab/.venv/bin/python      # TODO: 본인 경로로 변경할 것
+export ISAACLAB_PY=~/IsaacLab/.venv/bin/python      # 각자 Isaac Lab 파이썬 경로
 export OMNI_KIT_ACCEPT_EULA=YES
 ```
 
@@ -20,89 +20,37 @@ unzip turtle_ninja_sim_large_files.zip
 
 | 풀리는 위치 | 내용 |
 |---|---|
-| `sim/robot_sim/usd/robot/` | 로봇 3D 모델 (**시뮬 실행에 필수**) |
-| `sim/robot_sim/robot_description/meshes*/`, `parts/` | 로봇 메시 (**시뮬 실행에도 필수**: 그리퍼 크랭크 메시 `meshes/generated/crank_anim_*.obj`. RViz 보기 · USD 다시 만들기) |
-| `sim/robot_sim/robot_description/images/` | 배포판 그림 · 영상 (참고용) |
 | `sim/robot_sim/real_photos/`, `sim/robot_sim/source/maze_parts_*` | 실제 사진, 미로 부품 원본 |
 
-**로봇** = 팀 최종 배포판 `nt_urdf_release_20261027_layout` (`robot_description/`, 설명 `robot_description/README_KO.md` · `CHANGES_20261027_layout.md`)
-- 바퀴 관절 `steer_<fl|fr|rl|rr>_joint` · `drive_<..>_joint` (팀 `swerve_controller` 이름), 팔 `arm_joint1~5`, 그리퍼 `gripper_finger_a/b_joint`
-- 총질량 3.81 kg (적재함 빈 상태). 시뮬 USD 는 이 URDF 를 `tools/urdf_to_robot_usd.py` 로 변환한 것 (질량 · 관성 그대로, 차체 고정 안 함)
-- 라이다 스캔면 바닥 위 60 mm (실측), 앞 라이다 yaw 180° · 뒤 0° (실물 장착 방향)
-- 주행 = 배포판 `swerve/nt_swerve.py` (팀 `swerve.cpp` 10-27 판을 옮긴 것) 를 100 Hz 로 그대로 씀: 같은 선 위 조향 선택, 출발 때 바퀴 바깥쪽, 범위 끝 1° 여유, 동시 조향 · 구동. 값은 `robot_description/config/swerve.yaml` (최고 0.261 m/s = 바퀴 모터 한계 · 1.675 rad/s). 조향 정렬 허용각만 π (구동하며 조향)
-- 시작 · 주행 자세 = 실물 받침 자세 parked + 그리퍼 16 mm (`config/initial_pose.json` 의 `positions`). 퍽 집기 준비자세 P0 (`C1_P0`) 는 `READY_POSE`
-- 관절 이득 = 배포판 검증값 (`config/nt_train_kit.py`): 조향 20 / 0.3, 바퀴 감쇠 1.0, 팔 500 / 10, 그리퍼 1000 / 2 · 20 N. 팔 힘 · 속도 한계는 실물 운용값 (`config/operating_limits.yaml`: J1–J4 속도 0.65–0.84 rad/s · 힘 = 출력 상한 % × 11.1 V 정지토크 1.7–3.4 N·m, J5 = 모터 설정 PV 4 · PWM 60 % -> 0.1 rad/s · 2.28 N·m). 카메라를 쓰면 그리퍼 크랭크 · 링크 막대를 손가락 위치에 맞춰 그림 (배포판 `CrankVisuals`)
-- 자기 충돌은 끔 (팔을 고정하고 주행 · 촬영만 하므로). 받침에서 팔을 꺼내고 넣는 동작을 시뮬하려면 배포판 USD 와 `config/nt_train_kit.py` 설정(자기 충돌 · 충돌 필터)을 쓸 것
-
-### 로봇 모델 보기 (RViz)
+**로봇** = 팀 URDF (`ros2_ws/src/description`, 실물). 시뮬용 파일은 GitHub 에 없고 한 번 만들어 씀 (URDF 가 바뀌면 다시):
 
 ```bash
-bash sim/robot_sim/robot_description/view.sh             # ROS 2 Lyrical, 빌드 없이. 관절 슬라이더 + RViz (팀 배포판 그대로)
-bash sim/robot_sim/robot_description/view.sh pose:=p0    # 시작 자세 parked(기본) · p0, gui:=false 면 슬라이더 없음, rviz:=false 면 RViz 안 띄움
+source /opt/ros/lyrical/setup.bash && source <ws>/install/setup.bash   # description · bringup 패키지를 빌드한 ws (xacro 가 찾음)
+python3 tools/convert_robot.py urdf                                   # -> robot/robot.urdf · robot/swerve.yaml
+OMNI_KIT_ACCEPT_EULA=YES $ISAACLAB_PY tools/convert_robot.py usd     # -> usd/robot/robot/robot.usda
 ```
 
-- URDF 는 `robot.urdf` 하나 (메시 경로 = 상대 경로). Isaac 시뮬 · 팔 순기구학 · RViz 보기 모두 이 파일을 씀 (`view.sh` 는 ROS 패키지 없이 읽음)
-
-## 2. 실습
-
-
-```bash
-cd Project2_Turtle_Ninja/sim/robot_sim
-```
-
-### 2-1. 랜덤 환경 재생 (자동)
-
-```bash
-$ISAACLAB_PY scripts/view_maze.py --viz kit --props --num_envs 4 --real
-```
-
-- 미로 4개가 나란히 뜨고, 각 미로마다 퍽·선반·바코드·장소 태그·신호등 위치가 따로 무작위로 놓인다
-- **30초마다** 배치와 로봇 시작 칸이 새로 뽑힌다 (`--reset_s 10` 이면 10초마다)
-- 로봇은 5초마다 무작위 방향으로 움직인다 (`--still` 이면 가만히)
-
-### 2-2. 키보드로 운전
-
-```bash
-$ISAACLAB_PY scripts/view_maze.py --viz kit --props --num_envs 1 --keyboard --real
-```
-
-Isaac 창의 3D 화면을 한 번 클릭한 뒤: **↑↓** 앞뒤 · **←→** 옆으로 (스워브) · **Z/X** 회전 · **L** 정지 · **N** 새 배치
-
-해 볼 것: 옆으로 가기 (←→), 가면서 돌기 (↑ + Z), 좁은 통로에서 방향 안 바꾸고 지나가기
-
-### 2-3. 원하는 배치 만들기
-
-```bash
-$ISAACLAB_PY scripts/view_maze.py --map                     # 칸 번호 지도 (0–23)
-$ISAACLAB_PY scripts/view_maze.py --viz kit --props --num_envs 1 --keyboard --shelf 8:N:0.10 --robot 7:0:0:0
-```
-
-| 옵션 | 뜻 |
-|---|---|
-| `--shelf 칸:벽[:벽에서m[:벽따라m[:회전°]]]` | 선반 고정, 여러 번 가능 (예 `8:N:0.10` = 8번 칸 북쪽 벽에서 10 cm) |
-| `--robot 칸[:dx:dy:yaw°]` | 로봇 시작 자리 고정 (yaw 0 = 동쪽, 90 = 북쪽) |
-
-### 2-4. 로봇 카메라 시점 보기
-
-```bash
-$ISAACLAB_PY scripts/view_maze.py --viz kit --props --num_envs 1 --keyboard --camera --real
-```
-
-Isaac 창 화면 왼쪽 위의 카메라 메뉴(`Perspective`) -> `Cameras` 에서 `birdeye` 를 고르면 상단 광각 카메라, `wrist_d435` 를 고르면 손목 D435 시점으로 바뀐다 (광각은 팀 K · D 로 어안 왜곡 적용, 귀퉁이는 비어 보임. YOLO 데이터는 귀퉁이까지 채워서 만듦)
-
-### 2-5. 그 밖의 옵션
+- 바퀴 관절 `steer_<fl|fr|rl|rr>_joint` · `drive_<..>_joint` (팀 `swerve_controller` 이름), 팔 `joint1~5`, 그리퍼 `gripper_left/right_joint` (직선). 그리퍼 연결기구 (크랭크 · 막대) 는 변환 때 고정
+- 루트 = `base_footprint` (바퀴 바닥), `base_link` 는 그 0.033 m 위. 센서는 USD 에서 `base_footprint` 몸체에 붙음 (변환 때 base_link 가 합쳐짐)
+- 라이다 스캔면 바닥 위 60 mm, 앞 라이다 yaw 180° · 뒤 0° (실물 장착 방향)
+- 주행 = `sim_core/nt_swerve.py` (팀 `swerve_controller` 규칙을 옮긴 것) 를 100 Hz 로: 같은 선 위 조향 선택, 출발 때 바퀴 바깥쪽, 범위 끝 1° 여유, 동시 조향 · 구동. 값은 `robot/swerve.yaml` (= `sim_core/swerve_base.yaml` + 모듈 위치 `config/controllers.yaml` · 조향 범위 URDF). 학습용 한계 0.261 m/s · 1.675 rad/s, 실물 값은 `use_real_speed_limits` (브리지 `--real_speed`)
+- 팔 자세 (실물 설정 그대로): 시작 · 주행 = `config/control.yaml` poses.home, 준비 P0 · 관찰 LOOK = `config/arm_paths.yaml` look 경로. 손가락 열림 58.5 mm (q 0.0165) · 닫힘 URDF 하한
+- 관절 이득: 조향 20 / 0.3, 바퀴 감쇠 1.0, 팔 500 / 10, 그리퍼 1000 / 2 · 20 N. 팔 힘 · 속도 한계 = URDF
+- 자기 충돌은 끔 (팔을 고정하고 주행 · 촬영만 하므로)
+- 손목 D435 를 쓰면 `hide_wrist_camera_body` 로 D435 케이스 메시를 숨김 (URDF 광학 프레임이 케이스보다 뒤라 그대로면 화면을 가림)
+- `robot_description/` = 배포판 URDF 남은 것 (control 도구용 임시, 그 폴더 README)
 
 로봇 부품 색은 항상 실물 색 (D435 은색, 받침대 크림색, 팔 · 손가락 · 모터 · 조향 모듈 · 라이다 판 검정), 선반 = 골판지 박스색
 
 | 옵션 | 뜻 |
 |---|---|
 | `--real` | 실제 강의실 배경(파노라마) + 실제 카펫 바닥 + 천장 조명 6개 + 벽판 유광 반사 (2-6 데이터와 같은 겉모습, 빼면 기본 회색 배경) |
-| `--lidar` | 앞 · 뒤 라이다(레이캐스트, 360° · 1°, 최대 8 m 가정) 를 켜고 맞은 점을 창에 표시. 스캔 높이 바닥 위 6.0 cm (배포판 _layout 실측, `base_scan_front/rear`) = 선반(7 cm) 은 잡히고, 바닥에 선 퍽(6 cm) 은 윗면과 같은 높이라 거의 안 잡힘. 로봇 자기 몸체에 가려지는 각도는 없음 |
+| `--lidar` | 앞 · 뒤 라이다(레이캐스트, 360° · 1°, 최대 8 m 가정) 를 켜고 맞은 점을 창에 표시. 스캔 높이 바닥 위 6.0 cm (`base_scan_front/rear`) = 선반(7 cm) 은 잡히고, 바닥에 선 퍽(6 cm) 은 윗면과 같은 높이라 거의 안 잡힘. 로봇 자기 몸체에 가려지는 각도는 없음 |
 | `--render pt` | PathTracing (2-6 데이터 기본). 움직이는 동안 노이즈, 멈추면 깨끗함. 기본 `rt` |
 | `--dome_yaw 90` | 배경 사진을 90° 돌림 |
 | `--arm_extended` | 팔을 접지 않고 편 자세로 |
 | `--num_envs N` | 미로 N 개 동시에 |
-| `--device cpu` | 물리를 CPU 로 (env 1개일 때 GPU 보다 약 8배 빠름: 스텝당 11 ms vs 88 ms, 2026-10-28 측정. 렌더링은 GPU 그대로) |
+| `--device cpu` | 물리를 CPU 로 (env 1개일 때 GPU 보다 약 8배 빠름: 스텝당 11 ms vs 88 ms. 렌더링은 GPU 그대로) |
 
 ### 2-6. YOLO 학습 데이터 만들기
 
@@ -115,7 +63,7 @@ $ISAACLAB_PY scripts/make_yolo_dataset.py --scenes 400 --views 2 --num_envs 1 --
 - 클래스: 빨간 원기둥 · 초록 원기둥 · 빨간 직육면체 · 초록 직육면체 · 바코드 · 신호등 (적게 나온 클래스를 우선 찍어 골고루 맞춤)
 - 헷갈리기 쉬운 경우도 섞음: 넘어진·바닥에 떨어진 퍽, 불 켜진 신호등, 가짜 종이(QR·글자·체크무늬. 바코드 닮은 줄무늬는 진짜와 구분 안 돼 뺌), 다른 모양의 색 물체 (`--p_fallen`, `--p_floor`, `--no_distractors`)
 - `--num_envs` 는 1 (기본 PathTracing 렌더는 2 부터 GPU 메모리 부족으로 디노이저가 빠짐)
-- 조명 · 반사 (장면마다 무작위, 실제 영상과 비교해 맞춘 값, 2026-10-27):
+- 조명 · 반사 (장면마다 무작위, 실제 영상과 비교해 맞춘 값):
   - 배경 파노라마 돔 0.25–1.1배 + 천장 사각 조명 6개 (세기 10000 × 0.7–1.3, `--ceil_int 0` 이면 끔)
   - 신호등: 꺼짐 · 빨 · 노 · 초 무작위, 켜진 불 세기 = 실제 영상에 맞춘 값(`TL_LAMP`)의 0.7–1.5배 (`--tl_glow_min/max`)
   - 벽판 유광 반사: 굴절률 2.2–3.0 · 거칠기 0.02–0.15 (`--panel_ior`, `--panel_rough`). 퍽 · 박스 · 로봇이 벽에 비침 (비친 상은 라벨 없음 = 오탐 대비)
@@ -163,32 +111,33 @@ $ISAACLAB_PY scripts/view_dice.py --viz kit --keyboard --real               # �
 
 ```bash
 # 터미널 1: 시뮬 + ROS 브리지 (물리 CPU, 실제 시간에 맞춤). 창 보려면 --viz kit --camera --real
-ROS_DOMAIN_ID=17 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST scripts/sim_nav_bridge.sh
+ROS_DOMAIN_ID=18 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST scripts/sim_nav_bridge.sh
 
 # 터미널 2: navigation 패키지 빌드 후 robot_state_publisher + Nav2 + RViz
 cd ../../ros2_ws && colcon build --packages-select navigation && source install/setup.bash && cd ../sim/robot_sim
-ROS_DOMAIN_ID=17 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST ros2 launch scripts/sim_nav2.launch.py
+ROS_DOMAIN_ID=18 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST ros2 launch scripts/sim_nav2.launch.py
 ```
 
 - RViz 의 `Nav2 Goal` 로 목표를 찍으면 감. AMCL 은 출발 자세로 시작 (`initial_pose:=x,y,yaw°`, 기본 = `dice_layout.json` 출발점)
-- 브리지 (`scripts/sim_nav_bridge.py`, 실행은 `.sh`): 내보냄 `/clock` · `/odom` · TF `odom -> base_link` · `/joint_states` · `/lidar_front/scan` · `/lidar_rear/scan` (레이캐스트, 360 · 1°, 60 mm) · `/sim/ground_truth`, 받음 `/cmd_vel` (TwistStamped) -> 배포판 스워브 컨트롤러. `/odom` 은 정답 위치 (잡음 없음)
-- 라이다 자기 몸 가림: 바퀴 · 조향 모듈 · 차체 기둥 · 반대쪽 라이다에 가린 빔은 돌아오지 않음(inf) 처리 (`sim_core/lidar_self.py`, 배포판 메시를 스캔 높이에서 자른 단면, 바퀴는 조향 각도를 따라 돎). 앞 라이다 기준 360 빔 중 약 100 개가 가림. `view_maze.py --lidar` 표시는 가림 없음
-- 비상 정지 (Nav2 `collision_monitor`): 진행 방향 1 s 앞 충돌 예상이면 감속 · 정지 (`FootprintApproach`), 차체 + 4 cm 안에 점이 들어오면 즉시 정지 (`PolygonStop`). 시험용 사람 = `/sim/person` (geometry_msgs/PointStamped, map xy, z < 0 이면 치움). 확인 (2026-10-28): 0.21 m/s 주행 중 앞면 11 cm 앞에 세우면 0.38 s 에 정지 (앞면 사이 8.4 cm), 치우면 다시 가서 도착
+- 브리지 (`scripts/sim_nav_bridge.py`, 실행은 `.sh`): 내보냄 `/clock` · `/odom` · TF `odom -> base_footprint` · `/joint_states` · `/lidar_front/scan` · `/lidar_rear/scan` (레이캐스트, 360 · 1°, 60 mm) · `/sim/ground_truth`, 받음 `/cmd_vel` (TwistStamped) -> 스워브 컨트롤러 (`--real_speed` = 실물 속도 한계). `/odom` 은 정답 위치 (잡음 없음)
+- 라이다 자기 몸 가림: 바퀴 · 조향 모듈 · 차체 기둥 · 반대쪽 라이다에 가린 빔은 돌아오지 않음(inf) 처리 (`sim_core/lidar_self.py`, URDF 메시를 스캔 높이에서 자른 단면, 바퀴는 조향 각도를 따라 돎). 앞 라이다 기준 360 빔 중 약 100 개가 가림. `view_maze.py --lidar` 표시는 가림 없음
+- 비상 정지 (Nav2 `collision_monitor`): 진행 방향 1 s 앞 충돌 예상이면 감속 · 정지 (`FootprintApproach`), 차체 + 4 cm 안에 점이 들어오면 즉시 정지 (`PolygonStop`). 시험용 사람 = `/sim/person` (geometry_msgs/PointStamped, map xy, z < 0 이면 치움). 확인: 0.21 m/s 주행 중 앞면 11 cm 앞에 세우면 0.38 s 에 정지 (앞면 사이 8.4 cm), 치우면 다시 가서 도착
 - 실물 주의: 실물 라이다는 자기 바퀴 · 기둥을 실제로 맞힘 (외곽에서 0.08–0.15 m) -> 그대로 두면 비상 정지 구역에 걸려 계속 멈춤. 실물 스캔은 몸에 맞은 점을 걸러야 함 (`laser_filters` 상자 필터 등, Lyrical 에 미설치)
 - Isaac 파이썬에서 시스템 Lyrical `rclpy` 를 씀 (`.sh` 가 ROS 경로와 순수 파이썬 모듈 `em` · `lark` 만 덧붙임, 시스템 패키지 `python3-empy` · `python3-lark` 필요)
-- 지도 = `maps/maze_dice_map.yaml`: 경기장 배치에서 라이다 높이(60 mm) 단면을 그린 것 (`python3 tools/layout_to_occupancy.py --maze dice`). 실제 경기는 Cartographer 지도로 바꿈 (`map:=`)
+- 지도 = `maps/maze_dice_map.yaml`: 경기장 배치에서 라이다 높이(60 mm) 단면을 그린 것 (`python3 tools/layout_to_occupancy.py --maze dice`). 실제 경기는 slam_toolbox 지도로 바꿈 (`map:=`)
 - Nav2 설정 = 레포 `config/nav2.yaml` (스워브: AMCL `OmniMotionModel`, MPPI `omni`), 실행 = `ros2_ws/src/navigation`
-- `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` 필수: 같은 망에서 같은 도메인의 실물 로봇이 켜져 있으면 시뮬 `/cmd_vel` 이 실물로 갈 수 있음
-- 확인 (2026-10-28): 출발점 -> L1 접근 지점 (3230, 950) mm, 시작 박스 1 을 돌아 21 s, 위치 오차 12 mm. 홀로노믹이라 진행 방향과 관계없이 몸 방향을 둔 채 이동하고 도착 때 돌아섬
+- `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` 필수: 같은 망에서 같은 도메인의 실물 로봇이 켜져 있으면 시뮬 `/cmd_vel` 이 실물로 갈 수 있음. 도메인도 실물(17)과 다르게 (예 18)
+- 확인: 출발점 -> L1 접근 지점 (3230, 950) mm, 시작 박스 1 을 돌아 21 s, 위치 오차 12 mm. 홀로노믹이라 진행 방향과 관계없이 몸 방향을 둔 채 이동하고 도착 때 돌아섬
 
 ## 3. 폴더
 
 | 폴더 | 내용 |
 |---|---|
 | `scripts/` | 실행 스크립트 (위 실습), Nav2 시험 브리지 · launch (`sim_nav_bridge.*`, `sim_nav2.launch.py`) |
-| `sim_core/` | 환경 정의: 로봇·스워브 제어·미로·소품·카메라 (`turtleninja_maze_env.py`), 배치 고정 (`fixed_layout.py`), 팔 무작위 · 관찰 자세 (`arm_poses.py`), 주사위 미션 경기장 · 신호등 점멸 (`dice_mission.py`) |
+| `sim_core/` | 환경 정의: 로봇·스워브 제어·미로·소품·카메라 (`turtleninja_maze_env.py`), 배치 고정 (`fixed_layout.py`), 팔 무작위 · 관찰 자세 (`arm_poses.py`), 주사위 미션 경기장 · 신호등 점멸 (`dice_mission.py`), 스워브 컨트롤러 (`nt_swerve.py` · `swerve_base.yaml`) |
 | `usd/` | 시뮬레이션용 3D 파일: 로봇 (`robot/`), 미로 (`maze_real.usd`, 무작위 미로 `mazes/`), 카펫 바닥, 소품 (`props/`: 퍽·태그·바코드·신호등), 배경 텍스처 (`textures/`) |
-| `robot_description/` | 로봇 URDF·설정·스워브·RViz 보기 (팀 최종 배포판 `nt_urdf_release_20261027_layout`, 메시 경로만 상대 경로로 바꾼 `robot.urdf`. 배포판 `usd/` · ROS 패키지 파일은 안 넣음) |
+| `robot/` | 시뮬용 팀 URDF · 스워브 설정 (`tools/convert_robot.py` 가 만듦, GitHub 에 안 올림) |
+| `robot_description/` | 배포판 URDF 남은 것 (control 도구용 임시) |
 | `maps/` | Nav2 시험용 지도 (`tools/layout_to_occupancy.py`) |
 | `source/` | 미로 배치 JSON, 미로 부품 원본 |
 | `tools/` | 3D 파일 다시 만들기 (아래) |
@@ -200,7 +149,7 @@ ROS_DOMAIN_ID=17 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST ros2 launch scripts/sim
 
 | 바뀐 것 | 명령 | 필요한 것 |
 |---|---|---|
-| 로봇 배포판 | 새 배포판 폴더를 `robot_description/` 에 복사, 배포판 `urdf/robot.urdf` 에서 `package://<패키지>/` 를 지워 `robot.urdf` 로 저장 (ROS 패키지 파일 · `urdf/` 는 지움) -> `$ISAACLAB_PY tools/urdf_to_robot_usd.py` | Isaac Lab |
+| 팀 URDF (`ros2_ws/src/description`) | 위 '로봇' 의 `tools/convert_robot.py urdf` · `usd` -> `robot/`, `usd/robot/` | ROS (xacro), Isaac Lab |
 | 미로 배치 (`source/*.json`) | `python3 tools/layout_to_maze_usd.py` | `pip install usd-core` |
 | 무작위 미로 (YOLO 데이터용) | `python3 tools/random_maze.py --count 8 --seed 0` -> `mazes/`, `usd/mazes/` | usd-core (또는 `$ISAACLAB_PY`) |
 | 태그·바코드·소품 | `python3 tools/make_tag_barcode_images.py` 후 `python3 tools/make_props_usd.py` | OpenCV, usd-core |

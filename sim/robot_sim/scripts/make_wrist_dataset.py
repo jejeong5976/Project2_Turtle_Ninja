@@ -3,18 +3,18 @@
 
 장면마다: 짐 선반 하나 앞(선반 앞면 ~ 차체 앞면 SHELF_STAND_GAP, 좌우 ±--lat_m, 앞뒤 ±--fwd_m, 방향 ±--yaw_deg)에 로봇을 세우고
   팔을 관찰 자세 후보 중 하나(--look bank, 순기구학으로 고른 자세 + ±--arm_jitter rad)로 둔 뒤 손목 D435 (tme.add_wrist_d435, 실물 공장 내부 파라미터)로 찍음.
-  시뮬 팔은 무게로 순기구학보다 약 2–8° 더 숙여짐 (관절 위치 제어 처짐, 2026-10-27 확인) -> 실물 서보 처짐과 비슷한 방향
+  시뮬 팔은 무게로 순기구학보다 약 2–8° 더 숙여짐 (관절 위치 제어 처짐) -> 실물 서보 처짐과 비슷한 방향
   그 선반 위를 다시 놓음: 퍽 --n_pucks 개(8개 중 무작위, --p_fallen 확률로 눕힘, yaw 무작위) + 파란 퍽 --n_blue 개(라벨 없음)
   --p_touch 장면은 선 퍽 2–3개를 면끼리 붙임. 가림 = 그리퍼 손가락(브래킷 각도 · 그리퍼 벌림에 따라) · 이웃 퍽
   --cam_tilt_deg = RealSense 브래킷 각도 (관찰 자세 후보도 이 각도로 다시 찾음, 숙일수록 그리퍼 손가락이 화면 아래를 가림)
-  2026-10-29 추가: 그리퍼 벌림 무작위, 퍽 거칠기, 선반 윗면(대부분) · 앞면에 장소 태그, 선반 앞 바닥 퍽(--p_floor, 바닥을 보는 관찰 자세 후보 따로),
+  무작위화: 그리퍼 벌림 무작위, 퍽 거칠기, 선반 윗면(대부분) · 앞면에 장소 태그, 선반 앞 바닥 퍽(--p_floor, 바닥을 보는 관찰 자세 후보 따로),
   퍽 태그 붙인 각도 · 위치 오차 (--tag_jitter, 물리 시작 전 = 실행마다). 브래킷 사이 각도는 실행마다 --cam_tilt_deg 를 4° 간격으로
   누운 퍽은 긴축 둘레로도 돌림 (사각기둥 90° 단위, 원기둥 무작위) → 어느 면이 위 · 앞으로 오는지 섞임
-  태그 면 무작위 (2026-10-27): 실물 퍽은 태그가 일부 면에만 붙어 있어 단색 면이 보임 (시뮬 USD 는 사각기둥 6면 · 원기둥 3곳 전부)
+  태그 면 무작위: 실물 퍽은 태그가 일부 면에만 붙어 있어 단색 면이 보임 (시뮬 USD 는 사각기둥 6면 · 원기둥 3곳 전부)
     고른 퍽마다 --p_no_tag 확률로 태그 전부 숨김, --p_all_tags 확률로 전부 보임, 나머지는 면마다 --p_face_tag 확률로 보임
   장면마다 배경 파노라마 · 밝기 · 천장 조명 · 벽판 반사 ·
   퍽 · 선반 색 흔들기 (make_yolo_dataset.py 와 같은 방식 · 같은 기본 범위)
-LOOK = 순기구학 탐색 결과 (2026-10-26): 카메라가 선반 윗면 중심(로봇 앞 0.30 m)을 0.30 m 거리 · 아래 60° 로 봄. 실물 미확인
+LOOK = 순기구학 탐색 결과: 카메라가 선반 윗면 중심(로봇 앞 0.30 m)을 0.30 m 거리 · 아래 60° 로 봄. 실물 미확인
 출력 <out>/<split>/<이름>_rgb.png, _depth.npy (m, float32, 0 = 없음), _mask.png (0 = 배경, k+1 = 퍽 k), _meta.json
   meta: K, 카메라 월드 자세, 퍽마다 {index, color, shape, tag_id, center_cam (m), axis_cam (긴축 = 퍽 +z), xaxis_cam (퍽 +x = 사각기둥 면 법선), px (보이는 화소), bbox,
         lying (긴축이 수직에서 45° 넘게 누움), tag_faces (태그가 켜진 면 이름, [] = 태그 없음)}
@@ -47,7 +47,7 @@ parser.add_argument('--look', choices=['bank', 'fixed'], default='bank',
                     help='bank = 순기구학 관찰 자세 후보 (sim_core/arm_poses.make_view_bank: 선반 윗면을 0.20–0.45 m · 아래 35–80° 로 보는 자세, '
                          '절반은 LOOK 근처 · 절반은 관절 전체에서), fixed = LOOK 하나 (+ --arm_jitter)')
 parser.add_argument('--n_poses', type=int, default=300, help='--look bank 후보 수')
-parser.add_argument('--p_fallen', type=float, default=0.5, help='관찰 선반 위 퍽을 눕힐 확률 (2026-10-27 0.3 → 0.5, 실물 누운 퍽 놓침)')
+parser.add_argument('--p_fallen', type=float, default=0.5, help='관찰 선반 위 퍽을 눕힐 확률 (실물 누운 퍽 놓침 대비 0.5)')
 parser.add_argument('--p_no_tag', type=float, default=0.3, help='퍽 태그를 전부 숨길 확률 (퍽마다 · 장면마다)')
 parser.add_argument('--p_all_tags', type=float, default=0.2, help='퍽 태그를 전부 보일 확률 (나머지는 면마다 --p_face_tag)')
 parser.add_argument('--p_face_tag', type=float, default=0.5, help='면마다 태그를 보일 확률')
@@ -64,15 +64,15 @@ parser.add_argument('--panel_ior', type=float, nargs=2, default=[2.2, 3.0], help
 parser.add_argument('--n_pucks', type=int, nargs=2, default=[1, 4], help='관찰 선반 위에 다시 놓을 퍽 수 범위 (8개 중 무작위)')
 parser.add_argument('--n_blue', type=int, nargs=2, default=[0, 2], help='관찰 선반 위 파란 퍽 수 범위 (라벨 없음 = 오탐 대비, 실물 파란 퍽과 같은 모양 · 태그)')
 parser.add_argument('--blue_srgb', type=int, nargs=3, default=[35, 100, 181],
-                    help='파란 퍽 색 (sRGB). 실물 D435 사진 (15, 53, 100) 을 같은 사진 초록 퍽 대비 노출 보정한 값 (2026-10-29)')
-parser.add_argument('--look_q', type=float, nargs=5, default=None, help='--look fixed 에서 쓸 관찰 자세 관절 J1..J5 (rad, URDF). 없으면 아래 LOOK (tools/find_look_pose.py 결과 넣기)')
-parser.add_argument('--cam_tilt_deg', type=float, default=0.0, help='RealSense 브래킷 각도 URDF 대비 추가분 (°, − = 그리퍼 쪽으로 숙임, tme.d435_tilt_R. URDF 에 실물 경첩 −12° 반영됨 2026-10-29). 실행마다 하나')
+                    help='파란 퍽 색 (sRGB). 실물 D435 사진 (15, 53, 100) 을 같은 사진 초록 퍽 대비 노출 보정한 값')
+parser.add_argument('--look_q', type=float, nargs=5, default=None, help='--look fixed 에서 쓸 관찰 자세 관절 J1..J5 (rad, URDF). 없으면 실물 LOOK (tme.LOOK_PUCK_POSE)')
+parser.add_argument('--cam_tilt_deg', type=float, default=0.0, help='RealSense 브래킷 각도 URDF 대비 추가분 (°, − = 그리퍼 쪽으로 숙임, tme.d435_tilt_R. URDF 에 실물 경첩 −12° 반영됨). 실행마다 하나')
 parser.add_argument('--p_touch', type=float, default=0.15, help='장면에서 선 퍽 2–3개를 면끼리 붙여 놓을 확률')
 parser.add_argument('--p_grip_open', type=float, default=0.3, help='시점마다 그리퍼 다 열림(기본 관찰 자세) 확률. 나머지는 손가락 관절 범위 안 무작위')
 parser.add_argument('--puck_rough', type=float, nargs=2, default=[0.3, 0.8], help='퍽 재질 거칠기 범위 (장면마다 퍽마다, PLA 무광 ~ 약한 광택)')
 parser.add_argument('--p_place_tag', type=float, default=0.6, help='장면마다 장소 태그(60 mm 라벨)를 관찰 선반에 붙일 확률')
 parser.add_argument('--p_tag_top', type=float, default=0.85,
-                    help='붙일 때 박스 윗면에 눕혀 붙일 확률 (나머지는 앞면). 장소 태그는 윗면일 가능성이 높음 (2026-10-29 사용자). 바코드는 벽에만')
+                    help='붙일 때 박스 윗면에 눕혀 붙일 확률 (나머지는 앞면). 장소 태그는 윗면일 가능성이 높음. 바코드는 벽에만')
 parser.add_argument('--pose_tries', type=int, default=3, help='팔이 관찰 자세에 못 가면(관절 오차 > 0.05 rad, 충돌로 밀림) 다른 자세로 다시 시도할 횟수. 다 실패하면 그 시점 건너뜀')
 parser.add_argument('--p_floor', type=float, default=0.15, help='장면에서 퍽 1–2 개를 선반 앞 바닥에 놓을 확률 (그 장면은 로봇이 --floor_back 만큼 물러나 바닥을 봄)')
 parser.add_argument('--floor_back', type=float, default=0.20, help='바닥 퍽 장면에서 로봇이 더 물러서는 거리 (m)')
@@ -93,10 +93,9 @@ from isaaclab.utils import instantiate
 
 from sim_core import turtleninja_maze_env as tme
 
-# 관찰 자세 = robot_description/config/initial_pose.json poses 'LOOK_PUCK' (tme.LOOK_PUCK_POSE, 2026-10-29 tools/find_look_pose.py, URDF 경첩 −12° 반영 기준).
-# 로봇 앞 0.26 m 선반 면을 0.29 m 에서 광축 9° 로 봄. 옛 값 (2026-10-26, 아래 60°): J1 −1.738, J2 −0.706, J3 −0.624, J4 0.312, J5 −0.005. 관절 이름 = URDF
-LOOK = {k: tme.LOOK_PUCK_POSE[k] for k in ('arm_joint1', 'arm_joint2', 'arm_joint3', 'arm_joint4', 'arm_joint5')}
-ARM_JOINTS = list(LOOK)
+# 관찰 자세 = 실물 LOOK (tme.LOOK_PUCK_POSE = config/arm_paths.yaml look 경로 끝). 관절 이름 = 팀 URDF
+ARM_JOINTS = tme.ARM_JOINTS
+LOOK = {k: tme.LOOK_PUCK_POSE[k] for k in ARM_JOINTS}
 if args.look_q is not None:
     LOOK = dict(zip(ARM_JOINTS, args.look_q))
 STAND = tme.SHELF_SIZE[0] / 2 + tme.SHELF_STAND_GAP + tme.ROBOT_FRONT     # 선반 중심 -> 로봇 중심
@@ -107,9 +106,9 @@ rng = np.random.default_rng(args.seed)
 # 관찰 자세 후보 (Isaac 없이 URDF 순기구학). 선반 윗면 중심 = 로봇 앞 STAND, 높이 = 바닥 + 선반 높이 (base_link 기준)
 from sim_core import arm_poses
 if args.look == 'bank':
-    _ztop = arm_poses.FLOOR_Z + tme.SHELF_SIZE[2]
+    _ztop = tme.FLOOR_Z + tme.SHELF_SIZE[2]
     _K = [[tme.D435_K['fx'], 0, tme.D435_K['cx']], [0, tme.D435_K['fy'], tme.D435_K['cy']], [0, 0, 1]]
-    _kw = dict(urdf=tme.ROBOT_URDF, tuck={**tme.READY_POSE, **{f: 0.0 for f in arm_poses.FINGERS}}, rng=rng, pole_xy=tme.PROFILE_XY,
+    _kw = dict(urdf=tme.ROBOT_URDF, tuck={**tme.READY_POSE, **{f: 0.0 for f in tme.FINGERS}}, rng=rng, pole_xy=tme.PROFILE_XY,
                cam_link=tme.D435_COLOR_FRAME, cam_off=(np.zeros(3), np.array(tme.d435_tilt_R(args.cam_tilt_deg))), K=_K, size=tme.D435_SIZE,
                target=(STAND, 0.0, _ztop), shelf_box=(STAND - tme.SHELF_SIZE[0] / 2, STAND + tme.SHELF_SIZE[0] / 2,
                                                        -tme.SHELF_SIZE[1] / 2, tme.SHELF_SIZE[1] / 2, _ztop))
@@ -118,7 +117,7 @@ if args.look == 'bank':
     BANK = [b[0] for b in _near + _far]
     # 바닥 퍽 장면: 로봇이 floor_back 만큼 물러서고 선반 앞면에서 8.5 cm 앞 바닥을 봄 (선반 상자 · 벽도 그만큼 뒤)
     FLOOR_TARGET_X = STAND + args.floor_back - (tme.SHELF_SIZE[0] / 2 + 0.085)
-    _kwf = {**_kw, 'target': (FLOOR_TARGET_X, 0.0, arm_poses.FLOOR_Z),
+    _kwf = {**_kw, 'target': (FLOOR_TARGET_X, 0.0, tme.FLOOR_Z),
             'shelf_box': (STAND + args.floor_back - tme.SHELF_SIZE[0] / 2, STAND + args.floor_back + tme.SHELF_SIZE[0] / 2,
                           -tme.SHELF_SIZE[1] / 2, tme.SHELF_SIZE[1] / 2, _ztop)}
     _fn, _ = arm_poses.make_view_bank(n=args.n_poses // 4, seed_pose=LOOK, **_kwf)
@@ -148,7 +147,7 @@ def pano_gain(name):
 PANO_GAIN = {p: pano_gain(PANOS[0]) / pano_gain(p) for p in PANOS}
 tme.use_real_look(cfg, PANOS[0])
 
-# 파란 퍽 (라벨 없음 = 오탐 대비, 2026-10-29). 빨간 퍽 USD 를 다시 불러 색만 파랑으로 (모양 · 태그 · 질량 그대로)
+# 파란 퍽 (라벨 없음 = 오탐 대비). 빨간 퍽 USD 를 다시 불러 색만 파랑으로 (모양 · 태그 · 질량 그대로)
 #   prim 이름이 BluePuck_k 라 마스크 패턴(Puck_k) 에 안 걸림. 태그 ID 는 빨간 퍽(0–3)과 같음 (ID 평가에는 안 씀)
 import isaaclab.sim as sim_utils
 from isaaclab.assets import RigidObjectCfg
@@ -245,7 +244,7 @@ with launch_simulation(cfg, args):
                        ('/rtx/pathtracing/optixDenoiser/enabled', True)):
             cs.set(k_, v_)
     print('[wrist] 로봇 실물 색:', sum(tme.apply_robot_real_colors(stage).values()), '개 재질', flush=True)
-    crank = tme.add_crank_visuals(stage)   # 그리퍼 크랭크 · 막대를 손가락 위치에 맞춤 (배포판 CrankVisuals)
+    tme.hide_wrist_camera_body(stage)
     robot, cam = env.scene['robot'], env.scene['wrist_d435']
     from pxr import Gf, Sdf, Usd, UsdGeom
     from isaaclab.utils.math import quat_mul
@@ -280,10 +279,10 @@ with launch_simulation(cfg, args):
     org = env.scene.env_origins[0]
     act = torch.zeros(1, env.action_manager.total_action_dim, device=dev)
     arm_ids = robot.find_joints(ARM_JOINTS, preserve_order=True)[0]
-    # 관찰(LOOK) 때 그리퍼 = 열림 58.5 mm (손가락 0). 기본 자세가 받침 16 mm 로 바뀌어 명시 (2026-10-28 전 데이터와 같은 모습)
-    finger_ids = robot.find_joints(['gripper_finger_a_joint', 'gripper_finger_b_joint'], preserve_order=True)[0]
-    LOOK_FINGER = 0.0
-    FINGER_LIM = (-0.021254, 0.010247)          # URDF gripper_finger_*_joint 범위
+    # 관찰(LOOK) 때 그리퍼 = 열림 58.5 mm (기본 자세는 닫힘이라 명시)
+    finger_ids = robot.find_joints(tme.FINGERS, preserve_order=True)[0]
+    LOOK_FINGER = tme.FINGER_OPEN
+    FINGER_LIM = (tme.FINGER_CLOSED, tme.FINGER_OPEN)
     def rough_attr(path):
         sh_ = stage.GetPrimAtPath(path)
         a_ = sh_.GetAttribute('inputs:roughness')
@@ -430,7 +429,7 @@ with launch_simulation(cfg, args):
                 fl_pts = []
                 for p in cand[:int(rng.integers(1, 3))]:
                     for _ in range(30):
-                        # 바닥 관찰 목표점(선반 앞면 8.5 cm 앞) 둘레 ±4 cm (앞뒤) · ±7 cm (옆) = 화면 안 (2026-10-29: ±12 cm 면 화면 밖이 많았음)
+                        # 바닥 관찰 목표점(선반 앞면 8.5 cm 앞) 둘레 ±4 cm (앞뒤) · ±7 cm (옆) = 화면 안 (±12 cm 면 화면 밖이 많음)
                         fq = np.array([tme.SHELF_SIZE[0] / 2 + 0.085 + rng.uniform(-0.04, 0.04), rng.uniform(-0.07, 0.07)])
                         if all(np.linalg.norm(fq - o_) > 0.07 for o_ in fl_pts):
                             break
@@ -476,7 +475,6 @@ with launch_simulation(cfg, args):
                     robot.write_joint_position_to_sim_index(position=qf, joint_ids=finger_ids, env_ids=torch.tensor([0], device=dev))
                     robot.write_joint_velocity_to_sim_index(velocity=torch.zeros_like(qf), joint_ids=finger_ids, env_ids=torch.tensor([0], device=dev))
                     robot.actuators.target_command.set_position_index(value=qf, joint_ids=finger_ids, env_ids=torch.tensor([0], device=dev))
-                    crank.update([grip])
                     for _ in range(args.settle_steps):
                         env.step(act)
                     jerr = float((robot.data.joint_pos.torch[0, arm_ids] - qa[0]).abs().max())

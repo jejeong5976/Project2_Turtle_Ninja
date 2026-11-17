@@ -74,7 +74,6 @@ with launch_simulation(cfg, args):
                 sh.CreateAttribute('inputs:ior', Sdf.ValueTypeNames.Float).Set(2.6)
                 sh.CreateAttribute('inputs:roughness', Sdf.ValueTypeNames.Float).Set(0.08)
     tme.apply_robot_real_colors(stage)
-    crank = tme.add_crank_visuals(stage)
     player = dm.SignalPlayer(stage, n, seq)
     action = torch.zeros(n, env.action_manager.total_action_dim, device=dev)
     kb, want_reset, last = None, [False], [None]
@@ -114,7 +113,6 @@ with launch_simulation(cfg, args):
                     last[0] = cmd
             c = player.update(t)
             env.step(action)
-            tme.update_crank_visuals(crank, env.scene['robot'])
             t += dt
             step += 1
             if snaps and t >= snaps[0][0]:
