@@ -2,7 +2,7 @@
 """주사위 미션 경기장에서 노드 사이 구간 주행 시간 측정 (env 1개 = 구간 1개, 동시에 달림).
 
 입력 --paths: 구간별 웨이포인트 JSON ({'paths': {'A>B': {'wp': [[x, y], ...]}}, 'heading': {노드: yaw}}, 경기장 m 좌표)
-주행: SwerveAction (배포판 nt_swerve = 팀 swerve.cpp 규칙, 가속 제한 · 조향 속도 · 조향 범위 포함) 에
+주행: SwerveAction (sim_core/nt_swerve = 팀 swerve_controller 규칙, 가속 제한 · 조향 속도 · 조향 범위 포함) 에
       전방 주시 추종기 (몸 방향 유지한 채 평행 이동 + 도착 방향으로 천천히 회전, 끝에서 감속) 로 (vx, vy, wz) 명령.
       Nav2 MPPI 와 다른 추종기라 실제 Nav2 시간과는 차이가 있음.
 도착: 목표 2 cm · 방향 0.03 rad 안 + 속도 1 cm/s 아래. 시간 초과 = 막힘으로 기록.

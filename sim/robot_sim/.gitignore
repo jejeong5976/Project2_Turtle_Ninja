@@ -1,8 +1,4 @@
-robot_description/meshes/
-robot_description/meshes_followup/
-robot_description/parts/
-robot_description/images/
-
+robot/
 usd/robot/
 real_photos/
 source/maze_parts_R3_R5_M4/

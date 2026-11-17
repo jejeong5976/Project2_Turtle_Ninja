@@ -4,10 +4,10 @@
 목표 칸은 같은 영역 안에서 시작 칸과 다르게 뽑는다. 기본은 반쪽 미로(24칸, 영역 1개).
 
 전제와 단순화:
-- 차체는 스워브로 주행한다: 행동 (vx, vy, wz) -> 배포판 swerve/nt_swerve.py (팀 swerve.cpp 2026-10-27 판 그대로, 100 Hz:
+- 차체는 스워브로 주행한다: 행동 (vx, vy, wz) -> sim_core/nt_swerve.py (팀 swerve_controller 규칙 그대로, 100 Hz:
   가속 제한 -> 역기구학 coherent · 출발 때 바퀴 바깥 · 범위 끝 여유 -> 동시 조향 · 구동) -> 조향 위치 목표 4 + 바퀴 속도 목표 4.
   바퀴와 바닥의 마찰로 움직인다.
-- 로봇은 팀 최종 배포판 robot_description/robot.urdf 그대로 (스워브 관절 8개, 모듈별 조향 한계, 센서 프레임). 팔은 접은 자세로 고정.
+- 로봇 = 팀 URDF (ros2_ws/src/description, 실물) 를 tools/convert_robot.py 로 바꾼 robot/robot.urdf · usd/robot. 팔은 접은 자세로 고정.
 - 작성 기준은 Isaac Lab 3.0 (PhysX 백엔드)이다. 쿼터니언은 (x, y, z, w), 자산 데이터는 `.torch`로 읽는다.
 """
 from __future__ import annotations
@@ -43,9 +43,10 @@ if TYPE_CHECKING:  # 런타임 import는 Kit보다 먼저 USD를 불러와 충�
     from isaaclab.envs import ManagerBasedEnv
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent          # sim/robot_sim (usd/, robot_description/, maze_*_layout.json)
+ROOT = HERE.parent          # sim/robot_sim (usd/, robot/, maze_*_layout.json)
+REPO = ROOT.parents[1]
 # 'half' = 위쪽 영역 6x4칸만 (두 영역의 통행 구조가 같아서 반으로 줄임, 환경 넓이 절반). 'full' = 원래 6x8칸
-# 'real' = 팀 실제 미로 (미로_전체부품_R3_R5_M4_2026-10-23 배치 JSON 의 A 경기장, layout_to_maze_usd.py). 벽판 3 mm·3030/R3 기둥·Ø60 마운트
+# 'real' = 팀 실제 미로 (미로 전체 부품 배치 JSON 의 A 경기장, layout_to_maze_usd.py). 벽판 3 mm·3030/R3 기둥·Ø60 마운트
 # 'half' = 이전 Gazebo SDF 위쪽 영역 (통로 구조가 실제와 위아래 반대였음, 보관용)
 MAZE_VARIANT = 'real'
 _SUFFIX = {'half': '_half', 'real': '_real', 'full': ''}[MAZE_VARIANT]
@@ -53,13 +54,17 @@ _SUFFIX = {'half': '_half', 'real': '_real', 'full': ''}[MAZE_VARIANT]
 # 대회 맵은 시연 1주 전 공개 (바깥 크기만 같음) -> YOLO 데이터는 여러 미로로 나눠 뽑음. sim_core import 전에 정해야 함
 MAZE_NAME = os.environ.get('TN_MAZE', '')
 LAYOUT = json.loads((ROOT / 'mazes' / f'{MAZE_NAME}_layout.json' if MAZE_NAME else ROOT / f'maze{_SUFFIX}_layout.json').read_text())
-# 로봇 = 팀 최종 배포판 nt_urdf_release_20261027_layout (robot_description/, README_KO.md · CHANGES_20261027_layout.md). URDF 는 수정 없이 그대로 쓰고
-#   시뮬레이션 값(팔 effort·gain, armature, 마찰, 접은 자세)은 아래 설정에서만 바꿈.
-#   robot_description/robot.urdf = 배포판 urdf/robot.urdf 에서 메시 경로 'package://nt_release_description/' 만 지운 것 (Isaac 변환 · 순기구학 · RViz)
-#   바퀴 관절 steer_<모듈>_joint / drive_<모듈>_joint, 총질량 3.81 kg, 라이다 스캔면 바닥 위 60 mm (앞 yaw 180° · 뒤 0°)
-# 시뮬은 변환된 USD (usd/robot) 로 돌고, URDF 는 다시 변환할 때만 씀 (urdf_to_robot_usd.py)
-ROBOT_DIR = ROOT / 'robot_description'
+# 로봇 = 팀 URDF (ros2_ws/src/description = 실물). tools/convert_robot.py 가 robot/robot.urdf · robot/swerve.yaml · usd/robot 을 만듦
+#   (GitHub 에 안 올림, URDF 가 바뀌면 다시 실행). 시뮬레이션 값 (팔 gain, armature, 마찰) 은 아래 설정에서만 바꿈.
+#   루트 = base_footprint (바퀴 바닥), base_link 는 그 BASE_Z 위. 바퀴 관절 steer_<모듈>_joint / drive_<모듈>_joint, 팔 joint1–5,
+#   손가락 gripper_left/right_joint (직선). 그리퍼 연결기구 (크랭크 · 막대) 는 변환 때 고정
+ROBOT_DIR = ROOT / 'robot'
 ROBOT_URDF = ROBOT_DIR / 'robot.urdf'
+for _p in (ROBOT_URDF, ROBOT_DIR / 'swerve.yaml'):
+    if not _p.exists():
+        raise FileNotFoundError(f'{_p} 없음 → tools/convert_robot.py urdf · usd 먼저')
+ARM_JOINTS = [f'joint{i}' for i in range(1, 6)]
+FINGERS = ['gripper_left_joint', 'gripper_right_joint']
 MAZE_USD = ROOT / 'usd' / 'mazes' / f'{MAZE_NAME}.usd' if MAZE_NAME else ROOT / 'usd' / f'maze{_SUFFIX}.usd'
 MAZE_COLLISION_USD = MAZE_USD if MAZE_NAME or MAZE_VARIANT == 'real' else ROOT / 'usd' / f'maze{_SUFFIX}_collision_only.usd'  # 카메라 없이 대량 학습용
 
@@ -67,30 +72,36 @@ CELL_X, CELL_Y = LAYOUT['grid']['cell_m']
 NUM_CELLS = len(LAYOUT['cells'])
 MAZE_INNER_HALF = tuple(LAYOUT.get('inner_half_m', (2.202, 3.152)))  # 바깥벽 중심선 (x, y)
 
-ARM_EFFORT_NM = 3.8  # XM430-W350 11.1 V 정지토크 (URDF 는 12 V 4.1 N·m, 배터리 11.1 V 라 여기서 덮어씀). 연속 운용 한계는 DR 범위로 다룸
-# 팔 관절별 한계 = 실물 운용값 (배포판 config/operating_limits.yaml arm_tested_max, A9F5 실물 3회 2026-10-26). URDF 는 하드웨어 한계 (4.1 N·m · 4.817 rad/s)
-#   속도 = 실제 잰 최고 속도 [rad/s], 힘 = 재생 중 출력 상한 (Goal PWM / 885) × 정지토크 [N·m] (역기전력 무시 근사)
-#   J5 = 모터 설정값 (Profile Velocity 4 -> 0.1 rad/s, PWM 60 % -> 2.28 N·m). 파일에 J5 가 없으면 J4 값으로 대신함
+import xml.etree.ElementTree as _ET
 import yaml as _yaml
-_OPS = _yaml.safe_load((ROBOT_DIR / 'config' / 'operating_limits.yaml').read_text())['arm_tested_max']
-ARM_VEL_LIMIT = dict(_OPS['velocity_rad_s'])
-ARM_EFFORT_LIMIT = {j: round(ARM_EFFORT_NM * pct / 100.0, 3) for j, pct in _OPS['pwm_limit_percent'].items()}
-ARM_VEL_LIMIT.setdefault('arm_joint5', ARM_VEL_LIMIT['arm_joint4'])
-ARM_EFFORT_LIMIT.setdefault('arm_joint5', ARM_EFFORT_LIMIT['arm_joint4'])
-SPAWN_Z = 0.075  # 바퀴 바닥 z=-0.072 + 3 mm (배포판 isaac_lab_init_state.parked_init_state 기본 root_z 와 같음)
-# 팔 자세 2개 (config/initial_pose.json)
-#   TUCK_POSE  = 주행 기본자세 = 실물 받침(parked, 'positions') + 그리퍼 16 mm (손가락 a·b 둘 다). 시작 · 주행 중 고정 자세
-#   READY_POSE = 퍽 집기 준비자세 = 실물 P0 (poses 'C1_P0', 받침에서 든 자세). 퍽 집기 직전에 들어감, 그리퍼 값 없음
-#   LOOK_PUCK_POSE = 손목 D435 로 선반 위 퍽을 내려다보는 관찰 자세 (poses 'LOOK_PUCK', 2026-10-29 tools/find_look_pose.py). 그리퍼 값 없음
-#   _layout 판에서 parked + 16 mm 정착 · 주행 안정 확인 (자기 충돌 끔이라 손가락-받침 겹침 영향 없음, 2026-10-28)
-_INIT_POSE = json.loads((ROBOT_DIR / 'config' / 'initial_pose.json').read_text())
-_PARKED = _INIT_POSE['positions']
-TUCK_POSE = {**{k: v for k, v in _PARKED.items() if k.startswith('arm_joint')},
-             'gripper_finger_a_joint': _PARKED['gripper_finger_a_joint'], 'gripper_finger_b_joint': _PARKED['gripper_finger_a_joint']}
-READY_POSE = dict(_INIT_POSE['poses']['C1_P0']['q_rad'])
-LOOK_PUCK_POSE = dict(_INIT_POSE['poses']['LOOK_PUCK']['q_rad'])
-# J1 정면각: 그리퍼 중심 방위가 차체 +x 가 되는 J1. config/joint_map.json 의 J1 받침 자세 4088 틱 = 정면 −94.6486°
-J1_FORWARD = math.radians(-94.6485994803)
+_LIMITS = {j.get('name'): j.find('limit') for j in _ET.parse(ROBOT_URDF).getroot().findall('joint') if j.find('limit') is not None}
+# 팔 힘 · 속도 한계 = 팀 URDF 관절 limit (XM430 4.1 N·m · 4.8 rad/s)
+ARM_EFFORT_LIMIT = {n: float(_LIMITS[n].get('effort')) for n in ARM_JOINTS}
+ARM_VEL_LIMIT = {n: float(_LIMITS[n].get('velocity')) for n in ARM_JOINTS}
+BASE_Z = 0.033   # base_link 높이 (base_footprint 기준)
+SPAWN_Z = 0.003  # 루트 = base_footprint (바퀴 바닥) + 3 mm
+# 팔 자세 (실물 설정 그대로, 관절 명령값 = 처짐 앞먹임 포함)
+#   TUCK_POSE      = 주행 기본자세 = config/control.yaml poses.home (받침 자세). 시작 · 주행 중 고정 자세, 손가락 0
+#   READY_POSE     = 퍽 집기 준비자세 = config/arm_paths.yaml look 경로의 P0 (받침에서 든 자세)
+#   LOOK_PUCK_POSE = 손목 D435 로 박스 위 퍽을 보는 관찰 자세 = 같은 경로의 마지막 점 look
+_CTRL = _yaml.safe_load((REPO / 'config' / 'control.yaml').read_text())['control_master']['ros__parameters']
+_LOOK = _yaml.safe_load((REPO / 'config' / 'arm_paths.yaml').read_text())['control_master']['ros__parameters']['arm_paths']['look']
+
+
+def _path_pose(path: dict, node: str) -> dict:
+    i = path['nodes'].index(node)
+    return dict(zip(ARM_JOINTS, path['q'][5 * i:5 * i + 5]))
+
+
+# 손가락 q [m]: 손가락 사이 = 2 · (0.0091 + q) · 1000 + 7.4 mm (control grasp_guard 식). 열림 58.5 mm, 닫힘 = URDF 하한 (18.6 mm)
+FINGER_OPEN = 0.0165
+FINGER_CLOSED = float(_LIMITS[FINGERS[0]].get('lower'))
+FLOOR_Z = -BASE_Z   # base_link 기준 바닥
+TUCK_POSE = {**dict(zip(ARM_JOINTS, _CTRL['poses']['home'])), **{f: FINGER_CLOSED for f in FINGERS}}
+READY_POSE = _path_pose(_LOOK, 'P0')
+LOOK_PUCK_POSE = _path_pose(_LOOK, 'look')
+# J1 정면각: 그리퍼 중심 방위가 차체 +x 가 되는 J1 (팀 URDF 는 0)
+J1_FORWARD = 0.0
 # 팔이 차체 안이라 차체 꼭짓점(0.133, 0.133)·조향한 바퀴가 가장 멂 -> 반경 0.20 m
 FOOTPRINT_RADIUS = 0.20
 # 재질 (마찰은 정지/운동, 반발 0). 부품은 TurtleBot3 Waffle Pi 계열 (ROBOTIS 부품 설명 기준), 마찰 수치는 실측 전 추정값
@@ -114,10 +125,10 @@ def _fixed_material(name: str) -> dict:
             'restitution_range': (m['restitution'],) * 2}
 
 
-# 스워브 = 배포판 config/swerve.yaml (팀 drive_only.yaml 과 같은 모듈 위치, 조향 범위 = 엔코더 창 전체, 모터 레지스터 · 데이터시트 값)
+# 스워브 = robot/swerve.yaml (sim_core/swerve_base.yaml + 모듈 위치 config/controllers.yaml · 조향 범위 팀 URDF)
 #   SWERVE_MODULES: 모듈 이름 -> (조향축 x, y [m], 바퀴 오프셋 [m] = 조향축에서 바퀴 접지점까지 모듈 y 방향, 조향 한계 min, max [rad])
 import yaml as _yaml
-SWERVE_YAML = _yaml.safe_load((ROBOT_DIR / 'config' / 'swerve.yaml').read_text())
+SWERVE_YAML = _yaml.safe_load((ROBOT_DIR / 'swerve.yaml').read_text())
 _g, _r = SWERVE_YAML['geometry'], SWERVE_YAML['steer_range_rad']
 SWERVE_MODULES = {m: (_g['module_x'][i], _g['module_y'][i], _g['module_offset'][i], _r['min'][i], _r['max'][i])
                   for i, m in enumerate(SWERVE_YAML['joints']['module_names'])}
@@ -128,7 +139,7 @@ _HW = SWERVE_YAML['hardware_max']        # 바퀴 · 조향 최고 속도 [rad/s
 _TRAIN = SWERVE_YAML['limits_for_training']
 
 
-# URDF -> USD 변환 설정 (urdf_to_robot_usd.py 가 사용). PhysX·MuJoCo 물리 정보가 함께 들어간 USD 를 만든다
+# URDF -> USD 변환 설정 (tools/convert_robot.py 가 사용). PhysX·MuJoCo 물리 정보가 함께 들어간 USD 를 만든다
 TURTLENINJA_URDF_SPAWN = sim_utils.UrdfFileCfg(
     asset_path=str(ROBOT_URDF),
     fix_base=False,
@@ -137,8 +148,7 @@ TURTLENINJA_URDF_SPAWN = sim_utils.UrdfFileCfg(
     joint_drive=sim_utils.UrdfConverterCfg.JointDriveCfg(
         gains=sim_utils.UrdfConverterCfg.JointDriveCfg.PDGainsCfg(stiffness=None, damping=None)),
 )
-# URDF 를 tools/urdf_to_robot_usd.py 로 변환한 USD (두 물리 엔진 공용, 없으면 그 스크립트 실행). 질량 · 관성은 URDF 그대로 (3.81 kg).
-# 배포판에 든 USD (usd/robot) 는 물리 variant 선택이 비어 있어 따로 지정해야 하고 관절 이득도 다름 -> 같은 URDF 로 직접 변환해 씀
+# URDF 를 tools/convert_robot.py 로 변환한 USD (두 물리 엔진 공용). 질량 · 관성은 URDF 그대로
 ROBOT_USD = ROOT / 'usd' / 'robot' / 'robot' / 'robot.usda'
 
 TURTLENINJA_CFG = ArticulationCfg(
@@ -150,21 +160,19 @@ TURTLENINJA_CFG = ArticulationCfg(
                                  solver_velocity_iteration_count=4),
             NewtonArticulationCfg(self_collision_enabled=False),
         ],
-        # PhysX 솔버 반복 8/1 이면 팔을 편 채 벽에 부딪힐 때 손목·손가락 관절이 발산 (2026-10-21 시험). 32/4 에서 0
+        # PhysX 솔버 반복 8/1 이면 팔을 편 채 벽에 부딪힐 때 손목·손가락 관절이 발산. 32/4 에서 0
     ),
     init_state=ArticulationCfg.InitialStateCfg(pos=(0.0, 0.0, SPAWN_Z), joint_pos=dict(TUCK_POSE)),
     # armature = 모터 회전자 관성 × 감속비² (관절에서 느껴지는 관성). XM430 감속비 353.5 -> 약 0.01 kg·m² (추정값, DR 대상)
-    # 0 이면 가벼운 손목이 벽에 닿을 때 관절이 발산함 (2026-10-22 시험). 그리퍼는 배포판 값 (armature 없음)
+    # 0 이면 가벼운 손목이 벽에 닿을 때 관절이 발산함. 그리퍼는 armature 없음
     actuators={
-        # 팔 이득 500 / 10 = 배포판 USD 구동값 (nt_train_kit · 키보드 시연 · verify_* 에서 parked 유지 0.18°, 실측 궤적 재생 확인). 실물 맞춤 아님.
-        #   힘 · 속도 한계 = 실물 운용값 (위 ARM_EFFORT_LIMIT · ARM_VEL_LIMIT)
-        'arm': ImplicitActuatorCfg(joint_names_expr=['arm_joint[1-5]'], stiffness=500.0, damping=10.0,
+        # 팔 이득 500 / 10 (접은 자세 유지 · 궤적 재생 확인값, 실물 맞춤 아님). 힘 · 속도 한계 = URDF (위 ARM_EFFORT_LIMIT · ARM_VEL_LIMIT)
+        'arm': ImplicitActuatorCfg(joint_names_expr=['joint[1-5]'], stiffness=500.0, damping=10.0,
                                    joint_effort_limit=ARM_EFFORT_LIMIT, joint_velocity_limit=ARM_VEL_LIMIT, armature=0.01),
-        # 그리퍼 = 배포판 nt_train_kit 값: 두 손가락 모두 구동 (USD 의 손가락 b 는 mimic 이라 구동 힘 0) 1000 / 2 · 20 N · 0.15 m/s.
-        #   16 mm 유지 · 빠른 개폐 (배포판 확인). 실물은 전류 제한 위치 모드 Goal Current 60 (약 0.16 A)
-        'gripper': ImplicitActuatorCfg(joint_names_expr=['gripper_finger_.*'], stiffness=1000.0, damping=2.0,
+        # 그리퍼: 두 손가락 모두 구동 1000 / 2 · 20 N · 0.15 m/s. 실물은 전류 제한 위치 모드 Goal Current 60 (약 0.16 A)
+        'gripper': ImplicitActuatorCfg(joint_names_expr=['gripper_(left|right)_joint'], stiffness=1000.0, damping=2.0,
                                        joint_effort_limit=20.0, joint_velocity_limit=0.15),
-        # 조향 · 바퀴 이득 = 배포판 검증값 (config/nt_train_kit.py actuators(), tools/sim_drive_check.py 와 같음. 실물 계단 응답 실측 전)
+        # 조향 · 바퀴 이득 (실물 계단 응답 실측 전)
         #   조향 20 N·m/rad ≈ XM430 기본 Position P Gain 800 + 정지 토크 4.1 N·m 대충 환산(약 19)과 비슷함
         # 조향 XM430-W350 위치 모드. 속도 한계(swerve.yaml 최고 4.796 rad/s)는 SwerveAction 이 목표를 그 속도로 옮겨서 지킴
         'steer': ImplicitActuatorCfg(joint_names_expr=['steer_.*_joint'], stiffness=20.0, damping=0.3,
@@ -260,7 +268,7 @@ def reset_robot_in_maze(env: ManagerBasedEnv, env_ids: torch.Tensor, footprint_r
 # 크기·색 중 실측이 아닌 값은 (가정) 표시. USD 는 make_props_usd.py 가 만듦
 PROPS_DIR = ROOT / 'usd' / 'props'
 NUM_BARCODES = 4                          # Code128 P2-01..P2-04 (팀 배포 표식)
-BARCODE_W, BARCODE_H = 0.070, 0.024       # 흰 여백 포함 실측 (2026-10-28), tools/make_props_usd.py 와 같게
+BARCODE_W, BARCODE_H = 0.070, 0.024       # 흰 여백 포함 실측, tools/make_props_usd.py 와 같게
 NUM_PLACE_TAGS = 3                        # 장소용 AprilTag L1–L3 (tag36h11 ID 12–14), 라벨 60 mm
 PLACE_TAG_W = 0.060
 PLACE_TAG_Z_RANGE = (0.15, 0.32)          # 붙이는 높이 미공개 -> 범위에서 무작위 (가정)
@@ -272,12 +280,12 @@ TL_POST_DEPTH = PROFILE_W + 0.040         # 벽 -> 기둥 + 신호등(Ø40) 앞�
 LOADED_SHELF_CHOICES = (4, 3)             # 짐 선반 수 후보 (12 / 선반 수 = 선반당 퍽 수)
 EMPTY_SHELF_PROB = 0.5
 NUM_SHELVES = max(LOADED_SHELF_CHOICES) + 1  # 선반 자산 수 (짐 최대 4 + 빈 1)
-SHELF_SIZE = (0.27, 0.27, 0.07)           # 깊이 × 폭 × 높이 270×270×70 mm (팀 확정 2026-10-23). 벽에 붙여 놓는다고 가정
-ROBOT_FRONT = 0.133                       # base_link -> 차체 앞면
+SHELF_SIZE = (0.27, 0.27, 0.07)           # 깊이 × 폭 × 높이 270×270×70 mm. 벽에 붙여 놓는다고 가정
+ROBOT_FRONT = 0.141                       # base_link -> 차체 앞면 (navigation chassis_x)
 SHELF_STAND_GAP = 0.03                    # 정렬 자세: 차체 앞면 ~ 선반 앞면 간격 (가정)
 GOAL_DIST_FROM_WALL = SHELF_SIZE[0] + SHELF_STAND_GAP + ROBOT_FRONT   # 정렬 자세 중심 ~ 벽면 = 0.433 m
 PUCK_D, PUCK_H = 0.03, 0.06  # 원기둥 Ø3×6 / 사각기둥 3×3×6 cm
-PUCK_MASS = {'box': 0.017, 'cyl': 0.013}  # 실측 (2026-10-24). 시뮬 물리는 usd/props/puck_*.usda 값을 씀 (tools/make_props_usd.py)
+PUCK_MASS = {'box': 0.017, 'cyl': 0.013}  # 실측. 시뮬 물리는 usd/props/puck_*.usda 값을 씀 (tools/make_props_usd.py)
 
 
 def _srgb_to_linear(rgb255):
@@ -286,12 +294,12 @@ def _srgb_to_linear(rgb255):
     return tuple(x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4 for x in c)
 
 
-SHELF_SRGB = (191, 166, 134)   # 선반 = 골판지 박스 색. 실물 사진 2026-10-27 (카펫 위 박스) 화소 중앙값 (223, 194, 156) 을
-#   같은 사진 카펫 (125) 이 카펫 기준값 real_colors.json (107) 이 되게 선형 공간에서 맞춤 (폰 자동 노출 보정). 이전 10-24 값 (203, 172, 139)
+SHELF_SRGB = (191, 166, 134)   # 선반 = 골판지 박스 색. 실물 사진 (카펫 위 박스) 화소 중앙값 (223, 194, 156) 을
+#   같은 사진 카펫 (125) 이 카펫 기준값 real_colors.json (107) 이 되게 선형 공간에서 맞춤 (폰 자동 노출 보정)
 PUCK_COLORS = {'red': _srgb_to_linear((157, 34, 53)),    # 팀 지정 (렌더용 보정은 tools/make_props_usd.py)
                'green': _srgb_to_linear((45, 150, 72))}  # 실물 사진 측정 (make_props_usd.py 와 같게)
 # 퍽 이름 = (색, 모양). 어떤 퍽이 어느 선반·자리에 갈지는 reset 마다 무작위
-# 퍽 = (색, 모양, 태그 ID). 빨강 R1–R4 = ID 0–3, 초록 G1–G4 = ID 4–7 (파랑 B 는 빠짐, 2026-10-23). 형태별 개수는 미공지 -> 색마다 반반 가정
+# 퍽 = (색, 모양, 태그 ID). 빨강 R1–R4 = ID 0–3, 초록 G1–G4 = ID 4–7 (파랑 B 는 빠짐). 형태별 개수는 미공지 -> 색마다 반반 가정
 # 퍽 USD(태그 포함)는 make_props_usd.py 의 PUCKS 와 같은 순서
 PUCKS = [('red', 'box', 0), ('red', 'box', 1), ('red', 'cyl', 2), ('red', 'cyl', 3),
          ('green', 'box', 4), ('green', 'box', 5), ('green', 'cyl', 6), ('green', 'cyl', 7)]
@@ -337,7 +345,7 @@ def hold_arm_at_default(env: ManagerBasedEnv, env_ids: torch.Tensor, asset_cfg: 
     asset: Articulation = env.scene[asset_cfg.name]
     if isinstance(env_ids, slice):
         env_ids = torch.arange(env.num_envs, device=env.device)[env_ids]
-    hold_ids = asset.find_joints(['arm_joint[1-5]', 'gripper_finger_.*'])[0]
+    hold_ids = asset.find_joints(ARM_JOINTS + FINGERS, preserve_order=True)[0]
     value = asset.data.default_joint_pos.torch[env_ids][:, hold_ids]
     asset.actuators.target_command.set_position_index(value=value, joint_ids=hold_ids, env_ids=env_ids)
 
@@ -471,26 +479,24 @@ def obs_goal_in_base(env: ManagerBasedEnv) -> torch.Tensor:
     return torch.stack([c * delta[:, 0] + s * delta[:, 1], -s * delta[:, 0] + c * delta[:, 1]], dim=-1)
 
 
-# ---------- 스워브 차체 행동 (배포판 nt_swerve.py = 팀 swerve.cpp 2026-10-27 판) ----------
+# ---------- 스워브 차체 행동 (sim_core/nt_swerve.py = 팀 swerve_controller 규칙) ----------
 
 def wrap_angle(a: torch.Tensor) -> torch.Tensor:
     return torch.remainder(a + math.pi, 2 * math.pi) - math.pi
 
 
-# 배포판 스워브 컨트롤러 (팀 swerve.cpp 2026-10-27 판을 줄 단위로 옮긴 것, C++ 일치 검사 tools/check_swerve_port.py)
 import sys as _sys
-_sys.path.insert(0, str(ROBOT_DIR / 'swerve'))
-import nt_swerve  # noqa: E402
+from sim_core import nt_swerve  # noqa: E402
 
 
 class SwerveAction(ActionTerm):
-    """행동 [-1, 1]^3 -> 몸 속도 명령 (vx, vy, wz) -> 배포판 nt_swerve.SwerveDrive (실물 swerve_controller 와 같은 규칙)
+    """행동 [-1, 1]^3 -> 몸 속도 명령 (vx, vy, wz) -> nt_swerve.SwerveDrive (실물 swerve_controller 와 같은 규칙)
     -> 모듈 4개 (조향 위치 목표, 바퀴 속도 목표).
 
     env 마다 SwerveDrive 하나를 두고 실물처럼 ctrl_hz(100 Hz) 로 update 함. 규칙은 모두 nt_swerve.py 그대로:
       명령 크기 제한 -> 가속 제한 -> 역기구학 (coherent 조향 선택, 멈춤 -> 출발 때 바퀴 바깥쪽 선호, 이동 중 분기 유지,
       범위 끝 1° 여유) -> 동시 조향 · 구동 (blend) -> 조향 정렬 게이트 -> 바퀴 최고 속도 정규화.
-    설정 = 배포판 config/swerve.yaml. 단 조향 정렬 허용각만 cfg.steer_tolerance (기본 π = 연속 조향, 사용자 결정) 로 덮어씀.
+    설정 = robot/swerve.yaml. 단 조향 정렬 허용각만 cfg.steer_tolerance (기본 π = 연속 조향) 로 덮어씀.
     조향 모터 속도 한계(steer_rate)는 물리 스텝마다 조향 목표를 그 속도 이하로 옮겨서 흉내 냄 (실물 모터 profile).
     계산은 CPU Python (env 수가 적은 데이터 생성 · 보기용). 빠진 것: 팔 차례(motion_mode) 잠금 = 항상 주행 허용.
     """
@@ -503,7 +509,7 @@ class SwerveAction(ActionTerm):
         names = list(SWERVE_MODULES)
         self._steer_ids, _ = self._asset.find_joints([STEER_JOINT.format(m) for m in names], preserve_order=True)
         self._drive_ids, _ = self._asset.find_joints([DRIVE_JOINT.format(m) for m in names], preserve_order=True)
-        kin, dcfg, _ = nt_swerve.from_config(str(ROBOT_DIR / 'config' / 'swerve.yaml'))
+        kin, dcfg, _ = nt_swerve.from_config(str(ROBOT_DIR / 'swerve.yaml'))
         dcfg.max_linear, dcfg.max_angular = cfg.max_linear, cfg.max_angular
         dcfg.max_linear_accel, dcfg.max_angular_accel = cfg.max_linear_accel, cfg.max_angular_accel
         dcfg.steer_tolerance = cfg.steer_tolerance
@@ -611,7 +617,7 @@ class SwerveAction(ActionTerm):
 
 @configclass
 class SwerveActionCfg(ActionTermCfg):
-    """속도 · 가속 한계 = 배포판 config/swerve.yaml 의 limits_for_training (하드웨어 끝 + 추정 가속). 실물 확인은 0.13 m/s · 0.2 m/s² 까지.
+    """속도 · 가속 한계 = swerve.yaml 의 limits_for_training (하드웨어 끝 + 추정 가속). 실물 설정으로 보려면 use_real_speed_limits.
     나머지 컨트롤러 규칙 · 값은 swerve.yaml controller 절 그대로 (nt_swerve.from_config)."""
 
     class_type: type[ActionTerm] = SwerveAction
@@ -621,7 +627,6 @@ class SwerveActionCfg(ActionTermCfg):
     max_linear_accel: float = _TRAIN['max_linear_accel']  # m/s² [추정]
     max_angular_accel: float = _TRAIN['max_angular_accel']  # rad/s² [추정]
     # 조향 정렬 허용각: 모듈 하나라도 이만큼 넘게 어긋나면 구동을 멈추고 조향 먼저. π = 연속 조향 (구동하며 조향, 바퀴 속도는 cos 감속)
-    # 연속 조향 채택 (사용자 결정 · 시험 완료, 2026-10-23 reports/steer_modes). 배포판 swerve.yaml 은 아직 0.17 (조향 먼저)
     steer_tolerance: float = math.pi
     ctrl_hz: float = 100.0  # 실물 swerve_controller 주기
     steer_rate: float = _HW['steer_speed']  # rad/s = 조향 모터 Velocity Limit 200 × 0.229 rpm (실물 hardware_map profile_vel 40 = 0.96, 확인 필요)
@@ -704,7 +709,7 @@ class ObservationsCfg:
         goal_in_base = ObsTerm(func=obs_goal_in_base)
         base_lin_vel = ObsTerm(func=mdp.base_lin_vel)
         arm_joint_pos = ObsTerm(func=mdp.joint_pos_rel,
-                                params={'asset_cfg': SceneEntityCfg('robot', joint_names=['arm_joint[1-5]'])})
+                                params={'asset_cfg': SceneEntityCfg('robot', joint_names=['joint[1-5]'])})
 
         def __post_init__(self):
             self.concatenate_terms = True
@@ -717,11 +722,11 @@ class EventsCfg:
     # 재질 분리: 바퀴 = TB3 고무 타이어, 나머지 = TB3 플라스틱·금속 부품 묶음. 범위를 넓히면 그대로 DR 이 됨
     wheel_material = EventTerm(
         func=mdp.randomize_rigid_body_material, mode='startup',
-        params={'asset_cfg': SceneEntityCfg('robot', body_names='v5_.*_wheel_link_0'), 'num_buckets': 1,
+        params={'asset_cfg': SceneEntityCfg('robot', body_names='wheel_.*_link'), 'num_buckets': 1,
                 **_fixed_material('rubber_wheel')})
     body_material = EventTerm(
         func=mdp.randomize_rigid_body_material, mode='startup',
-        params={'asset_cfg': SceneEntityCfg('robot', body_names='^(?!v5_.*_wheel_link_0$).*'), 'num_buckets': 1,
+        params={'asset_cfg': SceneEntityCfg('robot', body_names='^(?!wheel_.*_link$).*'), 'num_buckets': 1,
                 **_fixed_material('tb3_plastic')})
     reset_in_maze = EventTerm(func=reset_robot_in_maze, mode='reset',
                               params={'footprint_radius': FOOTPRINT_RADIUS, 'margin': 0.02})
@@ -784,7 +789,7 @@ def use_real_look(cfg: 'TurtleNinjaMazeEnvCfg', pano: str = 'pano_191331.jpg', y
 
 # ---------- 천장 조명 (강의실 천장 사각 조명 흉내. 위치 · 크기 · 세기는 실측 아님) ----------
 # 파노라마 돔만 쓰면 벽이 실제보다 어둡고 파랗고(채도 67 vs 실제 51), 비친 퍽이 검게 나옴 -> 위에서 비추는 조명 추가
-# 세기 10000 + 돔 0.25–1.1 배: 벽/바닥 밝기 비 0.65 (실제 0.67), 벽 채도 56, 벽판 ior 2.6 일 때 반사율 0.13 (실제 0.13). 2026-10-27 미리보기
+# 세기 10000 + 돔 0.25–1.1 배: 벽/바닥 밝기 비 0.65 (실제 0.67), 벽 채도 56, 벽판 ior 2.6 일 때 반사율 0.13 (실제 0.13), 미리보기
 CEIL_LIGHT_XY = [(x, y) for x in (-1.2, 1.2) for y in (-2.0, 0.0, 2.0)]   # 미로 중심 기준 (m)
 CEIL_LIGHT_SIZE = (0.6, 1.2)                                               # 사각 조명 가로 · 세로 (m)
 CEIL_LIGHT_Z = 2.6
@@ -807,25 +812,23 @@ def add_ceiling_lights(stage, env_origins, intensity: float = CEIL_LIGHT_INT) ->
 
 
 # ---------- 로봇 실물 색 (URDF 색은 부품 구분용 임시 색) ----------
-# 손목 D435 와 뒤 받침대(PLA). 실물 사진 (2026-10-24, 휴대폰) 화소 중앙값 sRGB. 폰 자동 노출이라 실제보다 약간 밝을 수 있음
-# URDF 원본: 받침대 주황 (0.97, 0.56, 0.14), D435 하늘색 (0.22, 0.68, 0.85) -> 상단 카메라 화면 아래에 크게 보임
-# 팔 프레임·손가락 URDF 연회색 (0.62, 0.66, 0.70), 모터 (0.15, 0.15, 0.17) -> 실물은 둘 다 검정. 팔은 움직여 광각 화면에 들어옴
-_ARM_BLACK, _MOTOR_BLACK = (28, 28, 30), (36, 36, 40)   # 팔 프레임·손가락 (검정 판금·출력물), Dynamixel 몸체 (사진 2026-10-24, 눈대중)
+# 손목 D435 와 뒤 받침대(PLA) = 실물 사진 화소 중앙값 sRGB (폰 자동 노출이라 약간 밝을 수 있음).
+# 팔 프레임 · 손가락 · 모터 = 실물은 검정 (URDF 는 연회색 · 진회색). 팔은 움직여 광각 화면에 들어옴
+_ARM_BLACK, _MOTOR_BLACK = (28, 28, 30), (36, 36, 40)   # 팔 프레임 · 손가락 (검정 판금 · 출력물), Dynamixel 몸체 (눈대중)
 ROBOT_REAL_COLORS = {   # 재질 이름: (sRGB, roughness). 부품(visual) 이름 대신 재질 이름으로 찾음
     'link5_down_PLA_mat': ((220, 208, 195), 0.6),     # 크림색 PLA 받침대
     'link5_down_D435_mat': ((218, 222, 222), 0.4),    # 은색 알루미늄 D435 몸체
     **{m: (_ARM_BLACK, 0.5) for m in (
         'arm_link1__frame_mat', 'arm_link2__frame_mat', 'arm_link3__frame_mat', 'link4_up_frame_mat', 'link5_down_frame_mat',
-        'gripper_crank__frame_mat', 'gripper_nut__frame_mat', 'finger_a_mat', 'finger_b_mat')},
+        'gripper_drive_crank_mat', 'gripper_drive_nut_mat', 'gripper_link_left_mat', 'gripper_link_right_mat', 'finger_a_mat', 'finger_b_mat')},
     **{m: (_MOTOR_BLACK, 0.45) for m in (
         'arm_base_link__motor_mat', 'arm_link1__motor_mat', 'arm_link2__motor_mat', 'arm_link3__motor_mat',
         'link4_up_motor_mat', 'link5_down_motor_mat')},
-    **{f'v5_{m}_steer_link_0_color': (_ARM_BLACK, 0.5) for m in ('fl', 'fr', 'rl', 'rr')},
-    **{m: (_ARM_BLACK, 0.5) for m in ('bottom_half_front_mat', 'bottom_half_rear_mat')},   # 라이다 앞 · 뒤 판 (URDF 적갈색 -> 검정, 사용자 2026-10-27)   # 스워브 조향 모듈 (URDF 주황, 실물 검정 2026-10-27 사용자)
+    **{m: (_ARM_BLACK, 0.5) for m in ('bottom_half_front_mat', 'bottom_half_rear_mat')},   # 라이다 앞 · 뒤 판 (실물 검정)
 }
 
 
-# ---------- 신호등 겉모습 (실제 영상에 맞춘 값, 2026-10-28) ----------
+# ---------- 신호등 겉모습 (실제 영상에 맞춘 값) ----------
 # 실제 = yolo/wide/datasets/real_frames/wide_traffic_light_0 (같은 자리 꺼짐 · 빨 · 노 · 초 프레임), 시뮬 = PathTracing, 신호등 앞 0.6 m · 높이 0.45 m
 #   꺼진 렌즈 색 / 카펫 비율: 빨 (1.37, 0.36, 0.30) · 노 (1.42, 0.96, 0.29) · 초 (0.32, 0.89, 0.52) -> 시뮬 ±0.03 안
 #   켜진 칸: 가운데가 거의 흰색 (실제 sRGB 약 242) -> 발광을 세게 (색은 가장자리 · 번짐에만 남음)
@@ -869,42 +872,6 @@ class TrafficLightLook:
             self.light[c].Set(gain * TL_LAMP[c]['glow'] if on else 0.0)
 
 
-def _load_train_kit():
-    """배포판 config/nt_train_kit.py 를 파일 경로로 직접 불러옴 (한 번만, 이후 sys.modules 것 재사용).
-    robot_description/config 는 __init__.py 없는 네임스페이스 패키지라, sys.path 어딘가에 일반 모듈 config.py
-    (예: cv2 폴더의 OpenCV 로더 설정)가 있으면 sys.path 순서와 무관하게 그쪽이 잡힘 -> NameError: LOADER_DIR."""
-    import importlib.util
-    import sys
-    name = 'turtle_ninja_robot_train_kit'
-    if name in sys.modules:
-        return sys.modules[name]
-    module_path = ROBOT_DIR / 'config' / 'nt_train_kit.py'
-    spec = importlib.util.spec_from_file_location(name, module_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f'배포판 학습 도우미를 못 불러옴: {module_path}')
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    try:
-        spec.loader.exec_module(module)
-    except BaseException:
-        del sys.modules[name]   # 실패한 반쪽 모듈이 남지 않게
-        raise
-    return module
-
-
-def add_crank_visuals(stage):
-    """그리퍼 크랭크(회색) · 링크 막대(노랑)를 손가락 위치에 맞춰 움직이는 보이는 모양 (물리 무관) = 배포판 config/nt_train_kit.CrankVisuals.
-    URDF 막대는 CAD 자세(58.5 mm)로 고정돼 있어 그리퍼를 16 mm 로 닫으면 막대 끝이 옆으로 튀어나와 보임 -> 카메라 쓸 때 붙임.
-    env.instantiate 뒤에 한 번 부르고, 손가락을 바꾼 뒤 렌더 전에 update_crank_visuals."""
-    return _load_train_kit().CrankVisuals(stage)
-
-
-def update_crank_visuals(crank, robot):
-    """env 별 손가락 a · b 평균값으로 크랭크 · 막대 자세 갱신 (바뀐 env 만 씀)."""
-    ids = robot.find_joints(['gripper_finger_a_joint', 'gripper_finger_b_joint'], preserve_order=True)[0]
-    crank.update(robot.data.joint_pos.torch[:, ids].mean(1).cpu().numpy())
-
-
 def apply_robot_real_colors(stage) -> dict:
     """env.instantiate 뒤에 호출. 로봇 부품 재질(Material 입력값)을 실물 색으로 덮어씀. 재질별로 바꾼 개수를 돌려줌.
 
@@ -930,6 +897,27 @@ def apply_robot_real_colors(stage) -> dict:
     return done
 
 
+def hide_wrist_camera_body(stage) -> int:
+    """env.instantiate 뒤에 호출 (손목 D435 를 쓸 때). D435 케이스 메시 (재질 link5_down_D435_mat) 를 안 보이게 함.
+    팀 URDF 의 d435_color_optical_frame 이 케이스 메시보다 1.2–4.3 cm 뒤에 있어 그대로면 손목 영상 대부분을 케이스가 가림.
+    카메라를 앞으로 옮기면 perception 이 쓰는 TF 와 어긋나므로 메시만 숨김. 숨긴 부품 수를 돌려줌"""
+    from pxr import Usd, UsdGeom
+    n = 0
+    for q in Usd.PrimRange(stage.GetPrimAtPath('/World/envs'), Usd.TraverseInstanceProxies()):
+        if q.GetName() != 'link5_down_D435_mat' or q.GetTypeName() != 'Material':
+            continue
+        part = stage.GetPrimAtPath(q.GetPath().GetParentPath().GetParentPath())
+        while part and part.IsInstanceProxy():
+            part = part.GetParent()
+        if part and part.IsInstance():
+            part.SetInstanceable(False)
+        part = stage.GetPrimAtPath(q.GetPath().GetParentPath().GetParentPath())
+        if part and not part.IsInstanceProxy():
+            UsdGeom.Imageable(part).MakeInvisible()
+            n += 1
+    return n
+
+
 # ---------- 상단 광각 카메라 ----------
 # URDF birdeye_camera_link (프로파일 기둥 위 브래킷, 아래로 40°·왼쪽 15.7°)의 자세를 그대로 씀.
 #        링크 원점 = 카메라 기판(PCB) 면이고 렌즈가 광축(+x)으로 20.8 mm 튀어나와 있음 -> 시뮬 카메라는 렌즈 앞면(+21 mm)에 둠
@@ -940,7 +928,8 @@ BIRDEYE_D = (-0.128704, 0.012667, -0.039807, 0.022852)                          
 
 
 def urdf_link_pose(urdf: Path, link: str, root: str = 'base_link'):
-    """URDF 고정 사슬로 root 기준 link 자세 -> (xyz 3, 회전행렬 3×3 리스트). 움직이는 관절은 0 으로 봄."""
+    """URDF 고정 사슬로 root 기준 link 자세 -> (xyz 3, 회전행렬 3×3 리스트). 움직이는 관절은 0 으로 봄.
+    root 가 link 의 조상이 아니어도 됨 (둘 다 트리 뿌리 기준으로 구한 뒤 상대 자세)."""
     import xml.etree.ElementTree as ET
     joints = {j.find('child').get('link'): j for j in ET.parse(str(urdf)).getroot().findall('joint')}
 
@@ -951,38 +940,44 @@ def urdf_link_pose(urdf: Path, link: str, root: str = 'base_link'):
                 [-sp, cp * sr, cp * cr]]
     mm = lambda a, b: [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
     mv = lambda a, v: [sum(a[i][k] * v[k] for k in range(3)) for i in range(3)]
-    chain = []
-    while link != root:
-        j = joints[link]
-        chain.append(j)
-        link = j.find('parent').get('link')
-    R, t = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], [0.0, 0.0, 0.0]
-    for j in reversed(chain):
-        o = j.find('origin')
-        xyz = [float(v) for v in ((o.get('xyz') if o is not None else None) or '0 0 0').split()]
-        rpy = [float(v) for v in ((o.get('rpy') if o is not None else None) or '0 0 0').split()]
-        t = [a + b for a, b in zip(t, mv(R, xyz))]
-        R = mm(R, rpy_mat(*rpy))
-    return t, R
+
+    def from_root(name):
+        chain = []
+        while name in joints:
+            chain.append(joints[name])
+            name = joints[name].find('parent').get('link')
+        R, t = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], [0.0, 0.0, 0.0]
+        for j in reversed(chain):
+            o = j.find('origin')
+            xyz = [float(v) for v in ((o.get('xyz') if o is not None else None) or '0 0 0').split()]
+            rpy = [float(v) for v in ((o.get('rpy') if o is not None else None) or '0 0 0').split()]
+            t = [a + b for a, b in zip(t, mv(R, xyz))]
+            R = mm(R, rpy_mat(*rpy))
+        return t, R
+    tl, Rl = from_root(link)
+    tr, Rr = from_root(root)
+    RrT = [list(r) for r in zip(*Rr)]
+    return mv(RrT, [a - b for a, b in zip(tl, tr)]), mm(RrT, Rl)
 
 
-def birdeye_pose_base():
-    """상단 카메라 자세 (base_link 기준, world 규약: x 앞·z 위) -> (pos, quat (x, y, z, w))."""
-    t, R = urdf_link_pose(ROBOT_URDF, 'birdeye_camera_link')
+def birdeye_pose_base(root: str = 'base_link'):
+    """상단 카메라 자세 (root 기준, world 규약: x 앞·z 위) -> (pos, quat (x, y, z, w))."""
+    t, R = urdf_link_pose(ROBOT_URDF, 'birdeye_camera_link', root=root)
     pos = tuple(t[i] + R[i][0] * BIRDEYE_LENS_FRONT_M for i in range(3))
     w = math.sqrt(max(0.0, 1.0 + R[0][0] + R[1][1] + R[2][2])) / 2
     quat = ((R[2][1] - R[1][2]) / (4 * w), (R[0][2] - R[2][0]) / (4 * w), (R[1][0] - R[0][1]) / (4 * w), w)
     return pos, quat
 
 
-# 상단 카메라 기둥(알루미늄 프로파일 20×20) 위치: 팔 자세 후보가 기둥과 겹치지 않게 (sim_core/arm_poses.py)
-#   기둥 메시는 profile_column_link 원점이 아니라 그 링크의 (−0.110, −0.096) 에 있음 = 카메라 브래킷 링크 xy
-PROFILE_XY = tuple(urdf_link_pose(ROBOT_URDF, 'profile_camera_bracket_TEMP')[0][:2])
+# 상단 카메라 기둥(알루미늄 프로파일 20×20) 위치 = 카메라 브래킷 링크 xy: 팔 자세 후보가 기둥과 겹치지 않게 (sim_core/arm_poses.py)
+PROFILE_XY = tuple(urdf_link_pose(ROBOT_URDF, 'profile_camera_bracket_link')[0][:2])
+# 센서를 붙이는 USD 몸체: 변환 때 base_link 가 base_footprint 에 합쳐짐 → 센서 자세도 base_footprint 기준
+BASE_PRIM = '{ENV_REGEX_NS}/Robot/Geometry/base_footprint'
 
 
 def add_birdeye_camera(cfg: 'TurtleNinjaMazeEnvCfg', width: int = 640,
                        height: int = 360, data_types=('rgb',), fisheye: bool = True, name: str = 'birdeye'):
-    """로봇 base_link 에 상단 광각 카메라를 붙임 (로봇과 같이 움직임). 실행 스크립트에서 args.enable_cameras = True 필요.
+    """로봇 몸 (BASE_PRIM) 에 상단 광각 카메라를 붙임 (로봇과 같이 움직임). 실행 스크립트에서 args.enable_cameras = True 필요.
 
     해상도는 1280x720 의 비율로 줄여 K 를 맞춤. 카메라 1대 × env 수 만큼 렌더링 -> 8 GB 에서 env 수십 개 이내로 쓸 것.
     """
@@ -995,21 +990,20 @@ def add_birdeye_camera(cfg: 'TurtleNinjaMazeEnvCfg', width: int = 640,
     if fisheye:
         spawn.distortion = OpenCvFisheyeDistortionCfg(**k, k1=BIRDEYE_D[0], k2=BIRDEYE_D[1], k3=BIRDEYE_D[2],
                                                       k4=BIRDEYE_D[3], image_size=(width, height))
-    pos, quat = birdeye_pose_base()
+    pos, quat = birdeye_pose_base(root='base_footprint')
     setattr(cfg.scene, name, TiledCameraCfg(
-        prim_path='{ENV_REGEX_NS}/Robot/Geometry/base_link/' + name, width=width, height=height,
+        prim_path=BASE_PRIM + '/' + name, width=width, height=height,
         data_types=list(data_types), spawn=spawn,
         offset=TiledCameraCfg.OffsetCfg(pos=pos, rot=quat, convention='world')))
 
 
-# ---------- 손목 D435 (팔 끝 arm_link5_wrist_roll 에 고정, 팔과 같이 움직임) ----------
-# 광학 프레임 = URDF d435_color_optical_frame (z 앞 · x 오른쪽 · y 아래) = 컬러 렌즈. d435_cad_optical_proxy_frame(케이스 가운데)에서
-# 광학 −x 로 32.5 mm (2026-10-29 실측 + 공장 외부 파라미터로 확인). 내부 파라미터 = 실물 D435 공장값 (2026-10-26, 640×480 컬러,
-# serial 261322071838, 왜곡 계수 0). 시뮬 깊이는 컬러와 같은 카메라라 정렬된 깊이와 같은 뜻
+# ---------- 손목 D435 (팔 끝 wrist_link 에 고정, 팔과 같이 움직임) ----------
+# 광학 프레임 = URDF d435_color_optical_frame (z 앞 · x 오른쪽 · y 아래) = 컬러 렌즈 (perception frame_id 와 같은 이름).
+# 내부 파라미터 = 실물 D435 공장값 (640×480 컬러, 왜곡 계수 0). 시뮬 깊이는 컬러와 같은 카메라라 정렬된 깊이와 같은 뜻
 D435_SIZE = (640, 480)
 D435_K = dict(fx=605.9, fy=605.4, cx=324.0, cy=245.9)
-D435_LINK = 'arm_link5_wrist_roll'
-D435_PRIM = '{ENV_REGEX_NS}/Robot/Geometry/base_link/arm_link1/arm_link2/arm_link3/arm_link4_wrist/arm_link5_wrist_roll/d435'
+D435_LINK = 'wrist_link'
+D435_PRIM = BASE_PRIM + '/link2/link3/link4/link5/wrist_link/d435'   # USD 경로 (link1 은 base_footprint 에 합쳐짐)
 
 
 def _mat_to_quat_xyzw(R) -> tuple:
@@ -1028,12 +1022,12 @@ def _mat_to_quat_xyzw(R) -> tuple:
     return (q[0], q[1], q[2], (R[k][j] - R[j][k]) / s)
 
 
-D435_COLOR_FRAME = 'd435_color_optical_frame'   # 컬러 렌즈 광학 프레임 (URDF, proxy = 케이스 가운데에서 광학 −x 32.5 mm, 2026-10-29 실측 · 공장값 확인)
+D435_COLOR_FRAME = 'd435_color_optical_frame'   # 컬러 렌즈 광학 프레임 (URDF)
 
 
 def d435_tilt_R(tilt_deg: float) -> list:
     """브래킷 각도: URDF 장착 방향에서 광학 x 축(영상 오른쪽) 둘레로 돌림. − = 영상 아래쪽(그리퍼 쪽)으로 숙임.
-    광학 프레임 기준 회전행렬 (3×3 리스트, URDF 광학 R 오른쪽에 곱함). 2026-10-29 계산: −25 ~ −30° 면 쥔 퍽이 화면 아래 가운데에 보임"""
+    광학 프레임 기준 회전행렬 (3×3 리스트, URDF 광학 R 오른쪽에 곱함)"""
     a = math.radians(tilt_deg)
     return [[1.0, 0.0, 0.0], [0.0, math.cos(a), -math.sin(a)], [0.0, math.sin(a), math.cos(a)]]
 
@@ -1063,7 +1057,7 @@ LIDAR_MAX_M = 8.0
 
 
 def add_lidars(cfg: 'TurtleNinjaMazeEnvCfg', debug_vis: bool = True):
-    """앞 · 뒤 라이다를 base_link 에 붙임 (cfg.scene.lidar_front / lidar_rear). debug_vis 면 맞은 점을 창에 표시."""
+    """앞 · 뒤 라이다를 로봇 몸 (BASE_PRIM) 에 붙임 (cfg.scene.lidar_front / lidar_rear). debug_vis 면 맞은 점을 창에 표시."""
     from isaaclab.sensors import MultiMeshRayCasterCfg, patterns
     T = MultiMeshRayCasterCfg.RaycastTargetCfg
     targets = [T(prim_expr='{ENV_REGEX_NS}/Maze', track_mesh_transforms=False)]
@@ -1071,9 +1065,9 @@ def add_lidars(cfg: 'TurtleNinjaMazeEnvCfg', debug_vis: bool = True):
         targets += [T(prim_expr='{ENV_REGEX_NS}/Shelf_[0-9]+'), T(prim_expr='{ENV_REGEX_NS}/Puck_[0-9]+'),   # '.*' 면 하위 prim 까지 맞음
                     T(prim_expr='{ENV_REGEX_NS}/TrafficLightPost')]
     for side in ('front', 'rear'):
-        t, R = urdf_link_pose(ROBOT_URDF, f'base_scan_{side}')
+        t, R = urdf_link_pose(ROBOT_URDF, f'base_scan_{side}', root='base_footprint')
         setattr(cfg.scene, f'lidar_{side}', MultiMeshRayCasterCfg(
-            prim_path='{ENV_REGEX_NS}/Robot/Geometry/base_link', mesh_prim_paths=targets,   # 레이캐스터는 있는 링크에 붙고 offset 으로 옮김
+            prim_path=BASE_PRIM, mesh_prim_paths=targets,   # 레이캐스터는 있는 링크에 붙고 offset 으로 옮김
             offset=MultiMeshRayCasterCfg.OffsetCfg(pos=tuple(t), rot=_mat_to_quat_xyzw(R)), ray_alignment='base',
             pattern_cfg=patterns.LidarPatternCfg(channels=1, vertical_fov_range=(0.0, 0.0),
                                                  horizontal_fov_range=(-180.0, 180.0), horizontal_res=LIDAR_RES_DEG),
@@ -1089,3 +1083,12 @@ def set_physics_backend(cfg: 'TurtleNinjaMazeEnvCfg', name: str | None):
         cfg.sim.physics = NewtonCfg()
         return
     raise ValueError(f'모르는 물리 엔진: {name}')
+
+
+def use_real_speed_limits(cfg: 'TurtleNinjaMazeEnvCfg'):
+    """바퀴 속도 · 가속을 실물 설정 (config/controllers.yaml) 으로. 기본 (학습용 하드웨어 끝 0.26 m/s) 대신 실물과 같게 볼 때만."""
+    p = _yaml.safe_load((REPO / 'config' / 'controllers.yaml').read_text())['swerve_controller']['ros__parameters']
+    b = cfg.actions.base
+    b.max_linear, b.max_angular = p['max_linear'], p['max_angular']
+    b.max_linear_accel, b.max_angular_accel = p['max_linear_accel'], p['max_angular_accel']
+    return cfg

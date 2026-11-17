@@ -5,7 +5,7 @@
   0 red_cyl  1 green_cyl  2 red_box  3 green_box  4 barcode  5 traffic_light (신호등 몸통만, 기둥 프로파일 제외)
 카메라: 1280×720, 팀 실측 K·어안 D (config/camera_wide.yaml = tme.BIRDEYE_K_FULL / BIRDEYE_D), 장착 위치·40° 숙임은 tme 값 (가정)
   기본(--distort cv): 2048×1216 핀홀(f 700)로 렌더 -> cv2.fisheye 모델로 1280×720 어안 영상을 직접 만듦 (Isaac 어안은 모서리가 비어서)
-  렌더: 기본 PathTracing (--render pt). Real-Time 2.0 은 TAA 면 노이즈, DLSS 면 방사형 줄무늬 (2026-10-24 비교)
+  렌더: 기본 PathTracing (--render pt). Real-Time 2.0 은 TAA 면 노이즈, DLSS 면 방사형 줄무늬
   로봇: 손목 D435·받침대 색을 실물 사진 색으로 덮어씀 (tme.apply_robot_real_colors, URDF·USD 파일은 그대로)
 장면: 미로 (--maze: 실제 A 경기장 또는 tools/random_maze.py 무작위 미로, 실행 한 번에 하나) + 랜덤 소품 (reset 마다 env 별 새 배치) + 실제 강의실 파노라마 배경·카펫 (tme.use_real_look)
 라벨: instance_id_segmentation 으로 보이는 화소만의 상자 (가려진 부분 제외). 화소 MIN_PX 미만은 버림
@@ -18,7 +18,7 @@
 클래스 균형: 사진마다 '지금까지 상자가 적은 클래스' 의 물체를 우선 겨냥 (가중치 1/(개수+20)). 10 % 는 아무 데나, 10 % 는 가짜 물체를 겨냥
 미탐(못 찾음) 대비 가정: 넘어진 퍽 (선반 위에 눕힘, --p_fallen), 바닥에 떨어진 퍽 (선반 앞, --p_floor), 불 켜진 신호등 (빨/노/초/꺼짐 무작위),
   먼 거리·가까운 거리 (0.25–1.8 m), 아주 어둡거나 밝은 조명, 화면 가장자리에 잘린 물체, 서로 가린 퍽
-오탐(잘못 찾음) 대비 가정 (라벨 없음 = 배경으로 학습): 벽에 붙은 가짜 종이 3장 (QR·글자·체크무늬. 줄무늬는 진짜 바코드와 구분 안 돼 뺌, 2026-10-28),
+오탐(잘못 찾음) 대비 가정 (라벨 없음 = 배경으로 학습): 벽에 붙은 가짜 종이 3장 (QR·글자·체크무늬. 줄무늬는 진짜 바코드와 구분 안 돼 뺌),
   다른 모양의 색 물체 6개 (정육면체·공·원판, 빨강·초록 포함 무작위 색, 바닥 또는 선반 위), 장소용 AprilTag (원래 있음)
 나누기: 배치(장면 × env) 단위로 train/val/test 80/10/10 -> 같은 배치의 다른 시점이 train·val 에 섞이지 않음
 출력: <out>/images/{train,val,test}/*.jpg, labels/.../*.txt, data.yaml, meta.jsonl, preview/ (상자 그린 앞쪽 몇 장)
@@ -39,7 +39,7 @@ from isaaclab.app import add_launcher_args, launch_simulation
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--maze', default='real', help="미로: real = 팀 실제 A 경기장, 그 밖 = tools/random_maze.py 가 만든 이름 (예 rand_03). 실행 한 번에 미로 하나")
-parser.add_argument('--num_envs', type=int, default=2, help='8 GB GPU 에서 4 는 메모리 부족 (분할 이미지 깨짐, 2026-10-24 확인)')
+parser.add_argument('--num_envs', type=int, default=2, help='8 GB GPU 에서 4 는 메모리 부족 (분할 이미지 깨짐)')
 parser.add_argument('--scenes', type=int, default=10, help='배치 다시 뽑는 횟수 (env 마다 다른 배치)')
 parser.add_argument('--views', type=int, default=8, help='배치 하나에서 찍는 시점 수')
 parser.add_argument('--out', default=str(Path(__file__).resolve().parents[3] / 'yolo' / 'wide' / 'datasets' / 'sim'))
@@ -52,11 +52,11 @@ parser.add_argument('--distort', choices=['cv', 'rtx'], default='cv',
                     help='cv = 넓은 핀홀로 렌더 후 OpenCV 어안(팀 K, D)으로 직접 왜곡 (화면 전체), rtx = Isaac 어안 (모서리 회색 원 밖 비어 있음)')
 parser.add_argument('--render', choices=['pt', 'rt'], default='pt',
                     help='pt = PathTracing (spp 16 × 4 프레임 + OptiX 디노이저, 깨끗함, 장당 약 1.8 s), '
-                         'rt = Real-Time 2.0 (빠름, TAA 면 벽·바닥이 오돌토돌, DLSS 면 방사형 줄무늬. 2026-10-24 비교)')
+                         'rt = Real-Time 2.0 (빠름, TAA 면 벽·바닥이 오돌토돌, DLSS 면 방사형 줄무늬)')
 parser.add_argument('--pt_spp', type=int, default=16, help='PathTracing 프레임당 샘플 수')
 parser.add_argument('--pt_total_spp', type=int, default=64, help='PathTracing 누적 샘플 수 (settle_steps × pt_spp 이하면 덜 수렴)')
 parser.add_argument('--aa', default='TAA', choices=['TAA', 'FXAA', 'Off', 'DLSS', 'DLAA'],
-                    help='--render rt 일 때 RTX 안티에일리어싱. DLSS 는 넓은 화각·카펫 무늬에서 방사형 줄무늬·벽 빛기둥이 생김, DLAA 는 이 GPU 에서 NGX 생성 실패 (2026-10-24 확인)')
+                    help='--render rt 일 때 RTX 안티에일리어싱. DLSS 는 넓은 화각·카펫 무늬에서 방사형 줄무늬·벽 빛기둥이 생김, DLAA 는 이 GPU 에서 NGX 생성 실패')
 parser.add_argument('--no_balance', action='store_true', help='클래스 균형 겨냥 끄기 (대상 무작위)')
 parser.add_argument('--no_distractors', action='store_true', help='가짜 물체(오탐 대비) 끄기')
 parser.add_argument('--p_fallen', type=float, default=0.2, help='퍽이 선반 위에 넘어져 있을 확률 (미탐 대비)')
@@ -71,7 +71,7 @@ parser.add_argument('--panel_rough', type=float, nargs=2, default=[0.02, 0.15],
                     help='벽판 거칠기 범위 (장면마다). 작을수록 비친 상이 선명. 실제 반사 경계가 또렷해 0.15 까지 (0.3 은 상이 뭉개짐)')
 parser.add_argument('--panel_ior', type=float, nargs=2, default=[2.2, 3.0],
                     help='벽판 굴절률 범위 (장면마다). 실제 벽판은 유광이라 퍽·박스·로봇이 비침 -> 반사율을 굴절률로 올림 (clearcoat 는 RTX 에서 효과 없었음). '
-                         '실제 프레임 비친 박스 반사율 0.13 (G) = 렌더 ior 2.6 (2.0 -> 0.07~0.09, 2.3 -> 0.09, 2.6 -> 0.11~0.14). 2026-10-27 측정, 프레임 1장 기준')
+                         '실제 프레임 비친 박스 반사율 0.13 (G) = 렌더 ior 2.6 (2.0 -> 0.07~0.09, 2.3 -> 0.09, 2.6 -> 0.11~0.14). 프레임 1장 기준')
 parser.add_argument('--p_shelf_off', type=float, default=0.5, help='선반을 벽에서 떼는 확률 (뗀 박스·퍽이 뒤 벽에 비침)')
 parser.add_argument('--shelf_off', type=float, nargs=2, default=[0.05, 0.35], help='선반을 벽에서 뗄 거리 범위 (m). 칸 안에 들어가지 않으면 반 · 0 으로 줄임')
 parser.add_argument('--p_shelf_corner', type=float, default=0.5, help='선반을 벽면 끝(모서리 쪽)에 붙이는 확률 (옆 벽에 비침)')
@@ -149,7 +149,7 @@ set_isaac_rtx_global_settings(cfg.scene.birdeye.renderer_cfg, antialiasing_mode=
 # 분할 출력은 색칠된 RGBA (colorize 끄기가 이 버전에서 안 먹음) -> 색을 32비트 정수로 묶어 ID 처럼 씀, 매핑 키도 (r, g, b, a)
 
 # ---- 오탐 대비 가짜 물체 (라벨 없음) ----
-PAPER_IDS = (1, 2, 3)   # distract_paper_0..3 = 줄무늬 · QR · 글자 · 체크무늬. 0(줄무늬)은 멀리서 진짜 바코드와 구분 안 돼 뺌 (2026-10-28)
+PAPER_IDS = (1, 2, 3)   # distract_paper_0..3 = 줄무늬 · QR · 글자 · 체크무늬. 0(줄무늬)은 멀리서 진짜 바코드와 구분 안 돼 뺌
 SOLIDS = [('cube', 0.05), ('cube', 0.04), ('sphere', 0.02), ('sphere', 0.025), ('disc', (0.03, 0.012)), ('disc', (0.035, 0.010))]
 PALETTE = {'red': (157, 34, 53), 'green': (45, 150, 72), 'orange': (220, 110, 30), 'yellow': (220, 200, 40), 'blue': (30, 70, 170),
            'beige': (200, 180, 140), 'white': (225, 225, 225), 'black': (30, 30, 30), 'pink': (220, 120, 150), 'lime': (140, 200, 60)}
@@ -185,7 +185,7 @@ R_ROBOT = 0.24              # 접은 팔 포함 대략 반지름 (실물 미측�
 from sim_core import arm_poses
 # 첫 항목 = 주행 기본자세(받침 + 그리퍼 16 mm). 무작위 자세의 차체 높이 기준은 P0 (받침 자세는 차체 안으로 내려가 있음)
 ARM_BANK, _ = arm_poses.make_bank(tme.ROBOT_URDF, tme.TUCK_POSE, 400, rng, tme.PROFILE_XY,
-                                  body_ref={**tme.READY_POSE, **{f: 0.0 for f in arm_poses.FINGERS}})
+                                  body_ref={**tme.READY_POSE, **{f: 0.0 for f in tme.FINGERS}})
 print(f'[yolo] 팔 자세 후보 {len(ARM_BANK) - 1}개 (+ 접은 자세), 접은 확률 {args.p_arm_tuck}', flush=True)
 
 
@@ -266,7 +266,6 @@ with launch_simulation(cfg, args):
     ceil_attrs = tme.add_ceiling_lights(stage, env.scene.env_origins, args.ceil_int) if args.ceil_int > 0 else []
     print(f'[yolo] 천장 조명 {len(ceil_attrs)}개, 세기 {args.ceil_int} × {args.ceil_k}', flush=True)
     print('[yolo] 로봇 실물 색:', tme.apply_robot_real_colors(stage), flush=True)
-    crank = tme.add_crank_visuals(stage)   # 그리퍼 크랭크 · 막대를 손가락 위치에 맞춤 (배포판 CrankVisuals)
     n, dev = env.num_envs, env.device
     ids = torch.arange(n, device=dev)
     org = env.scene.env_origins
@@ -304,7 +303,7 @@ with launch_simulation(cfg, args):
     shelf_col = {(e, k): find_attr(f'/World/envs/env_{e}/Shelf_{k}', 'inputs:diffuseColor')
                  for e in range(n) for k in range(tme.NUM_SHELVES)}
     shelf_base = np.array(tme._srgb_to_linear(tme.SHELF_SRGB), float)
-    arm_ids = robot.find_joints(arm_poses.ARM_JOINTS + arm_poses.FINGERS, preserve_order=True)[0]
+    arm_ids = robot.find_joints(tme.ARM_JOINTS + tme.FINGERS, preserve_order=True)[0]
     print(f'[yolo] 미로 {args.maze} ({tme.MAZE_USD.name}, 칸 {tme.LAYOUT["grid"]["nx"]}×{tme.LAYOUT["grid"]["ny"]}), envs {n}, 장면 {args.scenes} × 시점 {args.views} -> 최대 {n * args.scenes * args.views} 장, 출력 {out.resolve()}', flush=True)
 
     meta_f = open(out / 'meta.jsonl', 'a')
@@ -503,12 +502,11 @@ with launch_simulation(cfg, args):
                 robot.write_root_pose_to_sim_index(root_pose=torch.cat([P, tme.quat_from_euler_xyz(z0, z0, yaw_t)], -1), env_ids=ids)
                 robot.write_root_velocity_to_sim_index(root_velocity=torch.zeros(n, 6, device=dev), env_ids=ids)
                 # 팔 자세: 관절값을 바로 쓰고 위치 목표도 같게 (settle 동안 유지)
-                qa = torch.tensor([[ARM_BANK[k][0][j] for j in arm_poses.ARM_JOINTS + arm_poses.FINGERS] for k in arm_pick],
+                qa = torch.tensor([[ARM_BANK[k][0][j] for j in tme.ARM_JOINTS + tme.FINGERS] for k in arm_pick],
                                   device=dev, dtype=torch.float32)
                 robot.write_joint_position_to_sim_index(position=qa, joint_ids=arm_ids, env_ids=ids)
                 robot.write_joint_velocity_to_sim_index(velocity=torch.zeros_like(qa), joint_ids=arm_ids, env_ids=ids)
                 robot.actuators.target_command.set_position_index(value=qa, joint_ids=arm_ids, env_ids=ids)
-                crank.update(qa[:, -2:].mean(1).cpu().numpy())
                 for _ in range(args.settle_steps):
                     env.step(act)
                 rgb = cam.data.output['rgb'][..., :3].cpu().numpy().astype(np.uint8)

@@ -68,7 +68,7 @@ if args.camera:
 if args.lidar:
     tme.add_lidars(cfg)
 if args.arm_extended:
-    cfg.scene.robot.init_state.joint_pos = {'.*': 0.0, 'arm_joint1': tme.J1_FORWARD}
+    cfg.scene.robot.init_state.joint_pos = {'.*': 0.0, 'joint1': tme.J1_FORWARD}
     cfg.events.reset_in_maze.params['footprint_radius'] = 0.29
 cfg.sim.default_visualizer_cfg = VisualizerCfg(eye=(4.0, -9.0, 9.0), lookat=(0.0, 0.0, 0.0))
 
@@ -93,7 +93,6 @@ with launch_simulation(cfg, args):
                 sh.CreateAttribute('inputs:ior', Sdf.ValueTypeNames.Float).Set(args.panel_ior)
                 sh.CreateAttribute('inputs:roughness', Sdf.ValueTypeNames.Float).Set(args.panel_rough)
     colors = tme.apply_robot_real_colors(stage)
-    crank = tme.add_crank_visuals(stage)   # 그리퍼 크랭크 · 막대를 손가락 위치에 맞춤 (배포판 CrankVisuals)
     print(f'[view_maze] 렌더 {args.render}, 로봇 실물 색 재질 {sum(colors.values())}개'
           + (f', 천장 조명 · 벽판 반사 ior {args.panel_ior} 거칠기 {args.panel_rough}' if args.real else ''), flush=True)
     action = torch.zeros(n, env.action_manager.total_action_dim, device=dev)
@@ -135,6 +134,5 @@ with launch_simulation(cfg, args):
             elif count % 250 == 0 and not args.still:  # 5 s 마다 새 무작위 명령 (조향에 최대 1.6 s)
                 action[:, :3] = torch.rand(n, 3, device=dev) * 2 - 1
             env.step(action)
-            tme.update_crank_visuals(crank, env.scene['robot'])
             count += 1
     env.close()

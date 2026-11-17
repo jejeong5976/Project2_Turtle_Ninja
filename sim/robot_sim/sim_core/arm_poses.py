@@ -1,7 +1,9 @@
 """팔 무작위 자세 후보 (YOLO 데이터: 움직이는 팔이 광각 화면에 보이기도·안 보이기도 하게). Isaac 없이 numpy 만 씀.
 
-robot.urdf 의 팔 사슬(base_link -> arm_link1..5 -> 손가락)로 순기구학을 계산해 말이 되는 자세만 남긴다.
-  - 관절 한계 안 (끝에서 margin 만큼 안쪽), 손목 비틀기(arm_joint5) ±90°
+URDF 의 팔 사슬(base_link -> 팔 5 관절 -> 손가락)로 순기구학을 계산해 말이 되는 자세만 남긴다.
+  관절 이름은 URDF 에서 고름: 팀 URDF (joint1..5 · gripper_left/right_joint, 시뮬) 또는 배포판 (arm_joint1..5 · gripper_finger_a/b_joint,
+  tools/arm_real · wrist_d435 도구가 아직 씀)
+  - 관절 한계 안 (끝에서 margin 만큼 안쪽), 손목 비틀기 (J5) ±90°
   - 모든 점이 바닥 위 (base_link z > FLOOR_Z + 여유)
   - 차체 위 (차체 외곽 안쪽 점은 접은 자세의 가장 낮은 점 높이 이상) -> 팔이 차체를 뚫지 않음 (시뮬은 자기 충돌 꺼짐)
   - 상단 카메라 기둥(세로 프로파일, turtleninja_maze_env.PROFILE_XY)과 떨어짐
@@ -16,9 +18,12 @@ from pathlib import Path
 
 import numpy as np
 
+TEAM_ARM = [f'joint{i}' for i in range(1, 6)]
+TEAM_FINGERS = ['gripper_left_joint', 'gripper_right_joint']
+# 배포판 이름 · 바닥 높이 (모듈 상수 = 배포판, tools/arm_real · wrist_d435 가 씀). 팀 URDF 는 ArmFK 의 arm · fingers · floor_z
 ARM_JOINTS = ['arm_joint1', 'arm_joint2', 'arm_joint3', 'arm_joint4', 'arm_joint5']
 FINGERS = ['gripper_finger_a_joint', 'gripper_finger_b_joint']
-FLOOR_Z = -0.072          # base_link 기준 바퀴 바닥 (turtleninja_maze_env.SPAWN_Z 설명)
+FLOOR_Z = -0.072          # 배포판 base_link 기준 바퀴 바닥
 FLOOR_MARGIN = 0.03
 BODY_HALF = 0.15          # 차체 외곽 ±0.133 + 여유
 POLE_R = 0.06
@@ -44,11 +49,15 @@ class ArmFK:
         root = ET.parse(str(urdf)).getroot()
         self.by_child = {j.find('child').get('link'): j for j in root.findall('joint')}
         self.joints = {j.get('name'): j for j in root.findall('joint')}
+        team = 'joint1' in self.joints
+        self.arm, self.fingers = (TEAM_ARM, TEAM_FINGERS) if team else (ARM_JOINTS, FINGERS)
+        bl = self.by_child.get('base_link')            # 팀: base_footprint -> base_link (바닥 = 그 높이 아래)
+        self.floor_z = -float(bl.find('origin').get('xyz').split()[2]) if team and bl is not None else FLOOR_Z
         self.limits = {}
-        for name in ARM_JOINTS + FINGERS:
+        for name in self.arm + self.fingers:
             lim = self.joints[name].find('limit')
             self.limits[name] = (float(lim.get('lower')), float(lim.get('upper')))
-        self.chains = {f: self._chain(self.joints[f].find('child').get('link')) for f in FINGERS}
+        self.chains = {f: self._chain(self.joints[f].find('child').get('link')) for f in self.fingers}
 
     def _chain(self, link):
         out = []
@@ -68,7 +77,7 @@ class ArmFK:
     def points(self, q: dict) -> np.ndarray:
         """관절값 -> 팔 링크 원점들 + 손끝 2개 (base_link 기준, (N, 3))."""
         pts = []
-        for f in FINGERS:
+        for f in self.fingers:
             R, t = np.eye(3), np.zeros(3)
             frames = []
             for name, typ, xyz, R0, axis in self.chains[f]:
@@ -85,7 +94,7 @@ class ArmFK:
         return np.array(pts)
 
     def ok(self, pts: np.ndarray, body_min_z: float, pole_xy) -> bool:
-        if (pts[:, 2] < FLOOR_Z + FLOOR_MARGIN).any():
+        if (pts[:, 2] < self.floor_z + FLOOR_MARGIN).any():
             return False
         inside = (np.abs(pts[:, 0]) < BODY_HALF) & (np.abs(pts[:, 1]) < BODY_HALF)
         if (pts[inside, 2] < body_min_z).any():
@@ -109,13 +118,13 @@ def make_bank(urdf: Path, tuck: dict, n: int, rng: np.random.Generator, pole_xy,
         if len(bank) > n:
             break
         q = {}
-        for name in ARM_JOINTS:
+        for name in fk.arm:
             lo, hi = fk.limits[name]
-            if name == 'arm_joint5':
+            if name == fk.arm[4]:
                 lo, hi = max(lo, -J5_LIMIT), min(hi, J5_LIMIT)
             q[name] = float(rng.uniform(lo + JOINT_MARGIN, hi - JOINT_MARGIN))
-        g = float(rng.uniform(*fk.limits[FINGERS[0]]))
-        q.update({f: g for f in FINGERS})
+        g = float(rng.uniform(*fk.limits[fk.fingers[0]]))
+        q.update({f: g for f in fk.fingers})
         pts = fk.points(q)
         if fk.ok(pts, body_min_z, pole_xy):
             bank.append((q, float(np.hypot(pts[:, 0], pts[:, 1]).max())))
@@ -181,16 +190,16 @@ def make_view_bank(urdf: Path, tuck: dict, n: int, rng: np.random.Generator, pol
         if len(bank) >= n:
             break
         q = {}
-        for name in ARM_JOINTS:
+        for name in fk.arm:
             lo, hi = fk.limits[name]
-            if name == 'arm_joint5':
+            if name == fk.arm[4]:
                 lo, hi = max(lo, -J5_LIMIT), min(hi, J5_LIMIT)
             lo, hi = lo + JOINT_MARGIN, hi - JOINT_MARGIN
             if seed_pose is not None and tries % 2:
                 q[name] = float(np.clip(seed_pose[name] + rng.uniform(-0.5, 0.5), lo, hi))
             else:
                 q[name] = float(rng.uniform(lo, hi))
-        q.update({f: 0.0 for f in FINGERS})
+        q.update({f: 0.0 for f in fk.fingers})
         pts = fk.points(q)
         if not fk.ok(pts, body_min_z, pole_xy):
             continue
@@ -203,5 +212,5 @@ def make_view_bank(urdf: Path, tuck: dict, n: int, rng: np.random.Generator, pol
         if not (dist[0] <= v['dist'] <= dist[1] and pitch[0] <= v['pitch'] <= pitch[1] and abs(v['roll']) <= max_roll
                 and v['cam_t'][2] > ztop + 0.05 and margin_px <= u <= W - margin_px and margin_px <= w <= H - margin_px):
             continue
-        bank.append(({k: round(val, 4) for k, val in q.items() if k in ARM_JOINTS}, v))
+        bank.append(({k: round(val, 4) for k, val in q.items() if k in fk.arm}, v))
     return bank, tries + 1
