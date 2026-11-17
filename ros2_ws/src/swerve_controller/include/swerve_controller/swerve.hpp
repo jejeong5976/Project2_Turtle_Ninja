@@ -153,8 +153,8 @@ private:
   double wheel_radius_;
   double steer_limit_;
   std::vector<SteeringRange> ranges_;
-  // coherent: shared physical target for translation when feasible; otherwise nearest zero.
-  // Previous commanded targets provide branch hysteresis, never measured mixed poses.
+  // coherent: 평행 이동은 가능하면 네 바퀴 공통 물리 목표, 안 되면 0° 에 가장 가까운 것.
+  // 가지 히스테리시스는 직전 명령 목표로만 (섞인 실측 자세는 안 씀)
   bool coherent_;
   double branch_margin_;
   double end_slack_;
@@ -248,8 +248,8 @@ private:
 
 struct SwerveDriveConfig
 {
-  // Zero speed/acceleration caps mean no body-level shaping.
-  double max_wheel_speed = 0.0;    // rad/s; motor Goal Velocity range, 0 = not configured
+  // 속도 · 가속 한계 0 = 몸 기준 제한 안 함
+  double max_wheel_speed = 0.0;    // [rad/s] 모터 Goal Velocity 범위, 0 = 설정 안 함
   double max_linear = 0.10;        // [m/s]  D16
   double max_angular = 0.5;        // [rad/s]
   double max_linear_accel = 0.2;   // [m/s²]

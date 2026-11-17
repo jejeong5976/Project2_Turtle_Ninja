@@ -11,8 +11,8 @@
 #include "manipulation/standup_table.hpp"
 #include "manipulation/visual_regrasp.hpp"
 #include "arm_kin_data.hpp"
-#include "farpick_rows_1111.hpp"
-#include "lyingpick_rows_1112.hpp"
+#include "farpick_rows.hpp"
+#include "lyingpick_rows.hpp"
 
 using manipulation::StandupPath;
 
@@ -630,7 +630,7 @@ TEST(FarpickPath, RetargetRejectsWhenGraspSegmentFailsOrJumps)
 //   약 −87° 돌려 (손 19.5° 기울임) 쥐는데 보통 PICK 의 돌림 보정 (pick_offset_rot_mm [0.4, -7.6] · pick_offset_rot_robot_mm [-2, -7], 젯슨 값) 이
 //   없어 손가락 가운데가 약 15 mm 왼쪽 → 3–4 cm 비껴 쥠. 보정 (약 −1.5, −14.4 mm) 만큼 옮겨 다시 풀면 닫는 점 손끝이 그만큼 옮겨지고
 //   손 기울임 · 닫힘 방향 · 손목 갈래는 그대로. 보정 값이 0 이면 경로 그대로
-TEST(FarpickPath, WristTurnGetsPickRotOffset2256)
+TEST(FarpickPath, WristTurnGetsPickRotOffset)
 {
   using namespace manipulation;
   const auto m = kin_data::model();

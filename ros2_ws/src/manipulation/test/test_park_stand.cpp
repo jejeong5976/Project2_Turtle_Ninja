@@ -1223,13 +1223,13 @@ ClearOut stand_clear(const ArmModel & m, const ParkCfg & c, const UprightCfg & u
 }
 }  // namespace
 
-TEST(ParkFix1116, RegraspOffsetCollision)
+TEST(ParkRegrasp, RegraspOffsetCollision)
 {
   const auto m = kin_data::model();
   const UprightCfg u;
   const Eigen::Vector2d real_off(0.0024, 0.0053);   // 실물 잰 받침 퍽 자리 평균 (base_link x · y)
   std::printf("받침 다시 쥐기 충돌 계산 [mm] (+ = 떨어짐, − = 닿음/박힘)  열린 손 안쪽 반 %.1f mm (모델)\n", (u.finger_inner0 + u.grip_open) * 1000.0);
-  for (const Eigen::Vector2d off : {Eigen::Vector2d(0.0, 0.0), Eigen::Vector2d(0.002, 0.0035)}) {
+  for (const auto & off : {Eigen::Vector2d(0.0, 0.0), Eigen::Vector2d(0.002, 0.0035)}) {
     double w_min = 1e9, pr_min = 1e9, pw_min = 1e9;
     int n = 0;
     // 누운 퍽 세우기 (꽂아 누르기, 실물 control.yaml 값)

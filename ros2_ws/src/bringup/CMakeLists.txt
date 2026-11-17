@@ -16,11 +16,11 @@ install(DIRECTORY "${REPOSITORY_CONFIG_DIR}/"
   PATTERN "*.json"
 )
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
-install(PROGRAMS scripts/run_all.sh DESTINATION share/${PROJECT_NAME}/scripts)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_wrist_camera_launch test/test_wrist_camera_launch.py TIMEOUT 45)
+  # 한 번에 켜기 tools/jetson/run_all.sh (저장소 경로로 실행, 설치 안 함)
   ament_add_pytest_test(test_run_all test/test_run_all.py TIMEOUT 30)
   # 켜는 순서: Nav2 · mission (stage2) → 카메라 · 인지 (+camera_delay_s)
   ament_add_pytest_test(test_mission_stagger test/test_mission_stagger.py TIMEOUT 30)

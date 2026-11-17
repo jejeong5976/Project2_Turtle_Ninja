@@ -95,8 +95,8 @@ public:
   void arm_ended(bool drive_ok);
   // 하드웨어 이상 → 무조건 STOP. 그동안의 HOME 확인은 무효 → 다음 HOME 이 성공해야 DRIVE
   void force_stop() {set(Turn::STOP);}
-  // Continuous permit, not just a one-time HOME check. A fault latches STOP;
-  // fresh measurements alone cannot restore DRIVE (a successful HOME must).
+  // 한 번 HOME 확인으로 끝이 아니라 매 주기 허가. 이상이면 STOP 으로 묶음,
+  // 새 측정값만으로는 DRIVE 로 못 돌아감 (HOME 이 성공해야 함)
   bool enforce_drive_guard(bool folded_fresh, bool hardware_healthy);
   // 매 주기 호출. STOPPING → ARM 조건:
   //   ① 바퀴 컨트롤러가 **이번 요청 번호**의 잠금을 답함 (acked_id == request_id(), 옛 번호의 답은 무시)

@@ -674,7 +674,7 @@ return_type SwerveController::update(const rclcpp::Time & time, const rclcpp::Du
   // ③ 모터 상태 읽기 → 못 읽으면 바퀴 0 · 조향 그대로
   std::vector<ModuleState> & meas = meas_buf_;   // 측정값 버퍼만 재사용 (drive_->update 안의 역기구학은 작은 벡터를 할당함, 8.6 µs 측정)
   if (!read_modules(meas)) {
-    drive_->reset();  // Any unreadable state cancels the previous command, including park.
+    drive_->reset();  // 상태를 못 읽으면 직전 명령 (park 포함) 을 취소
     write_modules(drive_->stop_hold(last_steer_));
     applied_.store(static_cast<uint64_t>(drive_->applied_turn_id()) << 1);   // 번호 그대로, DRIVE 아님
     {

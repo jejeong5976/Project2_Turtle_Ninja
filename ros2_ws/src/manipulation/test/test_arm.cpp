@@ -910,7 +910,7 @@ TEST(DriveFoldGuard, StaleFoldStopsBeforeHardwareTimeout)
 {
   FakeMaster m; double t = 0.; home_to_drive(m, t);
   m.meas_flowing = false;
-  // Fold age limit .2s is stricter than HardwareWatch .3s.
+  // 접힘 측정 나이 한계 0.2 s 가 HardwareWatch 0.3 s 보다 엄격함
   t += .21; m.step(t);
   ASSERT_TRUE(m.hw.healthy(t));
   EXPECT_EQ(m.arbiter.turn(), Turn::STOP);

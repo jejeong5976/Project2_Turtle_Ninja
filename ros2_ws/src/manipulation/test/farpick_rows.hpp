@@ -1,4 +1,4 @@
-// farpick_rows_1111.hpp — 실제 로봇에 쓴 먼 퍽 표 줄 (config/farpick, 손으로 고치지 말 것)
+// farpick_rows.hpp — 실제 로봇에 쓴 먼 퍽 표 줄 (config/farpick, 손으로 고치지 말 것)
 //   kRowSq15: farpick_paths_ok75_nbr_none.txt 네모 (0.270, 0.050, 15°) — 실제 퍽 (0.269, 0.047) 9.9° 에서 점 1 건너뜀 → 그리퍼 안 열림 → 빈손
 //   kRowNb270: farpick_paths_ok75_nbr_270.txt 네모 (0.330, 0.010, 0°) — 실제 퍽 (0.336, 0.019) −1.9° (10.6 mm) 에서 들기 점이 관절 범위 밖
 #pragma once

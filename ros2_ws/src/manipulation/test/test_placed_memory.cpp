@@ -116,7 +116,7 @@ TEST(PlacedMemory, OdomRoundTrip)
 
 // 실물 순서: 기억 없으면 두 번째 먼 PLACE 의 첫 자리 = 실물이 고른 (0.303, 0.026). 기억 (+20 mm) 이 있으면 그 자리는 안 고르고
 //   고른 자리는 놓은 퍽과 겹치지 않음. 그다음 가까운 칸 넷은 기억 이웃 (여유 없음) 으로도 손가락 자리가 있음
-TEST(PlacedMemory, Tonight1112Sequence)
+TEST(PlacedMemory, RealSequence)
 {
   const auto m = kin_data::model();
   const Eigen::Vector2d j1 = m.j1_xy;

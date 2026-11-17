@@ -705,7 +705,7 @@ TEST(JointConvert, DriveDefaultIsIdentity)
 }
 
 
-// Several STATE frames received together must each contribute a board-time sample.
+// 한꺼번에 받은 STATE 프레임도 하나하나 보드 시각 표본이 되어야 함
 TEST(OpenCRPositionRate, BatchedFramesScalingAndFailedJoint)
 {
   Pty p;
@@ -720,7 +720,7 @@ TEST(OpenCRPositionRate, BatchedFramesScalingAndFailedJoint)
     s.n = 3;
     s.comm_err = err;
     s.pos[1] = static_cast<float>(0.75 + ms * 0.0002);
-    s.vel[1] = 0.16f;  // reported is deliberately 80% of position-derived rate
+    s.vel[1] = 0.16f;  // 보고 속도는 일부러 위치로 구한 속도의 80 %
     uint8_t bytes[pkt::MAX_FRAME];
     const auto len = pkt::encode_state(s, bytes, sizeof(bytes));
     ASSERT_EQ(::write(p.master, bytes, len), len);
@@ -729,7 +729,7 @@ TEST(OpenCRPositionRate, BatchedFramesScalingAndFailedJoint)
   ASSERT_TRUE(link.wait_for_state(0.2));
   EXPECT_NEAR(link.state().joints[1].position_velocity, -0.2, 1e-5);
   EXPECT_NEAR(link.state().joints[1].velocity, -0.16, 1e-6);
-  // Poll with no new data must neither re-feed a duplicate timestamp nor reset.
+  // 새 데이터 없는 poll 은 같은 시각을 다시 넣지도, 초기화하지도 않아야 함
   EXPECT_EQ(link.poll(), 0);
   EXPECT_NEAR(link.state().joints[1].position_velocity, -0.2, 1e-5);
   send_state(70, 2);
@@ -741,13 +741,13 @@ TEST(OpenCRPositionRate, BatchedFramesScalingAndFailedJoint)
   send_state(110, 0);
   ASSERT_TRUE(link.wait_for_state(0.2));
   EXPECT_NEAR(link.state().joints[1].position_velocity, -0.2, 1e-5);
-  send_state(110, 0);  // a genuinely repeated board STATE is a clock fault
+  send_state(110, 0);  // 같은 보드 시각 STATE 가 다시 오면 시각 이상
   ASSERT_TRUE(link.wait_for_state(0.2));
   EXPECT_TRUE(std::isnan(link.state().joints[1].position_velocity));
   for (uint32_t ms = 120; ms <= 180; ms += 10) {send_state(ms, 0);}
   ASSERT_TRUE(link.wait_for_state(0.2));
   EXPECT_TRUE(std::isnan(link.state().joints[1].position_velocity));
-  // Existing reported velocity remains available to the default controller.
+  // 보고 속도는 그대로 남아 기본 컨트롤러가 씀
   EXPECT_NEAR(link.state().joints[1].velocity, -0.16, 1e-6);
 }
 

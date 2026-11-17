@@ -97,7 +97,7 @@ struct JointReading
   double position = 0.0;   // rad (그리퍼 m)
   double velocity = 0.0;   // rad/s (그리퍼 m/s)
   double current = 0.0;    // A (모터 전류 — 토크가 아님)
-  double position_velocity = std::numeric_limits<double>::quiet_NaN();  // board-time estimate
+  double position_velocity = std::numeric_limits<double>::quiet_NaN();  // 보드 시각 기준 추정
 };
 
 struct LinkState

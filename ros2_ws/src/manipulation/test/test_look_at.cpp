@@ -208,7 +208,7 @@ TEST(LookAt, SlotParse)
 
 // 8) 실제 경기장: 벽 바코드 중심 바닥 위 약 25 cm, 광각에서 수평 0.66 m (base 앞 약 0.61 m), 벽 위 38 cm.
 //    0.25 m 에서 정면으로 (손목 컬러 fx 606, 8 cm · 90 모듈 → 0.27 m 안이어야 2 px/모듈) 광축 < 2°
-TEST(LookAt, LowWallBarcode1113)
+TEST(LookAt, LowWallBarcode)
 {
   const auto m = kin_data::model();
   const LookAtParams p;
@@ -236,7 +236,7 @@ TEST(LookAt, LowWallBarcode1113)
 
 // 9) 실제 로봇 시험 자세 (팀 rad 0.11375, 0.17963, -0.65079, -0.81745, -0.00859) = URDF FK 로 바코드 base (0.46, 0.08, 바닥 0.27) 를
 //    약 24 cm 에서 겨눈 자세 → 이 모델에서도 광축 오차 작음 (모델 = URDF 확인)
-TEST(LookAt, RealTestPose1113Aims)
+TEST(LookAt, RealTestPoseAims)
 {
   const auto m = kin_data::model();
   const auto q = team_to_model(m, {0.11375, 0.17963, -0.65079, -0.81745, -0.00859});
@@ -289,7 +289,7 @@ TEST(LookAt, KeepLightClearInWide)
 }
 
 // 11) 실제 로봇: 3 px/모듈 = 카메라 15–16 cm, 몸을 가까이 (바코드 base 0.40 m 앞) · 팔은 접은 쪽 (J2 토크 작게)
-TEST(LookAt, CloseCompactLook1113)
+TEST(LookAt, CloseCompactLook)
 {
   const auto m = kin_data::model();
   LookAtParams p;
@@ -316,7 +316,7 @@ TEST(LookAt, CloseCompactLook1113)
 
 // 12) 실제 로봇에서 읽힌 자세 (팀 rad -0.13647, -0.15476, 0.43255, -1.65000, 0.00644): 벽 38 cm · 바코드 바닥 위 27 cm 를
 //     약 15 cm 에서 (3.5 px/모듈) 2/2 읽음. 같은 목표를 LOOK_AT 으로 풀면 광축 < 2° · 15 cm · J2 토크가 그 자세 근처 (접은 팔)
-TEST(LookAt, RealReadPose1113)
+TEST(LookAt, RealReadPose)
 {
   const auto m = kin_data::model();
   const auto q_real = team_to_model(m, {-0.13647, -0.15476, 0.43255, -1.65000, 0.00644});

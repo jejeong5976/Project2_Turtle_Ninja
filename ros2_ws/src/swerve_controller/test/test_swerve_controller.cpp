@@ -83,7 +83,7 @@ protected:
       cmd.header.stamp = controller->get_node()->now() - rclcpp::Duration::from_seconds(stamp_age_s);
     }
     cmd.twist.linear.x = vx;
-    cmd.twist.linear.y = vy;  // default ~5 degrees: force the steering-before-drive branch
+    cmd.twist.linear.y = vy;  // 기본 약 5°: 조향 먼저 (구동 전) 분기를 타게 함
     for (int i = 0; i < 10; ++i) {
       pub->publish(cmd);
       executor.spin_some();
@@ -98,7 +98,7 @@ protected:
       controller_interface::return_type::OK);
   }
 
-  // Destroy the controller (and its loans) before handles and plugin loader.
+  // 컨트롤러 (와 빌린 인터페이스) 를 핸들 · 플러그인 로더보다 먼저 없앰
   std::unique_ptr<pluginlib::ClassLoader<controller_interface::ControllerInterface>> loader;
   std::vector<hardware_interface::StateInterface::SharedPtr> states;
   std::vector<hardware_interface::CommandInterface::SharedPtr> commands;
@@ -122,7 +122,7 @@ TEST_F(SwerveControllerTest, PositionInterfaceCompensationAndInvalidEstimateStop
   ASSERT_TRUE(states[1]->set_value<double>(NAN));
   update();
   for (int i = 4; i < 8; ++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(), 0.0);}
-  // Recovery without a fresh cmd_vel must not revive the old motion command.
+  // 새 cmd_vel 없이 복구되면 직전 이동 명령을 되살리지 않아야 함
   ASSERT_TRUE(states[1]->set_value(0.16));
   update();
   for (int i = 4; i < 8; ++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(), 0.0);}
@@ -231,7 +231,7 @@ TEST_F(SwerveControllerTest, CoherentMixedPoseAndDeactivationHoldMeasuredPositio
   ASSERT_EQ(controller->on_activate(rclcpp_lifecycle::State()),CallbackReturn::SUCCESS);
   publish_command(.05,0); update();
   for (int i=0;i<8;++i) {EXPECT_NEAR(commands[i]->get_optional<double>().value(),0,1e-9);}
-  // Deactivation in the middle of steering must hold feedback, not the 0-degree target.
+  // 조향 도중 비활성화: 0° 목표가 아니라 실측 (feedback) 을 유지해야 함
   ASSERT_TRUE(states[2]->set_value(-2.5));
   ASSERT_EQ(controller->on_deactivate(rclcpp_lifecycle::State()),CallbackReturn::SUCCESS);
   EXPECT_DOUBLE_EQ(commands[1]->get_optional<double>().value(),-2.5);

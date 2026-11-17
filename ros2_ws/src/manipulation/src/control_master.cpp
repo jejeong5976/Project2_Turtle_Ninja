@@ -6282,8 +6282,8 @@ private:
       }
       hw_waived_ = waived;
     }
-    // HOME confirmation is a continuous drive permit. An out-of-range, missing
-    // or stale arm measurement invalidates it even after a successful HOME.
+    // HOME 확인은 매 주기 주행 허가. 팔 측정값이 범위 밖 · 없음 · 오래됨이면
+    // HOME 이 성공했어도 허가가 풀림
     //   쉬는 팔: 토크를 끈 뒤 (처짐 — 다시 앉히기 전) 는 느슨한 허용 (rest_fold_tol_rad) 도 인정. 그 밖이면 STOP
     rest_take_state();   // 팔 보드 토크 상태 (sense_group_ 이 받아 둔 것) → rest_
     rest_refresh_fold();

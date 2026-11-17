@@ -164,7 +164,7 @@ TEST(MaxPerformance, WheelRegisterBudgetPreservesRatios) {
 }
 
 TEST(MaxPerformance, FullSingleTurnRangeKeepsEquivalentDiagonalInsideEndpoints) {
-  // The W350 position-mode endpoint cannot be extended merely by removing margins.
+  // W350 위치 모드 끝은 여유를 없앤다고 넓어지지 않음
   const double tick=2*PI/4096;
   std::vector<SteeringRange> ranges;
   for(int zero:{3066,1552,2577,3589}){ranges.push_back({(zero-4095)*tick,zero*tick});}

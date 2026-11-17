@@ -215,7 +215,7 @@ TEST(SwerveRanges, DriveRejectsBeforeRampAndNeverReplacesStopWithRollCompensatio
   for (auto & m:now) {m.steer_rate=.2;}
   d.set_turn(true,1,0);
   d.set_command({.05,0,0},0);
-  d.update(0,.01,now);  // prior feasible moving command
+  d.update(0,.01,now);  // 직전: 가능한 이동 명령
   d.set_command({.03,.03,0},.01);
   auto out=d.update(.01,.01,now);
   EXPECT_FALSE(d.command_feasible());
@@ -226,7 +226,7 @@ TEST(SwerveRanges, DriveRejectsBeforeRampAndNeverReplacesStopWithRollCompensatio
   out=d.update(.02,.01,now);
   EXPECT_TRUE(d.command_feasible());
   EXPECT_LT(out[0].steer_angle,0);
-  EXPECT_LT(out[0].wheel_speed,0);  // compensation allowed again only for feasible steering
+  EXPECT_LT(out[0].wheel_speed,0);  // 조향이 가능할 때만 보상을 다시 허용
 }
 
 // ---------- 바퀴가 조향축 옆에 있는 경우 (CAD: 바깥쪽 26.9 mm) ----------
@@ -940,14 +940,14 @@ TEST(CoherentPose, CardinalAndFeasibleDiagonalSharePhysicalAngle) {
   auto mixed=facing(0); mixed[1].steer_angle=-kPi; mixed[3].steer_angle=4;
   for (double deg : {0.,45.,90.,180.,225.,270.}) {
     const auto out=coherent_geometry().inverse(heading(deg),mixed,false);
-    // Same physical line for every module: equal angles or exactly pi apart (outboard branch).
+    // 모든 모듈이 같은 물리 직선: 각도가 같거나 정확히 π 차이 (바깥쪽 가지)
     for (const auto & m:out) {
       const double d=std::fabs(std::remainder(m.steer_angle-out[0].steer_angle, kPi));
       EXPECT_NEAR(d,0,1e-9);
     }
     expect_realizes(coherent_geometry(),heading(deg),out,ranges_from_zero(kRealZero));
   }
-  // -45 cannot be shared: rr cannot reach -45, fr cannot reach +135.
+  // -45 는 공통 불가: rr 은 -45 못 감, fr 은 +135 못 감
   const auto out=coherent_geometry().inverse(heading(-45),mixed,false);
   EXPECT_GT(std::fabs(out[1].steer_angle-out[3].steer_angle),3.0);
   expect_realizes(coherent_geometry(),heading(-45),out,ranges_from_zero(kRealZero));
@@ -974,7 +974,7 @@ TEST(CoherentPose, FullCircleAndCompoundSweepAlwaysRealizeTwistWithinRealLimits)
 TEST(CoherentPose, LimitNoiseDoesNotFlipBackAndForth) {
   auto k=coherent_geometry(); auto m=facing(0);
   auto prev=k.inverse(heading(-41),m,false);
-  // Enter common pose from the interior, then leave at the hard limit once.
+  // 안쪽에서 공통 자세로 들어간 뒤 실제 한계에서 한 번 벗어남
   prev=k.inverse(heading(-38),m,false,nullptr,prev);
   prev=k.inverse(heading(-43),m,false,nullptr,prev);
   const double branch=prev[3].steer_angle;
@@ -1001,10 +1001,10 @@ TEST(CoherentPose, DriveGatesUntilAllAlignedKeepsOffsetAndHandlesNewCommand) {
   }
   drive.set_command({0,.05,0},.01); drive.set_turn(true,1,.01);
   out=drive.update(.01,.01,m);
-  // Sideways: parallel wheels, fr/rl on the -90 branch so every wheel stays outboard
+  // 옆 주행: 바퀴 평행, fr/rl 은 -90 가지 → 모든 바퀴가 바깥쪽
   const double side[4]={kPi/2,-kPi/2,-kPi/2,kPi/2};
   for (int i=0;i<4;++i) {EXPECT_NEAR(out[i].steer_angle,side[i],1e-9);}
-  // A timeout during alignment holds measured pose, without starting park or rolling compensation.
+  // 정렬 중 명령 끊김: 실측 자세 유지, park · 굴림 보상은 시작 안 함
   out=drive.update(1,.01,m);
   for (int i=0;i<4;++i) {
     EXPECT_NEAR(out[i].steer_angle,m[i].steer_angle,1e-9); EXPECT_DOUBLE_EQ(out[i].wheel_speed,0);
@@ -1089,7 +1089,7 @@ TEST(CoherentPose, EveryPhysicalBoundaryRejectsRepeatedBranchChatter) {
 }
 
 
-// sideways driving keeps every wheel outboard (no wheel tucked under the deck)
+// 옆 주행에서 모든 바퀴가 바깥쪽 (판 밑으로 들어간 바퀴 없음)
 TEST(CoherentPose, SidewaysKeepsEveryWheelOutboard) {
   auto k=coherent_geometry(); const auto mods=real_modules();
   for (double deg : {90., -90., 0., 180., 45., -135.}) {
@@ -1102,7 +1102,7 @@ TEST(CoherentPose, SidewaysKeepsEveryWheelOutboard) {
       EXPECT_GT(o,-band-1e-12) << "deg " << deg << " module " << i << " angle " << a;   // near-tie keeps the old choice
     }
   }
-  // -45 / 135 line: rr cannot reach -45, so its +135 pose is the only feasible one (old documented exception)
+  // -45 / 135 직선: rr 은 -45 를 못 가서 +135 자세만 가능 (문서에 적어 둔 예외)
   for (double deg : {-45., 135.}) {
     const auto out=k.inverse(heading(deg),facing(0),false);
     expect_realizes(k,heading(deg),out,ranges_from_zero(kRealZero));

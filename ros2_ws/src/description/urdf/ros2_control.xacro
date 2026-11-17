@@ -35,7 +35,7 @@
         </state_interface>
         <state_interface name="velocity"/>
         <state_interface name="effort"/>   <!-- opencr: 모터 전류 [A] (토크 아님) -->
-        <!-- OpenCR STATE board time + position, 60 ms fit; no synthetic mock value. -->
+        <!-- OpenCR STATE 보드 시각 + 위치를 60 ms 맞춤으로 계산, mock 은 만든 값을 넣지 않음 -->
         <xacro:if value="${hardware == 'opencr' and jn.startswith('steer_')}">
           <state_interface name="position_velocity"/>
         </xacro:if>

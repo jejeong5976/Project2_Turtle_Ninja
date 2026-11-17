@@ -386,7 +386,7 @@ TEST(RegraspSpot, EdgeMarginAndKnownPucks)
 
 // 사례 2139 (실제 로봇): 붙은 네모 (이웃 -86°, 겹쳐 잰 5.4 mm) 를 먼 퍽 표로 쥔 뒤 (기울임 0) 원래 자리 (0.214, -0.001) 에 내려놓으면 사이 < 0 → 이웃을 누름.
 //   사이 30 mm 넘는 자리 (이웃 반대쪽) 를 고르고 팔 모델로 수직 다시 쥐기 · 내려놓기가 풀림
-TEST(RegraspSpot, Case2139TouchingPairAtFrontEdge)
+TEST(RegraspSpot, TouchingPairAtFrontEdge)
 {
   const Eigen::Vector2d p0(0.212, -0.001);
   const auto nb = manipulation::unbias_neighbors(p0, kSq, {nb_2139()});
@@ -402,7 +402,7 @@ TEST(RegraspSpot, Case2139TouchingPairAtFrontEdge)
 
 // 사례 2131 (실제 로봇): 목표 (0.210, -0.036) · 같은 색 이웃 +y 쪽 면 사이 -5.9 mm, 먼 퍽 표 기울임 6° (내려놓는 손 10°, farpick_regrasp_tilt_dev 5).
 //   고정 격자는 자리를 못 찾음 (놓을 자리에 이미 퍽이 보임) → 먼 퍽 표를 못 씀. 사이 30 mm 넘는 자리를 찾아야 함
-TEST(RegraspSpot, Case2131NeighborOnInnerSide)
+TEST(RegraspSpot, NeighborOnInnerSide)
 {
   const Eigen::Vector2d det(0.210, -0.036), p0(0.2095, -0.039);   // PICK 이 이웃 반대쪽으로 3 mm 민 점
   const NeighborPuck n = sq(0.210, -0.036 + 0.0289);

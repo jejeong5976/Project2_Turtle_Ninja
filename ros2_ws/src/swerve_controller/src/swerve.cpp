@@ -99,7 +99,7 @@ std::vector<ModuleState> SwerveKinematics::inverse(
   std::vector<ModuleState> out(modules_.size());
 
   if (coherent_ && ranges_.empty()) {
-    // Explicit bounded candidates also support mock configurations without zero ticks.
+    // 범위를 직접 준 후보: 영점 눈금이 없는 mock 설정에서도 씀
     SwerveKinematics bounded(modules_, wheel_radius_, steer_limit_,
       std::vector<SteeringRange>(modules_.size(), {-steer_limit_, steer_limit_}), true, branch_margin_, end_slack_);
     bounded.travel_weight_ = travel_weight_;
@@ -108,8 +108,8 @@ std::vector<ModuleState> SwerveKinematics::inverse(
     return bounded.inverse(cmd, current, cosine_scale, feasible, previous, prefer_outward);
   }
   if (!ranges_.empty()) {
-    // New branches need 3 degrees of clearance when a safe equivalent exists.
-    // A retained target may approach the true limit. No physical range is enlarged.
+    // 안전한 같은 자세가 있으면 새 가지는 끝에서 3° 여유가 있어야 함.
+    // 유지하는 목표는 실제 한계까지 가도 됨. 물리 범위는 넓히지 않음
     const double margin = branch_margin_;
     constexpr double hysteresis = 20.0 * kPi / 180.0;
     const bool have_previous = previous.size() == modules_.size();
@@ -129,9 +129,9 @@ std::vector<ModuleState> SwerveKinematics::inverse(
     if (coherent_ && std::hypot(cmd.vx, cmd.vy) >= kStopEps) {
       const double heading = std::atan2(cmd.vy, cmd.vx);
       double cost = INFINITY;
-      // A common translation reference must be reachable by every module.
-      // For compound motion it is only a branch preference: each module keeps its
-      // exact local velocity heading. This also avoids flips from tiny yaw noise.
+      // 평행 이동 공통 기준은 모든 모듈이 갈 수 있어야 함.
+      // 회전이 섞인 이동에서는 가지 고르기에만 씀: 각 모듈은 제 자리 속도 방향을
+      // 그대로 따름. 작은 yaw 잡음으로 뒤집히는 것도 막음
       const double first = std::ceil((ranges_[0].min - heading) / kPi);
       const double last = std::floor((ranges_[0].max - heading) / kPi);
       for (double n = first; n <= last; n += 1.0) {
@@ -195,10 +195,9 @@ std::vector<ModuleState> SwerveKinematics::inverse(
       }
       const bool safe_exists = std::any_of(cand_buf.begin(), cand_buf.begin() + n_cand,
         [](const Candidate & c) {return c.safe;});
-      // Coherent translation: of the two parallel poses (angle, angle+pi) prefer the one whose
-      // wheel offset points away from the body centre, so sideways driving keeps every wheel
-      // outboard instead of tucking two diagonal wheels under the deck .
-      // A deadband near the tie keeps the old choice; physical ranges are not changed.
+      // coherent 평행 이동: 평행한 두 자세 (angle, angle+π) 중 바퀴 offset 이 몸 가운데에서 바깥을 향하는 쪽을 고름
+      // → 옆 주행에서 대각 두 바퀴가 판 밑으로 들어가지 않고 모든 바퀴가 바깥쪽에 있음.
+      // 둘이 비슷하면 (불감대 안) 직전 선택 유지. 물리 범위는 바꾸지 않음
       auto outward = [&](double a) {
           return -modules_[i].offset * std::sin(a) * modules_[i].x + modules_[i].offset * std::cos(a) * modules_[i].y;
         };
@@ -700,7 +699,7 @@ std::vector<ModuleState> SwerveDrive::update_core(
     return modules;  // 조향 보상 분기가 정지 명령을 다시 덮어쓰지 않게 함.
   }
 
-  // A stale/invalid command may decelerate, but must never start a new steering pose.
+  // 오래되거나 잘못된 명령은 감속만 하고, 새 조향 자세를 시작하지 않음
   if (!fresh) {
     const bool aligned = steering_aligned(modules, measured, cfg_.steer_tolerance);
     if (!aligned) {out_ = {0.0, 0.0, 0.0};}

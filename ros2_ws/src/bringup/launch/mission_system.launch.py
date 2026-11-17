@@ -246,7 +246,7 @@ def generate_launch_description():
           description="AMCL: 정지 중 지도/스캔으로 시작 위치 자동 맞춤, 낮은 지도 일치도에서 자동 재시도"),
         A("startup_recovery", default_value="true", choices=["true", "own", "false"],
           description="true (기본) = Nav2 autostart + 실패한 lifecycle manager 만 복구 (RESET 최대 3 · 멈춘 manager 재시작 최대 2) / "
-                      "own = 감시기가 시작도 맡음 (11-13 예전, 비교용) / false = autostart 만"),
+                      "own = autostart 대신 감시기가 시작 · 복구를 모두 맡음 / false = autostart 만"),
         A("mission_loc", default_value="auto", choices=["auto", "health", "amcl"],
           description="mission 위치 판단: auto (기본) = localization:=amcl 이면 amcl 아니면 health / health = pose_guard /localization_health / "
                       "amcl = /amcl_pose 공분산 (localization:=amcl 일 때만)"),

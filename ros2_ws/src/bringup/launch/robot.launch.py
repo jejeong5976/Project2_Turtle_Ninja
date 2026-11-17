@@ -11,7 +11,7 @@
   # 팔 OpenCR 을 안 붙이고 바퀴만 (arm:=false, 하드웨어는 다 장착해도 됨) — 팔 컨트롤러 · control_master 를 띄우지 않음
   ros2 launch bringup robot.launch.py arm:=false hardware_map:=$(ros2 pkg prefix bringup)/share/bringup/config/hardware_map_drive_only.yaml
     거부: 하드웨어 지도에 팔 관절이 있음. swerve_controller 는 차례(require_motion_mode) 를 보지 않음
-    바퀴만 시험한 기능은 arm:=false 에서만: park_on_idle · drive_test_params · enforce_command_limits:=false (동시 조향 blend 는 controllers.yaml 에서 늘 켬)
+    바퀴만 시험한 기능은 arm:=false 에서만: park_on_idle · drive_test_params · enforce_command_limits:=false (동시 조향 blend 는 controllers.yaml 값을 따름, 지금 끔)
     hardware:=mock mock_dynamics:=true : 조향 · 바퀴에 속도 · 가속 한계가 있는 가짜 모터
 """
 
@@ -123,7 +123,7 @@ def swerve_setup(context):
         raise RuntimeError("steering_policy must be nearest | coherent")
     # 팔 OpenCR 이 없으면 control_master 도 안 뜸 → 바퀴 차례(DRIVE) 허가를 줄 노드가 없으므로 차례를 보지 않음
     params = {"park_on_idle": park == "true", "steering_policy": policy, "require_motion_mode": not arm_off}
-    if blend == "true":   # 동시 조향·구동 덮어쓰기 (기본 = controllers.yaml 값, 켬). 진행 막힘 blend_stall_s 넘으면 구동 0
+    if blend == "true":   # 동시 조향·구동 덮어쓰기 (기본 = controllers.yaml 값, 지금 끔). 진행 막힘 blend_stall_s 넘으면 구동 0
         params.update(blend_steer_drive=True, blend_stall_s=float(context.perform_substitution(LaunchConfiguration("blend_stall_s"))),
                       blend_margin=float(context.perform_substitution(LaunchConfiguration("blend_margin"))))
     elif blend == "false":   # 끄고 비교할 때 (바퀴마다 cos)
@@ -201,11 +201,11 @@ def generate_launch_description():
         DeclareLaunchArgument("sag_correction", default_value="true",
                               description="false = TF 에 팔 처짐 보정을 안 넣음 (엔코더 그대로, 실물 A/B 비교용)"),
         DeclareLaunchArgument("steering_policy", default_value="coherent",
-                              description="coherent = 평행 이동은 공통 자세 우선 (기본) | nearest = 예전 최소 이동"),
+                              description="coherent = 평행 이동은 공통 자세 우선 (기본) | nearest = 바퀴마다 지금 조향에서 가장 적게 도는 각도"),
         DeclareLaunchArgument("park_on_idle", default_value="false",
                               description="true = 정지 1 s 뒤 조향 0° (바퀴 바깥쪽) 로 복귀. arm:=false 에서만"),
         DeclareLaunchArgument("blend_steer_drive", default_value="",
-                              description="비움 = controllers.yaml 값 (켬, RL 학습과 같음) | true · false = 덮어쓰기 (false = 예전 바퀴마다 cos)"),
+                              description="비움 = controllers.yaml 값 (지금 끔) | true · false = 덮어쓰기 (false = 동시 모드 끔, 바퀴마다 조향 오차 cos 만큼 감속)"),
         DeclareLaunchArgument("blend_stall_s", default_value="1.0",
                               description="동시 모드에서 조향이 못 따라와 진행이 막힌 시간이 이보다 길면 구동 0 [s]"),
         DeclareLaunchArgument("blend_margin", default_value="0.7",

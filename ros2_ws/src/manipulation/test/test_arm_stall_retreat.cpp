@@ -1,4 +1,4 @@
-// test_night4.cpp — 팔 실행기 · 하드웨어 감시의 시각 문제: 주기 멈춤 · 보낸 시각 기한 · 시각 앞섬 · 도중 정지 HOME 되돌아가기
+// test_arm_stall_retreat.cpp — 팔 실행기 · 하드웨어 감시의 시각 문제: 주기 멈춤 · 보낸 시각 기한 · 시각 앞섬 · 도중 정지 HOME 되돌아가기
 #include <gtest/gtest.h>
 
 #include <cmath>
@@ -39,7 +39,7 @@ unsigned sent_gen(const std::vector<ArmCommand> & out)
 
 // ① 실제 로봇 사례 재현: 다시 계획 (2.2 s) 이 tick 시각을 묵혀 SEND → 받아 주기 기한 2 s 가 보내기 전에 지남
 //   끄면: 다음 tick 에서 '받아 주지 않음'. 주기 멈춤 늦추기 (set_stall) 만으로도 · 보낸 시각 (mark_sent) 만으로도 안 끊김
-TEST(Night4Stall, StaleTickSendIsNotAbandoned)
+TEST(ArmStall, StaleTickSendIsNotAbandoned)
 {
   for (int mode = 0; mode < 3; ++mode) {   // 0 = 끔, 1 = set_stall, 2 = mark_sent
     ArmRunner r(2.0, 5.0, 1.0);
@@ -69,7 +69,7 @@ TEST(Night4Stall, StaleTickSendIsNotAbandoned)
 }
 
 // ② 진짜로 안 받아 주면 여전히 끊김 (늦추기만, 한계 없앰 아님) · 지난 세대 mark_sent 는 아무것도 안 함
-TEST(Night4Stall, RealAcceptTimeoutStillFails)
+TEST(ArmStall, RealAcceptTimeoutStillFails)
 {
   ArmRunner r(2.0, 5.0, 1.0);
   r.set_stall(0.25);
@@ -92,7 +92,7 @@ TEST(Night4Stall, RealAcceptTimeoutStillFails)
 }
 
 // ③ 주기가 멈춘 동안 (재생기 결과 · 측정이 못 들어옴) 끝나기 기한 · 접힘 확인 기한도 늦춤
-TEST(Night4Stall, MotionAndVerifyDeadlinesShiftByGap)
+TEST(ArmStall, MotionAndVerifyDeadlinesShiftByGap)
 {
   ArmRunner r(2.0, 1.0, 1.0, 0.5);
   r.set_stall(0.25);
@@ -115,7 +115,7 @@ TEST(Night4Stall, MotionAndVerifyDeadlinesShiftByGap)
 }
 
 // ④ 끄면 (set_stall 0) 주기가 멈춘 시간도 그대로 세어 시간 초과 → 취소
-TEST(Night4Stall, OffKeepsOldTimeout)
+TEST(ArmStall, OffKeepsOldTimeout)
 {
   ArmRunner r(2.0, 1.0, 1.0);
   r.start(two_moves());
@@ -126,7 +126,7 @@ TEST(Night4Stall, OffKeepsOldTimeout)
 }
 
 // ⑤ 하드웨어 감시: 다른 스레드가 판정 시각 뒤 측정 · 답을 넣음 (로그 "잠깐 이상 (정상)" · "(보드 이상: )" 의 원인)
-TEST(Night4Hw, FutureStampWithinToleranceIsHealthy)
+TEST(HardwareWatch, FutureStampWithinToleranceIsHealthy)
 {
   HardwareWatch w(0.3, 0.1, 1.0);
   const double t = 100.0;
@@ -152,7 +152,7 @@ TEST(Night4Hw, FutureStampWithinToleranceIsHealthy)
 }
 
 // ⑥ 지나온 길 기록: 일직선 dt 점은 줄이고 꺾인 점은 남김
-TEST(Night4Trace, AppendKeepsCornersOnly)
+TEST(ArmTrace, AppendKeepsCornersOnly)
 {
   std::vector<std::vector<double>> tr;
   for (int i = 0; i <= 10; ++i) {manipulation::trace_append(tr, {0.1 * i, 0, 0, 0, 0});}
@@ -203,7 +203,7 @@ std::vector<double> mix(const std::vector<double> & a, const std::vector<double>
 }  // namespace
 
 // ⑦ PLACE 도중 멈춤 → 거꾸로: B → S → A → (A–D–G–D–A 고리 뺌) → L 출구. 이웃 두 점은 모두 지나온 구간 (새 직선 없음)
-TEST(Night4Retreat, ReversesToExitSkippingGraspLoop)
+TEST(HomeRetreat, ReversesToExitSkippingGraspLoop)
 {
   const auto tr = pick_place_trace();
   ASSERT_EQ(tr.size(), 9u);
@@ -240,7 +240,7 @@ TEST(Night4Retreat, ReversesToExitSkippingGraspLoop)
 }
 
 // ⑧ 지나온 길에서 벗어남 (손으로 옮김 · 토크 꺼져 처짐) · 출구 없음 · 기록 없음 → 빈 목록 (= 거절)
-TEST(Night4Retreat, RefusesWhenOffTraceOrNoExit)
+TEST(HomeRetreat, RefusesWhenOffTraceOrNoExit)
 {
   const auto tr = pick_place_trace();
   std::string why;
@@ -257,7 +257,7 @@ TEST(Night4Retreat, RefusesWhenOffTraceOrNoExit)
 }
 
 // ⑨ 쥐러 내려가다 멈춤 (A–D 도중) → D 를 지나지 않고 A → L. 되돌아가기가 또 멈춰도 (A–L 도중) 다시 L 로
-TEST(Night4Retreat, StopDuringDescentAndRepeatedStop)
+TEST(HomeRetreat, StopDuringDescentAndRepeatedStop)
 {
   std::vector<std::vector<double>> tr;
   for (const auto * q : {&L, &A, &D}) {manipulation::trace_append(tr, *q);}
@@ -277,7 +277,7 @@ TEST(Night4Retreat, StopDuringDescentAndRepeatedStop)
 }
 
 // ⑩ 실패한 먼 PLACE: 내려놓을 자리 S 에 퍽이 남았을 때만 기억 (놓기 전 · 다시 쥔 뒤 끝나면 안 남음)
-TEST(Night4Placed, FarPutLeftOnlyAfterRelease)
+TEST(PlacedMemory, FarPutLeftOnlyAfterRelease)
 {
   using manipulation::far_put_left_after;
   bool left = false;
@@ -294,7 +294,7 @@ TEST(Night4Placed, FarPutLeftOnlyAfterRelease)
 // =====================================================================
 
 // ⑪ 쥐고 올라오는 길 (D → A) 에서 멈춤: 같은 구간 (A → D 내려감) 과 겹쳐도 바깥 A 로 → L. D · G 로 안 내려감
-TEST(Night4bRetreat, StopOnReturnLegGoesOutward)
+TEST(HomeRetreat, StopOnReturnLegGoesOutward)
 {
   const auto tr = pick_place_trace();
   const std::vector<std::vector<double>> blocked{G};   // 닫기를 보낸 점
@@ -318,7 +318,7 @@ bool at_p0(const std::vector<double> & q) {return near(q, E0, 0.05);}
 }  // namespace
 
 // ⑫ STORE 빼는 중 멈춤 → 칸 안 (넣은 깊이) 으로 안 돌아감: 빼기 끝 W → P0. 빼기 끝이 길의 끝이면 (P0 로 가는 점을 아직 안 보냄) 거절
-TEST(Night4bRetreat, StoreWithdrawStopNeverReinserts)
+TEST(HomeRetreat, StoreWithdrawStopNeverReinserts)
 {
   std::vector<std::vector<double>> tr;
   for (const auto * q : {&E0, &Sx, &Ca, &Ci, &W, &E0}) {manipulation::trace_append(tr, *q);}
@@ -345,7 +345,7 @@ TEST(Night4bRetreat, StoreWithdrawStopNeverReinserts)
 }
 
 // ⑬ 그리퍼 점은 일직선 줄이기로 안 지워짐 (막힌 점이 길에 남게)
-TEST(Night4bTrace, KeepBeforeProtectsGripPoint)
+TEST(ArmTrace, KeepBeforeProtectsGripPoint)
 {
   std::vector<std::vector<double>> tr;
   manipulation::trace_append(tr, {0, 0, 0, 0, 0});
@@ -357,7 +357,7 @@ TEST(Night4bTrace, KeepBeforeProtectsGripPoint)
 }
 
 // ⑭ 자동 접기는 되돌아가기 안 씀 · 되돌아간 뒤 실측이 출구 밖이면 접지 않음
-TEST(Night4bRetreat, OnlyOnHomeRequestAndLandedByMeasurement)
+TEST(HomeRetreat, OnlyOnHomeRequestAndLandedByMeasurement)
 {
   EXPECT_EQ(manipulation::home_retreat_block(true, true, false), "");
   EXPECT_NE(manipulation::home_retreat_block(false, true, false), "");   // 실패 뒤 자동 접기 · P0 자동 접기
@@ -373,7 +373,7 @@ TEST(Night4bRetreat, OnlyOnHomeRequestAndLandedByMeasurement)
 }
 
 // ⑮ mark_sent 뒤 다음 tick 이 그 틈을 또 늘리지 않음 → 보낸 시각 + 2 s 에 끊김
-TEST(Night4bStall, MarkSentDoesNotDoubleExtend)
+TEST(ArmStall, MarkSentDoesNotDoubleExtend)
 {
   ArmRunner r(2.0, 5.0, 1.0);
   r.set_stall(0.25);
@@ -392,7 +392,7 @@ TEST(Night4bStall, MarkSentDoesNotDoubleExtend)
 }
 
 // ⑯ 계속 굶는 노드: 늘림 합 상한 (5 s) 뒤에는 시간 초과 · 유예는 시작 2 s 뒤 안 늘림
-TEST(Night4bStall, PermanentStarvationStillTimesOut)
+TEST(ArmStall, PermanentStarvationStillTimesOut)
 {
   ArmRunner r(2.0, 1.0, 1.0);
   r.set_stall(0.25, 5.0);

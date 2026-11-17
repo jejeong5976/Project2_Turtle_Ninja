@@ -173,7 +173,7 @@ int OpenCRLink::configure(double timeout_s, uint16_t as_velocity_mask)
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
   }
   waiting_ack_ = false;
-  // Do not carry a previous session's samples (or clock fault) across CONFIG.
+  // CONFIG 를 넘어 이전 연결의 표본 (시각 이상 포함) 을 이어 쓰지 않음
   position_rates_.assign(joints_.size(), PositionRate{});
   for (auto & j : state_.joints) {j.position_velocity = NAN;}
   temps_.assign(joints_.size(), -1);   // CONFIG 전 온도를 새 설정의 값처럼 보이지 않게

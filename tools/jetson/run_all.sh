@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
 # 창 하나에서 켜기: 떠 있는 실행 정리 → 자동 위치/시작 복구 → STANDBY 확인 → 녹화 → robot_cli.
 # 주행 정책·도킹 값은 아래 launch 인자로, 팔/인지 실행값은 [3/6] 에서 넘김. 임계값은 각 노드 한 곳에만 둠.
-# 사용: bash run_all.sh  (환경 변수 INIT=x,y,yaw_deg · MAP=지도경로 · P=미션설정 선택 가능)
-# 종료는 $ROBOT_TOOLS/stop_robot.sh 가 담당함. 이 스크립트는 /mission/start를 자동 호출하지 않음.
+# 사용: bash tools/jetson/run_all.sh <프로젝트> <도구폴더> <미션설정> <지도>
+#   인자 대신 환경 변수 ROBOT_PROJECT · ROBOT_TOOLS · P · MAP 로 줘도 됨 (둘 다 있으면 인자). 하나라도 없으면 이 사용법을 보이고 끝.
+#   <프로젝트>  ros2_ws/install/setup.bash 가 있는 저장소 폴더
+#   <도구폴더>  stop_robot.sh · start_robot_amcl.sh 가 있는 폴더
+#   <미션설정>  start_robot_amcl.sh 에 넘기는 미션 설정 yaml
+#   <지도>      start_robot_amcl.sh 에 MAP 으로 넘기는 지도 경로
+#   선택: INIT=x,y,yaw_deg (초기 탐색 중심) · RUN_ALL_LOG_DIR (실행 로그) · RUN_ALL_BAG_DIR (녹화)
+# 종료는 <도구폴더>/stop_robot.sh 가 담당함. 이 스크립트는 /mission/start를 자동 호출하지 않음.
 set -euo pipefail
-ROBOT_PROJECT=${ROBOT_PROJECT:-$HOME/p2_integ}
-ROBOT_TOOLS=${ROBOT_TOOLS:-$HOME/real_1111}
-P=${P:-$HOME/planning_run.yaml}
-MAP=${MAP:-$HOME/maps/arena7}
+ROBOT_PROJECT=${1:-${ROBOT_PROJECT:-}}
+ROBOT_TOOLS=${2:-${ROBOT_TOOLS:-}}
+P=${3:-${P:-}}
+MAP=${4:-${MAP:-}}
+if [[ -z "$ROBOT_PROJECT" || -z "$ROBOT_TOOLS" || -z "$P" || -z "$MAP" ]]; then
+  sed -n 4,10p "$0"
+  exit 2
+fi
 INIT=${INIT:--0.357,-0.005,-1.1}
 RUN_ALL_LOG_DIR=${RUN_ALL_LOG_DIR:-$HOME/run_all_logs}
 RUN_ALL_BAG_DIR=${RUN_ALL_BAG_DIR:-$HOME/bags}

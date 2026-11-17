@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / 'scripts' / 'run_all.sh'
+SCRIPT = Path(__file__).resolve().parents[4] / 'tools' / 'jetson' / 'run_all.sh'
 
 
 class RunAllTests(unittest.TestCase):
@@ -44,7 +44,8 @@ printf '%s\\n' "$SKIP_CONFIRM $*" > "$RUN_ALL_TEST_ROOT/launch_args"
 sleep 30
 ''')
             env = dict(os.environ, RUN_ALL_TEST_ROOT=str(root), ROBOT_PROJECT=str(root),
-                       ROBOT_TOOLS=str(root / 'tools'), RUN_ALL_LOG_DIR=str(root / 'logs'),
+                       ROBOT_TOOLS=str(root / 'tools'), P=str(root / 'mission.yaml'),
+                       MAP=str(root / 'map'), RUN_ALL_LOG_DIR=str(root / 'logs'),
                        RUN_ALL_BAG_DIR=str(root / 'bags'))
             try:
                 result = subprocess.run(['bash', str(SCRIPT)], env=env, input='',
@@ -60,7 +61,7 @@ sleep 30
                 launch = (root / 'launch_args').read_text()
                 for arg in ('startup_recovery:=true', 'auto_initial_pose:=true', 'wrist_respawn:=true'):
                     self.assertIn(arg, launch)
-                self.assertTrue(launch.startswith('1 '))
+                self.assertTrue(launch.startswith('1 ' + str(root / 'mission.yaml') + ' '))
                 self.assertEqual((root / 'pkill_args').read_text().strip(), '-INT -f ros2 bag record')
             finally:
                 pidfile = root / 'launch_pid'
@@ -69,6 +70,27 @@ sleep 30
                         os.killpg(int(pidfile.read_text()), signal.SIGTERM)
                     except ProcessLookupError:
                         pass
+
+    def test_missing_paths_print_usage_and_stop(self):
+        with tempfile.TemporaryDirectory(prefix='startup_run_all_') as dirname:
+            root = Path(dirname)
+            (root / 'bin').mkdir()
+            ros = root / 'bin/ros2'
+            ros.write_text('#!/bin/sh\ntouch "$RUN_ALL_TEST_ROOT/ros2_called"\n')
+            ros.chmod(0o755)
+            full = {'ROBOT_PROJECT': str(root), 'ROBOT_TOOLS': str(root / 'tools'),
+                    'P': str(root / 'mission.yaml'), 'MAP': str(root / 'map')}
+            base = {k: v for k, v in os.environ.items() if k not in full}
+            base.update(RUN_ALL_TEST_ROOT=str(root), PATH=str(root / 'bin') + ':' + os.environ['PATH'],
+                        RUN_ALL_LOG_DIR=str(root / 'logs'), RUN_ALL_BAG_DIR=str(root / 'bags'))
+            for missing in full:
+                env = dict(base, **{k: v for k, v in full.items() if k != missing})
+                result = subprocess.run(['bash', str(SCRIPT)], env=env, input='',
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 2, missing)
+                self.assertIn('사용: bash tools/jetson/run_all.sh', result.stdout, missing)
+                self.assertFalse((root / 'logs').exists(), missing)
+                self.assertFalse((root / 'ros2_called').exists(), missing)
 
 
 if __name__ == '__main__':

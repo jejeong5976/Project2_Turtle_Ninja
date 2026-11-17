@@ -1,4 +1,4 @@
-# moveit_config — 닌자터틀 팔 MoveIt 설정
+# moveit_config — IK 계산용 (실행 중에는 안 씀)
 
 | 파일 | 내용 |
 |---|---|

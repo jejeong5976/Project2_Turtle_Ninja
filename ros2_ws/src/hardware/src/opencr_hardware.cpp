@@ -377,7 +377,7 @@ CallbackReturn OpenCRHardware::on_configure(const rclcpp_lifecycle::State &)
         "끈 채로 손으로 한계 안 (조향이면 똑바로) 으로 돌려 놓을 것", js[it.idx].name.c_str(), t, q * 180.0 / M_PI);
     }
   }
-  RCLCPP_WARN(get_logger(), "조향 자동 복구 끝: %s", all_ok ? "성공" : "실패 (켜면 예전처럼 토크를 못 켬 → ERROR)");
+  RCLCPP_WARN(get_logger(), "조향 자동 복구 끝: %s", all_ok ? "성공" : "실패 (켜면 토크를 못 켬 → ERROR)");
   check_pos_limits(false);   // 다시 센 뒤 한계 한 줄 (아직 한계 밖인 관절은 손으로 돌리라는 경고)
   return CallbackReturn::SUCCESS;
 }
@@ -747,8 +747,8 @@ void OpenCRHardware::publish_states()
     if (!ifaces_[i].pos.empty()) {set_state(ifaces_[i].pos, fresh ? r.position : NaN);}
     if (!ifaces_[i].vel.empty()) {set_state(ifaces_[i].vel, fresh ? r.velocity : NaN);}
     if (!ifaces_[i].position_vel.empty()) {
-      // Position-derived compensation never accepts STATE older than 50 ms,
-      // even when measure_max_age_s is configured more permissively.
+      // 위치로 구한 보상은 50 ms 넘은 STATE 를 받지 않음
+      // (measure_max_age_s 를 더 느슨하게 둬도 같음)
       set_state(ifaces_[i].position_vel,
         fresh && link_->joint_measured(i, 0.05) ? r.position_velocity : NaN);
     }

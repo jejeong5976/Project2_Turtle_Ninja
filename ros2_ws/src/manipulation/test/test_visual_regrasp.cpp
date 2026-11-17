@@ -980,7 +980,7 @@ struct Spot0118
 
 // 위 사례 재현: 면에 맞춘 94.5° 는 위 점 40 mm IK 가 안 돼 184.5° (= J5 −89°) 로 쥠. rot_hand_mm 없이 = PICK 값 (−1.1, −14.5) mm (로그 그대로),
 //   새 = 손 지렛대 (+1.4, −3.1) mm 근처. 손끝은 잰 중심 + regrasp_offset + 보정, 실제 손목 돌림은 −89° (로그 글 +91° 가 아님)
-TEST(RegraspRotHand, Real0118TurnUsesHandLever)
+TEST(RegraspRotHand, RealTurnUsesHandLever)
 {
   Spot0118 s;
   ASSERT_EQ(s.blind.size(), 3u);
@@ -1586,7 +1586,7 @@ const DetFrame1903 kObsDets1903[] = {
 //   고르기에서 빠짐 = 실물 '새 장에 놓은 퍽 없음' 그대로. (2) 올린 점의 태그 장은 받침 퍽 윗면 높이 (0.1965) 에 내리면 한 변 14.5–16 mm (15.3 ± 6 % 안),
 //   중심이 받침 가운데에서 10 mm 안팎 → 받침 다시 보기가 그 장을 고름 (창 3 은 11.7 mm 라 한계 10 mm 로 지금 동작 = 가운데에서 쥠)
 //   칸 퍽 평면 (칸 바닥 0.1325 + 퍽 0.06) 에 내려도 받침과 4 mm 차라 크기는 맞음 — 실물 로그 '퍽 태그 11 안 씀 (16.4 mm)' 은 올라가는 중 다른 장
-TEST(ParkRelook, Replay1903LiftTagsAtParkHeight)
+TEST(ParkRelook, ReplayLiftTagsAtParkHeight)
 {
   const double top = 0.1365 + 0.060;
   const Eigen::Vector2d park(0.1008, 0.00115);

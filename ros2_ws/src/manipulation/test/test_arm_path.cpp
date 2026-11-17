@@ -1050,9 +1050,11 @@ bool same_lr(const std::vector<double> & a, const std::vector<double> & b, doubl
 }
 }  // namespace
 
-// 12 칸 실제 경로: d30 · store_<칸> 모두 관찰 자세 (look_rack 끝, 실측 0.05 rad 어긋남) 에서 → lift_real (S3 r8) → 칸 경로 그대로.
-//   look_rack 을 기준점에서 갔든 집은 자리에서 갔든 (첫 점 pick_end) 같음. 새 구간은 관찰 자세 → 바로 앞 점 (방금 지나온 구간 거꾸로) 하나뿐
-TEST(LookRackJoin, RealPathsAllCellsJoinAtLiftReal)
+// 12 칸 실제 경로: d30 · store_<칸> 모두 관찰 자세 (look_rack 끝, 실측 0.05 rad 어긋남) 에서 지나온 관찰 경로를 거꾸로 → 칸 경로 그대로.
+//   S10: look_rack 이 칸 경로 lift_real 을 그대로 지남 → lift_real 에서 이음. 나머지 11 칸: 관찰 경로 중간 높이를 올려 둬서
+//   칸 경로 점과 겹치지 않음 → look_rack 첫 점 lift (= 칸 경로 첫 점, 박스 위 기준점) 까지 거꾸로 (S3 은 r8 … lift_real 도 거꾸로) → 칸 경로 처음부터.
+//   look_rack 을 기준점에서 갔든 집은 자리에서 갔든 (첫 점 pick_end) 같음. 새 자세 없음 (지금 자세 · 관찰 경로 점 · 칸 경로 점뿐)
+TEST(LookRackJoin, RealPathsAllCellsJoinThroughRecordedPoints)
 {
   for (int k = 1; k <= 12; ++k) {
     const std::string s = "S" + std::to_string(k);
@@ -1074,7 +1076,8 @@ TEST(LookRackJoin, RealPathsAllCellsJoinAtLiftReal)
         std::size_t j = 0;
         const auto out = manipulation::look_rack_back_join(store, *lp, look.nodes.front(), q_now, 0.15, why, 1e-3, &j);
         ASSERT_FALSE(out.empty()) << name << ": " << why;
-        EXPECT_EQ(j, k == 3 ? 9u : 2u) << name;   // out 끝 (store.size − j) 점 = store.nodes[j..] (store_recover 는 앞을 store.nodes[0..j) 로 되돌림)
+        const bool at_lift_real = k == 10;
+        EXPECT_EQ(j, at_lift_real ? 2u : 1u) << name;   // out 끝 (store.size − j) 점 = store.nodes[j..] (store_recover 는 앞을 store.nodes[0..j) 로 되돌림)
         // store_recover 가 쓰는 경로: 이은 앞부분 → 원래 칸 경로 앞 (박스 위 기준점) = 원래 칸 경로와 같음
         std::vector<PathNode> rec(store.nodes.begin(), store.nodes.begin() + static_cast<std::ptrdiff_t>(j));
         rec.insert(rec.end(), out.end() - static_cast<std::ptrdiff_t>(store.nodes.size() - j), out.end());
@@ -1082,14 +1085,18 @@ TEST(LookRackJoin, RealPathsAllCellsJoinAtLiftReal)
         for (std::size_t i = 0; i < rec.size(); ++i) {EXPECT_TRUE(same_lr(rec[i].q, store.nodes[i].q)) << name << " " << i;}
         EXPECT_TRUE(same_lr(out.front().q, q_now)) << name;
         EXPECT_TRUE(manipulation::path_start_ok(ArmPath{name, out, true}, q_now, 0.15, why)) << name;
-        // 첫 점 (lift) 만 관찰 자세로 바뀜. S3: look_rack 이 칸 경로 r2..r8 을 따라가다 갈라짐 → r8 까지만 거꾸로 (r2..r7 은 다시 안 감)
-        ASSERT_EQ(out.size(), store.nodes.size() - (k == 3 ? 7 : 0)) << name;
-        EXPECT_TRUE(same_lr(out[1].q, look.nodes[look.nodes.size() - 2].q)) << name;   // look_rack 끝 바로 앞 점 (지나온 점) = 칸 경로 점
-        const std::size_t sh = store.nodes.size() - out.size();
-        for (std::size_t i = 1; i < out.size(); ++i) {
-          EXPECT_TRUE(same_lr(out[i].q, store.nodes[i + sh].q)) << name << " " << i;   // 칸 경로 (놓는 점 포함) 그대로
-          EXPECT_EQ(out[i].grip, store.nodes[i + sh].grip) << name << " " << i;
-          EXPECT_EQ(out[i].stop, store.nodes[i + sh].stop) << name << " " << i;
+        // S10: 첫 점 (lift) 만 관찰 자세로 바뀜. 나머지: [관찰 자세, look_rack n-2 … 1 거꾸로, 칸 경로 전체] (S1 209 점 → 211 점)
+        ASSERT_EQ(out.size(), store.nodes.size() + (at_lift_real ? 0 : look.nodes.size() - 1)) << name;
+        EXPECT_TRUE(same_lr(out[1].q, look.nodes[look.nodes.size() - 2].q)) << name;   // look_rack 끝 바로 앞 점 (지나온 점)
+        const std::size_t nb = out.size() - (store.nodes.size() - j + 1);   // 칸 경로 store.nodes[j − 1] 이 나오는 자리
+        for (std::size_t i = 1; i < nb; ++i) {
+          EXPECT_TRUE(same_lr(out[i].q, look.nodes[look.nodes.size() - 1 - i].q)) << name << " " << i;   // 지나온 관찰 경로 거꾸로
+        }
+        for (std::size_t i = nb; i < out.size(); ++i) {
+          const PathNode & want = store.nodes[j - 1 + i - nb];
+          EXPECT_TRUE(same_lr(out[i].q, want.q)) << name << " " << i;   // 칸 경로 (놓는 점 포함) 그대로
+          EXPECT_EQ(out[i].grip, want.grip) << name << " " << i;
+          EXPECT_EQ(out[i].stop, want.stop) << name << " " << i;
         }
       }
       // 관찰 자세가 아니면 (기준점 · 집은 자리 · 받침) 안 이음 → 칸 경로 그대로
