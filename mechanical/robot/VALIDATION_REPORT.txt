@@ -1,0 +1,27 @@
+LOCAL REVISION r3 — 2026-11-17
+Source: TB3_WafflePi_Swerve_V3_Final, Fusion v10. Native Fusion source unchanged.
+
+RESULT
+All 15 exported STEP files pass OpenCascade 8.0.1 shape validation.
+All 481 nonassembly shape definitions pass OpenCascade 7.9.3 validation.
+Component names, solid counts and shell counts are preserved.
+
+REPAIRS
+A5_MastCam_Base: separated a collapsed notch vertex into two vertices at the existing line/circle intersections and reconnected three incident edges. Largest displacement from the old merged vertex is about 0.009619 mm. Existing curves and surfaces were retained. The 45 x 45 x 31 mm envelope and 39 faces are unchanged. Repaired volume: 14885.989297 mm3; surface area: 12290.590441 mm2. The same correction was applied to its assembly definition.
+
+PR30_IPL_01: the imported vendor face contained disconnected circular regions and inconsistent boundary orientation. Split six such regions into separate faces and corrected the main face's wire orientation. Original vertex-coordinate sets, edge geometry, edge count and outer envelope are unchanged. Faces changed from 1458 to 1464. Twenty-four assembly occurrences account for the increase of 144 assembly face instances. Repaired solid volume: 46884.783902 mm3. The invalid imported shape calculated 40034.507280 mm3; that invalid-shape result is not a reliable physical volume. This is a topology repair, not verification against the vendor's native CAD or the physical part.
+
+ASSEMBLY
+One root, 2373 solid instances, 3552 shell instances, 136011 face instances. Source Fusion counts are preserved separately in the manifest, because they are different concepts. Overall tight dimensions: 290 x 495.373503 x 639.178506 mm. The assembly drawing now labels height as 639.2 mm. Surface models and existing coincident geometry remain; no aggregate physical material volume is asserted.
+
+DXF AND DOCUMENTATION
+Corrected A6 profile extent to 63.75 x 45 mm and Leader Grip Ring A to 31 x 83.5 mm. Recomputed all DXF extents including interior arc extrema. DXF geometry is unchanged. Endpoint closure checked at 0.0001 mm (maximum rounding gap about 0.000054 mm).
+Updated manifest assembly-space part bounds to tight geometric bounds, retaining the original Fusion bounds separately. Corrected the separate leader-gripper measured bounds.
+Updated A5 drawing facts and assembly height/provenance notes. Original shaded views are retained: A5's small connectivity correction and the vendor face partition do not change the retained boundary geometry at the drawing's resolution.
+Haemin Kim remains the design author only of A1-A7 and their associated exports.
+
+LIMITS
+These remain draft reference drawings, not manufacturing releases. Materials, tolerances, finishes and processes are unspecified. Placeholder batteries, estimated placements, unmodelled fasteners, the 27 mm camera-board versus 28 mm frame pattern, and other source limitations remain. Native Fusion v10 was not modified. Independent kernel validity checks establish topology consistency, not design intent or physical fit.
+
+EVIDENCE
+See validation.json for all model and component results, exact bounds, DXF measurements and repair provenance. The manifest contains SHA-256 checksums for each supplied CAD/drawing/validation file.

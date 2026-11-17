@@ -1,0 +1,51 @@
+{
+  "kind": "allocation",
+  "revision": 1,
+  "reason": "initial",
+  "stamp_s": 484.01,
+  "barcode": "P2-02",
+  "order": "descending",
+  "signal": {"sequence": "RGGYYGGYRRRY", "R": 4, "Y": 4, "G": 4},
+  "yellow_shape": "cylinder",
+  "status": "complete",
+  "places": [
+    {"place": "L1", "group": "R", "pips": 4, "placed": 0, "filled": true, "center_map": [-3.305, -0.004], "center_arena_mm": [3681, 1004],
+      "cells": [
+        {"cell": 0, "puck": "5", "map": [-3.246, -0.065], "arena_mm": [3621, 1064]},
+        {"cell": 1, "puck": "3", "map": [-3.366, -0.063], "arena_mm": [3741, 1064]},
+        {"cell": 2, "puck": "10", "map": [-3.244, 0.055], "arena_mm": [3621, 944]},
+        {"cell": 3, "puck": "4", "map": [-3.364, 0.057], "arena_mm": [3741, 944]}
+      ]},
+    {"place": "L2", "group": "Y", "pips": 4, "placed": 0, "filled": true, "center_map": [-1.951, -2.684], "center_arena_mm": [2277, 3658],
+      "cells": [
+        {"cell": 0, "puck": "6", "map": [-1.892, -2.745], "arena_mm": [2217, 3718]},
+        {"cell": 1, "puck": "11", "map": [-2.012, -2.742], "arena_mm": [2337, 3718]},
+        {"cell": 2, "puck": "7", "map": [-1.890, -2.625], "arena_mm": [2217, 3598]},
+        {"cell": 3, "puck": "9", "map": [-2.010, -2.622], "arena_mm": [2337, 3598]}
+      ]},
+    {"place": "L3", "group": "G", "pips": 4, "placed": 0, "filled": true, "center_map": [-3.401, -4.315], "center_arena_mm": [3696, 5316],
+      "cells": [
+        {"cell": 0, "puck": "8", "map": [-3.342, -4.376], "arena_mm": [3636, 5376]},
+        {"cell": 1, "puck": "2", "map": [-3.462, -4.373], "arena_mm": [3756, 5376]},
+        {"cell": 2, "puck": "0", "map": [-3.340, -4.256], "arena_mm": [3636, 5256]},
+        {"cell": 3, "puck": "1", "map": [-3.460, -4.253], "arena_mm": [3756, 5256]}
+      ]}
+  ],
+  "pucks": [
+    {"id": "0", "color": "green", "shape": "box", "where": "cargo:S11", "to": "L3#2", "seen_as": ""},
+    {"id": "1", "color": "green", "shape": "box", "where": "cargo:S8", "to": "L3#3", "seen_as": ""},
+    {"id": "2", "color": "green", "shape": "box", "where": "cargo:S6", "to": "L3#1", "seen_as": ""},
+    {"id": "3", "color": "red", "shape": "box", "where": "cargo:S12", "to": "L1#1", "seen_as": ""},
+    {"id": "4", "color": "red", "shape": "box", "where": "cargo:S1", "to": "L1#3", "seen_as": ""},
+    {"id": "5", "color": "red", "shape": "box", "where": "box:B3", "to": "L1#0", "seen_as": ""},
+    {"id": "6", "color": "green", "shape": "cylinder", "where": "cargo:S5", "to": "L2#0", "seen_as": ""},
+    {"id": "7", "color": "green", "shape": "cylinder", "where": "cargo:S7", "to": "L2#2", "seen_as": ""},
+    {"id": "8", "color": "green", "shape": "cylinder", "where": "box:B3", "to": "L3#0", "seen_as": ""},
+    {"id": "9", "color": "red", "shape": "cylinder", "where": "cargo:S3", "to": "L2#3", "seen_as": ""},
+    {"id": "10", "color": "red", "shape": "cylinder", "where": "cargo:S2", "to": "L1#2", "seen_as": ""},
+    {"id": "11", "color": "red", "shape": "cylinder", "where": "cargo:S10", "to": "L2#1", "seen_as": ""}
+  ],
+  "verify_order": ["L1", "L2", "L3"],
+  "expected_remaining_s": 911,
+  "history": []
+}

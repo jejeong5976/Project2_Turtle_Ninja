@@ -1,0 +1,260 @@
+[local_planner_node-17] [INFO] [1794811693.225789275] [rl_nav]: 출발점 (-0.357, -0.005) ±0.15 m 목표: 0.50 m 안에서 PolygonStop 막히면 도착까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-18] [INFO] [1794811693.885562298] [rl_dock]: 정책 /home/turtle/p2_integ/ros2_ws/install/bringup/share/bringup/config/rl/dock3.npz 불러옴, 주행 (dock_to_pose → cmd_vel_nav), 한계 [0.255, 0.255, 0.300], 성공 2 cm · 2.0°
+[local_planner_node-17] [INFO] [1794811693.944393355] [rl_nav]: 정책 /home/turtle/p2_integ/ros2_ws/install/bringup/share/bringup/config/rl/nav_nf5.npz 불러옴, 주행 (navigate_to_pose → cmd_vel_nav), 한계 [0.255, 0.255, 0.500], 성공 5 cm · 5.0°
+[local_planner_node-17] [INFO] [1794811741.302721207] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794811743.769056473] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794811743.769967715] [rl_nav]: 출발점 목표 11 cm 앞 PolygonStop 막힘 → 도착까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794811745.319591493] [rl_nav]: 도착 4.0 s, 오차 3.9 cm · 3.5°
+[local_planner_node-17] [INFO] [1794811745.319781799] [rl_nav]: 회전: odom ∫|ω| 24° · 필요 2° · 실제 순 2° · 남는 회전 22° · 명령 반전 2 번
+[local_planner_node-17] [INFO] [1794811745.366125233] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794811769.387845094] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794811769.392158740] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794811769.392286325] [rl_nav]: 출발 자리 PolygonStop 막힘 → 25 cm 벗어나거나 정지 구역 빌 때까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794811770.224458026] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794811770.224617004] [rl_nav]: 출발 자리 5 cm 벗어남 · 정지 구역 빔 → 영역 켬
+[local_planner_node-17] [INFO] [1794811777.585288173] [rl_nav]: 회전: odom ∫|ω| 117° · 필요 95° · 실제 순 75° · 남는 회전 23° · 명령 반전 5 번
+[local_planner_node-17] [INFO] [1794811777.607020979] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-18] [INFO] [1794811777.688644272] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 끔
+[local_planner_node-18] [INFO] [1794811777.688887475] [rl_dock]: 목표 odom 고정 (-1.114, 0.163, -92.8°)
+[local_planner_node-18] [INFO] [1794811777.689381336] [rl_dock]: 박스 맞춤: 확인 1/3
+[local_planner_node-18] [INFO] [1794811777.840188433] [rl_dock]: 박스 맞춤: 지도 대비 (-4.4, +9.0) cm · -2.5° (측정 1 번)
+[local_planner_node-18] [INFO] [1794811778.840485810] [rl_dock]: 박스 맞춤: 지도 대비 (-4.1, +8.5) cm · -2.6° (측정 11 번)
+[local_planner_node-18] [INFO] [1794811779.841270489] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 0 cm 앞, 막은 점 박스 기준 (앞 +26.5, 옆 +18.8) cm · 중심에서 32.5 cm, 면 -2°, 측정 15 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794811782.191841577] [rl_dock]: 도착 4.5 s, 오차 0.8 cm · 1.7°, 박스 지도 대비 9.2 cm · -1.9° (측정 15 번)
+[local_planner_node-18] [INFO] [1794811782.193211639] [rl_dock]: 회전: odom ∫|ω| 26° · 필요 21° · 실제 순 21° · 남는 회전 6° · 명령 반전 0 번
+[local_planner_node-18] [INFO] [1794811782.244132081] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 켬
+[local_planner_node-17] [INFO] [1794811833.589908085] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794811834.302469871] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794811834.302644849] [rl_nav]: 출발 자리 PolygonStop 막힘 → 25 cm 벗어나거나 정지 구역 빌 때까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794811834.823348996] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794811834.823544518] [rl_nav]: 출발 자리 13 cm 벗어남 · 정지 구역 빔 → 영역 켬
+[local_planner_node-17] [INFO] [1794811852.884922483] [rl_nav]: 회전: odom ∫|ω| 91° · 필요 2° · 실제 순 18° · 남는 회전 88° · 명령 반전 4 번
+[local_planner_node-17] [INFO] [1794811852.908812110] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-18] [INFO] [1794811852.987236649] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 끔
+[local_planner_node-18] [INFO] [1794811852.987408779] [rl_dock]: 목표 odom 고정 (-3.413, -1.992, -88.3°)
+[local_planner_node-18] [INFO] [1794811852.987851088] [rl_dock]: 박스 맞춤: 확인 1/3
+[local_planner_node-18] [INFO] [1794811853.140022196] [rl_dock]: 박스 맞춤: 지도 대비 (-2.8, +6.6) cm · -10.8° (측정 1 번)
+[local_planner_node-18] [INFO] [1794811853.840584174] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 2 cm 앞, 막은 점 박스 기준 (앞 +16.1, 옆 +1.8) cm · 중심에서 16.2 cm, 면 -9°, 측정 8 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794811854.139580319] [rl_dock]: 박스 맞춤 버림: 조각 길이 10 cm
+[local_planner_node-18] [WARN] [1794811858.738398723] [rl_dock]: 범위 2 배 안 3 s → 성공으로 끝냄, 오차 0.6 cm · 2.0°
+[local_planner_node-18] [INFO] [1794811858.738567301] [rl_dock]: 회전: odom ∫|ω| 24° · 필요 15° · 실제 순 20° · 남는 회전 9° · 명령 반전 0 번
+[local_planner_node-18] [INFO] [1794811858.780770306] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 켬
+[local_planner_node-17] [INFO] [1794811915.388965802] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794811916.099062470] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794811916.099214727] [rl_nav]: 출발 자리 PolygonStop 막힘 → 25 cm 벗어나거나 정지 구역 빌 때까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794811916.620730816] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794811916.620887169] [rl_nav]: 출발 자리 15 cm 벗어남 · 정지 구역 빔 → 영역 켬
+[local_planner_node-17] [INFO] [1794811942.085067395] [rl_nav]: 회전: odom ∫|ω| 155° · 필요 1° · 실제 순 60° · 남는 회전 154° · 명령 반전 3 번
+[local_planner_node-17] [INFO] [1794811942.106841256] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-18] [INFO] [1794811942.187292504] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 끔
+[local_planner_node-18] [INFO] [1794811942.187638684] [rl_dock]: 목표 odom 고정 (-0.734, -4.167, -99.8°)
+[local_planner_node-18] [INFO] [1794811942.188134785] [rl_dock]: 박스 맞춤: 확인 1/3
+[local_planner_node-18] [INFO] [1794811942.339517052] [rl_dock]: 박스 맞춤: 지도 대비 (-4.8, -4.4) cm · +7.7° (측정 1 번)
+[local_planner_node-18] [INFO] [1794811943.040106675] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 2 cm 앞, 막은 점 박스 기준 (앞 +37.7, 옆 +12.6) cm · 중심에서 39.8 cm, 면 +6°, 측정 8 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794811943.438434233] [rl_dock]: 박스 맞춤: 지도 대비 (-6.5, -3.6) cm · +6.9° (측정 12 번)
+[local_planner_node-18] [INFO] [1794811943.740120868] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 2 개, 4 cm 앞, 막은 점 박스 기준 (앞 +48.1, 옆 -20.0) cm · 중심에서 52.0 cm, 면 +8°, 측정 15 번) → 서서 다시 봄
+[local_planner_node-18] [WARN] [1794811943.938458126] [rl_dock]: 정밀 접근 직선 경로에 박스 아닌 점 7 개 (2 cm 앞, 막은 점 박스 기준 (앞 +49.7, 옆 -19.7) cm · 중심에서 53.5 cm, 연속 3 스캔, 측정 17 번) → 멈추고 실패 (목표 23 cm)
+[local_planner_node-18] [INFO] [1794811943.938610287] [rl_dock]: 회전: odom ∫|ω| 25° · 필요 57° · 실제 순 8° · 남는 회전 0° · 명령 반전 0 번
+[local_planner_node-18] [INFO] [1794811943.963954458] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 켬
+[local_planner_node-17] [INFO] [1794811944.087062316] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794811944.092603590] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794811944.092918986] [rl_nav]: 출발 자리 PolygonStop 막힘 → 25 cm 벗어나거나 정지 구역 빌 때까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [WARN] [1794811944.093232109] [rl_nav]: 명령 틈 2.01 s (0.3 s 넘으면 swerve_controller 가 멈춤)
+[local_planner_node-17] [INFO] [1794811944.185575802] [rl_nav]: 회전: odom ∫|ω| 1° · 필요 56° · 실제 순 1° · 남는 회전 0° · 명령 반전 0 번
+[local_planner_node-17] [INFO] [1794811944.208344042] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-18] [INFO] [1794811944.286935206] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 끔
+[local_planner_node-18] [INFO] [1794811944.287103112] [rl_dock]: 목표 odom 고정 (-0.844, -4.218, -90.6°)
+[local_planner_node-18] [INFO] [1794811944.287476364] [rl_dock]: 박스 맞춤: 확인 1/3
+[local_planner_node-18] [INFO] [1794811944.287552557] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 6 개, 2 cm 앞, 막은 점 박스 기준 (앞 +48.6, 옆 -19.8) cm · 중심에서 52.5 cm, 면 +0°, 측정 0 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794811944.440601465] [rl_dock]: 박스 맞춤: 지도 대비 (-0.9, +0.7) cm · -1.3° (측정 1 번)
+[local_planner_node-18] [WARN] [1794811944.638691137] [rl_dock]: 정밀 접근 직선 경로에 박스 아닌 점 8 개 (2 cm 앞, 막은 점 박스 기준 (앞 +47.8, 옆 -19.9) cm · 중심에서 51.8 cm, 연속 5 스캔, 측정 3 번) → 멈추고 실패 (목표 22 cm)
+[local_planner_node-18] [INFO] [1794811944.638849027] [rl_dock]: 회전: odom ∫|ω| 1° · 필요 56° · 실제 순 0° · 남는 회전 0° · 명령 반전 0 번
+[local_planner_node-18] [INFO] [1794811944.661781876] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 켬
+[local_planner_node-17] [INFO] [1794811944.787407232] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794811944.794907983] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794811944.795061969] [rl_nav]: 출발 자리 PolygonStop 막힘 → 25 cm 벗어나거나 정지 구역 빌 때까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794811951.366293456] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794811951.366463986] [rl_nav]: 출발 자리 11 cm 벗어남 · 정지 구역 빔 → 영역 켬
+[local_planner_node-17] [INFO] [1794811953.094951128] [rl_nav]: 도착 8.3 s, 오차 1.9 cm · 0.7°
+[local_planner_node-17] [INFO] [1794811953.095094138] [rl_nav]: 회전: odom ∫|ω| 50° · 필요 47° · 실제 순 47° · 남는 회전 3° · 명령 반전 0 번
+[local_planner_node-17] [INFO] [1794811953.127970420] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794811966.587387259] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794811966.687239799] [rl_nav]: 회전: odom ∫|ω| 0° · 필요 8° · 실제 순 0° · 남는 회전 0° · 명령 반전 0 번
+[local_planner_node-17] [INFO] [1794811966.699636474] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-18] [INFO] [1794811966.787826587] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 끔
+[local_planner_node-18] [INFO] [1794811966.788006205] [rl_dock]: 목표 odom 고정 (-0.869, -4.203, -91.5°)
+[local_planner_node-18] [INFO] [1794811966.788555011] [rl_dock]: 박스 맞춤: 확인 1/3
+[local_planner_node-18] [INFO] [1794811966.990788758] [rl_dock]: 박스 맞춤: 지도 대비 (+4.4, -0.4) cm · -2.2° (측정 1 번)
+[local_planner_node-18] [INFO] [1794811967.289774373] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 18 cm 앞, 막은 점 박스 기준 (앞 +39.0, 옆 -16.0) cm · 중심에서 42.1 cm, 면 -2°, 측정 4 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794811967.790089661] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 10 cm 앞, 막은 점 박스 기준 (앞 +32.8, 옆 -15.5) cm · 중심에서 36.3 cm, 면 -3°, 측정 9 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794811968.090342169] [rl_dock]: 박스 맞춤: 지도 대비 (+4.8, -0.9) cm · -2.7° (측정 12 번)
+[local_planner_node-18] [INFO] [1794811968.190393847] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 11 cm 앞, 막은 점 박스 기준 (앞 +30.1, 옆 -16.3) cm · 중심에서 34.3 cm, 면 -3°, 측정 13 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794811968.489242980] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 0 cm 앞, 막은 점 박스 기준 (앞 +28.6, 옆 -15.8) cm · 중심에서 32.7 cm, 면 -3°, 측정 13 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794811968.890543113] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 7 cm 앞, 막은 점 박스 기준 (앞 +25.4, 옆 -16.4) cm · 중심에서 30.2 cm, 면 -3°, 측정 13 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794811969.990023178] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 3 cm 앞, 막은 점 박스 기준 (앞 +20.8, 옆 -16.4) cm · 중심에서 26.5 cm, 면 -3°, 측정 13 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794811970.390743049] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 0 cm 앞, 막은 점 박스 기준 (앞 +19.9, 옆 -16.1) cm · 중심에서 25.6 cm, 면 -3°, 측정 13 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794811970.789957080] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 0 cm 앞, 막은 점 박스 기준 (앞 +18.2, 옆 -16.2) cm · 중심에서 24.4 cm, 면 -3°, 측정 13 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794811971.688837592] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 1 cm 앞, 막은 점 박스 기준 (앞 +34.4, 옆 -16.0) cm · 중심에서 37.9 cm, 면 -3°, 측정 13 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794811972.091149991] [rl_dock]: 도착 5.3 s, 오차 1.1 cm · 0.6°, 박스 지도 대비 5.0 cm · -2.7° (측정 13 번)
+[local_planner_node-18] [INFO] [1794811972.091315113] [rl_dock]: 회전: odom ∫|ω| 22° · 필요 8° · 실제 순 5° · 남는 회전 14° · 명령 반전 0 번
+[local_planner_node-18] [INFO] [1794811972.143711313] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 켬
+[local_planner_node-17] [INFO] [1794812036.086723612] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812036.091164683] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794812036.091298797] [rl_nav]: 출발 자리 PolygonStop 막힘 → 25 cm 벗어나거나 정지 구역 빌 때까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794812037.222890624] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812037.223046210] [rl_nav]: 출발 자리 6 cm 벗어남 · 정지 구역 빔 → 영역 켬
+[local_planner_node-17] [WARN] [1794812048.390312004] [rl_nav]: PolygonStop 이 8 s 넘게 막음 → 멈추고 실패 (목표 134 cm)
+[local_planner_node-17] [INFO] [1794812048.393304420] [rl_nav]: 회전: odom ∫|ω| 11° · 필요 85° · 실제 순 2° · 남는 회전 0° · 명령 반전 0 번
+[local_planner_node-17] [INFO] [1794812048.446847992] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812048.586363222] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812048.592528279] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794812048.592680569] [rl_nav]: 출발 자리 PolygonStop 막힘 → 25 cm 벗어나거나 정지 구역 빌 때까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794812050.163657153] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812050.163824131] [rl_nav]: 출발 자리 11 cm 벗어남 · 정지 구역 빔 → 영역 켬
+[local_planner_node-17] [INFO] [1794812062.785490114] [rl_nav]: 회전: odom ∫|ω| 94° · 필요 83° · 실제 순 39° · 남는 회전 11° · 명령 반전 5 번
+[local_planner_node-17] [INFO] [1794812062.807061541] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-18] [INFO] [1794812062.888705345] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 끔
+[local_planner_node-18] [INFO] [1794812062.888897891] [rl_dock]: 목표 odom 고정 (-2.067, -4.188, 177.7°)
+[local_planner_node-18] [INFO] [1794812062.889374856] [rl_dock]: 박스 맞춤: 확인 1/3
+[local_planner_node-18] [INFO] [1794812063.090369230] [rl_dock]: 박스 맞춤: 지도 대비 (-2.5, -4.4) cm · +0.1° (측정 1 번)
+[local_planner_node-18] [INFO] [1794812064.189718158] [rl_dock]: 박스 맞춤: 지도 대비 (-3.3, -3.8) cm · -0.3° (측정 12 번)
+[local_planner_node-18] [INFO] [1794812065.193871170] [rl_dock]: 박스 맞춤: 지도 대비 (-3.7, -3.4) cm · +0.2° (측정 22 번)
+[local_planner_node-18] [INFO] [1794812065.491586147] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 7 cm 앞, 막은 점 박스 기준 (앞 +36.9, 옆 -15.8) cm · 중심에서 40.2 cm, 면 +0°, 측정 22 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794812066.490804707] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 2 cm 앞, 막은 점 박스 기준 (앞 +36.8, 옆 -15.0) cm · 중심에서 39.7 cm, 면 +0°, 측정 22 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794812066.890468630] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 3 cm 앞, 막은 점 박스 기준 (앞 +35.9, 옆 -15.9) cm · 중심에서 39.3 cm, 면 +0°, 측정 22 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794812068.890178661] [rl_dock]: 도착 6.0 s, 오차 1.0 cm · 0.7°, 박스 지도 대비 5.1 cm · +0.2° (측정 22 번)
+[local_planner_node-18] [INFO] [1794812068.890308070] [rl_dock]: 회전: odom ∫|ω| 46° · 필요 43° · 실제 순 43° · 남는 회전 3° · 명령 반전 1 번
+[local_planner_node-18] [INFO] [1794812068.942903568] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 켬
+[local_planner_node-17] [INFO] [1794812127.286939159] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812127.444129224] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794812127.444253554] [rl_nav]: 출발 자리 PolygonStop 막힘 → 25 cm 벗어나거나 정지 구역 빌 때까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794812128.264168976] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812128.264358751] [rl_nav]: 출발 자리 7 cm 벗어남 · 정지 구역 빔 → 영역 켬
+[local_planner_node-17] [INFO] [1794812132.404304281] [rl_nav]: 목표가 지도 장애물 → 목표 뒤 5 cm 까지 계획 + 직선
+[local_planner_node-17] [INFO] [1794812141.486152224] [rl_nav]: 회전: odom ∫|ω| 77° · 필요 8° · 실제 순 15° · 남는 회전 69° · 명령 반전 3 번
+[local_planner_node-17] [INFO] [1794812141.508534674] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-18] [INFO] [1794812141.587447676] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 끔
+[local_planner_node-18] [INFO] [1794812141.587591206] [rl_dock]: 목표 odom 고정 (-3.556, -2.491, 167.4°)
+[local_planner_node-18] [INFO] [1794812141.587973283] [rl_dock]: 박스 맞춤: 확인 1/3
+[local_planner_node-18] [INFO] [1794812141.739040091] [rl_dock]: 박스 맞춤: 지도 대비 (+13.8, -3.2) cm · +4.4° (측정 1 번)
+[local_planner_node-18] [INFO] [1794812145.239623427] [rl_dock]: 도착 3.7 s, 오차 1.0 cm · 1.7°, 박스 지도 대비 14.1 cm · +4.6° (측정 10 번)
+[local_planner_node-18] [INFO] [1794812145.239772238] [rl_dock]: 회전: odom ∫|ω| 26° · 필요 25° · 실제 순 19° · 남는 회전 1° · 명령 반전 0 번
+[local_planner_node-18] [INFO] [1794812145.282775848] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 켬
+[local_planner_node-17] [INFO] [1794812192.088331337] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812192.646692273] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794812192.646834330] [rl_nav]: 출발 자리 PolygonStop 막힘 → 25 cm 벗어나거나 정지 구역 빌 때까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794812193.566744448] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812193.566931020] [rl_nav]: 출발 자리 9 cm 벗어남 · 정지 구역 빔 → 영역 켬
+[local_planner_node-17] [INFO] [1794812199.486718546] [rl_nav]: 회전: odom ∫|ω| 78° · 필요 89° · 실제 순 46° · 남는 회전 0° · 명령 반전 1 번
+[local_planner_node-17] [INFO] [1794812199.499192878] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-18] [INFO] [1794812199.587855561] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 끔
+[local_planner_node-18] [INFO] [1794812199.588024308] [rl_dock]: 목표 odom 고정 (-3.349, -3.702, -96.2°)
+[local_planner_node-18] [INFO] [1794812199.588315270] [rl_dock]: 박스 맞춤: 확인 1/3
+[local_planner_node-18] [INFO] [1794812199.739445525] [rl_dock]: 박스 맞춤: 지도 대비 (+0.1, -11.7) cm · -5.6° (측정 1 번)
+[local_planner_node-18] [INFO] [1794812200.839612529] [rl_dock]: 박스 맞춤: 지도 대비 (+0.9, -12.7) cm · -5.6° (측정 12 번)
+[local_planner_node-18] [INFO] [1794812201.840620903] [rl_dock]: 박스 맞춤: 지도 대비 (+0.7, -12.1) cm · -7.0° (측정 22 번)
+[local_planner_node-18] [INFO] [1794812203.740394390] [rl_dock]: 정밀 접근 직선 경로 막힘 (점 1 개, 2 cm 앞, 막은 점 박스 기준 (앞 +30.6, 옆 +15.2) cm · 중심에서 34.2 cm, 면 -7°, 측정 23 번) → 서서 다시 봄
+[local_planner_node-18] [INFO] [1794812204.290399115] [rl_dock]: 도착 4.7 s, 오차 1.4 cm · 1.1°, 박스 지도 대비 12.1 cm · -7.1° (측정 23 번)
+[local_planner_node-18] [INFO] [1794812204.290545556] [rl_dock]: 회전: odom ∫|ω| 36° · 필요 40° · 실제 순 34° · 남는 회전 0° · 명령 반전 0 번
+[local_planner_node-18] [INFO] [1794812204.343133155] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 켬
+[local_planner_node-17] [INFO] [1794812257.187184789] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812257.692770483] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794812257.692905050] [rl_nav]: 출발 자리 PolygonStop 막힘 → 25 cm 벗어나거나 정지 구역 빌 때까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794812258.223420369] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812258.223568409] [rl_nav]: 출발 자리 11 cm 벗어남 · 정지 구역 빔 → 영역 켬
+[local_planner_node-17] [INFO] [1794812262.285607456] [rl_nav]: 회전: odom ∫|ω| 25° · 필요 5° · 실제 순 18° · 남는 회전 21° · 명령 반전 1 번
+[local_planner_node-17] [INFO] [1794812262.307715213] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-18] [INFO] [1794812262.387926146] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 끔
+[local_planner_node-18] [INFO] [1794812262.388111628] [rl_dock]: 목표 odom 고정 (-4.092, -3.629, -99.7°)
+[local_planner_node-18] [INFO] [1794812262.388394396] [rl_dock]: 박스 맞춤: 확인 1/3
+[local_planner_node-18] [INFO] [1794812262.589884917] [rl_dock]: 박스 맞춤: 지도 대비 (-1.6, -3.0) cm · -1.7° (측정 1 번)
+[local_planner_node-18] [INFO] [1794812263.590703036] [rl_dock]: 박스 맞춤: 지도 대비 (-2.6, -3.4) cm · -1.8° (측정 11 번)
+[local_planner_node-18] [INFO] [1794812266.640598327] [rl_dock]: 도착 4.3 s, 오차 1.0 cm · 1.6°, 박스 지도 대비 4.4 cm · -1.3° (측정 17 번)
+[local_planner_node-18] [INFO] [1794812266.641225848] [rl_dock]: 회전: odom ∫|ω| 14° · 필요 13° · 실제 순 13° · 남는 회전 1° · 명령 반전 0 번
+[local_planner_node-18] [INFO] [1794812266.683812226] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 켬
+[local_planner_node-17] [INFO] [1794812363.386379471] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812363.455065194] [rl_nav]: 지금 자리에서 경로 안 나옴 → 뒤 5 cm 로 빠져나와 감
+[local_planner_node-17] [INFO] [1794812363.457310762] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794812363.457414511] [rl_nav]: 출발 자리 빠져나오기 경로 → 25 cm 벗어나거나 정지 구역 빌 때까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794812365.227987614] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812365.228155365] [rl_nav]: 출발 자리 10 cm 벗어남 · 정지 구역 빔 → 영역 켬
+[local_planner_node-17] [INFO] [1794812372.664592345] [rl_nav]: 목표가 지도 장애물 → 목표 뒤 5 cm 까지 계획 + 직선
+[local_planner_node-17] [INFO] [1794812377.386154541] [rl_nav]: 회전: odom ∫|ω| 43° · 필요 1° · 실제 순 5° · 남는 회전 42° · 명령 반전 4 번
+[local_planner_node-17] [INFO] [1794812377.408563280] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-18] [INFO] [1794812377.489287402] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 끔
+[local_planner_node-18] [INFO] [1794812377.489459345] [rl_dock]: 목표 odom 고정 (-2.501, -2.180, -101.2°)
+[local_planner_node-18] [INFO] [1794812377.490809609] [rl_dock]: 박스 맞춤: 확인 1/3
+[local_planner_node-18] [INFO] [1794812377.692003343] [rl_dock]: 박스 맞춤: 지도 대비 (-3.7, +1.9) cm · -1.1° (측정 1 번)
+[local_planner_node-18] [INFO] [1794812378.791665632] [rl_dock]: 박스 맞춤: 지도 대비 (-2.7, +1.8) cm · -1.4° (측정 12 번)
+[local_planner_node-18] [INFO] [1794812382.190421318] [rl_dock]: 도착 4.7 s, 오차 1.2 cm · 1.7°, 박스 지도 대비 3.3 cm · -2.2° (측정 20 번)
+[local_planner_node-18] [INFO] [1794812382.190571148] [rl_dock]: 회전: odom ∫|ω| 14° · 필요 4° · 실제 순 4° · 남는 회전 9° · 명령 반전 0 번
+[local_planner_node-18] [INFO] [1794812382.222822458] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 켬
+[local_planner_node-17] [INFO] [1794812477.290823694] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812477.850737727] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794812477.850869955] [rl_nav]: 출발 자리 PolygonStop 막힘 → 25 cm 벗어나거나 정지 구역 빌 때까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794812478.282276962] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812478.282434887] [rl_nav]: 출발 자리 10 cm 벗어남 · 정지 구역 빔 → 영역 켬
+[local_planner_node-17] [INFO] [1794812494.585779814] [rl_nav]: 회전: odom ∫|ω| 61° · 필요 1° · 실제 순 3° · 남는 회전 59° · 명령 반전 4 번
+[local_planner_node-17] [INFO] [1794812494.607299829] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-18] [INFO] [1794812494.686974812] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 끔
+[local_planner_node-18] [INFO] [1794812494.687086175] [rl_dock]: 목표 odom 고정 (-3.497, 0.852, -102.0°)
+[local_planner_node-18] [INFO] [1794812494.687645234] [rl_dock]: 박스 맞춤: 확인 1/3
+[local_planner_node-18] [INFO] [1794812494.889118846] [rl_dock]: 박스 맞춤: 지도 대비 (-2.7, +3.0) cm · +1.4° (측정 1 번)
+[local_planner_node-18] [INFO] [1794812498.039052597] [rl_dock]: 도착 3.4 s, 오차 1.0 cm · 0.2°, 박스 지도 대비 4.6 cm · +0.4° (측정 9 번)
+[local_planner_node-18] [INFO] [1794812498.039228250] [rl_dock]: 회전: odom ∫|ω| 4° · 필요 2° · 실제 순 1° · 남는 회전 2° · 명령 반전 0 번
+[local_planner_node-18] [INFO] [1794812498.091931792] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 켬
+[local_planner_node-17] [INFO] [1794812601.187185313] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812601.287951621] [rl_nav]: 회전: odom ∫|ω| 0° · 필요 1° · 실제 순 0° · 남는 회전 0° · 명령 반전 0 번
+[local_planner_node-17] [INFO] [1794812601.299960445] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-18] [INFO] [1794812601.387451525] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 끔
+[local_planner_node-18] [INFO] [1794812601.387619594] [rl_dock]: 목표 odom 고정 (-3.527, 0.896, -101.6°)
+[local_planner_node-18] [INFO] [1794812602.688167901] [rl_dock]: 도착 1.3 s, 오차 1.4 cm · 0.5°, 박스 지도 대비 0.0 cm · +0.0° (측정 0 번, 마지막 이유 freeze)
+[local_planner_node-18] [INFO] [1794812602.688313986] [rl_dock]: 회전: odom ∫|ω| 7° · 필요 1° · 실제 순 0° · 남는 회전 6° · 명령 반전 0 번
+[local_planner_node-18] [INFO] [1794812602.721737405] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 켬
+[local_planner_node-17] [INFO] [1794812614.687001464] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812615.154669704] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794812615.154807916] [rl_nav]: 출발 자리 PolygonStop 막힘 → 25 cm 벗어나거나 정지 구역 빌 때까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794812615.785683649] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812615.785837861] [rl_nav]: 출발 자리 9 cm 벗어남 · 정지 구역 빔 → 영역 켬
+[local_planner_node-17] [INFO] [1794812635.185552154] [rl_nav]: 회전: odom ∫|ω| 125° · 필요 3° · 실제 순 6° · 남는 회전 122° · 명령 반전 2 번
+[local_planner_node-17] [INFO] [1794812635.208033091] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-18] [INFO] [1794812635.288114044] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 끔
+[local_planner_node-18] [INFO] [1794812635.288275776] [rl_dock]: 목표 odom 고정 (-2.657, -1.959, -105.6°)
+[local_planner_node-18] [INFO] [1794812635.289713288] [rl_dock]: 박스 맞춤: 확인 1/3
+[local_planner_node-18] [INFO] [1794812635.441886237] [rl_dock]: 박스 맞춤: 지도 대비 (-0.6, -1.9) cm · -0.1° (측정 1 번)
+[local_planner_node-18] [INFO] [1794812636.540293970] [rl_dock]: 박스 맞춤: 지도 대비 (-0.2, -2.9) cm · -0.3° (측정 12 번)
+[local_planner_node-18] [INFO] [1794812639.390634822] [rl_dock]: 도착 4.1 s, 오차 1.0 cm · 1.4°, 박스 지도 대비 3.1 cm · +0.1° (측정 17 번)
+[local_planner_node-18] [INFO] [1794812639.390773066] [rl_dock]: 회전: odom ∫|ω| 8° · 필요 3° · 실제 순 5° · 남는 회전 5° · 명령 반전 0 번
+[local_planner_node-18] [INFO] [1794812639.423475944] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 켬
+[local_planner_node-17] [INFO] [1794812650.392444331] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812650.752907350] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794812650.753063834] [rl_nav]: 출발 자리 PolygonStop 막힘 → 25 cm 벗어나거나 정지 구역 빌 때까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794812651.884098078] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812651.884258755] [rl_nav]: 출발 자리 11 cm 벗어남 · 정지 구역 빔 → 영역 켬
+[local_planner_node-17] [INFO] [1794812655.584457187] [rl_nav]: 목표가 지도 장애물 → 목표 뒤 35 cm 까지 계획 + 직선
+[local_planner_node-17] [INFO] [1794812660.761554299] [rl_nav]: 목표가 지도 장애물 → 목표 뒤 40 cm 까지 계획 + 직선
+[local_planner_node-17] [INFO] [1794812693.774270839] [rl_nav]: 목표가 지도 장애물 → 목표 뒤 20 cm 까지 계획 + 직선
+[local_planner_node-17] [WARN] [1794812702.451235533] [rl_nav]: 시간 초과
+[local_planner_node-17] [INFO] [1794812702.451413585] [rl_nav]: 회전: odom ∫|ω| 192° · 필요 1° · 실제 순 1° · 남는 회전 191° · 명령 반전 12 번
+[local_planner_node-17] [INFO] [1794812702.500481466] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812702.687140712] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812704.284982600] [rl_nav]: 회전: odom ∫|ω| 17° · 필요 2° · 실제 순 4° · 남는 회전 15° · 명령 반전 0 번
+[local_planner_node-17] [INFO] [1794812704.307204992] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-18] [INFO] [1794812704.388581153] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 끔
+[local_planner_node-18] [INFO] [1794812704.388781190] [rl_dock]: 목표 odom 고정 (-4.855, -3.144, -107.9°)
+[local_planner_node-18] [INFO] [1794812704.389229905] [rl_dock]: 박스 맞춤: 확인 1/3
+[local_planner_node-18] [INFO] [1794812704.590061088] [rl_dock]: 박스 맞춤: 지도 대비 (+0.2, -0.5) cm · +1.3° (측정 1 번)
+[local_planner_node-18] [INFO] [1794812707.889801870] [rl_dock]: 도착 3.5 s, 오차 0.9 cm · 1.1°, 박스 지도 대비 0.2 cm · +0.4° (측정 9 번)
+[local_planner_node-18] [INFO] [1794812707.889976371] [rl_dock]: 회전: odom ∫|ω| 8° · 필요 2° · 실제 순 4° · 남는 회전 6° · 명령 반전 0 번
+[local_planner_node-18] [INFO] [1794812707.922833912] [rl_dock]: collision_monitor PolygonStop,FootprintApproach 켬
+[local_planner_node-17] [INFO] [1794812718.887696039] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812718.961886871] [rl_nav]: 지금 자리에서 경로 안 나옴 → 뒤 5 cm 로 빠져나와 감
+[local_planner_node-17] [INFO] [1794812718.964459288] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794812718.964598716] [rl_nav]: 출발 자리 빠져나오기 경로 → 25 cm 벗어나거나 정지 구역 빌 때까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794812720.385370858] [rl_nav]: collision_monitor PolygonStop 켬
+[local_planner_node-17] [INFO] [1794812720.385508750] [rl_nav]: 출발 자리 10 cm 벗어남 · 정지 구역 빔 → 영역 켬
+[local_planner_node-17] [INFO] [1794812746.015908249] [rl_nav]: collision_monitor PolygonStop 끔
+[local_planner_node-17] [INFO] [1794812746.016039420] [rl_nav]: 출발점 목표 44 cm 앞 PolygonStop 막힘 → 도착까지 영역 끔 (병진 ≤ 0.10 m/s)
+[local_planner_node-17] [INFO] [1794812750.913068255] [rl_nav]: 도착 32.0 s, 오차 4.2 cm · 0.9°
+[local_planner_node-17] [INFO] [1794812750.913212963] [rl_nav]: 회전: odom ∫|ω| 189° · 필요 91° · 실제 순 90° · 남는 회전 99° · 명령 반전 10 번
+[local_planner_node-17] [INFO] [1794812750.965908145] [rl_nav]: collision_monitor PolygonStop 켬
