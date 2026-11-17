@@ -1,0 +1,1 @@
+../../../../../../ros2_ws/src/navigation/scripts/local_planner_node.py
