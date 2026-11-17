@@ -5,7 +5,24 @@ scan_merger:
     bins: 720                   # 0.5°
     range_min: 0.05
     range_max: 8.0
-    body_half: [0.17, 0.19]     # 자기 몸(바퀴 · 기둥 · 선) 상자 반길이 · 반폭 [m] — tools/drive/body_footprint.py 와 같게
+    body_half: [0.17, 0.19]     # 자기 몸(바퀴 · 기둥 · 선) 상자 반길이 · 반폭 [m] — tools/drive/body_footprint.py 와 같게 (self_filter box 일 때만)
+    # 자기 몸 거르기: box = 위 상자 (옆 0.16–0.19 가 지워져 PolygonStop ±0.18 이 옆 사람을 못 봄)
+    #   wheels = 차체 외곽 상자 + 바퀴 모듈마다 조향 각 (/joint_states) 따라 도는 사각형. 실물 bag (7022 스캔) 분석으로 정함:
+    #   움직일 때 늘 보이는 자기 점은 |y| ≤ 0.15 (바퀴 · 왼쪽 선) · 앞뒤는 차체 안. 모듈 점은 조향축 기준 굴림 ±0.03 · 바퀴축 −0.035~+0.045 (라이다 오차 ~1 cm 더함)
+    self_filter: wheels
+    chassis_x: [-0.133, 0.141]  # [m] 차체 뒤 · 앞 끝 (URDF body_back · body_front)
+    chassis_half_y: 0.150       # [m] 차체 반폭 0.133 + 바퀴 바깥면 (조향 0° 0.149) · 왼쪽 선 (0.14–0.15)
+    face_clear_x: [-0.17, 0.17] # [m] 차체 폭 (|y| ≤ chassis_half_y) 안 앞뒤는 여기까지 버림 (body_half 앞뒤와 같음)
+                                #   박스 면 1 cm 정차 (면 = 중심 0.152) 에서 출발할 때 박스 면이 FootprintApproach (±0.16) 안이라 출발 명령이 다 0 이 됨 → 안 보이게.
+                                #   옆 띠 (|y| > 0.150) 는 그대로라 옆 사람은 봄
+    wheel_module_x: [-0.070, 0.060, -0.070, 0.060]   # 조향축 [m] fl fr rl rr (controllers.yaml module_x 와 같게)
+    wheel_module_y: [0.112, 0.112, -0.112, -0.112]
+    steer_joints: [steer_fl_joint, steer_fr_joint, steer_rl_joint, steer_rr_joint]
+    wheel_half_u: 0.07          # [m] 굴림 방향 반길이 (조향축 기준). 옆으로 갈 때 (조향 ±75–105°) 바퀴 굴림 끝이
+                                #   조향축에서 0.050–0.065 → 0.065 + 라이다 오차 0.5 cm (작으면 몸 점이 PolygonStop ±0.18 안에 남아 막힘)
+    wheel_in: 0.05              # [m] 바퀴축 안쪽 (몸 쪽)
+    wheel_out: 0.05             # [m] 바퀴축 바깥쪽 (바퀴 바깥면 0.037 + 라이다 오차)
+    joint_timeout: 0.5          # [s] 조향 각이 이보다 오래되면 모듈 둘레 원 (반지름 0.071) 으로
     max_age: 0.15               # [s] 라이다끼리 이보다 시각이 벌어지면 /scan 안 냄 (한쪽 끊김)
     out: /scan
 

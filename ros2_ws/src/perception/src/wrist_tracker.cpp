@@ -75,7 +75,7 @@ KindInfo parse_kind(const std::string & kind, const std::string & fallback_color
 
 std::string reject_reason(const PuckPose & p)
 {
-  if (p.truncated) {return "truncated";}
+  if (p.truncated && !p.tag_centre) {return "truncated";}   // 태그로 중심을 잡았으면 마스크가 잘려도 씀 (박스 끝 퍽)
   if (p.n_points < MIN_POINTS) {return "points";}
   if (p.spread[0] > MAX_LONG_SPREAD || p.spread[1] > MAX_MID_SPREAD) {return "size";}
   return "";
@@ -190,6 +190,23 @@ std::vector<PuckDetection> PuckTracker::update(const std::vector<RawPuck> & raws
   return out;
 }
 
+int PuckTracker::known_id_near(const Vec3 & center) const
+{
+  const Track * near = nullptr;
+  double best = match_m_;
+  for (const auto & t : tracks_) {
+    const double d = (center - t.obs.back().second.pose.center).norm();
+    if (d <= best) {best = d; near = &t;}
+  }
+  if (near == nullptr) {return -1;}
+  OrderedVote<int> ids;
+  for (const auto & [f, r] : near->obs) {
+    if (frame_ + 1 - f < window_ && r.pose.tag) {ids.add(r.pose.tag->id, 1.0);}   // 다음 장 (frame_ + 1) 기준 창
+  }
+  const int * id = ids.best();
+  return id ? *id : -1;
+}
+
 PuckDetection PuckTracker::summarize(const std::vector<const RawPuck *> & recent) const
 {
   // 선/누움 다수결: 많은 쪽 장만 남겨 중심 · 긴축 · 면 방향 계산 (동점이면 최근 장). 위쪽 모름이면 전부
@@ -210,11 +227,16 @@ PuckDetection PuckTracker::summarize(const std::vector<const RawPuck *> & recent
     group = recent;
   }
   const RawPuck & last = *group.back();
-  // 중심 = 좌표별 중앙값
+  // 중심 = 좌표별 중앙값. 태그로 중심을 잡은 장이 있으면 그 장들만 (깊이 점 중심은 비스듬히 보면 수 mm 치우쳐 섞으면 흔들림)
+  std::vector<const RawPuck *> tagged;
+  for (const auto * r : group) {
+    if (r->pose.tag_centre) {tagged.push_back(r);}
+  }
+  const auto & cgroup = tagged.empty() ? group : tagged;
   Vec3 center;
   for (int k = 0; k < 3; ++k) {
     std::vector<double> c;
-    for (const auto * r : group) {c.push_back(r->pose.center[k]);}
+    for (const auto * r : cgroup) {c.push_back(r->pose.center[k]);}
     center[k] = median(std::move(c));
   }
   // 긴축 = 마지막 장 부호에 맞춰 평균
@@ -260,6 +282,7 @@ PuckDetection PuckTracker::summarize(const std::vector<const RawPuck *> & recent
   d.hits = static_cast<int>(recent.size());
   d.axis_source = last.pose.axis_source;
   if (!known.empty()) {d.upright = upright;}
+  d.center_from_tag = !tagged.empty();
   return d;
 }
 

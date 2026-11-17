@@ -4,7 +4,7 @@
 //   경로 주행(path_follow)이 받아서 따름. 정지 · 경고는 원인이 없어진 뒤 hold_s 더 유지 (깜빡임 방지).
 // 제일 믿는 값 = SLAM(map). 단 라이다가 지도 벽과 맞을 때만 — 맞음 비율이 낮으면 SLAM 위치를 못 믿음.
 //   정지  라이다(/scan) 0.5 s 끊김 · map→odom TF 1 s 멈춤 · 지도 맞음 < 60 % 가 1 s · 지도 맞음을 2 s 넘게 못 잼
-//         · map→odom 한 번에 > 25 cm 또는 > 10° 인데 맞음 < 85 % · 방향 고침 5 s 평균 > 3 °/s · 가속도 9.8 ± 3 밖 1 s
+//         · map→odom 한 번에 > 25 cm 또는 > 10° 인데 고친 뒤 잰 맞음 < 85 % · 방향 고침 5 s 평균 > 3 °/s · 가속도 9.8 ± 3 밖 1 s
 //   경고  맞음 < 85 % · map→odom 한 번에 > 10 cm 또는 > 3° · 방향 고침 > 1 °/s · 라이다 < 7 Hz 또는 < 150 점
 //         · IMU 0.5 s 끊김 · 자이로 > 5 rad/s 튐
 // 자이로 이동 치우침 (/imu_motion_bias, Vector3Stamped z [rad/s]): 움직이는 동안 자이로가 실제 회전을 덜 느끼는 만큼.
@@ -23,6 +23,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "diagnostic_msgs/msg/diagnostic_status.hpp"
@@ -31,6 +32,7 @@
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "navigation/pose_guard_logic.hpp"
+#include "navigation/resubscribe_watch.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
@@ -77,21 +79,14 @@ public:
 
     pub_health_ = create_publisher<diagnostic_msgs::msg::DiagnosticStatus>("/localization_health", 10);
     pub_bias_ = create_publisher<geometry_msgs::msg::Vector3Stamped>("/imu_motion_bias", 10);
-    sub_scan_ = create_subscription<sensor_msgs::msg::LaserScan>("/scan", rclcpp::SensorDataQoS(),
-      [this](sensor_msgs::msg::LaserScan::ConstSharedPtr m) {
-        scan_ = m;
-        scan_times_.push_back(mono());
-        while (scan_times_.size() > 50) {scan_times_.pop_front();}
-      });
+    subscribe_scan();
     sub_imu_ = create_subscription<sensor_msgs::msg::Imu>("/imu_sensor_broadcaster/imu", rclcpp::SensorDataQoS(),
       [this](sensor_msgs::msg::Imu::ConstSharedPtr m) {on_imu(*m);});
     sub_odom_ = create_subscription<nav_msgs::msg::Odometry>("/odom", 10,
       [this](nav_msgs::msg::Odometry::ConstSharedPtr m) {
         odom_speed_ = std::hypot(m->twist.twist.linear.x, m->twist.twist.linear.y);
       });
-    sub_map_ = create_subscription<nav_msgs::msg::OccupancyGrid>("/map",
-      rclcpp::QoS(1).transient_local().reliable(),
-      [this](nav_msgs::msg::OccupancyGrid::ConstSharedPtr m) {map_ = m;});
+    subscribe_map();
     match_t_ = mono();
     timer_ = create_wall_timer(std::chrono::milliseconds(200), [this]() {tick();});
     RCLCPP_INFO(get_logger(), "위치 감시 → /localization_health%s", publish_bias_ ? " · /imu_motion_bias" : "");
@@ -100,7 +95,53 @@ public:
   ~PoseGuard() override {save_bias();}
 
 private:
-  // 배운 치우침 저장: 임시 파일에 쓴 뒤 이름을 바꿈 (쓰는 중에 꺼져도 예전 파일이 남음). 1 분마다 · 끝날 때
+  // 발행자는 도는데 구독만 못 받는 시작 (DDS 짝짓기 유실) → 조용하면 구독을 새로 만듦
+  //   /scan 5 s · /map 10 s (받은 뒤엔 /map 은 안 봄, 한 번만 옴). 연달아면 2 배씩 최대 60 s
+  void subscribe_scan()
+  {
+    sub_scan_ = create_subscription<sensor_msgs::msg::LaserScan>("/scan", rclcpp::SensorDataQoS(),
+      [this](sensor_msgs::msg::LaserScan::ConstSharedPtr m) {
+        scan_ = m;
+        scan_times_.push_back(mono());
+        while (scan_times_.size() > 50) {scan_times_.pop_front();}
+        scan_watch_.seen(mono());
+      });
+    scan_watch_.start(mono());
+  }
+
+  void subscribe_map()
+  {
+    sub_map_ = create_subscription<nav_msgs::msg::OccupancyGrid>("/map",
+      rclcpp::QoS(1).transient_local().reliable(),
+      [this](nav_msgs::msg::OccupancyGrid::ConstSharedPtr m) {map_ = m;});
+    map_watch_.start(mono());
+  }
+
+  // 발행자가 보이는데 못 받으면 WARN (짝짓기 유실), 발행자가 아직 안 보이면 INFO. /map 은 발행자 (map_server · AMCL 켜짐) 가 보일 때만
+  void heal_subscriptions(double now)
+  {
+    if (scan_watch_.due(now)) {
+      const size_t pubs = sub_scan_->get_publisher_count();
+      sub_scan_.reset();
+      subscribe_scan();
+      if (pubs > 0) {
+        RCLCPP_WARN(get_logger(), "/scan 발행자 %zu 인데 %s → 구독 다시 만듦 (%d 번째)", pubs,
+          scan_watch_.ever() ? "끊김" : "못 받음", scan_watch_.count());
+      } else {
+        RCLCPP_INFO(get_logger(), "/scan 발행자 아직 안 보임 → 구독 새로 만듦 (%d 번째)", scan_watch_.count());
+      }
+    }
+    if (!map_ && sub_map_->get_publisher_count() == 0) {
+      map_watch_.start(now);   // 지도 발행자 (AMCL 이면 map_server ACTIVE) 전엔 안 셈
+    } else if (!map_ && map_watch_.due(now)) {
+      const size_t pubs = sub_map_->get_publisher_count();
+      sub_map_.reset();
+      subscribe_map();
+      RCLCPP_WARN(get_logger(), "/map 발행자 %zu 인데 못 받음 → 구독 다시 만듦 (%d 번째)", pubs, map_watch_.count());
+    }
+  }
+
+  // 배운 치우침 저장: 임시 파일에 쓴 뒤 이름을 바꿈 (쓰는 중에 꺼져도 이전 파일이 남음). 1 분마다 · 끝날 때
   void save_bias()
   {
     if (!publish_bias_ || bias_->estimate() == saved_bias_) {return;}
@@ -108,7 +149,7 @@ private:
     {
       std::ofstream f(tmp);
       f << bias_->estimate() << "\n";
-      f.close();   // 버퍼를 실제로 써 봐야 디스크 가득 참 등을 알 수 있음 → 실패면 예전 파일을 그대로 둠
+      f.close();   // 버퍼를 실제로 써 봐야 디스크 가득 참 등을 알 수 있음 → 실패면 이전 파일을 그대로 둠
       if (f.fail()) {
         RCLCPP_WARN(get_logger(), "치우침 저장 실패: %s", tmp.c_str());
         std::remove(tmp.c_str());
@@ -159,14 +200,16 @@ private:
       return std::nullopt;
     }
     const double yaw = yaw_of(t.rotation), c = std::cos(yaw), s = std::sin(yaw);
+    const double origin_yaw = yaw_of(info.origin.orientation);
     int n = 0, hit = 0;
     for (std::size_t i = 0; i < scan_->ranges.size(); ++i) {
       const double r = scan_->ranges[i];
       if (!std::isfinite(r) || r <= 0.25 || r >= 4.0) {continue;}
       const double a = scan_->angle_min + scan_->angle_increment * static_cast<double>(i);
       const double lx = r * std::cos(a), ly = r * std::sin(a);
-      const int u = static_cast<int>(std::floor((t.translation.x + c * lx - s * ly - info.origin.position.x) / info.resolution));
-      const int v = static_cast<int>(std::floor((t.translation.y + s * lx + c * ly - info.origin.position.y) / info.resolution));
+      const auto [u, v] = map_cell(
+        t.translation.x + c * lx - s * ly, t.translation.y + s * lx + c * ly,
+        info.origin.position.x, info.origin.position.y, origin_yaw, info.resolution);
       ++n;
       if (u >= 0 && v >= 0 && u < static_cast<int>(info.width) && v < static_cast<int>(info.height) &&
         dist_[static_cast<std::size_t>(v) * info.width + u] * info.resolution < 0.05)
@@ -181,6 +224,7 @@ private:
   void tick()
   {
     const double now = mono();
+    heal_subscriptions(now);
     GuardMetrics m;
 
     // map→odom: 시각이 오래됐나 · 한 번 고친 양 · 5 s 방향 고침 속도
@@ -192,6 +236,7 @@ private:
       const double x = ts.transform.translation.x, y = ts.transform.translation.y, yaw = yaw_of(ts.transform.rotation);
       if (have_m2o_ && (x != m2o_[0] || y != m2o_[1] || yaw != m2o_[2])) {
         jumps_.push_back({now, std::hypot(x - m2o_[0], y - m2o_[1]), std::fabs(wrap_angle(yaw - m2o_[2])) * 180.0 / M_PI});
+        if (jumps_.back()[1] > 0.25 || jumps_.back()[2] > 10.0) {big_jump_t_ = now;}
       }
       m2o_ = {x, y, yaw};
       have_m2o_ = true;
@@ -210,19 +255,27 @@ private:
         (yaw_hist_.back()[0] - yaw_hist_.front()[0]);
     }
 
-    // 지도 맞음: 지금 못 재면 옛 값으로 정상이라 하지 않음
+    // 지도 맞음: 지금 못 재면 지난 값으로 정상이라 하지 않음
     const auto r = (m.map_odom_age && *m.map_odom_age <= 1.0) ? match_ratio(now) : std::nullopt;
     if (r) {
-      match_hist_.push_back(*r);
+      match_hist_.push_back({now, *r});
       while (match_hist_.size() > 5) {match_hist_.pop_front();}
       match_t_ = now;
     } else {
       match_hist_.clear();
     }
-    if (!match_hist_.empty()) {
-      std::vector<double> v(match_hist_.begin(), match_hist_.end());
+    const auto median = [](std::vector<double> v) {
       std::nth_element(v.begin(), v.begin() + v.size() / 2, v.end());
-      m.match = v[v.size() / 2];
+      return v[v.size() / 2];
+    };
+    if (!match_hist_.empty()) {
+      std::vector<double> all, after;
+      for (const auto & [t, x] : match_hist_) {
+        all.push_back(x);
+        if (big_jump_t_ && t >= *big_jump_t_) {after.push_back(x);}   // 이번 주기 값은 고친 TF 로 잼
+      }
+      m.match = median(all);
+      if (!after.empty()) {m.match_since_jump = median(after);}
     }
     if (m.match && *m.match < 0.60) {
       if (!low_since_) {low_since_ = now;}
@@ -315,13 +368,13 @@ private:
   std::vector<std::int16_t> dist_;
   double dist_t_{-1e9};
   std::deque<double> scan_times_, spikes_;
-  std::optional<double> imu_t_, acc_bad_since_, low_since_;
+  std::optional<double> imu_t_, acc_bad_since_, low_since_, big_jump_t_;
   double odom_speed_{0.0};
   bool have_m2o_{false};
   std::array<double, 3> m2o_{};
   std::deque<std::array<double, 3>> jumps_;
   std::deque<std::array<double, 2>> yaw_hist_;
-  std::deque<double> match_hist_;
+  std::deque<std::pair<double, double>> match_hist_;   // (시각, 맞음)
   double match_t_{0.0};
   double last_err_{-1e9}, last_warn_{-1e9}, bias_pub_t_{-1e9}, bias_save_t_{0.0};
   double saved_bias_{0.0};
@@ -335,6 +388,7 @@ private:
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_odom_;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr sub_map_;
   rclcpp::TimerBase::SharedPtr timer_;
+  ResubscribeWatch scan_watch_{5.0, 60.0}, map_watch_{10.0, 60.0};
 };
 
 }  // namespace navigation

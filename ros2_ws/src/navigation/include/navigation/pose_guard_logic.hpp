@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace navigation
@@ -15,6 +16,16 @@ namespace navigation
 inline double wrap_angle(double a)
 {
   return std::atan2(std::sin(a), std::cos(a));
+}
+
+// OccupancyGrid origin 은 map 안에서 회전할 수 있다. 먼저 그 자세의 역변환을 한다.
+inline std::pair<int, int> map_cell(
+  double x, double y, double origin_x, double origin_y, double origin_yaw, double resolution)
+{
+  const double dx = x - origin_x, dy = y - origin_y;
+  const double c = std::cos(origin_yaw), s = std::sin(origin_yaw);
+  return {static_cast<int>(std::floor((c * dx + s * dy) / resolution)),
+          static_cast<int>(std::floor((-s * dx + c * dy) / resolution))};
 }
 
 // 판정에 쓰는 지표. 없는 값(std::nullopt)은 "모름"
@@ -28,6 +39,7 @@ struct GuardMetrics
   double match_unknown_s{0.0};          // match 를 못 잰 시간 [s]
   std::optional<double> map_odom_age;   // map→odom TF 시각이 얼마나 오래됐나 [s]
   double jump_m{0.0};                   // 최근 1 s 안 map→odom 한 번 고친 양
+  std::optional<double> match_since_jump;  // 마지막 큰 보정 뒤에 잰 match 중앙값 (없으면 match 로 판정)
   double jump_deg{0.0};
   std::optional<double> yaw_fix_rate;   // 최근 5 s map→odom 방향 고침 속도 [°/s]
   std::optional<double> imu_age;
@@ -60,7 +72,9 @@ inline GuardResult evaluate(const GuardMetrics & m)
     std::snprintf(b, sizeof(b), "지도 맞음 %.0f%%", *m.match * 100.0);
     warn.emplace_back(b);
   }
-  const bool match_good = m.match && *m.match >= 0.85;
+  // 큰 보정은 고친 뒤 잰 맞음으로 판정: 5 개 중앙값에는 고치기 전 낮은 값이 남아 맞게 고친 것도 정지로 봄
+  const auto & match_jump = m.match_since_jump ? m.match_since_jump : m.match;
+  const bool match_good = match_jump && *match_jump >= 0.85;
   if (m.jump_m > 0.25 || m.jump_deg > 10.0) {
     std::snprintf(b, sizeof(b), "SLAM 큰 보정 %.0f cm · %.1f°%s", m.jump_m * 100.0, m.jump_deg,
       match_good ? " 받아들임" : "");
