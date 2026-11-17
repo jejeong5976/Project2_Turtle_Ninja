@@ -76,6 +76,7 @@ struct PuckDetection
   int hits{0};
   std::string axis_source;
   std::optional<bool> upright;
+  bool center_from_tag{false};              // 중심 = 태그로 잰 장들의 중앙값 (tag_top_refine · tag_lying_refine)
 };
 
 // 긴축 = z 인 회전행렬 (열 x, y, z). face_dir 있으면 x 축 = 면 방향, 없으면 카메라 x 를 긴축에 수직으로 누름
@@ -95,6 +96,10 @@ public:
 
   // 이번 장 원시 퍽(거르기 끝난 것 포함) → 이번 장에 보인 확정 퍽
   std::vector<PuckDetection> update(const std::vector<RawPuck> & raws);
+
+  // update 전에: center (카메라 좌표) 에서 match_m 안 가장 가까운 묶음이 다음 장 기준 최근 window 장 안에 본 태그 ID 최빈값,
+  //   없으면 -1 (태그 다시 찾기를 할지 · 옆 퍽 ID 를 안 뺏게)
+  int known_id_near(const Vec3 & center) const;
 
   int frame() const {return frame_;}
   size_t n_tracks() const {return tracks_.size();}

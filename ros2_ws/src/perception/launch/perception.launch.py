@@ -6,8 +6,9 @@
 입력: launch 인자
   - params: 설정 yaml. 비우면 레포 config/perception.yaml, 그것도 없으면 코드 기본값
   - wide_model · wrist_model: TensorRT .engine 경로
-  - publish_debug: true 면 /perception/wrist_debug_image 발행
+  - publish_debug: true 면 /perception/wrist_debug_image · /perception/wide_debug_image 발행
   - use_sim_time: 기본 false
+  - respawn · respawn_delay: perception_node 가 끝나면 (멈춤 감시 abort 포함) 다시 띄움, 기본 true · 2 s
 출력
   - 노드 /perception. 토픽 · 서비스는 perception_node.cpp 참고
 실행
@@ -53,8 +54,10 @@ def make_node(context):
     for launch_arg, key in (("wide_model", "wide.model"), ("wrist_model", "wrist.model")):
         if arg(launch_arg):
             overrides[key] = os.path.abspath(os.path.expanduser(arg(launch_arg)))
-    if arg("publish_debug"):
-        overrides["wrist.publish_debug"] = arg("publish_debug").lower() == "true"
+    if arg("publish_debug"):   # 손목 · 광각 둘 다
+        on = arg("publish_debug").lower() == "true"
+        overrides["wrist.publish_debug"] = on
+        overrides["wide.publish_debug"] = on
 
     parameters = ([params] if params else []) + [overrides]
     return [
@@ -65,6 +68,8 @@ def make_node(context):
             name="perception",
             output="screen",
             parameters=parameters,
+            respawn=arg("respawn").lower() == "true",
+            respawn_delay=float(arg("respawn_delay")),
         ),
     ]
 
@@ -74,7 +79,9 @@ def generate_launch_description():
         DeclareLaunchArgument("params", default_value="", description="비우면 레포 config/perception.yaml → 없으면 코드 기본값"),
         DeclareLaunchArgument("wide_model", default_value="", description="광각 상자 검출 .engine"),
         DeclareLaunchArgument("wrist_model", default_value="", description="손목 퍽 분할 .engine"),
-        DeclareLaunchArgument("publish_debug", default_value="", description="true 면 /perception/wrist_debug_image"),
+        DeclareLaunchArgument("publish_debug", default_value="", description="true 면 /perception/wrist_debug_image · wide_debug_image"),
         DeclareLaunchArgument("use_sim_time", default_value="false"),
+        DeclareLaunchArgument("respawn", default_value="true", description="노드가 끝나면 (멈춤 감시 abort 포함) 다시 띄움"),
+        DeclareLaunchArgument("respawn_delay", default_value="2.0", description="다시 띄우기 전 대기 초"),
         OpaqueFunction(function=make_node),
     ])

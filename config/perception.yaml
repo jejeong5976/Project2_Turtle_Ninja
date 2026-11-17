@@ -5,6 +5,7 @@
 # 출력 토픽
 #   - /perception/wide/detections   DetectionArray  광각 퍽, 위치 NaN → RViz · 디버깅용
 #   - /perception/wrist/detections  DetectionArray  손목 퍽, 3D 자세 → planning 이 받음
+#   - /perception/wrist/tags        WristTagArray   손목 AprilTag ID · 모서리 (적재함 칸 · 쥔 퍽, control_master 가 위치 계산)
 #   - /perception/traffic_light     TrafficLight    RED · YELLOW · GREEN · OFF · UNKNOWN + visible
 #   - /perception/task_text         TaskText        바코드 원문, 켜져 있는 동안 확정될 때마다
 # 실행
@@ -18,31 +19,40 @@
 
 perception:
   ros__parameters:
-    wide:                                # 광각 Arducam UC-684, 아래 40°
+    watchdog_s: 5.0                      # 멈춤 감시: 콜백 그룹 하트비트가 이 초 넘게 없으면 abort → launch respawn (0 = 끔)
+    wide:                                # 광각 Arducam UC-684, 아래 30°
       image_topic: /wide_cam/image_raw
       image_qos: reliable                # reliable | best_effort. 큰 영상을 best_effort 로 받으면 프로세스 사이에서 유실
       frame_id: birdeye_camera_optical_frame   # 출력 header.frame_id = 배포판 URDF 이름. "" 면 드라이버 영상 header 그대로
       model: ""                          # 광각 .engine, launch 인자 wide_model:= 로 줌
       conf: 0.5                          # 검출 신뢰도 기준
       iou: 0.7
-      max_hz: 15.0                       # 이보다 빨리 오는 영상은 검출 건너뜀, 바코드 넘기기는 함
+      max_hz: 30.0                       # 이보다 빨리 오는 영상은 검출 건너뜀, 바코드 넘기기는 함. 엔진 960 추론 약 9 ms (Jetson trtexec) → 카메라 30 Hz 전부
       enabled: true                      # ~/wide/enable 로 켜고 끔, 검출 · 신호등
+      publish_debug: false               # true 면 /perception/wide_debug_image (상자 · 신호등 칸 · 칸 밝기), 구독자 있을 때만 그림
       read_tags: false                   # 16 mm 퍽 태그는 광각 1 m 에서 칸당 2 px 미만이라 거의 안 읽힘 → 끔, 출력 id 는 늘 ""
       tag_min_side_px: 60                # 잘라 낸 상자가 이보다 작으면 키워서 태그 검출. 퍽 태그 ID 0–11 만 받음
       puck_classes: [red_cyl, green_cyl, red_box, green_box]
 
-    traffic_light:                       # 광각 상자 중 신호등 → 칸 밝기 판정 + 다수결
+    traffic_light:                       # 광각 상자 중 신호등 → 칸 흰색 비율 · 밝기 판정 + 다수결
       enabled: true
       class: traffic_light
-      red: [0.10, 0.40]                  # [확인 필요] 상자 높이 대비 칸 위치, 위 → 아래. 실물 신호등으로 다시 잴 것
-      yellow: [0.40, 0.70]
-      green: [0.70, 1.00]
-      v_margin: 40.0                     # 가장 밝은 칸이 나머지보다 이만큼 밝아야 켜짐, 아니면 OFF
+      red: [0.36, 0.56]                  # [확인 필요] 상자 높이 대비 칸 위치, 위 → 아래. 위 흰 뚜껑(0–0.33) 은 뺌
+      yellow: [0.60, 0.75]               #    실물 한 장 (책상 약 1.5 m, 초록 켬) 에서 잰 임시값, 관측 위치에서 다시 잴 것
+      green: [0.80, 0.98]
+      white_min: 0.30                    # 1) 흰색: 흰 화소 비율이 가장 높은 칸이 이 이상이고
+      white_margin: 0.20                 #    다른 칸보다 이만큼 높으면 켜짐 (실측 켜진 칸 0.71 · 꺼진 렌즈 0.03)
+      white_v: 240.0                     #    흰 화소 = V ≥ white_v · S ≤ white_s
+      white_s: 60.0
+      v_margin: 40.0                     # 2) 밝기: 1) 로 못 정하면 가장 밝은 칸이 나머지보다 이만큼 밝아야 켜짐, 아니면 OFF
       window: 5                          # 최근 이 장 수 중
       need: 3                            #   이 장 수가 같으면 확정
       timeout: 1.0                       # 이 시간 동안 못 찾으면 다수결 비움. 못 찾은 영상 자체는 바로 UNKNOWN + visible=false
 
     wrist:                               # 손목 D435, realsense2_camera align_depth.enable:=true
+      held:                              # 쥔 퍽 마스크 재기
+        enable: true
+      tag_rescue: true                   # 못 읽은 퍽 태그를 분할 상자 둘레에서 다시 찾기
       model: ""                          # 손목 .engine, launch 인자 wrist_model:= 로 줌
       conf: 0.5                          # 분할 신뢰도 기준, Python wrist_detector.SEG_CONF 와 같음
       iou: 0.7                           # one2many head NMS, ultralytics 기본
@@ -56,11 +66,43 @@ perception:
       reset_move_m: 0.01                 # 장 사이 카메라가 이보다 움직이면 묶음 지움
       reset_rot_deg: 2.0
       depth_scale: 0.001                 # 16UC1 깊이 단위 → m
+      min_rise_m: 0.0                    # 윗면이 둘레 낮은 면보다 이만큼도 안 솟은 분할은 퍽 아님 (실물: 상자 로고를 green 퍽으로). 0 = 안 봄.
+      tag_centre: false                  # 퍽 중심을 모양으로 (태그는 ID 만) — 태그가 비뚤게 붙은 퍽
+                                         #   0.012 로 켜기 전에 퍽이 붙어 꽉 찬 박스에서 가운데 퍽이 안 빠지는지 확인 (둘레가 옆 퍽 윗면뿐이면 빠짐)
       publish_debug: false               # true 면 /perception/wrist_debug_image
       color_topic: /camera/camera/color/image_raw
       depth_topic: /camera/camera/aligned_depth_to_color/image_raw
       info_topic: /camera/camera/color/camera_info
       image_qos: reliable                # reliable | best_effort. 컬러 · 깊이 구독, best_effort 면 장이 빠짐
+      image_qos_depth: 2                 # 보관 장 수. 처리가 카메라보다 느릴 때 쌓인 지난 장 대신 최근 장 (5 면 약 0.2 s 늦은 장)
+      tag_roi: true                      # 퍽 태그를 분할 상자 둘레만 검출 (false = 전체 영상, 장당 약 17 ms Jetson)
+      tag_roi_pad_px: 24                 #   상자 둘레 여유 [px]
+      drift_correct: true                # 손목 카메라가 손목에서 돈 만큼 (manipulation camera_drift_node, 홈 사진) 박스 윗면 측정과 퍽 위쪽 방향을 바로잡음
+      drift_topic: /wrist_cam/drift      #   퍽 위치는 카메라 좌표로 내고 control_master 가 같은 값으로 되돌림 (두 번 안 곱함)
+
+    wrist_tags:                          # 손목 컬러 → AprilTag ID · 모서리 (/perception/wrist/tags). 칸 바닥 태그 · 퍽 태그 위치는 control_master 가 계산
+      enabled: false                     # ~/wrist_tags/enable 로 켜고 끔. control_master 가 팔 작업 동안만 켬 (구독은 늘 두고 꺼진 동안 버림)
+      max_hz: 5.0                        # 이 주기로 한 장씩 (자기 콜백 그룹, 손목 퍽 처리와 따로)
+      max_hamming: 1                     # AprilTag 3: 고친 비트가 이보다 많으면 버림
+      min_margin: 30.0                   # AprilTag 3: 판정 여유 (decision_margin) 이보다 작으면 버림
+      nthreads: 2                        # AprilTag 3 스레드
+      puck_ids: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]   # 쥔 퍽 다시 찾기 대상
+      puck_tag_size_m: 0.0153            # 퍽 윗면 태그 검은 사각 (인쇄 실측 15.2~15.4 mm)
+      held_max_dist_m: 0.15              # 카메라에서 이보다 가까운 퍽 태그 = 쥔 퍽. 본 검출에 없으면 원본 영상 aruco 로 한 번 더
+
+    box:                                 # 장소 · 시작 박스 윗면 (손목 깊이) → /perception/wrist/box, 중심 · yaw
+      enabled: true                      # ~/box/enable 로 켜고 끔. 엔진 없이도 돎 (깊이 · TF 만 씀)
+      frame: base_footprint              # 바닥 = 0, z = 위인 프레임. 출력 frame_id
+      size: 0.205                        # 윗면 한 변 [m]
+      top_z: 0.07                        # 윗면 높이 [m]
+      band: 0.012                        # 윗면으로 볼 높이 폭 ± (처짐 · 깊이 잡음)
+      drop: 0.03                         # 윗면보다 이만큼 낮으면 바닥 쪽 (테두리 판정)
+      min_x: 0.15                        # 이보다 가까운 점 = 차체 (앞 끝 0.145 m, 바퀴 포함), 안 씀
+      front_min_x: 0.175                 # 뒤 변을 못 봤을 때만: 맞춘 앞 변이 이보다 가까우면 실패 (차체에 가려 앞뒤가 틀어짐)
+      min_side_pts: 40                   # 앞뒤 · 좌우 축마다 한 변은 이 점 수 이상 보여야 성공
+      stride: 2                          # 화소 건너뛰기
+      guess: [0.2575, 0.0, 0.0]          # 처음 추정 (frame 기준 x, y, yaw) = 정차 자리에서 본 박스 중심 (dice_map 정차 거리)
+      max_hz: 5.0
 
     barcode:                             # 벽 1D 바코드, zxing-cpp 로 Code128 판독
       camera: wrist                      # wide | wrist. 이 카메라 컬러 영상에서 읽음

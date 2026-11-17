@@ -49,6 +49,22 @@ void cuda_ok(cudaError_t e, const char * what)
 {
   if (e != cudaSuccess) {throw std::runtime_error(std::string(what) + ": " + cudaGetErrorString(e));}
 }
+
+// GPU 결과 기다리기 = 잠듦 (BlockingSync). CUDA 기본 (Auto) 은 컨텍스트 수 ≤ 코어 수면 spin
+//   → 추론 동안 CPU 코어 하나가 100 % 로 기다림 (Jetson: 손목 · 광각 30 Hz 면 코어 절반 넘게)
+//   CUDA 컨텍스트 만들기 전에만 바꿀 수 있음 → 첫 엔진에서 한 번. 이미 만들어졌으면 (다른 CUDA 사용) 그대로 둠
+void use_blocking_sync()
+{
+  static const bool once = [] {
+      const cudaError_t e = cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);
+      if (e != cudaSuccess) {
+        std::cerr << "[trt] cudaSetDeviceFlags(BlockingSync) 실패, 기본 대기 방식 유지: " << cudaGetErrorString(e) << std::endl;
+        cudaGetLastError();   // 오류 상태 지움 (다음 CUDA 호출이 이 오류를 받지 않게)
+      }
+      return true;
+    }();
+  (void)once;
+}
 }  // namespace
 
 struct TrtEngine::Impl
@@ -58,6 +74,8 @@ struct TrtEngine::Impl
   std::unique_ptr<nvinfer1::ICudaEngine> engine;
   std::unique_ptr<nvinfer1::IExecutionContext> ctx;
   cudaStream_t stream{nullptr};
+  cudaEvent_t ev_start{nullptr}, ev_end{nullptr};   // GPU 계산 시간 계측
+  float gpu_ms{0.0f};
   TrtTensor in;
   std::vector<TrtTensor> outs;
   void * in_ptr{nullptr};
@@ -68,6 +86,8 @@ struct TrtEngine::Impl
   ~Impl()
   {
     for (void * p : bufs) {cudaFree(p);}
+    if (ev_start) {cudaEventDestroy(ev_start);}
+    if (ev_end) {cudaEventDestroy(ev_end);}
     if (stream) {cudaStreamDestroy(stream);}
     ctx.reset();      // 만든 역순으로 해제
     engine.reset();
@@ -83,6 +103,7 @@ TrtEngine::TrtEngine(const std::string & path)
     throw std::runtime_error("모델 확장자는 .engine / .plan (.onnx 는 Jetson 에서 trtexec 로 변환): " + path);
   }
   I.names = read_names(path);
+  use_blocking_sync();   // runtime · 엔진 만들기 (컨텍스트 생성) 전
   std::ifstream f(path, std::ios::binary);
   if (!f) {throw std::runtime_error("엔진 파일 없음: " + path);}
   const std::vector<char> blob((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -93,6 +114,8 @@ TrtEngine::TrtEngine(const std::string & path)
   I.ctx.reset(I.engine->createExecutionContext());
   if (!I.ctx) {throw std::runtime_error("TensorRT 실행 문맥 생성 실패");}
   cuda_ok(cudaStreamCreate(&I.stream), "cudaStreamCreate");
+  cuda_ok(cudaEventCreate(&I.ev_start), "cudaEventCreate");
+  cuda_ok(cudaEventCreate(&I.ev_end), "cudaEventCreate");
 
   bool have_in = false;
   for (int i = 0; i < I.engine->getNbIOTensors(); ++i) {
@@ -151,7 +174,9 @@ void TrtEngine::infer(const std::vector<float> & input, std::vector<std::vector<
   if (input.size() != I.in.count) {throw std::runtime_error("입력 크기가 엔진과 다름");}
   cuda_ok(cudaMemcpyAsync(I.in_ptr, input.data(), input.size() * sizeof(float), cudaMemcpyHostToDevice, I.stream),
     "입력 복사");
+  cuda_ok(cudaEventRecord(I.ev_start, I.stream), "cudaEventRecord");
   if (!I.ctx->enqueueV3(I.stream)) {throw std::runtime_error("TensorRT enqueueV3 실패");}
+  cuda_ok(cudaEventRecord(I.ev_end, I.stream), "cudaEventRecord");
   outs.resize(I.outs.size());
   for (size_t i = 0; i < I.outs.size(); ++i) {
     outs[i].resize(I.outs[i].count);
@@ -159,6 +184,9 @@ void TrtEngine::infer(const std::vector<float> & input, std::vector<std::vector<
       I.stream), "출력 복사");
   }
   cuda_ok(cudaStreamSynchronize(I.stream), "cudaStreamSynchronize");
+  cudaEventElapsedTime(&I.gpu_ms, I.ev_start, I.ev_end);
 }
+
+float TrtEngine::last_gpu_ms() const {return impl_->gpu_ms;}
 
 }  // namespace perception

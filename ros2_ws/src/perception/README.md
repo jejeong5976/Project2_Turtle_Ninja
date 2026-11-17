@@ -4,19 +4,23 @@
 
 | 파이프라인 | 받는 것 | 보내는 것 |
 |---|---|---|
-| 광각 `WidePipeline` | 광각 컬러 (Arducam UC-684) | `/perception/wide/detections` (퍽 상자 · 색 · 모양 · 퍽 태그 ID, 위치 NaN), `/perception/traffic_light` |
+| 광각 `WidePipeline` | 광각 컬러 (Arducam UC-684) | `/perception/wide/detections` (퍽 상자 · 색 · 모양 · 퍽 태그 ID, 위치 NaN), `/perception/traffic_light`, `/perception/wide_debug_image` (선택) |
 | 손목 `WristPipeline` | D435 컬러 + 정렬 깊이 + camera_info, TF `odom ← d435_color_optical_frame` | `/perception/wrist/detections` (퍽 중심 · 자세 · 선/누움 · ID), `/perception/wrist_debug_image` (선택) |
+| 손목 태그 `WristTagStage` (켜져 있을 때만, `~/wrist_tags/enable`) | D435 컬러 + camera_info | `/perception/wrist/tags` (AprilTag ID · 왜곡 푼 모서리, 적재함 칸 · 쥔 퍽 위치는 control_master 가 계산) |
 | 바코드 `BarcodeStage` | `barcode.camera` (wide / wrist) 카메라 콜백 안에서, 켜져 있을 때만 | `/perception/task_text` |
 
 | 토픽 | 타입 | 내용 |
 |---|---|---|
-| `/perception/wide/detections` · `/perception/wrist/detections` | `interfaces/DetectionArray` | 퍽만. 카메라마다 토픽 따로 (2026-11-02, 예전 한 토픽 `/perception/detections`). 처리한 영상마다, 못 찾으면 빈 배열 (= 그 카메라에서 못 찾음). 광각은 위치 NaN, planning 은 손목만 받음 |
+| `/perception/wide/detections` · `/perception/wrist/detections` | `interfaces/DetectionArray` | 퍽만. 카메라마다 토픽 따로. 처리한 영상마다, 못 찾으면 빈 배열 (= 그 카메라에서 못 찾음). 광각은 위치 NaN, planning 은 손목만 받음 |
+| `/perception/wrist/tags` | `interfaces/WristTagArray` | 손목 AprilTag (36h11) ID · 화소 모서리 · 왜곡 푼 정규 좌표 모서리. CLAHE + AprilTag 3, 쥔 퍽 태그 (카메라 0.15 m 안) 를 못 찾으면 원본 영상 aruco 로 한 번 더 (`rescue`). 기본 꺼짐, control_master 가 팔 작업 · 퍽 쥔 동안 켬 (`wrist_tags.*`) |
 | `/perception/traffic_light` | `interfaces/TrafficLight` | RED / YELLOW / GREEN / OFF / UNKNOWN + `visible`. 이번 영상에서 못 찾으면 UNKNOWN + `visible=false` |
 | `/perception/task_text` | `interfaces/TaskText` | 바코드 원문 `raw_text`. **기본 꺼짐**, planning 이 READ_BARCODE 단계에서 `~/barcode/enable` 로 켜고 나가면 끔. 켜져 있는 동안 최근 5 장 중 3 장 같고 이번 장도 그 값이면 보냄. 못 읽은 장도 다수결에 들어가 안 보이면 확정이 풀림 |
 
 - `header.stamp` = 촬영 시각 그대로, `header.frame_id` = 배포판 URDF 이름 (광각 `birdeye_camera_optical_frame`, 손목 `d435_color_optical_frame`)
 - 퍽 ID = AprilTag 0–11 만. 장소 태그(12–14)는 퍽 ID 로 안 붙임 (`common.hpp` `is_puck_tag`)
+- 손목 태그 다시 찾기 (`wrist.tag_rescue`, 기본 켬): 1차 (분할 상자 + 24 px, aruco) 에서 태그를 못 받고 묶음 ID 도 없는 퍽만 넓힌 상자 (+48 px) 를 퍽마다 AprilTag 3 (있으면) → CLAHE → aruco 로 다시 봄. 태그 중심이 그 퍽 마스크 (8 px 여유) 안일 때만, 태그 하나는 퍽 하나에만 (`wrist_tag_rescue.hpp`)
 - 손목은 TF 를 못 구하면 발행 안 함 (위쪽 없이 내면 긴축이 틀림 → planning 이 검출 끊김으로 앎)
+- 손목 마스크 자세 (`wrist.mask_pose`, 기본 켬): LOOK 화면 아래쪽은 그리퍼 · 차체가 깊이를 가림. 마스크 안 깊이 점이 `wrist.mask_pose_min_fill` (0.3) 보다 적거나 윗면 점이 윗면 긴 변의 `wrist.mask_pose_min_span` (0.7) 도 못 덮으면, 중심 (누운 퍽은 긴축도) 을 마스크 윤곽 → 윗면 높이 평면 (깊이로 잰 높이, 손목 카메라 보정 반영) + 옆면 모델로 다시 잡음. 높이 · 선/누움 · 거르기는 그대로, 깊이가 넉넉하면 예전 값 그대로. 로그 `[wrist] 마스크 중심 (깊이 모자람)` (`wrist_pose.hpp` `mask_top_refine`)
 
 ## 구조
 
@@ -34,23 +38,30 @@ perception/
 │   ├── wide_tag_reader.hpp         # 광각: 퍽 상자 안 태그 ID
 │   ├── wrist_seg.hpp               # 손목: letterbox · 출력 해석 · 마스크 + 실행 (SegModel)
 │   ├── wrist_pose.hpp              # 손목: 마스크 + 깊이 → 퍽 자세
-│   └── wrist_tracker.hpp           # 손목: 여러 장 확정
+│   ├── wrist_tracker.hpp           # 손목: 여러 장 확정
+│   ├── wrist_tag_rescue.hpp        # 손목: 태그 못 붙인 퍽만 넓힌 상자 · AprilTag 3 로 다시 찾기
+│   ├── wrist_tag_reader.hpp        # 손목: 영상 한 장 AprilTag ID · 모서리 (CLAHE + AprilTag 3, 없으면 aruco)
+│   ├── wrist_box.hpp               # 손목: 깊이로 장소 · 시작 박스 윗면 중심 · 방향
+│   └── wrist_held.hpp              # 손목: 쥔 퍽 분할 마스크 (영상 오른쪽 아래 ROI)
 ├── src/
-│   ├── perception_node.cpp         # 노드 조립 · 서비스 · main (MultiThreadedExecutor 3 스레드)
+│   ├── perception_node.cpp         # 노드 조립 · 서비스 · main (콜백 그룹 4 · MultiThreadedExecutor 4 스레드)
 │   ├── wide_pipeline.{hpp,cpp}     # 광각 처리 (퍽 · 신호등)
 │   ├── wrist_pipeline.{hpp,cpp}    # 손목 처리
+│   ├── wrist_tag_stage.{hpp,cpp}   # 손목 태그 단계 (/perception/wrist/tags, ~/wrist_tags/enable 일 때만 구독)
+│   ├── image_cv.hpp                # sensor_msgs/Image ↔ cv::Mat (cv_bridge 대신, manipulation 에 같은 파일 복사)
 │   ├── barcode.{hpp,cpp}           # 바코드 판독기 (zxing) + 단계: 다수결 · 발행 (카메라 콜백 안에서)
 │   ├── msg_utils.hpp               # planning 메시지 규칙 (NaN · 0 쿼터니언 · ID · 신호등 상수)
 │   └── (include 헤더와 같은 이름의 .cpp)
-└── test/  test_wide · test_barcode · test_common · test_wrist_pose · test_wrist_seg
+└── test/  test_wide · test_barcode · test_common · test_wrist_pose · test_wrist_seg · test_wrist_box · test_wrist_held · test_wrist_tag_reader · test_wrist_tag_rescue · test_hang_watch · test_input_watch
 ```
 
 | 대상 | 내용 | 빌드 조건 |
 |---|---|---|
-| `perception_core` | ROS 없음: `common` · `wide_detector` · `wide_tag_reader` · `traffic_light` · `wrist_pose` · `wrist_tracker` · `wrist_seg` | 항상 (개발 PC 테스트) |
+| `perception_core` | ROS 없음: `common` · `wide_detector` · `wide_tag_reader` · `traffic_light` · `wrist_pose` · `wrist_tracker` · `wrist_seg` · `wrist_tag_reader` · `wrist_box` · `wrist_tag_rescue` · `wrist_held` | 항상 (개발 PC 테스트) |
+| ↳ AprilTag 3 부분 | `apriltag` 패키지 (`ros-$ROS_DISTRO-apriltag`, 손목 태그 단계 `wrist_tag_reader` 와 같은 것) 있으면 `PERCEPTION_HAVE_APRILTAG` → 태그 다시 찾기에 AprilTag 3. 없으면 aruco 만 (경고) | apriltag 있을 때 |
 | ↳ TensorRT 부분 | `trt_engine.cpp` 추가 + `PERCEPTION_HAVE_TRT` → `BoxDetector` · `SegModel` 구현이 켜짐 | TensorRT 있을 때 (Jetson) |
 | `perception_barcode` | `barcode` (판독기 + 단계, ROS · zxing 씀) | 항상 (개발 PC 테스트) |
-| `perception_node` | 노드 · 파이프라인 3개 | TensorRT 있을 때 |
+| `perception_node` | 노드 · 광각 · 손목 · 바코드 파이프라인 + 손목 태그 단계 | TensorRT 있을 때 |
 
 광각 · 손목 모델은 같은 구조: 전처리 · 후처리 함수 (TensorRT 없이 테스트) + 모델 클래스 (`TrtEngine` 을 직접 가짐, `#ifdef PERCEPTION_HAVE_TRT`)
 
@@ -74,9 +85,10 @@ perception/
 |---|---|
 | 광각 | 광각 영상 → 상자 검출 · 퍽 태그 · 신호등 → 발행. `barcode.camera=wide` 면 바코드 판독도 |
 | 손목 | 컬러 · 깊이 동기 (message_filters 입력 구독도 이 그룹) → 분할 · 기하 · 확정 → 발행. `barcode.camera=wrist` 면 동기 전 컬러로 바코드 판독도 |
+| 손목 태그 | `~/wrist_tags/enable` 일 때만 손목 컬러 구독 → AprilTag ID · 모서리 → `/perception/wrist/tags` |
 | 관리 | enable · reset 서비스 (플래그만 바꿈, 실제 초기화는 각 파이프라인이 다음 콜백에서) |
 
-- `MultiThreadedExecutor` 3 스레드 (Jetson 실측 후 조정)
+- `MultiThreadedExecutor` 4 스레드 (콜백 그룹 광각 · 손목 · 손목 태그 · 관리)
 - TensorRT 엔진은 파이프라인마다 따로 (실행 문맥 · CUDA stream · 버퍼 각자). 한 엔진을 두 스레드가 같이 쓰지 않음
 - 바코드는 출발 구역에 하나라 켜져 있을 때(READ_BARCODE)만 그 카메라 콜백 안에서 판독 → 따로 스레드 안 둠. 판독 중엔 그 카메라 처리가 느려짐 (그때 다른 일 없음)
 - 손목 바코드는 동기 전 컬러로 읽음 → 깊이 · TF 가 없어도 읽힘
@@ -125,13 +137,19 @@ ros2 launch perception perception.launch.py wide_model:=<광각>.engine wrist_mo
 colcon test --packages-select perception && colcon test-result --verbose
 ```
 
-| 시험 | 내용 | 결과 (개발 PC) |
+| 시험 | 내용 | 개수 |
 |---|---|---|
-| `test_wide` | letterbox · NMS · 출력 두 형식 해석 · 퍽 태그 (장소 태그 버림) · 신호등 칸 판정 (모두 꺼짐 = OFF · 빈 상자 = unknown) | 11 개 통과 |
-| `test_barcode` | 합성 EAN-13 · Code128 P2-01–04 (모듈 2 · 3 · 5 px) · 8° 기울고 흐림 · 빈 영상 (zxing 빌드) | 4 개 통과 |
-| `test_common` | 다수결 · 퍽 태그 ID · 메시지 규칙 (NaN · 0 쿼터니언 · ID · 색/모양 · 신호등 상수) | 6 개 통과 |
-| `test_wrist_pose` | 손목 기하 · 확정 (합성 점군) | 15 개 통과 |
-| `test_wrist_seg` | 합성 출력으로 분할 전후처리 · 출력 모양 판정 | 3 개 통과 |
+| `test_wide` | letterbox · NMS · 출력 두 형식 해석 · 퍽 태그 (장소 태그 버림) · 신호등 칸 판정 (모두 꺼짐 = OFF · 빈 상자 = unknown) | 14 |
+| `test_barcode` | 합성 EAN-13 · Code128 P2-01–04 (모듈 2 · 3 · 5 px) · 8° 기울고 흐림 · 빈 영상 (zxing 빌드) | 6 |
+| `test_common` | 다수결 · 퍽 태그 ID · 메시지 규칙 (NaN · 0 쿼터니언 · ID · 색/모양 · 신호등 상수) | 6 |
+| `test_wrist_pose` | 손목 기하 · 확정 (합성 점군 + `test/data` 실물 마스크 · 깊이) | 29 |
+| `test_wrist_seg` | 합성 출력으로 분할 전후처리 · 출력 모양 판정 | 5 |
+| `test_wrist_box` | 장소 박스 윗면 중심 · 방향: 광선 추적 깊이 (잡음 · 구멍), 퍽 올린 박스 · 차체 겹침 거부 · 넓게 찾기 · 시작 수 상한 | 12 |
+| `test_wrist_held` | 쥔 퍽 마스크 재기 (합성 + `test/data` 실물 분할 마스크 6 장) | 5 |
+| `test_wrist_tag_reader` | 그린 tag36h11 → ID · 모서리, 왜곡 풀기 · ROI 비닝, 쥔 퍽 거리 판정, 영역 투영 · 합치기 | 6 |
+| `test_wrist_tag_rescue` | 실제 36h11 로 그린 퍽 윗면 합성 영상: AprilTag 3 모서리 순서 · 화소 규약, 주인 퍽 규칙, 기울고 작은 태그, 합친 상자의 CLAHE 건너뜀, 상자 경계 잘림, 옆 퍽 태그 안 뺏음, 시간 한도, 묶음 ID 기억 · 못 찾은 퍽 쉼 (끝까지), truncated 퍽 통과, 처리 시간. `TAG_SWEEP=1` 이면 격자 탐색 (1차 대비 성공 · 틀린 ID 표) | 14 (탐색 2 개는 `TAG_SWEEP=1` 일 때만) |
+| `test_hang_watch` | 멈춤 감시 (하트비트 선 칸 → 기록 한 번 · 스택) · respawn 상태 파일 되살리기 | 8 |
+| `test_input_watch` | 영상 끊김 → 구독 다시 만들기 (5 s 조용하면, 연달아면 2 배씩 최대 60 s) | 4 |
 | TensorRT 코드 · 노드 | 개발 PC 엔 TensorRT 없음 → `-DPERCEPTION_HAVE_TRT -fsyntax-only` 로 문법만 확인 (`trt_engine.cpp` 제외) | Jetson 에서 빌드 · 실행 확인 필요 |
 
 ## 주의 · 남은 것
