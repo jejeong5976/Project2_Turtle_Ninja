@@ -19,10 +19,10 @@ std::string trim(const std::string & s)
 }
 }  // namespace
 
-std::optional<Task> parse_task(const std::string & raw_text, std::string * error)
+std::optional<Task> parse_task(const std::string & raw_text, const BarcodeTable & table, std::string * error)
 {
   const std::string text = trim(raw_text);
-  const auto order = parse_dice_barcode(text, error);   // 빈 바코드 · 미등록 바코드는 여기서 걸러짐
+  const auto order = parse_dice_barcode(text, table, error);   // 빈 바코드 · 미등록 바코드는 여기서 걸러짐
   if (!order) {return std::nullopt;}
   Task t;
   t.task_id = text;

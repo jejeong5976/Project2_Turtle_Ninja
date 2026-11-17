@@ -1,7 +1,7 @@
 # VerifyRecord.msg — 세 장소 재검증 결과
 #
 # 역할
-#   - 발제 v5 '이동 후 검증': 새 관측으로 장소별 ID · 위치를 기록하고 전체 중복 · 누락 판정
+#   - 발제 '이동 후 검증': 새 관측으로 장소별 ID · 위치를 기록하고 전체 중복 · 누락 판정
 # 토픽
 #   - /planning/verify_record, transient_local
 # 보내는 쪽 → 받는 쪽

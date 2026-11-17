@@ -8,20 +8,40 @@
 namespace planning
 {
 
-void PuckRegistry::update(const PuckRecord & seen)
+namespace
+{
+// 표 많은 값. 같으면 지금 값 유지 (지금 값이 공동 1 등일 때), 표가 없으면 지금 값
+std::string top_vote(const std::map<std::string, int> & v, const std::string & now)
+{
+  int best = 0;
+  std::string out = now;
+  for (const auto & [k, n] : v) {
+    if (n > best || (n == best && k == now)) {best = n; out = k;}
+  }
+  return out;
+}
+}  // namespace
+
+void PuckRegistry::update(const PuckRecord & seen, bool vote_kind)
 {
   if (seen.id.empty()) {
     add_candidate(seen);
     return;
   }
   auto it = by_id_.find(seen.id);
-  if (it == by_id_.end()) {
-    by_id_[seen.id] = seen;
-  } else {
-    const std::string state = it->second.state;   // 상태는 팔 결과로만 바뀜 → 유지
-    it->second = seen;
-    it->second.state = state;
+  if (it == by_id_.end()) {it = by_id_.emplace(seen.id, seen).first;}
+  PuckRecord & r = it->second;
+  r.x = seen.x;
+  r.y = seen.y;
+  r.z = seen.z;
+  r.last_seen = seen.last_seen;
+  auto & v = votes_[seen.id];
+  if (vote_kind && r.state == "on_field") {
+    if (!seen.color.empty()) {++v.color[seen.color];}
+    if (!seen.shape.empty()) {++v.shape[seen.shape];}
   }
+  r.color = top_vote(v.color, r.color.empty() ? seen.color : r.color);
+  r.shape = top_vote(v.shape, r.shape.empty() ? seen.shape : r.shape);
   // 같은 자리에 있던 후보는 이 퍽이었던 것 → 삭제
   candidates_.erase(
     std::remove_if(candidates_.begin(), candidates_.end(), [&](const PuckRecord & c) {

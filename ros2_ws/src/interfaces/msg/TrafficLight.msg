@@ -9,7 +9,7 @@
 # note
 #   - 광각 영상을 처리할 때마다 발행, wide.max_hz 이하 → 끊기면 planning 이 perception 끊김으로 처리
 #   - 이번 영상에서 신호등을 못 찾으면 이전 색을 내지 않고 UNKNOWN + visible=false
-#   - OFF 는 발제 v5 점멸 기록에 필요함, 소등으로 점멸 하나를 구별
+#   - OFF 는 발제 점멸 기록에 필요함, 소등으로 점멸 하나를 구별
 
 uint8 UNKNOWN=0               # 판정 못 함, 이유는 visible 로 구분
 uint8 RED=1

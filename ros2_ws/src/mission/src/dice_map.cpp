@@ -53,6 +53,34 @@ Pose2D node_stop(const DiceMap & a, int node)
   return a.start;
 }
 
+std::optional<BoxRecenter> recenter_box_on_pucks(
+  const std::array<double, 2> & center, const std::vector<std::array<double, 2>> & pts,
+  double box_radius, double search_radius, double max_shift)
+{
+  const auto count_in = [&](const std::array<double, 2> & c) {
+      int n = 0;
+      for (const auto & p : pts) {
+        if (std::hypot(p[0] - c[0], p[1] - c[1]) <= box_radius) {++n;}
+      }
+      return n;
+    };
+  BoxRecenter r;
+  double sx = 0.0, sy = 0.0;
+  for (const auto & p : pts) {
+    if (std::hypot(p[0] - center[0], p[1] - center[1]) > search_radius) {continue;}
+    sx += p[0];
+    sy += p[1];
+    ++r.used;
+  }
+  if (r.used == 0) {return std::nullopt;}
+  r.center = {sx / r.used, sy / r.used};
+  r.shift = std::hypot(r.center[0] - center[0], r.center[1] - center[1]);
+  r.before = count_in(center);
+  r.after = count_in(r.center);
+  if (r.after <= r.before || r.shift > max_shift) {return std::nullopt;}
+  return r;
+}
+
 bool load_dice_map(const std::string & path, DiceMap & out, std::string * error)
 {
   YAML::Node y;
@@ -78,6 +106,7 @@ bool load_dice_map(const std::string & path, DiceMap & out, std::string * error)
     a.start = arena_to_map(T, start_arena);
     a.barcode_view = arena_to_map(T, barcode_arena);
     a.box_radius = y["box_radius"].as<double>(a.box_radius);
+    a.box_size = y["box_size"].as<double>(a.box_size);
 
     for (int i = 0; i < 6; ++i) {
       const std::string key = "B" + std::to_string(i + 1);

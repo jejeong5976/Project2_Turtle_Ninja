@@ -8,21 +8,32 @@
 
 mission_manager:
   ros__parameters:
-    # ---- dice (발제 v5 '주사위 기억 로봇', 설계 docs/planning/transfer_planner_design.md)
+    # ---- dice (발제 '주사위 기억 로봇', 설계 docs/planning/transfer_planner_design.md)
     dice_map: ""                      # 비우면 레포 maps/dice_map.yaml (경기장 좌표 · 정차 자세 · map_from_arena)
     travel_table: ""                  # 비우면 레포 maps/dice_travel_times.yaml (노드 사이 이동 · 팔 동작 시간)
-    collect_order: [1, 2, 6, 3, 4, 5] # 시작 박스 방문 순서 (마지막 박스 LOOK 뒤 할당 · 운반 계획)
+    barcode_table: ""                 # 비우면 레포 maps/dice_barcodes.json (바코드 → 오름 · 내림차순)
+    collect_order: [1, 2, 4, 5, 6, 3] # 시작 박스 방문 순서 (마지막 박스 LOOK 뒤 할당 · 운반 계획), arena5 planner_server 시간표 (maps/dice_travel_times.yaml) + 정차 면 같이 골라 1 등
     look_dwell_s: 1.0                 # LOOK 뒤 검출 모으는 시간
     dice_pick_fresh_s: 90.0           # 정차 중 PICK 은 LOOK 때 본 odom 기준 위치를 이 시간까지 씀 (차체가 서 있으므로)
     transfer_max_remaining: 4         # 박스에 남은 퍽이 이보다 많으면 정확해 대신 대체 해 (Jetson 계산 시간 보호)
     # 재검증 (발제 '이동 후 검증' 8점): VERIFY LOOK 뒤 새 관측으로 판정 → /planning/verify_record + 기록 파일
     verify_radius_m: 0.18             # 장소 중심에서 이 안의 퍽 = 그 장소 퍽 (칸 최대 0.085, 박스 윗면 반폭 0.1025)
-    verify_cell_tol_m: 0.03           # 칸 중심에서 이 안이면 칸 위
+    verify_cell_tol_m: 0.05           # 칸 중심 (재검증 측정 박스 중심 + 계획 눈 오프셋) 에서 이 안이면 칸 위 (눈 위치 ±5 cm 면 성공)
+    verify_cell_ids: true             # 칸마다 놓은 퍽 ID 가 그 칸 verify_cell_tol_m 안 + 다시 본 색 · 모양이 그룹 조건 (R 빨강 · G 초록 · Y 모양 통일) 에 맞아야 함 (ID · 색 · 모양 못 읽음 = 불합격). false = 위치 · 그룹 조건만 (ID 안 봄)
+    verify_fit: true                  # 박스 측정이 없을 때만: 관측 퍽에 눈 모양을 지도 칸에서 옮기고 돌려 맞춘 뒤 칸 판정. 측정 있으면 박스 중심 기준 칸 그대로
+    verify_fit_max_shift_m: 0.10      # 맞춤 이동 한도 (지도 칸에서)
+    verify_fit_max_rot_deg: 180.0     # 맞춤 회전 한도. 180 = 방향 무관 (눈 방향은 채점과 무관, 모양만), 좌우 반전도 회전으로 됨
+    verify_on_box_margin_m: 0.0       # 박스 위 확인: 퍽 중심이 잰 윗면 (재검증 LOOK 손목 측정 → 놓을 때 LOOK 측정) 가장자리에서 이만큼 안쪽, 밖이면 그 퍽 불합격 (떨어짐). 측정 없으면 안 봄
+    verify_ignore_inset_m: 0.015      # 퍽 중심이 잰 윗면 가장자리에서 이만큼 안쪽이 아닌 검출은 판정 · 개수에서 뺌 (박스 모서리 · 로봇 몸 오검출, 정상 칸 퍽은 약 40 mm 안쪽). 0 = 안 뺌
+    verify_image_topic: /planning/verify_image   # 재검증 장소마다 판정 그림 1 장 (sensor_msgs/Image bgr8, transient_local 3) + 기록 폴더 verify_L<n>.jpg. "" = 안 함
+    verify_color_topic: /camera/camera/color/image_raw   # VERIFY 단계 동안만 구독
+    verify_info_topic: /camera/camera/color/camera_info
+    verify_camera_frame: d435_color_optical_frame        # 그림 투영 TF (map → 이 프레임)
     verify_vote_ratio: 0.7            # 퍽 색 · 모양 = LOOK 동안 읽힌 장 다수결, 1 등 비율 < 이것이면 모름
     # ---- 기록 파일 (발제 '기록: signal.json, allocation.json'): <record_dir>/run_<시각>/
     #   signal.json (신호 기록 끝날 때) · allocation.json + allocation_rev<N>.json (계획 · 재계획 때, 첫 PLACE 전) · verify.yaml (재검증 끝)
     record_dir: ~/planning_logs       # "" = 안 씀
-    max_replans: 6                    # dice 단계가 재시도로도 안 되면 그 퍽 · 장소 빼고 다시 계획하는 최대 횟수
+    max_replans: 15                    # dice 단계가 재시도로도 안 되면 그 퍽 · 장소 빼고 다시 계획하는 최대 횟수
     map_frame: map
     base_frame: base_link
     odom_frame: odom                  # 집을 때 target 계산용 (AMCL 보정에 안 흔들리는 프레임)
@@ -37,11 +48,14 @@ mission_manager:
     min_confidence: 0.5
     candidate_max_age_s: 30.0         # ID 못 읽은 후보를 이만큼 못 보면 삭제
     signal_timeout_s: 1.0             # /perception/traffic_light 가 이만큼 끊기면 UNKNOWN 으로 봄
-    # 신호등 점멸 기록 (발제 v5: 출발 구역에서 12 번 점멸, 1 s 켜짐 + 1 s 소등, 끝 3 s 소등). 설명 signal_recorder.hpp
-    signal_record: true               # STANDBY · HOME · 첫 READ_BARCODE · OBSERVE_SIGNAL 동안 기록. 순서 = 바코드 → 점멸 관측 → task 실행 (발제 v5)
+    # 신호등 점멸 기록 (발제: 출발 구역에서 12 번 점멸, 1 s 켜짐 + 1 s 소등, 끝 3 s 소등). 설명 signal_recorder.hpp
+    signal_record: true               # STANDBY · HOME · 첫 READ_BARCODE · OBSERVE_SIGNAL 동안 기록. 순서 = 바코드 → 점멸 관측 → task 실행
     barcode_look: true                # READ_BARCODE = 이동 → 팔 LOOK_BARCODE (손목으로 바코드 정면) → 읽기 → 팔 HOME
     barcode_enable_service: /perception/barcode/enable   # READ_BARCODE 동안만 perception 바코드 판독 켬 (std_srvs/SetBool). "" 면 안 부름
+    wide_enable_service: /perception/wide/enable         # 신호 기록 Done 이면 perception 광각 끔 (뒤 단계는 손목만), reset_signal 이면 다시 켬. "" 면 안 부름
+    wide_capture_service: /wide_cam/set_capture     # 같은 때 광각 usb_cam 캡처도 멈춤 (MJPG 디코딩 CPU 약 40 %), reset_signal 이면 다시 켬. "" 면 안 부름
     signal_wait_s: 90.0               # OBSERVE_SIGNAL 최대 대기 (넘으면 불완전으로 진행, 색 추정 안 함)
+    signal_retries: 0                 # 기록이 불완전하면 비우고 다시 기록하는 횟수. 발제 p.6: 팀 오류로 신호를 다시 안 보여 줌 → 0 = 실제 기록을 signal.json 에 남기고 정지 · 복귀 (전 2)
     signal_expected: 12               # 점멸 수
     signal_min_on_s: 0.3              # 이보다 짧은 켜짐은 깜빡임 (오검출)
     signal_min_off_s: 0.25            # 점멸 사이 소등으로 인정하는 최소 길이
@@ -51,19 +65,30 @@ mission_manager:
     signal_max_ambiguous: 0.3         # 점멸 안 애매 관측 비율 상한 (넘으면 '?')
     signal_min_count: 1               # 색별 횟수 규칙 (발제 각 1-6)
     signal_max_count: 6
-    control_timeout_s: 1.0            # /odom · /control/motion_mode 끊김 → FAULT
+    control_timeout_s: 3.0            # /odom · /control/motion_mode 끊김 → FAULT (코드 기본 1.0)
     require_motion_mode: true         # MotionMode 따름: 주행은 DRIVE 일 때만, 팔 작업은 ready 일 때만 (control 없이 시험할 땐 false)
     drive_wait_s: 10.0                # 주행 단계에서 DRIVE 를 이만큼 못 받으면 HOME 끼워 넣음 (INIT 은 FAULT)
 
     # ---- 출발 · 준비 확인 (STANDBY) · 실행 중 감시 (require_* false = 그 항목 안 봄, 시험용)
     auto_start: false                 # true 면 준비되는 즉시 시작 (시험용). 대회는 /mission/start
+
+    # ---- 시험용 부분 실행. 기본 = 전부 끔 → 시연 흐름 그대로. 잘못된 값이면 노드가 시작 때 이유를 남기고 멈춤
+    #   예) 퍽 집기만:   signal_fixed:=RGRRGRGGYGYG barcode_fixed:=P2-01 collect_boxes:="[1, 2]" stop_after:=COLLECT
+    #       주사위만:    signal_fixed:=… barcode_fixed:=… start_phase:=DELIVER cargo_file:=<재고.yaml> cargo_restore:=true
+    #       재검증만:    signal_fixed:=… barcode_fixed:=… start_phase:=VERIFY  (이미 놓인 배치를 L1 → L2 → L3 로 봄)
+    #   HOME 은 늘 먼저 함. 재고 파일 칸 순서는 cargo_slots 와 같아야 함 (slots: - slot: S12 item: {puck_id, color, shape, task_id, verified})
+    signal_fixed: ""                  # "RGRRGRGGYGYG" = 신호등 안 보고 이 12 점멸로 (기록 규칙 · 횟수 규칙 검사 그대로)
+    barcode_fixed: ""                 # "P2-01" = 바코드 지점에 안 가고 이 원문으로 (barcode_table 에 있어야 함)
+    start_phase: ""                   # COLLECT | DELIVER (지금 재고로 배달 계획) | VERIFY. "" = 처음부터
+    stop_after: ""                    # READ_BARCODE | SIGNAL (바코드 · 신호로 배치 정한 직후, 주행 없음) | COLLECT (마지막 박스도 집기만) | DELIVER | VERIFY → 끝나면 복귀 · COMPLETED. "" = 끝까지
+    # collect_boxes: [1, 2]           # collect_order 에서 이 박스만. 안 쓰면 전부 (yaml 빈 목록 [] 은 타입이 없어 노드가 못 뜸 → 주석으로 둠)
     lifecycle_services: ["/lifecycle_manager_navigation/is_active"]   # localization_source: amcl 이면 /lifecycle_manager_localization 은 코드가 더함
     require_scan: true
-    scan_topics: [/lidar_front/scan, /lidar_rear/scan]   # 라이다 2 개 각각 감시, 하나라도 끊기면 SCAN_LOST (이동 차단). 실물 드라이버도 lidar_front/scan · lidar_rear/scan 로 띄운 것으로 앎 (사용자, 2026-11-01, 실물 ros2 topic list 로 최종 확인)
+    scan_topics: [/lidar_front/scan, /lidar_rear/scan]   # 라이다 2 개 각각 감시, 하나라도 끊기면 SCAN_LOST (이동 차단). 실물 드라이버도 lidar_front/scan · lidar_rear/scan 로 띄운 것으로 앎 (실물 ros2 topic list 로 최종 확인)
     scan_timeout_s: 1.0
     require_detections: true
     detection_topics: [/perception/wrist/detections]   # 받을 퍽 검출 토픽 (카메라마다 따로). 광각 /perception/wide/detections 는 위치가 NaN 이라 안 받음
-    detection_frames: ["d435_color_optical_frame"]   # 출력이 살아 있어야 하는 카메라 프레임 (DetectionArray.header.frame_id). D435 컬러 렌즈 (케이스 가운데 proxy 에서 32.5 mm, 2026-10-29)
+    detection_frames: ["d435_color_optical_frame"]   # 출력이 살아 있어야 하는 카메라 프레임 (DetectionArray.header.frame_id). D435 컬러 렌즈 (케이스 가운데 proxy 에서 32.5 mm)
     detection_timeout_s: 1.0
     require_localization: true
     localization_source: health       # health = pose_guard /localization_health (실물 slam_toolbox, nav2 localization:=slam) | amcl = /amcl_pose 공분산 (시뮬)
@@ -73,7 +98,24 @@ mission_manager:
     loc_ready_yaw_std_deg: 10.0
     loc_lost_xy_std_m: 0.30           # amcl 만: 실행 중 상실 판단
     loc_lost_yaw_std_deg: 30.0
-    loc_fault_s: 1.0                  # 위치 추정 상실이 이만큼 이어지면 FAULT
+    loc_fault_s: 2.5                  # 위치 추정 상실이 이만큼 이어지면 FAULT (loc_recovery false 일 때). pose_guard 정지 유지 (hold_s 1 s) 보다 충분히 길게
+    # 위치 추정 상실 복구 (FAULT 없음, 위 loc_fault_s · loc_max_recoveries 는 안 씀):
+    #   대기 → loc_wait_s 뒤 마지막 정상 자리 (odom 기준) 쪽으로 최대 loc_backoff_max_m 물러나기 (팔 접힘 · 빈 그리퍼 · 이동 단계일 때만)
+    #   → 상실 loc_degrade_s + map→odom 안정 (창 loc_stable_window_s 안 loc_stable_xy_m · loc_stable_yaw_deg 안) 이면 조건부 계속
+    #   → loc_force_s 넘으면 무조건 조건부 계속. 정상이 loc_ok_hold_s 이어지면 정상
+    loc_recovery: true
+    loc_ok_hold_s: 3.0
+    loc_wait_s: 10.0
+    loc_degrade_s: 30.0
+    loc_force_s: 60.0
+    loc_backoff_tries: 2
+    loc_backoff_max_m: 0.30
+    loc_backoff_min_m: 0.05
+    loc_backoff_timeout_s: 20.0
+    loc_backoff_lookback_s: 2.0      # 물러날 자리 = 상실 판정 이만큼 전 자세 (pose_guard 는 나빠진 뒤 1 s 넘어야 판정)
+    loc_stable_window_s: 5.0
+    loc_stable_xy_m: 0.03
+    loc_stable_yaw_deg: 2.0
     monitor_recover_s: 2.0            # scan · 검출 끊김: 회복이 이만큼 유지되면 해제
     monitor_max_recoveries: 2         # 자동 해제 최대 횟수 (start 마다 초기화)
     monitor_fault_s: 10.0             # 이만큼 회복 못 하면 FAULT
@@ -81,23 +123,121 @@ mission_manager:
     # ---- 액션
     action_retry_s: 1.0               # 팔 작업 거절 시 재전송 간격
     action_retry_max_s: 15.0
+    retrieve_retry_max_s: 5.0          # RETRIEVE 거절 재전송 한계 (거절은 다시 보내도 같음 → 빨리 실패 → retrieve_reject_skip_n 으로 건너뜀)
     server_wait_s: 30.0               # Nav2 · /arm_task 서버가 이만큼 안 뜨면 단계 실패 (INIT HOME 이면 FAULT)
     nav_timeout_s: 60.0
     arm_timeout_s: 60.0
     read_timeout_s: 5.0               # 바코드 지점 도착 뒤 읽기 대기
+    read_retries: 6                   # 안 읽히면 같은 자리에서 다시 읽기 (5 s × 6). 한 번 실패로 미션 전체를 포기하지 않게
+    dice_pip_frame: arena             # 주사위 눈 방향: arena = 발제 p.4 지도 +Y 기준 세 곳 같은 방향 · viewer = 보는 사람 기준
 
     # ---- 재고 (적재함 · 그리퍼)
-    cargo_slots: [S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12]   # URDF rack_cell_S* 이름, 팔에서 먼 칸부터 = 채우는 순서. dice 는 11 칸 이상 필요
+    # 채우는 순서 = 뒷줄부터 (base_link x −0.102 S1 · S2 → −0.042 S3 · S8 → +0.018 → +0.078). dice 는 11 칸 이상 필요
+    #   같은 줄 안은 넣기 제약 (rack_store_needs_empty) 순서: 안쪽 칸 (S11 · S12 · S10 · S9) 을 바깥 칸 (S6 · S7 · S5 · S4) 보다 먼저, S1 은 S2 보다 먼저
+    #   번호 순 (S1 → S12) 은 S4 → S9 · S5 → S10 등 넣기 제약을 어김 (S10 을 넣을 때 S5 퍽에 손가락이 닿음, pose_safety). 빼기 제약은 config/rack_cells.yaml
+    cargo_slots: [S1, S2, S3, S8, S11, S6, S12, S7, S10, S5, S9, S4]   # URDF rack_cell_S* 이름
+    rack_store_needs_empty: [""]   # 넣기 전에 비어야 할 칸 (config/rack_cells.yaml rack_constraints). 첫 빈 칸이 어기면 다음 빈 칸
+    rack_retrieve_needs_empty: [""]   # 빼기 전에 비어야 할 칸 (S7 ← S12 실제로 닿음 −13 mm). 같은 종류 중 지키는 칸 먼저
+    # STORE 앞에 LOOK_RACK (퍽 쥔 채 그 칸 관찰 자세, 칸마다 다름 = control 표). 칸 위치 · 쥔 퍽은 control_master 가 손목 태그로 잼
+    #   STORE target 은 빈 프레임 (= 녹화 경로 그대로). LOOK_RACK 거절이면 그대로 STORE
+    rack_look: true
+    wrist_enable_service: /perception/wrist/enable  # Nav2 · 정밀 접근 목표 진행 중에만 perception 손목 퍽 검출 끔 (CPU). "" = 안 부름 (늘 켜짐)
+    wrist_on_grace_s: 2.0                          # 켠 뒤 이 시간은 손목 검출 끊김 (DETECTION_LOST) 으로 안 셈
+    box_enable_service: /perception/box/enable     # 같은 때 손목 박스 측정도 끔 (미션은 장소 LOOK 뒤 측정만 씀). "" = 안 부름
+    # 장소 박스 측정 (손목 깊이 /perception/wrist/box): 장소 LOOK 뒤 측정 중앙값 = 칸 기준 (중심 + 박스 회전만큼 돈 눈)
+    #   못 받거나 지도 중심에서 box_max_shift_m 넘게 멀면 지도 값 (dice_map center)
+    box_measure: true
+    box_topic: /perception/wrist/box
+    box_min_samples: 3                # LOOK 뒤 이 개수 모이면 확정
+    box_wait_s: 2.0                   # LOOK 뒤 측정 기다리는 최대 시간
+    box_max_shift_m: 0.15             # 지도 중심에서 이보다 먼 측정은 버림
+    # 놓는 칸이 박스 테두리를 넘지 않게: 퍽 중심이 박스 중심에서 (반 변 − 퍽 반폭 − 여유) 안 (측정 박스 기준, 없으면 지도 박스)
+    #   기본 102.5 − 21.2 − 10 = 71.3 mm → 눈 간격 60 mm 는 그대로, 넘는 칸만 안쪽으로 옮김
+    place_box_half_m: 0.1025          # 박스 윗면 반 변
+    place_puck_half_m: 0.0212         # 퍽 발자국 반폭 (네모 30 mm 대각선 반)
+    place_edge_margin_m: 0.010        # 테두리 여유 (놓는 오차 · 측정 오차)
+    # 장소별 PLACE 놓는 점 보정 [앞, 왼쪽] mm — 정차점에서 장소를 보는 로봇 기준 (로봇은 늘 같은 정차점에서 장소를 봄). 놓는 목표에만 더함,
+    #   재검증 · 기록은 눈 점 그대로. 세 장소 공통 치우침은 control_master place_offset_x/y_mm (base_link) 로 (둘 다 더해짐)
+    #   실물에서 맞추기: 놓인 퍽이 눈 점보다 로봇 쪽으로 5 mm 면 앞 +5. 실행 중: ros2 param set /mission_manager place_offset_L1_mm "[5.0, 0.0]"
+    place_offset_L1_mm: [0.0, 0.0]
+    place_offset_L2_mm: [0.0, 0.0]
+    place_offset_L3_mm: [0.0, 0.0]
     cargo_file: ""                    # 재고 기록 파일 (빈 문자열 = 저장 안 함)
     cargo_restore: false              # 시작할 때 파일에서 복원 (노드 재시작 때만 true)
 
     # ---- 퍽
     puck_standoff_m: 0.30             # 퍽 앞에 설 거리 (approach 생기면 줄임)
+
+    # ---- 정밀 접근 (박스 · 장소 정차 0.2575 m = 면 1 cm)
+    dock_action: dock_to_pose         # RL 정밀 접근 노드 액션 (NavigateToPose 형). "" = 정차점으로 Nav2 바로 (가짜 세계)
+    dock_nav_back_m: 0.025            # Nav2 목표 = 정차점 뒤 이 거리 (박스 중심 0.2825 = 면 2 cm, nf 학습 구간 끝 · planner 가 경로 냄)
+    dock_timeout_s: 40.0
+    dock_handoff_m: 0.40              # 정차점 정면 통로 (뒤 이 거리 안) 에 들어오면 Nav2 취소 → 정밀 접근으로 넘김 (Nav2 목표가 더 멀어 감속 없이). 0 = Nav2 도착 뒤 넘김
+    dock_handoff_lat_m: 0.15          # 넘김 통로 옆 한계 (정밀 접근 학습 출발 broad 옆 ±15 cm). 거리만 보면 모퉁이를 돌기 전에 넘겨 벽 쪽으로 붙음
+    dock_handoff_yaw_deg: 60.0        # 넘김 통로 방향 한계 (broad ±60°). 통로에 안 들어오면 Nav2 도착 (면 2 cm) 뒤 넘김
+                                      #   좁으면 (5 cm · 15°) 돌면서 붙는 주행 정책이 너무 가까이서야 넘겨 박스를 못 잼
+    dock_box_topic: /dock/box_measured   # 정밀 접근 노드가 라이다로 잰 정차점 → 정차점 보정표 (같은 정차점 재시도 · 다시 오기 목표). "" = 안 씀
+    dock_fix_match_m: 0.05            # 이 거리 · 15° 안 단계 정차점 = 같은 정차점
+    dock_fix_max_m: 0.35              # 잰 정차점이 단계 정차점에서 이보다 멀면 안 씀
     pick_fresh_s: 2.0                 # 이보다 오래 전에 본 위치로는 집지 않음
     puck_half_height_m: 0.03          # 퍽 높이 6 cm 의 절반 (PLACE 때 놓은 퍽 중심 = place_height + 이 값)
     grasp_offset_m: 0.015             # 그리퍼 중심 = 퍽 중심 + 쥘 끝 방향으로 이 값 (긴축 한쪽 끝 3 cm 구간을 쥠, 적재함 설계 기준)
 
     # ---- 재시도
     nav_retries: 1
-    pick_retries: 2
-    place_retries: 1
+    pick_retries: 4
+    pick_relook: true                 # PICK 이 팔을 움직이고 실패하면 재시도 전 HOME → 같은 정차 LOOK 다시 → 그 뒤 검출로 집음
+    relook_wait_s: 1.5                # 다시 보기 LOOK 뒤 새 검출 기다리는 최대 시간, 안 오면 그 재시도 실패
+    # 박스 정밀 접근 실패 (박스가 지도 자리에 없음 등) → 빼기 전에 한 번: 정차점 box_relook_back_m 뒤에서 LOOK → box_relook_dwell_s 동안
+    #   박스 중심 box_relook_radius_m 안에서 본 퍽 (ID) 평균 = 새 박스 중심 (box_relook_max_shift_m 넘으면 안 씀) → 같은 방향 · 거리로 새 정차점, 그 박스 이동 다시
+    box_relook: true
+    box_relook_back_m: 0.12
+    box_relook_dwell_s: 1.5
+    box_relook_radius_m: 0.25
+    box_relook_max_shift_m: 0.25
+    place_retries: 4
+    empty_grasp_skip_n: 5   # PICK 빈손이 같은 퍽에 이 번 나오면 그 퍽 건너뜀 (그 전엔 다시 보고 다시 집기)
+    retrieve_empty_skip_n: 3   # RETRIEVE 빈손 뒤 퍽이 칸에 남음: 다시 꺼냄, 이 번째면 칸에 둔 채 건너뜀 (나머지로 계속)
+    box_retry_later: true   # 박스 이동이 재시도까지 실패하면 남은 박스 뒤에 한 번 더
+    # 재고 작업 (PICK · STORE · RETRIEVE · PLACE · LOOK_RACK) 이 움직인 뒤 실패 + control 결과 끝 그리퍼 실측 빈손 (GRIP:EMPTY · OPEN)
+    #   → FAULT 대신 확인 LOOK (적재함 빈손 스캔 · 장소 LOOK) 으로 before · done · removed 를 자동으로 고르고 재계획. 쥠 · 모름 · 안 맞음 = FAULT (사람)
+    auto_reconcile: true
+    # RETRIEVE 성공 결과 뒤 그리퍼 실측 빈손 = 못 꺼냄 → 실패 (위 자동 정합 = 적재함 스캔). 모름 · 쥠 = 성공 그대로
+    retrieve_hand_check: true
+    reconcile_wait_s: 1.5             # 확인 LOOK 뒤 검출 기다리는 최대 시간
+    reconcile_place_tol_m: 0.03       # 장소 확인: 그 칸에서 이 안이면 놓인 것
+    reconcile_scan_skip_home: true      # RETRIEVE 빈손 정합 스캔을 HOME 없이 (거절 · 실패면 HOME 뒤 한 번 더)
+    reconcile_look_rack: true           # RETRIEVE 빈손 정합 확인 = 그 칸만 빈손 LOOK_RACK (control look_rack_empty, 적재함 맞춤 안 함) → HOME. false = 적재함 전체 스캔
+    retrieve_reject_skip_n: 1           # RETRIEVE 가 control 에 계속 거절되면 이 번째에 그 퍽을 칸에 둔 채 건너뜀 (0 = 같은 RETRIEVE 반복)
+    rack_tags_topic: /rack_tags/detections
+    nav_fault_before_first: true   # 첫 이동 성공 전 이동 실패 = 주행 계통 문제 → FAULT NAV_NOT_WORKING (박스를 줄줄이 안 버림)
+    place_nav_fail_n: 2   # DELIVER 중 같은 장소 이동이 이 번 실패하면 그 장소 버리고 남은 장소부터
+    sensor_fault_hold_s: 60.0   # 라이다 · 검출 · 위치 감시 FAULT 를 팔 작업 · 퍽 쥔 동안 미루는 최대 시간
+    box_realign_shift_m: 0.04   # 장소 측정 박스가 기대 자리에서 이만큼 넘게 다르면 측정 박스 기준 정차점으로 다시 붙음
+    box_realign_yaw_deg: 8.0   #   또는 방향이 이만큼 넘게 다르면
+    box_realign_max: 1   #   장소마다 task 당 다시 붙기 횟수 (0 = 끔)
+    path_retry_total_s: 40.0   # 경로 계획 실패면 기다렸다 다시, 이동 단계마다 총 시간 (0.0 = 끔)
+    path_retry_wait_s: [5.0, 10.0]   # n 번째 기다림, 끝 값 반복
+    path_fail_quick_s: 5.0   # 이유 코드 없는 실패를 경로 실패로 보는 최대 시간
+    path_fail_still_m: 0.05   # 그동안 움직임 한도
+    alloc_prefer_more_pucks: true   # 같은 장소 수면 놓는 퍽 많은 쪽
+    fill_partial_places: true
+    bc_panel_arena: [0.05, 0.93, 0.20]   # 바코드 벽 판 가운데 [x y z] 경기장 m (z = 바닥 위), [] = 판 안 씀
+    bc_panel_size: [0.36, 0.39]   # 판 폭 · 높이 m
+    bc_panel_margin_m: 0.08   # 광각 상자는 판 + 이 여유 안만 씀
+    bc_panel_depth_tol_m: 0.20   # 라이다 판 면이 지도보다 멀 때 이 안이면 씀
+    bc_panel_sweep_m: [0.0, -0.12, 0.12]   # 판 따라 훑기 가로 자리
+    bc_renudge_m: 0.04   # 다가간 뒤에도 팔이 안 닿으면 이만큼 더 가까이
+    bc_approach_min_m: 0.30   # 바코드까지 가장 가까이 가는 거리
+    wide_brightness: -20   # 광각 캡처를 다시 켤 때 다시 넣는 v4l2 밝기 (bringup 과 같게)
+    wide_device: /dev/v4l/by-id/usb-Arducam_Technology_Co.__Ltd._USB_2.0_Camera_SN0001-video-index0   # 광각 장치 (by-id)
+    lying_backoff_x_m: 0.20   # 누운 퍽이 x 보다 가까우면 안 집고 곧게 뒤로 뺀 뒤 다시 LOOK (0 = 끔)
+    lying_backoff_upright_x_m: 0.10   # 선 퍽 (방향 모름 포함) 이 x 보다 가까우면 뒤로 (0 = 끔)
+    lying_backoff_target_x_m: 0.25   # 뒤로 뺀 뒤 가장 가까운 퍽 x 목표
+    lying_backoff_max_m: 0.12   # 뒤로 빼는 최대 거리
+    lying_backoff_speed_mps: 0.10
+    lying_backoff_drive_wait_s: 3.0   # DRIVE 기다리는 최대 시간
+    lying_backoff_cmd_topic: /cmd_vel_nav   # collision_monitor 를 거치는 명령 토픽
+    lying_backoff_cm_node: /collision_monitor
+    lying_backoff_polygons: [PolygonStop]   # 뒤로 빼는 동안 끄는 영역
+    signal_back_m: 0.05   # 바코드를 읽은 뒤 신호 기록은 출발 자리에서 이만큼 뒤에서

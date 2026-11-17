@@ -1,9 +1,11 @@
-# Detection.msg — 퍽 검출 1 개
+# Detection.msg — 퍽 검출 1 개 (또는 적재함 칸 1 개)
 #
 # 역할
 #   - 영상 한 장에서 찾은 퍽 하나의 색 · 모양 · 태그 ID · 자세
 # 토픽
 #   - DetectionArray 안에 담겨 /perception/wrist/detections · /perception/wide/detections 로 나감
+#   - 적재함 칸 태그는 /rack_tags/detections (control_master): kind "rack_tag" · "rack_puck", label "S1"…, id = 태그 ID, frame_id = base_link
+#   - 박스 윗면은 /perception/wrist/box: kind "place_box", frame_id = base_footprint, pose = 윗면 중심 + yaw (90° 주기)
 # 보내는 쪽 → 받는 쪽
 #   - perception_node → mission_manager
 # note
@@ -13,7 +15,7 @@
 
 std_msgs/Header header        # stamp = 촬영 시각, frame_id = pose 기준 카메라 광학 프레임
 
-string kind                   # "puck"
+string kind                   # perception: "puck" | "place_box" | "held_image", control: "rack_tag" | "rack_puck" | "puck_pnp" | "held_tag" | "held_tag_fresh" | "seat_pose"
 string label                  # "red" | "green"
 string shape                  # "cylinder" | "box", 모르면 ""
 string id                     # AprilTag ID 문자열 "0"–"11", 못 읽으면 ""
@@ -24,3 +26,4 @@ bool yaw_known                # x 축을 믿어도 되는지
                               #   true  = x 축이 사각기둥 면 법선, 90° 주기. 선 퍽 = 윗면 윤곽으로, 누운 퍽 = 위쪽
                               #   false = z 축만 믿음. 원기둥 · 면 방향 못 구한 사각기둥 · 모서리로 기댄 사각기둥
 float32[4] bbox               # x_min, y_min, x_max, y_max, 원본 영상 픽셀
+bool center_from_tag          # true = pose.position 을 퍽 윗면 태그로 잼 (선 퍽 윗면 · 누운 퍽의 위를 향한 옆면), false = 깊이 점 (비스듬히 보면 수 mm 치우침)

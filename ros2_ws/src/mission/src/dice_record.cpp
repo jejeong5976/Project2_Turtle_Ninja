@@ -40,6 +40,33 @@ std::string str_list(const std::vector<std::string> & v)
 
 std::string place_name(int p) {return "L" + std::to_string(p + 1);}
 
+std::string blinks_json(const std::vector<SignalBlink> & b, double start_s, const char * indent)
+{
+  std::ostringstream j;
+  j << "[";
+  for (size_t i = 0; i < b.size(); ++i) {
+    j << "\n" << indent << "{\"n\": " << i + 1 << ", \"color\": " << str(std::string(1, b[i].color)) << ", \"start_s\": " <<
+      num(b[i].start - start_s, 2) << ", \"end_s\": " << num(b[i].end - start_s, 2) << "}" << (i + 1 < b.size() ? "," : "");
+  }
+  j << (b.empty() ? "]" : "\n" + std::string(indent).substr(2) + "]");
+  return j.str();
+}
+
+std::string partial_json(const SignalPartial & p, double start_s, const char * indent)
+{
+  const std::string in(indent);
+  std::ostringstream j;
+  j << "{\n";
+  j << in << "\"partial\": " << p.n << ",\n";
+  j << in << "\"parked_s\": " << num(p.parked - start_s, 2) << ",\n";
+  j << in << "\"sequence\": " << str(p.sequence) << ",\n";
+  j << in << "\"count\": " << p.blinks.size() << ",\n";
+  j << in << "\"blinks\": " << blinks_json(p.blinks, start_s, (in + "  ").c_str()) << ",\n";
+  j << in << "\"issues\": " << str_list(p.issues) << "\n";
+  j << in.substr(2) << "}";
+  return j.str();
+}
+
 // map → 경기장 [mm]
 std::array<double, 2> arena_mm(const DiceMap & a, double x, double y)
 {
@@ -111,7 +138,7 @@ std::string allocation_to_json(const AllocationRecord & r, const DicePlan & plan
       if (c.puck_id == p.id) {to = place_name(c.place) + "#" + std::to_string(c.cell);}
     }
     j << "    {\"id\": " << str(p.id) << ", \"color\": " << str(p.color) << ", \"shape\": " << str(p.shape) <<
-      ", \"where\": " << str(p.where) << ", \"to\": " << str(to) << "}" << (i + 1 < r.pucks.size() ? "," : "") << "\n";
+      ", \"where\": " << str(p.where) << ", \"to\": " << str(to) << ", \"seen_as\": " << str(p.seen_as) << "}" << (i + 1 < r.pucks.size() ? "," : "") << "\n";
   }
   j << "  ],\n";
   std::vector<std::string> vo;
@@ -146,9 +173,22 @@ std::string signal_to_json(const SignalRecorder & rec, double start_s, bool time
   auto issues = rec.issues();
   if (timed_out && !rec.finished()) {issues.push_back("signal_wait_s 안에 기록이 안 끝남");}
   j << "  \"issues\": " << str_list(issues) << ",\n";
-  j << "  \"note\": \"시각은 planning 시작 기준 [s]. '?' = 색을 정하지 못한 점멸 (추정해 채우지 않음)\"\n";
+  // 12 개 전에 끝 소등이 온 시퀀스 (본 그대로). 위 sequence 에 이어 붙이지 않음
+  const auto & ph = rec.partial_history();
+  j << "  \"partials\": [";
+  for (size_t i = 0; i < ph.size(); ++i) {j << (i ? ", " : "\n    ") << partial_json(ph[i], start_s, "      ");}
+  j << (ph.empty() ? "],\n" : "\n  ],\n");
+  j << "  \"note\": \"시각은 planning 시작 기준 [s]. '?' = 색을 정하지 못한 점멸 (추정해 채우지 않음). partials = 12 개 전에 끝 소등이 온 시퀀스 (참고, 결과 아님)\"\n";
   j << "}\n";
   return j.str();
+}
+
+std::string signal_partial_to_json(const SignalPartial & p, double start_s)
+{
+  std::string body = partial_json(p, start_s, "  ");
+  // {"kind": "signal_partial", …}
+  body.insert(2, "  \"kind\": \"signal_partial\",\n");
+  return body + "\n";
 }
 
 }  // namespace mission

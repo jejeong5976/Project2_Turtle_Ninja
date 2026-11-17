@@ -2,15 +2,14 @@
 
 - 대상 노드: `mission_manager` (패키지 `mission`)
 - 기준 코드: main `b55aeb4`(PR #2 `feat/base-drive` 머지) + 브랜치 `feat/planning-core`
-- 작성 2026-10-20, 갱신 2026-10-21 (코드 구현 기준으로 다시 씀), 2026-10-22 (상태 2층 구조 · 출발 신호 · 준비 확인 · 실행 중 감시), 2026-11-01 (planning / mission 패키지 분리, 옛 move 흐름 · 신호등 구역 규칙 삭제)
-- 패키지 구조 (2026-11-01)
+- 패키지 구조
 
 | 패키지 | 내용 |
 |---|---|
-| `planning` (실행 층, 미션 내용 모름) | 라이브러리 `planning_core` (types · puck_registry · cargo · health · grasp, ROS 없음) + `planning_exec` (`Executor`: Nav2 · `/arm_task` 호출, 재시도, HOME 끼워 넣기, DRIVE 대기, 감시, 퍽 기록부, 재고, `/mission/cargo` · `/planning/markers`). 실행 파일 없음 (2026-11-02 `record_point` · `mission_map` 삭제) |
-| `mission` (발제 v5 미션) | 계산 파일 dice · dice_map · dice_steps · dice_verify · dice_record · transfer_* · signal_recorder · task_parser + 노드 `mission_manager` (`mission_manager.cpp`), `launch/mission.launch.py` |
+| `planning` (실행 층, 미션 내용 모름) | 라이브러리 `planning_core` (types · puck_registry · cargo · health · grasp · inventory_policy, ROS 없음) + `planning_exec` (`Executor`: Nav2 · `/arm_task` 호출, 재시도, HOME 끼워 넣기, DRIVE 대기, 감시, 퍽 기록부, 재고, `/mission/cargo` · `/planning/markers`). 실행 파일 없음 (`record_point` · `mission_map` 삭제) |
+| `mission` (발제 미션) | 계산 파일 dice · dice_map · dice_steps · dice_verify · dice_record · transfer_* · signal_recorder · task_parser + 노드 `mission_manager` (`mission_manager.cpp`), `launch/mission.launch.py` |
 
-- 의존 방향: mission → planning (반대 없음). 노드 이름 `mission_manager` (2026-11-02 옛 `planning_master` 에서 바꿈, 토픽 · 서비스 · 파라미터 이름은 그대로, `config/planning.yaml` 최상위 키만 바뀜)
+- 의존 방향: mission → planning (반대 없음). 노드 이름 `mission_manager` (`config/planning.yaml` 최상위 키)
 - 표시: **[구현]** 코드에 있음, **[계획]** 합의 · 구현 전
 - 확정 사항
   - task는 벽에 붙은 1D 바코드로 읽음. 내용 형식 미정 → perception은 원문만 넘기고 해석은 planning
@@ -52,8 +51,8 @@ perception ──────/perception/traffic_light┤  (신호등 최종 상
                                            │          ──/mission/cargo──▶ 대시보드
                                            │          ──/planning/markers▶ RViz
                                            ├─ navigate_to_pose (액션) ──▶ Nav2
-                                           ├─ /arm_task        (액션) ──▶ control_master
-                                           └─ /approach        (액션) ──▶ [계획] 정밀 정렬
+                                           ├─ dock_to_pose     (액션) ──▶ 정밀 접근 (rl_dock / simple_dock)
+                                           └─ /arm_task        (액션) ──▶ control_master
 ```
 
 ---
@@ -62,10 +61,11 @@ perception ──────/perception/traffic_light┤  (신호등 최종 상
 
 | 토픽 | 타입 | 보내는 쪽 | QoS | planning이 하는 일 |
 |---|---|---|---|---|
-| `/perception/wrist/detections` (`detection_topics`) | `interfaces/DetectionArray` | perception 손목 | reliable, depth 10 | 촬영 시각 TF로 map(기록부) · odom(집기용) 변환. 2026-11-02 카메라별 토픽으로 분리 (광각 `/perception/wide/detections` 는 위치 NaN 이라 안 받음) |
+| `/perception/wrist/detections` (`detection_topics`) | `interfaces/DetectionArray` | perception 손목 | reliable, depth 10 | 촬영 시각 TF로 map(기록부) · odom(집기용) 변환. 카메라별 토픽으로 분리 (광각 `/perception/wide/detections` 는 위치 NaN 이라 안 받음) |
 | `/perception/task_text` | `interfaces/TaskText` | perception | reliable, depth 10 | 바코드 원문 → `parse_task` |
 | `/perception/traffic_light` | `interfaces/TrafficLight` | perception | reliable, depth 10 | 출발 구역에서 점멸 순서 기록 (9.1절). 구역 정지 규칙(9.2절)은 기본 꺼짐 |
 | `/control/motion_mode` | `interfaces/MotionMode` | control_master (10 Hz) | reliable, transient_local, depth 1 | 주행 = DRIVE일 때만, 팔 작업 = `ready`일 때만. 끊기면 FAULT |
+| `/wrist_cam/drift` (`drift_topic`) | `geometry_msgs/QuaternionStamped` | camera_drift_node (HOME 마다) | reliable, transient_local 1 | 손목 카메라가 돈 만큼. 재검증용 원시 관측에만 되돌려 곱함 (카메라 좌표 p → R · p), 기록부 · PICK 목표는 명목 TF (control_master 가 따로 되돌림). `""` = 안 씀 |
 | `/odom` | `nav_msgs/Odometry` | swerve_controller (50 Hz) | reliable, depth 10 | 준비 확인, RUNNING 중 끊기면 FAULT |
 | `/lidar_front/scan` · `/lidar_rear/scan` (`scan_topics`) | `sensor_msgs/LaserScan` | 라이다 드라이버 2 개 | SensorData | 라이다마다 생존 확인만 (준비 확인, 하나라도 끊기면 이동 차단) |
 | `/localization_health` | `diagnostic_msgs/DiagnosticStatus` | navigation `pose_guard` (slam.launch.py) | 기본, 5 Hz | `localization_source: health` (기본, 실물 slam_toolbox). level 0 정상 · 1 경고 · 2 정지, 2 이상 · 끊김 = 상실 |
@@ -81,7 +81,7 @@ perception ──────/perception/traffic_light┤  (신호등 최종 상
 | `pose.position`이 NaN · `frame_id` 빈 것 · TF 변환 실패 → 버림 | - | - |
 | ID 못 읽은 후보를 오래 못 보면 삭제 | 30 s | `candidate_max_age_s` |
 | `/perception/traffic_light` 끊김 → UNKNOWN + 못 찾음으로 봄 | 1.0 s | `signal_timeout_s` |
-| `/odom` · `/control/motion_mode` 끊김 → FAULT (RUNNING) | 1.0 s | `control_timeout_s` |
+| `/odom` · `/control/motion_mode` 끊김 → FAULT (RUNNING) | 3.0 s (코드 기본 1.0) | `control_timeout_s` |
 | 검출 출력 생존은 카메라 프레임별 (`DetectionArray.header.frame_id`, 빈 배열도 출력) | d435_color_optical_frame | `detection_frames` |
 | MotionMode 따르기 (control 없이 시험할 땐 false) | true | `require_motion_mode` |
 
@@ -98,7 +98,7 @@ perception ──────/perception/traffic_light┤  (신호등 최종 상
 | `/planning/markers` | `visualization_msgs/MarkerArray` | RViz | 2 Hz | 퍽 기록부(색 원기둥 + ID), 후보(구), Nav2 목표(화살표) |
 | `/planning/perception_request` | `PerceptionRequest` | perception | - | [계획, 선택] 지금 찾는 대상 |
 
-- `/mission/hold`: twist_mux 대신 `cmd_vel_hold` 가 받음 (2026-10-28). Nav2 `cmd_vel_nav` → collision_monitor → `cmd_vel_safe` → `cmd_vel_hold` → `/cmd_vel` → swerve_controller. true 면 Nav2 명령을 버리고 0 을 보냄. teleop 이 `/cmd_vel` 로 직접 보내면 안 거침. 2026-11-01: `nav2.launch.py mission_hold:=true` (기본) 면 hold 를 받기 전에도 막고 (`start_hold`), hold 가 2.5 s 넘게 안 오면 막음 (mission_manager 가 죽으면 멈춤). Nav2 단독 시험은 `mission_hold:=false`. 운영 규칙: Nav2 를 띄운 동안 teleop 금지, 매핑 · 수동 시험은 Nav2 없이
+- `/mission/hold`: twist_mux 대신 `cmd_vel_hold` 가 받음. Nav2 `cmd_vel_nav` → collision_monitor → `cmd_vel_safe` → `cmd_vel_hold` → `/cmd_vel` → swerve_controller. true 면 Nav2 명령을 버리고 0 을 보냄. teleop 이 `/cmd_vel` 로 직접 보내면 안 거침.: `nav2.launch.py mission_hold:=true` (기본) 면 hold 를 받기 전에도 막고 (`start_hold`), hold 가 2.5 s 넘게 안 오면 막음 (mission_manager 가 죽으면 멈춤). Nav2 단독 시험은 `mission_hold:=false`. 운영 규칙: Nav2 를 띄운 동안 teleop 금지, 매핑 · 수동 시험은 Nav2 없이
 
 ---
 
@@ -110,7 +110,18 @@ perception ──────/perception/traffic_light┤  (신호등 최종 상
 |---|---|
 | `/mission/start` | STANDBY + 준비 완료일 때만 RUNNING. 경기 시간 시작(첫 start). 안 되면 거절 + 준비 안 된 이유. 사람이 RViz로 위치 확인한 뒤 호출 |
 | `/mission/resume` | FAULT → STANDBY. 취소한 팔 · Nav2 목표의 최종 결과를 받기 전이면 거절. 다시 start 해야 움직임 |
-| `/mission/clear_gripper` | 그리퍼 재고 기록 지움 (사람이 퍽을 빼고 확인한 뒤). 기록이 남아 있으면 start 거절 |
+| `/mission/clear_gripper` | 그리퍼 재고 기록 지움 (사람이 퍽을 로봇 밖으로 뺀 뒤, 그 퍽은 이번 미션에서 안 씀). 기록이 남아 있으면 start 거절 |
+| `/mission/inventory_returned` | 사람이 손의 퍽을 빼서 그 퍽 원래 박스 위에 되돌려 놓음 → 그리퍼 기록 비움 · 퍽 박스 위 (on_field), 이어 하기에서 다시 집음. 쥔 채 실패한 STORE · LOOK_RACK · PLACE 불확실이면 before 정합 같이 |
+
+재고 자동 정합 (`auto_reconcile`, 기본 켬): 재고 작업이 움직인 뒤 실패하면 control 이 결과 끝에 그리퍼 실측 `GRIP:EMPTY|OPEN|HOLD|UNKNOWN <m>` 을 붙임. 빈손 (EMPTY · OPEN) 이면 FAULT 대신 아래로 자동 정합 → 실패 자리에서 재계획. 쥠 · 모름 · 표시 없음 · 증거가 안 맞으면 지금처럼 FAULT INVENTORY_UNCERTAIN (사람 `inventory_*` · `inventory_returned`).
+
+| 실패 작업 | 확인 | before | done | removed (잃음) |
+|---|---|---|---|---|
+| PICK | 없음 (빈손 = 퍽은 박스) | 늘 → 빈손 PICK 처럼 다시 보고 다시 집기 | - | - |
+| STORE | 빈손 적재함 LOOK (`slot rack`, `/rack_tags/detections`) | - | 칸 S 에 그 퍽 | 칸 S 바닥 태그 보임 (빔) |
+| RETRIEVE | 같음 | 칸 S 에 그 퍽 (다시 꺼냄) | - | 칸 S 빔 |
+| LOOK_RACK | 같음 | - | - | 그 퍽 안 보임 + 빈 칸 3 개 이상 봄 (칸 안에 보이면 FAULT) |
+| PLACE | 그 장소 LOOK (손목 검출) | - | 그 칸 `reconcile_place_tol_m` 안 | 장소에 안 보임 (검출은 옴), 다른 자리에 보이면 FAULT |
 
 부르는 서비스 [구현]: Nav2 `lifecycle_manager`의 `/<매니저>/is_active` (Trigger, 1 Hz, `lifecycle_services`)
 
@@ -119,8 +130,8 @@ perception ──────/perception/traffic_light┤  (신호등 최종 상
 | 이름 | 타입 | 서버 | 상태 |
 |---|---|---|---|
 | `navigate_to_pose` | `nav2_msgs/action/NavigateToPose` | Nav2 | [구현] 목표 frame `map` |
+| `dock_to_pose` (`dock_action`) | `nav2_msgs/action/NavigateToPose` | RL 정밀 접근 노드 | [구현] 박스 · 장소 이동 2 단계: Nav2 목표 = 정차점 뒤 `dock_nav_back_m` 0.025 m, 정차점 정면 통로 (뒤 `dock_handoff_m` 0.40 m · 옆 `dock_handoff_lat_m` 0.15 m · 방향 `dock_handoff_yaw_deg` 60°) 안에서 Nav2 취소 → 이 액션으로 정차점 (0.2575 m, 면 1 cm). 노드가 collision_monitor 영역을 끄고 켬 · 목표를 odom 에 고정 |
 | `/arm_task` | `interfaces/action/ArmTask` | control_master | [구현] HOME · PICK · PLACE · STORE · RETRIEVE · LOOK · LOOK_BARCODE (control 은 HOME · PICK · PLACE 만 구현) |
-| `/approach` | `Approach.action` | 미정 | [계획] 정밀 정렬 |
 | `/perception/check_slot` | `CheckSlot.srv` | perception | [계획, 선택] 적재함 칸 확인 |
 
 액션 규칙 [구현]
@@ -132,7 +143,7 @@ perception ──────/perception/traffic_light┤  (신호등 최종 상
 | 결과 대기 최대 시간 | 60 s / 60 s | `nav_timeout_s`, `arm_timeout_s` |
 | FAULT · 복귀 시작 → 진행 중 Nav2 목표 취소 | 즉시 | - |
 | FAULT → 진행 중 팔 작업 취소 | 즉시 | - |
-| 취소한 목표(팔 · Nav2)의 최종 결과 전에는 새 목표 안 보냄 (2026-11-01) | 넘으면 단계 실패 (HOME 이면 FAULT) | `server_wait_s` |
+| 취소한 목표(팔 · Nav2)의 최종 결과 전에는 새 목표 안 보냄 | 넘으면 단계 실패 (HOME 이면 FAULT) | `server_wait_s` |
 | 팔 시간 초과 → 취소 → 최종 결과까지 기다려 판정. 결국 성공이면 단계 성공 + 재고 반영, 아니면 실패 + HOME 필요 | - | `arm_timeout_s` |
 | FAULT 등으로 취소한 팔 작업이 결국 성공 → 재고 · 기록부에 반영 (그리퍼 기록 → start 전 `/mission/clear_gripper` 확인) | - | - |
 
@@ -145,19 +156,20 @@ control_master 동작에 맞춘 규칙 [구현]
 | HOME 실패 → 바퀴 못 풂 | HOME 실패 = FAULT |
 | `ready=false`면 ArmTask 거절 | `ready=true`일 때만 보냄 |
 | 바퀴는 DRIVE일 때만 움직임 | Navigate는 DRIVE일 때만 진행 (대기 원인 DRIVE_LOST). `drive_wait_s`(10 s) 넘으면 HOME 끼워 넣음. DRIVE 받기 전 두 번째 HOME이면 FAULT |
+| LOOK 류 뒤 그 자세 유지, `lazy_fold` 면 STORE · PLACE 뒤 P0 (바퀴 잠금 유지) | 그 작업들 뒤 Navigate 앞에 바로 HOME 끼워 넣음 (이미 DRIVE 면 건너뜀) |
 | 팔 진행 feedback `phase` | `/mission/status.arm_phase`에 표시 |
 
 ---
 
 ## 6. ArmTask.target 약속 [planning 구현, control IK 합의 대기]
 
-- control_master는 지금 target을 안 쓰고 고정 자세로 동작함 (시험용). IK로 target을 쓰도록 바뀔 예정 (2026-10-21 control 담당 확인)
+- control_master는 지금 target을 안 쓰고 고정 자세로 동작함 (시험용). IK로 target을 쓰도록 바뀔 예정 (control 담당 확인)
 
 | 항목 | 값 |
 |---|---|
 | frame | `base_link`, 보내는 순간 기준 |
 | `position` | **그리퍼 중심이 갈 점** = 퍽 중심 + 쥘 끝 방향 × `grasp_offset_m`(0.015) → 쥘 쪽 3 cm 구간의 가운데 |
-| `orientation` | z 축 = **쥘 끝** 방향. x 축 = 아래 규칙 (`grasp_orientation`, 2026-10-27). perception 이 방향을 안 줬으면 (0,0,0,0) |
+| `orientation` | z 축 = **쥘 끝** 방향. x 축 = 아래 규칙 (`grasp_orientation`). perception 이 방향을 안 줬으면 (0,0,0,0) |
 | HOME | position (0,0,0), orientation (0,0,0,0) |
 
 쥘 끝 고르기 (`choose_grasp_axis`, 퍽은 위아래 대칭 → 양 끝 모두 가능)
@@ -211,8 +223,8 @@ float32 confidence            # 0.0 ~ 1.0
 geometry_msgs/Pose pose       # 퍽 중심 [m] · 퍽 자세 (z 축 = 긴축 6 cm 방향)
                               #   위치 모르면 position 전부 NaN
                               #   방향 모르면 orientation (0,0,0,0) — msg 기본값이 w=1 이라 w=0 을 직접 넣어야 함
-bool yaw_known                # [신규 2026-10-27] 퍽 x 축(사각기둥 면 방향)을 믿어도 되는지
-                              #   true = x 축이 사각기둥 면 법선 (선 = 윗면 윤곽, 누움 = 위쪽 · 2026-10-29), false = z 축(긴축)만 믿음
+bool yaw_known # [신규 ] 퍽 x 축(사각기둥 면 방향)을 믿어도 되는지
+                              #   true = x 축이 사각기둥 면 법선 (선 = 윗면 윤곽, 누움 = 위쪽), false = z 축(긴축)만 믿음
 float32[4] bbox               # [x_min, y_min, x_max, y_max] 원본 영상 픽셀
 ```
 
@@ -235,14 +247,14 @@ uint8 UNKNOWN=0
 uint8 RED=1
 uint8 YELLOW=2
 uint8 GREEN=3
-uint8 OFF=4                   # 2026-10-28 추가: 보이고 불이 모두 꺼짐 (점멸 기록은 소등으로 점멸을 구별)
+uint8 OFF=4 #  추가: 보이고 불이 모두 꺼짐 (점멸 기록은 소등으로 점멸을 구별)
 std_msgs/Header header
 uint8 state
 bool visible                  # OFF + true = 소등, UNKNOWN + true = 애매, UNKNOWN + false = 못 찾음
 ```
 
 ```
-# SignalRecord.msg — 신호등 점멸 기록 결과 (planning → 대시보드 · 이후 task 계산), 2026-10-28
+# SignalRecord.msg — 신호등 점멸 기록 결과 (planning → 대시보드 · 이후 task 계산),
 uint8 WAITING=0 / RECORDING=1 / DONE=2 / INCOMPLETE=3
 std_msgs/Header header
 uint8 status
@@ -266,7 +278,7 @@ string task_id
 bool verified                 # 카메라로 확인했는가 (지금은 기록만 → false)
 ```
 
-### 7.2 MissionStatus [구현, 2026-10-21 확장 · 10-22 상태 구조 반영]
+### 7.2 MissionStatus [구현, 확장 · 상태 구조 반영]
 
 - main 필드 5개는 유지 (state 값만 운영 상태로 바뀜), 아래에 필드 추가 (main에서 이 msg를 쓰는 다른 노드 없음)
 
@@ -326,8 +338,10 @@ ArmTask 확장 요청 [계획, control 합의 필요]
 | 추가 | 쓰는 곳 |
 |---|---|
 | `STORE=3`, `RETRIEVE=4` + `string slot` | 적재함 넣기 · 꺼내기 (planning 재고 전환은 구현됨) |
-| `PUSH=5` | 퍽 치기 (밀어 넘어뜨리기) |
-| `LOOK=6` | 바코드 · 퍽 관찰 자세 |
+| `LOOK=5` | 박스 · L1 · L2 · L3 관찰 자세 (격자 중심이 정차점 앞 0.2575 m). 시뮬 자세 `initial_pose.json` LOOK_PUCK |
+| `LOOK_BARCODE=6` | 출발 구역 벽 바코드 정면 보기 |
+| (7 비움) | 번호 재사용 안 함 |
+| `PUSH` (번호 미정) | 퍽 치기 (밀어 넘어뜨리기) |
 | 결과 `uint8 error` (UNREACHABLE · NO_OBJECT · HW_FAULT …) | 실패 이유별 처리 (다시 서기 / 포기 / FAULT) |
 | 결과 `bool holding` | PICK 성공 확인 |
 
@@ -337,20 +351,20 @@ ArmTask 확장 요청 [계획, control 합의 필요]
 
 ---
 
-## 8. 상태 · 단계 [구현, 2026-10-22 2층 구조]
+## 8. 상태 · 단계 [구현, 2층 구조]
 
 - 위층 = 로봇 운영 상태 4개, 아래층 = 미션 단계 4개 (RUNNING 안). 신호등 · 센서 대기는 상태가 아니라 **대기 원인 목록**
-- 설계 검토: Codex 와 토의 후 단순화 (PREPARING + WAIT_START → STANDBY, PAUSED + SUSPENDED → 대기 원인)
 
 ```
 STANDBY ──/mission/start──▶ RUNNING ──미션 끝──▶ DONE (COMPLETED · RETURN_FAILED)
    ▲                           │ 이상
    └──/mission/resume── FAULT ◀┘
-RUNNING 안:  HOME → READ_BARCODE → OBSERVE_SIGNAL → COLLECT → DELIVER → VERIFY → RETURN_HOME   (발제 v5 순서: 바코드 → 12회 점멸 관측 → 이동, 2026-11-01)
+RUNNING 안: HOME → READ_BARCODE → OBSERVE_SIGNAL → COLLECT → DELIVER → VERIFY → RETURN_HOME (발제 순서: 바코드 → 12회 점멸 관측 → 이동)
 ```
 
-- `OBSERVE_SIGNAL` (2026-10-28, 순서 2026-11-01): 첫 바코드를 읽은 뒤 출발 구역에 선 채 신호등 점멸 기록 끝까지 기다림 (9.1절). 기록은 STANDBY · HOME · 첫 READ_BARCODE 중에도 하므로 운영자가 언제 시작해도 놓치지 않음. 끝나거나 `signal_wait_s` 넘으면 COLLECT, 이미 끝났으면 건너뜀. 기록이 불완전하면 움직이지 않고 복귀 처리 (`DONE`)
+- `OBSERVE_SIGNAL` (순서): 첫 바코드를 읽은 뒤 출발 구역에 선 채 신호등 점멸 기록 끝까지 기다림 (9.1절). 기록은 STANDBY · HOME · 첫 READ_BARCODE 중에도 하므로 운영자가 언제 시작해도 놓치지 않음. 끝나거나 `signal_wait_s` 넘으면 COLLECT, 이미 끝났으면 건너뜀. 기록이 불완전하면 움직이지 않고 복귀 처리 (`DONE`)
 - `READ_BARCODE` 동안만 perception 바코드 판독을 켬: `barcode_enable_service` (기본 `/perception/barcode/enable`, std_srvs/SetBool) 에 true, 다른 단계 · FAULT · DONE 이면 false. 응답 받을 때까지 1 s 마다 다시 보냄
+- 신호 기록이 Done 이 되면 perception 광각을 끔: `wide_enable_service` (기본 `/perception/wide/enable`) 에 false, Done 전 (`/mission/reset_signal` 뒤 포함) 은 true. 뒤 단계는 손목만 써서 Jetson CPU 를 덜 씀. 광각 퍽 검출 (RViz 용) 도 같이 멈춤. usb_cam 캡처도 같이 멈춤 (`wide_capture_service`, 기본 `/wide_cam/set_capture`): perception 을 꺼도 usb_cam 은 MJPG 를 계속 디코딩해 CPU 약 40 % 를 씀
 
 | 위층 | 하는 일 | 다음 |
 |---|---|---|
@@ -358,6 +372,19 @@ RUNNING 안:  HOME → READ_BARCODE → OBSERVE_SIGNAL → COLLECT → DELIVER �
 | `RUNNING` | 미션 단계 실행 | 미션 끝 → `DONE` / 이상 → `FAULT` |
 | `DONE` | 정지, 결과 기록 | - |
 | `FAULT` | 모든 목표 취소, hold true, 원인 코드 기록 | `/mission/resume` (사람 확인) → `STANDBY` |
+
+시험용 부분 실행 (`config/planning.yaml`, 기본 = 전부 끔)
+
+| 파라미터 | 값 | 동작 |
+|---|---|---|
+| `signal_fixed` | `RGRRGRGGYGYG` | 신호등 입력 대신 이 12 점멸을 기록기에 넣음 (1 s 켜짐 · 1 s 소등, 같은 판정 규칙 → Done). `/mission/reset_signal` = 같은 값 다시. 준비 확인 `TRAFFIC_LIGHT` 안 봄 |
+| `barcode_fixed` | `P2-01` | 바코드 지점 이동 · LOOK_BARCODE 없이 이 원문으로 task. 준비 확인 `BARCODE_SERVICE` 안 봄 |
+| `start_phase` | `COLLECT` · `DELIVER` · `VERIFY` | HOME 뒤 이 단계부터. DELIVER = 재고 (`cargo_file` + `cargo_restore: true`) 로 배달 계획, 재고 없으면 복귀. VERIFY = 세 장소 재검증만 |
+| `stop_after` | `READ_BARCODE` · `SIGNAL` · `COLLECT` · `DELIVER` · `VERIFY` | 그 단계 끝나면 복귀 · COMPLETED. SIGNAL = 바코드 · 신호 기록으로 배치 (로그 `배치: L1 … (ASC/DESC)`) 정한 직후, 수집 주행 없음. COLLECT 면 마지막 박스도 집기 계획 (보통은 배달 계획이 그 박스 퍽을 DELIVER 에서 집음) |
+| `collect_boxes` | `[1, 2]` | `collect_order` 에서 이 박스만 |
+
+- 잘못된 값 (글자 · 미등록 바코드 · 없는 박스 · stop_after 가 start_phase 보다 앞) 은 시작 때 FATAL 로그 + 노드 종료
+- 가짜 세계 (운동학) 확인: 수집만 B1 · B2 = PICK · LOOK_RACK · STORE 4 번 / 재고 12 → 배달 12 · 재검증 / DELIVER 만 / VERIFY 만 / 바코드만 / 전체 = 모두 COMPLETED
 
 STANDBY 준비 확인 (`wait_reasons` 표시 이름, 움직이지 않는 확인만)
 
@@ -372,7 +399,9 @@ STANDBY 준비 확인 (`wait_reasons` 표시 이름, 움직이지 않는 확인�
 | `LOCALIZATION_COV` | amcl: AMCL 표준편차 x · y ≤ 0.10 m, yaw ≤ 10° | `require_localization` |
 | `SCAN:<토픽>` | `scan_topics` 각 라이다 최근 수신 (앞 · 뒤 따로) | `require_scan` |
 | `DETECTIONS:<프레임>` | 해당 카메라 검출 출력 최근 수신 | `require_detections` |
-| `GRIPPER_RECORD` | 그리퍼 재고 기록 비어 있음 | `/mission/clear_gripper` |
+| `GRIPPER_RECORD` | 그리퍼 재고 기록 비어 있음 | 퍽을 원래 박스에 놓았으면 `/mission/inventory_returned`, 로봇 밖으로 뺐으면 `/mission/clear_gripper` (start · resume 거절 글에 안내) |
+| `TRAFFIC_LIGHT` | `/perception/traffic_light` 최근 수신 (`signal_timeout_s` 1 s). 신호 기록이 Done 이면 안 봄 (mission_manager) | - |
+| `BARCODE_SERVICE:<서비스>` | `barcode_enable_service` 서비스가 보임 (mission_manager) | `barcode_enable_service: ""` |
 
 | 아래층 (RUNNING) | 하는 일 | 다음 |
 |---|---|---|
@@ -381,10 +410,10 @@ STANDBY 준비 확인 (`wait_reasons` 표시 이름, 움직이지 않는 확인�
 | `OBSERVE_SIGNAL` | 출발 구역에서 점멸 기록 끝까지 대기 | 완전 → `COLLECT` / 불완전 · 시간 초과 → `RETURN_HOME` |
 | `COLLECT` | 박스마다 이동 → LOOK → Plan(CollectBox) = 본 퍽 [STORE] PICK 끼워 넣기, 마지막 박스 뒤 Plan(Delivery) = 할당 · 운반 계획 | `DELIVER` |
 | `DELIVER` | 운반 계획대로 [RETRIEVE] PLACE (목표 = 장소 중심 + 주사위 눈 오프셋) | `VERIFY` |
-| `VERIFY` | 장소마다 이동 → LOOK → Plan(Verify) 판정 · 기록 (`/planning/verify_record`, verify.yaml) | `RETURN_HOME` |
+| `VERIFY` | 장소마다 이동 → LOOK → Plan(Verify) 판정 · 기록 (`/planning/verify_record`, `/planning/verify_image`, verify.yaml · verify_L<n>.jpg) | `RETURN_HOME` |
 | `RETURN_HOME` | `start_pose`로 이동 | 도착 → `DONE`(COMPLETED) / 실패 → `DONE`(RETURN_FAILED) |
 
-대기 원인 (RUNNING, 동시에 여러 개 가능, 차단 범위는 코드 한 곳 `nav_blocked` · `pick_blocked`)
+대기 원인 (RUNNING, 동시에 여러 개 가능, 차단 범위는 코드 한 곳 `nav_blocked`)
 
 | 원인 | 막는 것 | 해제 · FAULT |
 |---|---|---|
@@ -394,10 +423,10 @@ STANDBY 준비 확인 (`wait_reasons` 표시 이름, 움직이지 않는 확인�
 | `LOCALIZATION_LOST` | 모든 이동 + PICK | map → odom 오래됨 또는 표준편차 x · y > 0.30 m · yaw > 30° → 1 s 안에 안 돌아오면 FAULT |
 
 - 시간 부족(`time_limit_s − return_margin_s`, 경기 시간은 첫 start 부터, 대기 원인 있어도 확인, 팔 작업 · HOME 중에는 끝나고 결과를 재고에 반영한 뒤 = `arm_busy()` false) → `RETURN_HOME`
-- FAULT 원인 코드: 실행기 `ODOM_LOST` · `CONTROL_LOST` · `HOME_FAILED` · `DRIVE_NOT_RESTORED` · `SCAN_LOST` · `DETECTION_LOST` · `LOCALIZATION_LOST`, 미션 `MAP_INVALID` · `BARCODE_UNREGISTERED` · `DICE_UNSOLVABLE`
+- FAULT 원인 코드: 실행기 `ODOM_LOST` · `CONTROL_LOST` · `HOME_FAILED` · `ARM_NO_RESULT` (팔 시간 초과 뒤 최종 결과 끝내 없음) · `DRIVE_NOT_RESTORED` · `SCAN_LOST` · `DETECTION_LOST` · `LOCALIZATION_LOST`, 미션 `MAP_INVALID` · `BARCODE_UNREGISTERED` · `DICE_UNSOLVABLE`
 - 실행기는 사건(단계 성공 · 실패 · DRIVE 받음 · FAULT)을 돌려주기만 함. FAULT 결정 · 실패 뒤 처리는 미션이 함. 미등록 바코드 · 계획 불가 FAULT 는 한 주기 처리가 끝난 뒤 적용
 - FAULT 뒤 재진입 (resume → start, 항상 HOME 부터): 바코드를 이미 처리했으면 복귀, RETURN_HOME 중이었으면 복귀 다시. 이전 팔 단계는 다시 실행 안 함
-- 취소 추적: 취소한 팔 · Nav2 목표는 최종 결과(또는 거절)를 받을 때까지 기다림 → resume 조건
+- 취소 추적: 취소한 팔 · Nav2 목표는 최종 결과(또는 거절)를 받을 때까지 기다림 → resume 조건. 서버가 없어지면 그 목표도 없어진 것으로 보고 안 기다림
 
 단계 종류 (`planning/types.hpp`, 미션을 모르는 형태)
 
@@ -432,7 +461,7 @@ dice 의 `Custom` 뜻 (`mission/common.hpp`)
 
 ## 9. 신호등 [구현]
 
-### 9.1 점멸 기록 (발제 v5, 2026-10-28) — `signal_recorder.hpp`
+### 9.1 점멸 기록 (발제) — `signal_recorder.hpp`
 
 - 과제: 출발 구역에서 12 번 점멸 (1 s 켜짐 + 1 s 소등, 같은 색 연속도 소등으로 구별), 12 번째 뒤 3 s 소등 = 끝. R · Y · G 각 1–6 회, 합 12. 불명 색은 임의 추정 금지
 - 관측: RED · YELLOW · GREEN, OFF + visible = 소등, UNKNOWN + visible = 애매, UNKNOWN + not visible 또는 토픽 끊김 = 못 봄
@@ -447,11 +476,10 @@ dice 의 `Custom` 뜻 (`mission/common.hpp`)
 
 - 못 본 구간은 켜짐 · 소등 어느 쪽으로도 세지 않음 → 소등을 못 봤으면 같은 색 두 점멸을 하나로 남김 (추정해 나누지 않음)
 - 결과: `/planning/signal_record` + 로그. 다시 기록: `/mission/reset_signal`
-- 단독 확인: `mission_manager` 를 띄우면 STANDBY 에서도 기록 → `/planning/signal_record` 확인 (2026-11-02 `signal_watch` 삭제). 시뮬: `sim/robot_sim/scripts/fake_traffic_light.py` (2026-10-28 확인: 잡음 애매 5 % · 못 봄 2 % 에서 RGRRGRGGYGYG DONE)
+- 단독 확인: `mission_manager` 를 띄우면 STANDBY 에서도 기록 → `/planning/signal_record` 확인 (`signal_watch` 삭제). 시뮬: `sim/robot_sim/scripts/fake_traffic_light.py` (확인: 잡음 애매 5 % · 못 봄 2 % 에서 RGRRGRGGYGYG DONE)
 
-### 9.2 구역 정지 규칙 — 삭제 (2026-11-01)
+### 9.2 구역 정지 규칙 — 삭제
 
-- 옛 `light_gate` (신호등 구역 RED · YELLOW 정지) 는 발제 v5 에 없어 패키지 분리 때 지움. 필요하면 분리 전 원본 참고
 
 ---
 
@@ -475,12 +503,18 @@ dice 의 `Custom` 뜻 (`mission/common.hpp`)
 | 이름 | 기본값 | 내용 |
 |---|---|---|
 | `dice_map` / `travel_table` | "" / "" | 비우면 레포 `maps/dice_map.yaml` / `maps/dice_travel_times.yaml` |
-| `collect_order` | [1, 2, 6, 3, 4, 5] | 시작 박스 방문 순서 |
+| `collect_order` | [1, 2, 4, 5, 6, 3] | 시작 박스 방문 순서 (arena5 planner_server 시간표 기준) |
 | `look_dwell_s` / `dice_pick_fresh_s` | 1.0 / 90.0 | LOOK 뒤 검출 모으기 / 정차 중 PICK 위치 유효 시간 |
 | `transfer_max_remaining` | 4 | 박스 남은 퍽이 이보다 많으면 대체 해 |
-| `verify_radius_m` / `verify_cell_tol_m` | 0.18 / 0.03 | 재검증 판정 |
+| `verify_radius_m` / `verify_cell_tol_m` | 0.18 / 0.05 | 재검증 판정 (칸 허용 ±5 cm) |
+| `verify_fit` / `verify_fit_max_shift_m` / `verify_fit_max_rot_deg` | true / 0.10 / 180 | 재검증 눈 모양 맞춤 (관측 퍽에 칸 배치를 옮기고 돌려 맞춘 뒤 칸 판정, 180° = 방향 무관 · 모양만). `verify.yaml` 장소마다 `frame_source` · `fit` · 맞춘 `cells` 기록 |
+| `box_wait_s` (재검증) | 2.0 | 재검증 Plan 도 손목 박스 측정이 `box_min_samples` 개 모이거나 이 시간까지 기다림 |
+| `verify_on_box_margin_m` | 0.0 | 재검증 박스 위 확인: 맞춘 칸이 윗면 밖으로 나가는 해는 버리고, 퍽 중심이 잰 윗면 (재검증 LOOK 손목 측정 → 놓을 때 LOOK 측정, `place_box_half_m`) 가장자리에서 이만큼 안쪽이 아니면 그 퍽 불합격. 박스 측정 없으면 안 봄 (`verify.yaml` `box: null`, `on_box: unknown`) |
+| `verify_image_topic` / `verify_color_topic` / `verify_info_topic` / `verify_camera_frame` | `/planning/verify_image` / `/camera/camera/color/image_raw` / `…/camera_info` / `d435_color_optical_frame` | 재검증 판정 그림: VERIFY 단계 동안만 손목 컬러 구독 → 판정 때 마지막 장에 본 퍽 (맞음 초록 · 문제 빨강, ID 색/모양, 칸 밖 mm) · 맞춘 칸 (+) · 위 띠 (장소 · 그룹 · OK/FAIL · 기준 출처 · 맞춤 이동) → `sensor_msgs/Image` bgr8, reliable · transient_local 3 + `verify_L<n>.jpg`. `""` = 안 함 |
 | `record_dir` / `max_replans` | ~/planning_logs / 6 | 기록 파일 폴더 / 재계획 최대 횟수 |
 | `barcode_look` / `barcode_enable_service` | true / /perception/barcode/enable | |
+| `wide_enable_service` | /perception/wide/enable | 신호 기록 Done 이면 광각 끔, "" = 안 부름 |
+| `wide_capture_service` | /wide_cam/set_capture | 신호 기록 Done 이면 광각 usb_cam 캡처 멈춤 (MJPG 디코딩 CPU), Done 전 · reset_signal 뒤 켬, "" = 안 부름 |
 | `signal_record` / `signal_wait_s` / `signal_*` | true / 90.0 / 9.1절 | 점멸 기록 |
 | `map_frame` / `base_frame` / `odom_frame` | map / base_link / odom | |
 | `tick_hz` | 10.0 | 판단 주기 |
@@ -490,7 +524,7 @@ dice 의 `Custom` 뜻 (`mission/common.hpp`)
 | `min_confidence` | 0.5 | |
 | `candidate_max_age_s` | 30.0 | |
 | `signal_timeout_s` | 1.0 | |
-| `control_timeout_s` | 1.0 | `/odom` · `/control/motion_mode` |
+| `control_timeout_s` | 3.0 (코드 기본 1.0) | `/odom` · `/control/motion_mode` |
 | `require_motion_mode` | true | |
 | `drive_wait_s` | 10.0 | |
 | `auto_start` | false | true 면 준비되는 즉시 시작 (시험용) |
@@ -500,13 +534,14 @@ dice 의 `Custom` 뜻 (`mission/common.hpp`)
 | `require_detections` / `detection_frames` / `detection_timeout_s` | true / ["d435_color_optical_frame"] / 1.0 | |
 | `require_localization` / `loc_timeout_s` | true / 2.0 | |
 | `loc_ready_xy_std_m` / `loc_ready_yaw_std_deg` | 0.10 / 10.0 | amcl 만: start 허용 기준 (시험용 초기값) |
-| `loc_lost_xy_std_m` / `loc_lost_yaw_std_deg` / `loc_fault_s` | 0.30 / 30.0 / 1.0 | 실행 중 상실 기준 (표준편차는 amcl 만) |
+| `loc_lost_xy_std_m` / `loc_lost_yaw_std_deg` / `loc_fault_s` | 0.30 / 30.0 / 2.5 | 실행 중 상실 기준 (표준편차는 amcl 만). `loc_fault_s` 는 pose_guard 정지 유지 `hold_s` 1 s 보다 길어야 짧은 정지 한 번이 바로 FAULT 가 안 됨 |
 | `monitor_recover_s` / `monitor_max_recoveries` / `monitor_fault_s` | 2.0 / 2 / 10.0 | scan · 검출 끊김 |
 | `action_retry_s` / `action_retry_max_s` | 1.0 / 15.0 | |
 | `server_wait_s` | 30.0 | |
 | `nav_timeout_s` / `arm_timeout_s` | 60.0 / 60.0 | |
 | `read_timeout_s` | 5.0 | |
-| `cargo_slots` | S1 … S12 | 12 칸 = URDF `rack_cell_S*`, 팔에서 먼 칸부터 = 채우는 순서 (dice 는 11 칸 이상 필요) |
+| `cargo_slots` | S1, S2, S3, S8, S11, S6, S12, S7, S10, S5, S9, S4 | 12 칸 = URDF `rack_cell_S*`, 목록 순서 = 채우는 순서 = 뒷줄부터, 같은 줄은 넣기 제약 순서 (dice 는 11 칸 이상 필요) |
+| `wrist_enable_service` | "" (설정 /perception/wrist/enable) | Nav2 · 정밀 접근 목표 진행 중에만 perception 손목 퍽 검출 끔, 그 밖 (도착 뒤 · 팔 작업 · 대기 · FAULT) 켬. 끈 동안 · 켠 뒤 `wrist_on_grace_s` (2 s) 는 DETECTION_LOST 로 안 셈. "" = 안 부름 |
 | `cargo_file` / `cargo_restore` | "" / false | |
 | `puck_standoff_m` | 0.30 | 퍽 앞에 설 거리 (임시, 팔 닿는 범위 받으면 조정) |
 | `pick_fresh_s` | 2.0 | 이보다 오래된 위치로 안 집음 |
@@ -523,18 +558,20 @@ ros2 launch mission mission.launch.py dice_map:=<다른 파일> params:=<다른 
 ```
 
 - 설정 yaml 순서: `params` 인자 → 레포 `config/planning.yaml`(bringup share) → 코드 기본값
-- 지도 폴더는 빌드 때 정해짐: mission `-DMISSION_MAPS_DIR=<경로>` (예전 이름 `PLANNING_MAPS_DIR` 도 받음). 기본 = 레포 `maps/`
+- 지도 폴더는 빌드 때 정해짐: mission `-DMISSION_MAPS_DIR=<경로>` (`PLANNING_MAPS_DIR` 도 받음). 기본 = 레포 `maps/`
 
 ---
 
-## 12. 바코드 해석 [구현, 발제 v5 형식 (2026-11-01)]
+## 12. 바코드 해석 [구현, 발제 형식]
 
 - 출발 구역 벽 Code128 하나. `task_parser` → `dice.hpp parse_dice_barcode`
 
 | 원문 | 뜻 |
 |---|---|
-| `P2-01` · `P2-03` | 오름차순: 신호 횟수 적은 그룹부터 L1 → L2 → L3 |
-| `P2-02` · `P2-04` | 내림차순: 많은 그룹부터 |
+| `P2-01` · `P2-03` | 오름차순 (`ASC`): 신호 횟수 적은 그룹부터 L1 → L2 → L3 |
+| `P2-02` · `P2-04` | 내림차순 (`DESC`): 많은 그룹부터 |
+
+표 = 레포 `maps/dice_barcodes.json` (발제 기준), 파라미터 `barcode_table` (비우면 그 파일). 표에 없으면 미등록 → FAULT `BARCODE_UNREGISTERED`
 | 그 밖 | 미등록 바코드 → **바로 FAULT** (`BARCODE_UNREGISTERED`, 발제: 오류 정지) |
 
 | 규칙 | 내용 |
@@ -543,7 +580,6 @@ ros2 launch mission mission.launch.py dice_map:=<다른 파일> params:=<다른 
 | 미등록 바코드 | 바로 FAULT, detail 에 원문. resume → start 하면 HOME 부터 다시 읽음 |
 | 안 읽힘 | `read_timeout_s` 안에 아무것도 안 오면 단계 실패 → 복귀 |
 | 단계 생성 | `dice_steps` (COLLECT · DELIVER · VERIFY), 운반 계획 `transfer_planner` |
-| 옛 시험 형식 | `move` 흐름은 2026-11-01 삭제 |
 
 ---
 
@@ -555,13 +591,12 @@ ros2 launch mission mission.launch.py dice_map:=<다른 파일> params:=<다른 
 | 팔 닿는 범위 | control | 몸 중심 기준 최소 · 최대 거리, 높이, 좌우 각도 → `puck_standoff_m` | 대기 |
 | 누운 퍽 세우기 | control | joint5 ±90° 제한으로 못 세우는 자세 | 대기 |
 | ArmTask 확장 | control | STORE · RETRIEVE · PUSH · LOOK, slot, error, holding | 대기 |
-| 퍽 쥔 채 주행 (CARRY) | control | dice 운반 계획이 그리퍼에 퍽 하나 든 채 주행할 수 있음 | 대기 |
+| 퍽 쥔 채 주행 (CARRY) | control | 안 함: 박스마다 집은 퍽을 전부 STORE, 운반 계획은 그리퍼가 빌 때만 이동, 실행기는 쥔 채 이동 단계면 FAULT CARRY_DRIVE | 결정됨 |
 | 퍽 자세 약속 | perception | 자세 z 축 = 긴축, 모르면 w=0 직접 | 전달 필요 |
-| 검출 frame_id | perception | URDF 이름 `d435_color_optical_frame`(D435 컬러 렌즈, 케이스 가운데 `d435_cad_optical_proxy_frame` 에서 광학 −x 32.5 mm, 2026-10-29 추가), `birdeye_camera_optical_frame`과 맞추기 | 전달 필요 |
+| 검출 frame_id | perception | URDF 이름 `d435_color_optical_frame`(D435 컬러 렌즈, 케이스 가운데 `d435_cad_optical_proxy_frame` 에서 광학 −x 32.5 mm, 추가), `birdeye_camera_optical_frame`과 맞추기 | 전달 필요 |
 | 인터페이스 전체 | perception | `Detection.id/shape`, `TaskText`, `TrafficLight` | 전달함, 답 대기 |
 | `/mission/hold` → `cmd_vel_hold` | 주행 | Nav2 → collision_monitor → `cmd_vel_hold` → `/cmd_vel` (TwistStamped), twist_mux 안 씀. `/cmd_vel` 을 이 경로 하나만 내는지 확인 | 전달 필요 |
 | Nav2 · AMCL base frame | 주행 | `base_footprint` (swerve가 `odom → base_footprint` 발행) | 전달 필요 |
-| 정밀 정렬(approach) 필요 여부 · 담당 | control / 주행 | IK 범위 보고 결정 | 미정 |
 
 ## 14. 미정 (대회 정보 필요)
 
