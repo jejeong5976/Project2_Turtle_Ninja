@@ -1,0 +1,203 @@
+mission_manager:
+  ros__parameters:
+    dice_map: ''
+    travel_table: ''
+    barcode_table: ''
+    collect_order:
+    - 1
+    - 2
+    - 4
+    - 5
+    - 6
+    - 3
+    look_dwell_s: 1.0
+    dice_pick_fresh_s: 90.0
+    transfer_max_remaining: 4
+    verify_radius_m: 0.18
+    verify_cell_tol_m: 0.05           # 칸 중심에서 이 안이면 칸 위 (눈 위치 허용 ±5 cm)
+    verify_vote_ratio: 0.7
+    record_dir: ~/planning_logs
+    max_replans: 15
+    map_frame: map
+    base_frame: base_link
+    odom_frame: odom
+    tick_hz: 10.0
+    time_limit_s: 0.0
+    return_margin_s: 60.0
+    detection_max_age_s: 0.5
+    min_confidence: 0.5
+    candidate_max_age_s: 30.0
+    signal_timeout_s: 1.0
+    signal_record: true
+    barcode_look: true
+    barcode_enable_service: /perception/barcode/enable
+    wide_enable_service: /perception/wide/enable
+    wide_capture_service: /wide_cam/set_capture
+    signal_wait_s: 90.0
+    signal_retries: 0
+    signal_expected: 12
+    signal_min_on_s: 0.3
+    signal_min_off_s: 0.25
+    signal_end_off_s: 2.5
+    signal_max_gap_s: 0.8
+    signal_majority: 0.8
+    signal_max_ambiguous: 0.3
+    signal_min_count: 1
+    signal_max_count: 6
+    control_timeout_s: 3.0
+    require_motion_mode: true
+    drive_wait_s: 10.0
+    auto_start: false
+    signal_fixed: ''
+    barcode_fixed: ''
+    start_phase: ''
+    stop_after: ''
+    lifecycle_services:
+    - /lifecycle_manager_navigation/is_active
+    require_scan: true
+    scan_topics:
+    - /lidar_front/scan
+    - /lidar_rear/scan
+    scan_timeout_s: 1.0
+    require_detections: true
+    detection_topics:
+    - /perception/wrist/detections
+    detection_frames:
+    - d435_color_optical_frame
+    detection_timeout_s: 1.0
+    require_localization: true
+    localization_source: health
+    localization_health_topic: /localization_health
+    loc_timeout_s: 2.0
+    loc_ready_xy_std_m: 0.1
+    loc_ready_yaw_std_deg: 10.0
+    loc_lost_xy_std_m: 0.3
+    loc_lost_yaw_std_deg: 30.0
+    loc_fault_s: 2.5
+    loc_recovery: true
+    loc_ok_hold_s: 3.0
+    loc_wait_s: 10.0
+    loc_degrade_s: 30.0
+    loc_force_s: 60.0
+    loc_backoff_tries: 2
+    loc_backoff_max_m: 0.3
+    loc_backoff_min_m: 0.05
+    loc_backoff_timeout_s: 20.0
+    loc_backoff_lookback_s: 2.0
+    loc_stable_window_s: 5.0
+    loc_stable_xy_m: 0.03
+    loc_stable_yaw_deg: 2.0
+    monitor_recover_s: 2.0
+    monitor_max_recoveries: 2
+    monitor_fault_s: 10.0
+    action_retry_s: 1.0
+    action_retry_max_s: 15.0
+    server_wait_s: 30.0
+    nav_timeout_s: 60.0
+    arm_timeout_s: 60.0
+    read_timeout_s: 5.0
+    read_retries: 6
+    dice_pip_frame: arena
+    cargo_slots:
+    - S1
+    - S2
+    - S3
+    - S8
+    - S11
+    - S6
+    - S12
+    - S7
+    - S10
+    - S5
+    - S9
+    - S4
+    rack_store_needs_empty: [""]
+    rack_retrieve_needs_empty: [""]
+    rack_look: true
+    wrist_enable_service: /perception/wrist/enable
+    wrist_on_grace_s: 2.0
+    box_enable_service: /perception/box/enable
+    box_measure: true
+    box_topic: /perception/wrist/box
+    box_min_samples: 3
+    box_wait_s: 2.0
+    box_max_shift_m: 0.3
+    place_box_half_m: 0.1025
+    place_puck_half_m: 0.0212
+    place_edge_margin_m: 0.01
+    place_offset_L1_mm:
+    - 0.0
+    - 0.0
+    place_offset_L2_mm:
+    - 0.0
+    - 0.0
+    place_offset_L3_mm:
+    - 0.0
+    - 0.0
+    cargo_file: ''
+    cargo_restore: false
+    puck_standoff_m: 0.3
+    dock_action: dock_to_pose
+    dock_nav_back_m: 0.025
+    dock_timeout_s: 40.0
+    dock_handoff_m: 0.4
+    dock_handoff_lat_m: 0.15
+    dock_handoff_yaw_deg: 60.0
+    pick_fresh_s: 2.0
+    puck_half_height_m: 0.03
+    grasp_offset_m: 0.015
+    nav_retries: 1
+    pick_retries: 4
+    pick_relook: true
+    relook_wait_s: 1.5
+    box_relook: true
+    box_relook_back_m: 0.12
+    box_relook_dwell_s: 1.5
+    box_relook_radius_m: 0.35
+    box_relook_max_shift_m: 0.3
+    place_retries: 4
+    empty_grasp_skip_n: 5
+    box_retry_later: true
+    nav_fault_before_first: true
+    place_nav_fail_n: 2
+    sensor_fault_hold_s: 60.0
+    box_realign_shift_m: 0.04
+    box_realign_yaw_deg: 8.0
+    box_realign_max: 1
+    path_retry_total_s: 40.0
+    path_retry_wait_s:
+    - 5.0
+    - 10.0
+    path_fail_quick_s: 5.0
+    path_fail_still_m: 0.05
+    alloc_prefer_more_pucks: true
+    fill_partial_places: true
+    barcode_search: true
+    bc_wide_yaw_offset_deg: -12.0
+    bc_wide_pitch_offset_deg: 8.0
+    bc_zone_arena:
+    - -1.0
+    - 5.5
+    - -1.0
+    - 7.5
+    test_return_home: true
+    bc_panel_arena: [0.05, 0.93, 0.20]   # 11-11 추가
+    bc_panel_size: [0.36, 0.39]   # 11-11 추가
+    bc_panel_margin_m: 0.08   # 11-11 추가
+    bc_panel_depth_tol_m: 0.20   # 11-11 추가
+    bc_panel_sweep_m: [0.0, -0.12, 0.12]   # 11-11 추가
+    bc_renudge_m: 0.04   # 11-11 추가
+    bc_approach_min_m: 0.30   # 11-11 추가
+    wide_brightness: -20   # 11-11 추가
+    wide_device: /dev/v4l/by-id/usb-Arducam_Technology_Co.__Ltd._USB_2.0_Camera_SN0001-video-index0   # 11-11 추가
+    lying_backoff_x_m: 0.20   # 11-11 추가
+    lying_backoff_upright_x_m: 0.10   # 선 퍽 (방향 모름 포함) 이 x 보다 가까우면 뒤로 (0 = 끔)
+    lying_backoff_target_x_m: 0.25   # 11-11 추가
+    lying_backoff_max_m: 0.12   # 11-11 추가
+    lying_backoff_speed_mps: 0.10   # 11-11 추가
+    lying_backoff_drive_wait_s: 3.0   # 11-11 추가
+    lying_backoff_cmd_topic: /cmd_vel_nav   # 11-11 추가
+    lying_backoff_cm_node: /collision_monitor   # 11-11 추가
+    lying_backoff_polygons: [PolygonStop]   # 11-11 추가
+    signal_back_m: 0.05   # 11-11 추가
+    retrieve_empty_skip_n: 3   # 11-11 추가

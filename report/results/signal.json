@@ -1,0 +1,24 @@
+{
+  "kind": "signal",
+  "status": "DONE",
+  "sequence": "RGGYYGGYRRRY",
+  "count": 12,
+  "R": 4, "Y": 4, "G": 4, "unknown": 0,
+  "blinks": [
+    {"n": 1, "color": "R", "start_s": 49.59, "end_s": 50.55},
+    {"n": 2, "color": "G", "start_s": 51.62, "end_s": 52.60},
+    {"n": 3, "color": "G", "start_s": 53.65, "end_s": 54.64},
+    {"n": 4, "color": "Y", "start_s": 55.65, "end_s": 56.62},
+    {"n": 5, "color": "Y", "start_s": 57.70, "end_s": 58.61},
+    {"n": 6, "color": "G", "start_s": 59.67, "end_s": 60.62},
+    {"n": 7, "color": "G", "start_s": 61.64, "end_s": 62.63},
+    {"n": 8, "color": "Y", "start_s": 63.65, "end_s": 64.61},
+    {"n": 9, "color": "R", "start_s": 65.63, "end_s": 66.59},
+    {"n": 10, "color": "R", "start_s": 67.69, "end_s": 68.65},
+    {"n": 11, "color": "R", "start_s": 69.67, "end_s": 70.60},
+    {"n": 12, "color": "Y", "start_s": 71.65, "end_s": 72.61}
+  ],
+  "issues": [],
+  "partials": [],
+  "note": "시각은 planning 시작 기준 [s]. '?' = 색을 정하지 못한 점멸 (추정해 채우지 않음). partials = 12 개 전에 끝 소등이 온 시퀀스 (참고, 결과 아님)"
+}

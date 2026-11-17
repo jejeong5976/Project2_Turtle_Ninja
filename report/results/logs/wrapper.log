@@ -1,0 +1,7 @@
+[15:47:49] 실물: bus_drive=/dev/ttyACM0,bus_arm=/dev/ttyACM1
+[15:47:49] ros2 launch bringup mission_system.launch.py hardware:=opencr lidar:=true lidar_front_port:=/dev/serial/by-path/platform-3610000.usb-usb-0:2.1:1.0-port0 lidar_rear_port:=/dev/serial/by-path/platform-3610000.usb-usb-0:2.2:1.0-port0 wrist_cam:=true wide_cam:=true perception:=true slam_mode:=mapping map:=/home/turtle/maps/arena7 opencr_ports:=bus_drive=/dev/ttyACM0,bus_arm=/dev/ttyACM1 dice_map:=/home/turtle/maps/dice_map_arena7b.yaml planning_params:=/home/turtle/planning_full.yaml dds_transport:=DEFAULT dock:=rl rack_tags:=true localization:=amcl initial_pose:=-0.357,-0.005,-1.1 mission_loc:=amcl nav_policy:=nav_nf5 dock_policy:=dock3 dock_tol:=0.015 dock_search:=0.30  (ROS_DOMAIN_ID=17) → /home/turtle/p2_integ/runs/robot_mission_opencr_20261116T154748
+arm:=true — 모듈별 조향 범위 [deg] fl -178.2~+178.2 · fr -178.2~+178.2 · rl -178.2~+178.2 · rr -132.7~+223.7 · 정지 후 바깥쪽 복귀 끔 (/tmp/steer_ranges_iryd45lu.yaml)
+[15:47:58] 바퀴 활성 — mission STANDBY 준비 확인 기다림 (slam · Nav2 · 카메라 · 인지 · 팔)
+[15:48:25] ✓ STANDBY 준비 완료 — 신호등 점멸 시작 뒤: ros2 service call /mission/start std_srvs/srv/Trigger '{}'
+[15:48:25] 상태: ros2 topic echo /mission/status · 복구: /mission/resume · 출발 구역 신호 다시 기록: /mission/reset_signal
+[15:48:25] Ctrl+C 로 끝 — 경고 · 오류 · 위치 감시 상태는 아래에 그대로 보임 (전체 기록 /home/turtle/p2_integ/runs/robot_mission_opencr_20261116T154748/launch.log)
