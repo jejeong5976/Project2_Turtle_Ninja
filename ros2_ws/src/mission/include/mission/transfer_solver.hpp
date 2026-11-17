@@ -13,10 +13,10 @@
 // 실행
 //   - mission_core 라이브러리, transfer_planner 가 부름. 시험 test_transfer
 // note: 동작 규칙
-//   - Move: 다른 노드로 이동 + 정차 + LOOK
-//       박스는 남은 퍽이 있고 실을 자리가 있을 때만, 장소는 그 장소에 놓을 퍽을 실었을 때만
+//   - Move: 다른 노드로 이동 + 정차 + LOOK. 그리퍼가 빌 때만 (퍽 쥔 채 주행 안 함)
+//       박스는 남은 퍽이 있고 칸이 남을 때만, 장소는 그 장소에 놓을 퍽을 적재함에 실었을 때만
 //   - Pick: 박스 정차 중 + 그리퍼 빔 → 그 박스에 남은 퍽 중 가장 가까운 것 = on_boxes 순서 첫 번째를 그리퍼로
-//   - Store: 그리퍼 → 빈 칸, 어디서든
+//   - Store: 그리퍼 → 빈 칸, 어디서든 (정차 전이어도 = 출발 · 재계획 때 쥔 퍽)
 //   - Retrieve: 칸 → 빈 그리퍼, 장소 정차 중 그 장소에 놓을 퍽만 → 다음 장소 퍽을 쥐고 주행 안 함
 //   - Place: 장소 정차 중 + 그리퍼 퍽이 그 장소 그룹 조건에 맞고 남은 칸이 있음
 //   - 끝: 박스 · 그리퍼 · 칸 모두 비고 세 장소 남은 칸 0 → 재검증 순회 + 출발점 복귀 비용
@@ -50,6 +50,9 @@ struct SolverInput
   std::string yellow_shape;                // "" = 아직 안 정함. Y 장소에 하나라도 놓았으면 그 모양 ("cylinder" | "box")
   // true = 퍽이 칸보다 많아도 됨 (재계획: 일부 장소만 채울 때). 남는 퍽은 그대로 두거나 실은 채로 끝남
   bool allow_leftover = false;
+  // 장소 방문 순서 강제 (−1 = 자유). place_rank[p] = 순번: 순번이 앞선 장소를 다 채우기 전에는 p 로 이동 안 함
+  //   (적재함 칸 제약 때문에 다른 해가 필요할 때 transfer_planner 가 씀)
+  std::array<int, kNumPlaces> place_rank{{-1, -1, -1}};
 };
 
 enum class SolverAct : uint8_t { Move, Pick, Store, Retrieve, Place };

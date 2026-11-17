@@ -5,6 +5,7 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <algorithm>
 #include <fstream>
 
 namespace planning
@@ -35,6 +36,30 @@ CargoItem node_item(const YAML::Node & n)
   return it;
 }
 
+YAML::Node doubt_node(const CargoDoubt & d)
+{
+  YAML::Node n;
+  n["arm_task"] = static_cast<int>(d.arm_task);
+  n["puck_id"] = d.puck_id;
+  n["slot"] = d.slot;
+  n["step_name"] = d.step_name;
+  n["reason"] = d.reason;
+  n["item"] = item_node(d.item);
+  return n;
+}
+
+CargoDoubt node_doubt(const YAML::Node & n)
+{
+  CargoDoubt d;
+  d.arm_task = static_cast<uint8_t>(n["arm_task"].as<int>(0));
+  d.puck_id = n["puck_id"].as<std::string>("");
+  d.slot = n["slot"].as<std::string>("");
+  d.step_name = n["step_name"].as<std::string>("");
+  d.reason = n["reason"].as<std::string>("");
+  if (n["item"]) {d.item = node_item(n["item"]);}
+  return d;
+}
+
 }  // namespace
 
 Cargo::Cargo(std::vector<std::string> slot_names)
@@ -53,9 +78,67 @@ std::optional<CargoItem> * Cargo::find_slot(const std::string & slot)
 std::optional<std::string> Cargo::free_slot() const
 {
   for (const auto & s : slots_) {
+    if (!s.second && store_ok(s.first)) {return s.first;}
+  }
+  for (const auto & s : slots_) {   // 제약을 지키는 빈 칸이 없음 → 첫 빈 칸 (막지 않음, 팔 쪽 경로 검사가 알림)
     if (!s.second) {return s.first;}
   }
   return std::nullopt;
+}
+
+std::optional<std::string> Cargo::free_slot_for(const CargoItem & item) const
+{
+  auto content = [&](const std::string & name) -> const std::optional<CargoItem> * {
+      for (const auto & s : slots_) {
+        if (s.first == name) {return &s.second;}
+      }
+      return nullptr;
+    };
+  // 짝 점수: 2 = 짝이 비었거나 같은 종류 (색 · 모양), 1 = 같은 색, 0 = 다른 색
+  std::optional<std::string> best;
+  int best_score = -1;
+  for (const auto & s : slots_) {
+    if (s.second || !store_ok(s.first)) {continue;}
+    int score = 2;
+    for (const auto & [a, b] : retrieve_rules_) {
+      const std::string partner = s.first == a ? b : (s.first == b ? a : "");
+      if (partner.empty()) {continue;}
+      const auto * c = content(partner);
+      if (!c || !*c) {continue;}
+      score = std::min(score, (*c)->color != item.color ? 0 : ((*c)->shape != item.shape ? 1 : 2));
+    }
+    if (score == 2) {return s.first;}
+    if (score > best_score) {best = s.first; best_score = score;}
+  }
+  return best ? best : free_slot();
+}
+
+std::optional<std::string> Cargo::retrieve_blocker(const std::string & slot) const
+{
+  for (const auto & [cell, must_empty] : retrieve_rules_) {
+    if (cell != slot) {continue;}
+    for (const auto & s : slots_) {
+      if (s.first == must_empty && s.second) {return must_empty;}
+    }
+  }
+  return std::nullopt;
+}
+
+void Cargo::set_rules(SlotRules store_needs_empty, SlotRules retrieve_needs_empty)
+{
+  store_rules_ = std::move(store_needs_empty);
+  retrieve_rules_ = std::move(retrieve_needs_empty);
+}
+
+bool Cargo::rule_ok(const SlotRules & rules, const std::string & slot) const
+{
+  for (const auto & [cell, must_empty] : rules) {
+    if (cell != slot) {continue;}
+    for (const auto & s : slots_) {
+      if (s.first == must_empty && s.second) {return false;}
+    }
+  }
+  return true;
 }
 
 std::size_t Cargo::stored_count() const
@@ -128,6 +211,29 @@ std::optional<CargoItem> Cargo::on_place(std::string * error)
   return placed;
 }
 
+bool Cargo::clear_slot(const std::string & slot)
+{
+  auto * s = find_slot(slot);
+  if (!s) {return false;}
+  s->reset();
+  return true;
+}
+
+bool Cargo::replace_slot_item(const std::string & slot, const CargoItem & item)
+{
+  auto * s = find_slot(slot);
+  if (!s || !s->has_value()) {return false;}
+  *s = item;
+  return true;
+}
+
+bool Cargo::set_doubt(const CargoDoubt & d)
+{
+  if (doubt_) {return false;}
+  doubt_ = d;
+  return true;
+}
+
 bool Cargo::save(const std::string & path, std::string * error) const
 {
   try {
@@ -141,6 +247,7 @@ bool Cargo::save(const std::string & path, std::string * error) const
     }
     root["slots"] = slots;
     if (gripper_) {root["gripper"] = item_node(*gripper_);}
+    if (doubt_) {root["doubt"] = doubt_node(*doubt_);}
 
     std::ofstream f(path);
     if (!f) {throw std::runtime_error("파일 쓰기 실패: " + path);}
@@ -170,9 +277,12 @@ bool Cargo::load(const std::string & path, std::string * error)
       if (slots[i]["item"]) {item = node_item(slots[i]["item"]);}
       loaded.emplace_back(name, item);
     }
+    std::optional<CargoDoubt> doubt;
+    if (root["doubt"]) {doubt = node_doubt(root["doubt"]);}   // 재시작해도 불확실 표시 유지
     slots_ = loaded;
     gripper_.reset();
     if (root["gripper"]) {gripper_ = node_item(root["gripper"]);}
+    doubt_ = doubt;
     return true;
   } catch (const std::exception & e) {
     set_error(error, e.what());

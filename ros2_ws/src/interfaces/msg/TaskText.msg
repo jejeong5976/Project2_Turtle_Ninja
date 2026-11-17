@@ -7,7 +7,7 @@
 # 보내는 쪽 → 받는 쪽
 #   - perception_node → mission_manager
 # note
-#   - 해석은 planning 이 함. 발제 v5 = P2-01 · P2-03 오름차순, P2-02 · P2-04 내림차순, 그 밖은 미등록
+#   - 해석은 planning 이 함. 발제 = P2-01 · P2-03 오름차순, P2-02 · P2-04 내림차순, 그 밖은 미등록
 #   - perception 은 planning 이 켰을 때만 읽고, 다수결로 확정된 값만 보냄
 #   - 켜져 있는 동안 계속 보냄 → planning 은 단계 시작 뒤 온 것만 씀
 

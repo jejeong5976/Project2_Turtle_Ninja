@@ -1,7 +1,9 @@
-// dice_record.hpp — 발제 v5 제출 기록 파일 signal.json · allocation.json 만들기
+// dice_record.hpp — 발제 제출 기록 파일 signal.json · allocation.json 만들기
 //
 // 역할
 //   - signal.json: 신호등 관측 결과 = 순서 · 횟수 · 점멸 시각 · 상태 · 문제. 기록이 끝났을 때 씀
+//       + partials: 12 개 전에 끝 소등이 온 시퀀스마다 색 · 시각 · 문제 (본 그대로, 결과에 이어 붙이지 않음)
+//   - signal_partial<N>.json: partial 하나, 남길 때 바로 씀 (노드가 중간에 꺼져도 남게)
 //   - allocation.json: 전체 할당 = 장소 그룹 · 눈 수 · Y 모양 · 칸마다 놓을 퍽 ID · 위치, 퍽 12 개 출처. 첫 PLACE 전에 씀
 //       재계획하면 revision 을 올려 다시 씀, history 에 이전 판 요약, 판마다 allocation_rev<N>.json 사본
 // 입력
@@ -35,6 +37,7 @@ struct AllocPuck
   std::string color;
   std::string shape;
   std::string where;            // "box:B3" · "cargo:S4" · "gripper" · "skipped:B2" · "lost" · "placed:L1"
+  std::string seen_as;          // 기록부 최신 관측이 계획 값과 다르면 "색/모양", 같으면 ""
 };
 
 // 칸 하나에 놓을 퍽
@@ -71,5 +74,8 @@ std::vector<AllocCell> planned_cells(const std::vector<Step> & steps, const Dice
 std::string allocation_to_json(const AllocationRecord & r, const DicePlan & plan, const DiceMap & arena);
 
 std::string signal_to_json(const SignalRecorder & rec, double start_s, bool timed_out);
+
+// partial 하나 (12 개 전에 끝 소등, 본 그대로) → signal_partial<N>.json 내용 (B2). signal.json 의 "partials" 와 같은 모양
+std::string signal_partial_to_json(const SignalPartial & p, double start_s);
 
 }  // namespace mission

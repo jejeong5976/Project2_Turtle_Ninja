@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.10)
 project(planning)
 
 # planning = 실행 층 (미션을 모름): 단계 실행기 · 퍽 기록부 · 적재함 · 감시 · grasp 계산
-#   미션 (발제 v5 dice 흐름 · mission_manager 노드) 은 mission 패키지 → 이 패키지 라이브러리를 씀
+#   미션 (발제 dice 흐름 · mission_manager 노드) 은 mission 패키지 → 이 패키지 라이브러리를 씀
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -30,6 +30,7 @@ add_library(planning_core STATIC
   src/puck_registry.cpp
   src/grasp.cpp
   src/cargo.cpp
+  src/inventory_policy.cpp
   src/health.cpp
 )
 set_target_properties(planning_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -72,6 +73,9 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_planning_core test/test_planning_core.cpp)
   target_link_libraries(test_planning_core planning_core)
+  # 실행기 액션 처리: 가짜 Nav2 · /arm_task 서버 (ROS 필요)
+  ament_add_gtest(test_executor_actions test/test_executor_actions.cpp)
+  target_link_libraries(test_executor_actions planning_exec)
 endif()
 
 ament_export_targets(export_planning HAS_LIBRARY_TARGET)

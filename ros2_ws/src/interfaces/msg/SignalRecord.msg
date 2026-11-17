@@ -1,7 +1,7 @@
 # SignalRecord.msg — 신호등 점멸 기록 결과
 #
 # 역할
-#   - 발제 v5 신호등 과제: 출발 구역에서 본 12 번 점멸의 순서 · 색별 횟수
+#   - 발제 신호등 과제: 출발 구역에서 본 12 번 점멸의 순서 · 색별 횟수
 # 토픽
 #   - /planning/signal_record  mission_manager, 바뀔 때 + 1 Hz, transient_local
 # 보내는 쪽 → 받는 쪽

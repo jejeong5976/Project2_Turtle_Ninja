@@ -22,7 +22,7 @@ uint8 ARM=2
 
 std_msgs/Header header
 uint8 mode
-uint32 request_id    # 차례가 바뀔 때마다 1 씩 증가. 예전 번호의 답으로 팔을 시작하지 않으려고 씀
+uint32 request_id    # 차례가 바뀔 때마다 1 씩 증가. 지난 번호의 답으로 팔을 시작하지 않으려고 씀
 string reason        # 사람이 읽는 이유, 예 "STOPPING"
 bool ready           # /control/motion_mode 만 씀: control_master 가 지금 새 팔 작업을 받을 수 있나
                      #   = 보드 상태 · 관절 측정이 신선하고 정상 + 팔 · 그리퍼 JTC 가 떠 있음

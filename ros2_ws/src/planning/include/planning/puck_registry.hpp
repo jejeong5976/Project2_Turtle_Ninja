@@ -18,9 +18,12 @@
 // note
 //   - 좌표 변환은 ROS 노드에서 끝낸 뒤 넣음
 //   - 상태는 팔 작업 성공 결과로만 바꿈
+//   - 색 · 모양 = ID 별 다수결 (한 장 오검출이 적재 기록을 덮어쓰지 않게).
+//       표는 현장 (on_field) 에 있을 때 · vote_kind 일 때만 셈 → 손 · 칸 · 놓은 뒤 검출은 위치만 바꿈
 
 #pragma once
 
+#include <map>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -48,8 +51,9 @@ public:
   explicit PuckRegistry(double merge_radius = 0.06)
   : merge_radius_(merge_radius) {}
 
-  // ID 를 읽은 검출 반영 (같은 ID 는 최신 값으로 덮어씀, 상태는 유지)
-  void update(const PuckRecord & seen);
+  // ID 를 읽은 검출 반영. 위치 · 시각은 최신 값, 색 · 모양은 표 많은 쪽, 상태는 유지
+  //   vote_kind false 이거나 상태가 on_field 가 아니면 색 · 모양 표를 안 셈 (아직 표가 없을 때 빈 값만 채움)
+  void update(const PuckRecord & seen, bool vote_kind = true);
 
   // ID 못 읽은 검출 반영 (가까운 후보와 합침)
   void add_candidate(const PuckRecord & seen);
@@ -66,6 +70,8 @@ public:
 private:
   double merge_radius_;
   std::unordered_map<std::string, PuckRecord> by_id_;
+  struct KindVotes {std::map<std::string, int> color, shape;};
+  std::unordered_map<std::string, KindVotes> votes_;   // ID → 색 · 모양별 본 장 수
   std::vector<PuckRecord> candidates_;
 };
 

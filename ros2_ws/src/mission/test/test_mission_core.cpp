@@ -5,9 +5,12 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <set>
 
 #include "mission/dice.hpp"
+#include "mission/dice_map.hpp"
 #include "mission/dice_steps.hpp"
 #include "mission/signal_recorder.hpp"
 #include "mission/task_parser.hpp"
@@ -15,18 +18,44 @@
 using namespace mission;
 
 // ============================================================================ task_parser
+namespace
+{
+// 레포 maps/dice_barcodes.json
+const BarcodeTable & barcodes()
+{
+  static const BarcodeTable t = [] {
+      BarcodeTable b;
+      std::string err;
+      EXPECT_TRUE(load_barcode_table(TEST_BARCODE_TABLE, b, &err)) << err;
+      return b;
+    }();
+  return t;
+}
+
+// 임시 바코드 표 파일을 쓰고 읽어 봄
+bool load_text(const std::string & text, BarcodeTable & out, std::string * err)
+{
+  const auto path = std::filesystem::temp_directory_path() / "dice_barcodes_test.json";
+  std::ofstream(path) << text;
+  const bool ok = load_barcode_table(path.string(), out, err);
+  std::filesystem::remove(path);
+  return ok;
+}
+}  // namespace
+
 TEST(TaskParser, DiceBarcodes)
 {
-  // 발제 v5: P2-01 · P2-03 오름차순, P2-02 · P2-04 내림차순
+  // 발제: P2-01 · P2-03 오름차순, P2-02 · P2-04 내림차순
+  EXPECT_EQ(barcodes().size(), 4u);
   for (const std::string code : {"P2-01", "P2-03"}) {
-    const auto t = parse_task(code);
+    const auto t = parse_task(code, barcodes());
     ASSERT_TRUE(t.has_value()) << code;
     EXPECT_EQ(t->dice_order, DiceOrder::Ascending);
     EXPECT_EQ(t->task_id, code);
     EXPECT_EQ(t->raw_text, code);
   }
   for (const std::string code : {"P2-02", "P2-04"}) {
-    const auto t = parse_task(code);
+    const auto t = parse_task(code, barcodes());
     ASSERT_TRUE(t.has_value()) << code;
     EXPECT_EQ(t->dice_order, DiceOrder::Descending);
   }
@@ -34,7 +63,7 @@ TEST(TaskParser, DiceBarcodes)
 
 TEST(TaskParser, TrimsWhitespace)
 {
-  const auto t = parse_task("  P2-02 \r\n");
+  const auto t = parse_task("  P2-02 \r\n", barcodes());
   ASSERT_TRUE(t.has_value());
   EXPECT_EQ(t->task_id, "P2-02");
   EXPECT_EQ(t->dice_order, DiceOrder::Descending);
@@ -43,14 +72,31 @@ TEST(TaskParser, TrimsWhitespace)
 TEST(TaskParser, RejectsUnregistered)
 {
   std::string err;
-  EXPECT_FALSE(parse_task("", &err).has_value());
-  EXPECT_FALSE(parse_task("P2-05", &err).has_value());          // 미등록
+  EXPECT_FALSE(parse_task("", barcodes(), &err).has_value());
+  EXPECT_FALSE(parse_task("P2-05", barcodes(), &err).has_value());          // 미등록
   EXPECT_NE(err.find("미등록"), std::string::npos);
-  EXPECT_FALSE(parse_task("p2-01", &err).has_value());          // 대소문자 다름 = 미등록
-  EXPECT_FALSE(parse_task("move;7;shelf_C", &err).has_value()); // 옛 시험 형식 안 받음
+  EXPECT_FALSE(parse_task("p2-01", barcodes(), &err).has_value());          // 대소문자 다름 = 미등록
+  EXPECT_FALSE(parse_task("move;7;shelf_C", barcodes(), &err).has_value()); // move; 형식 안 받음
+  EXPECT_FALSE(parse_task("P2-01", BarcodeTable{}, &err).has_value());     // 빈 표 = 전부 미등록
 }
 
-// ============================================================================ signal_recorder (발제 v5 신호등 12 번 점멸)
+TEST(TaskParser, BarcodeTableRejectsBadFiles)
+{
+  BarcodeTable t;
+  std::string err;
+  EXPECT_FALSE(load_text("{\"barcodes\": []}", t, &err));                                              // 빈 목록
+  EXPECT_FALSE(load_text("{\"barcodes\": [{\"barcode\": \"P2-01\", \"sortOrder\": \"UP\"}]}", t, &err));   // ASC · DESC 아님
+  EXPECT_NE(err.find("sortOrder"), std::string::npos);
+  EXPECT_FALSE(load_text("{\"barcodes\": [{\"barcode\": \"P2-01\", \"sortOrder\": \"ASC\"}, "
+    "{\"barcode\": \"P2-01\", \"sortOrder\": \"DESC\"}]}", t, &err));                                // 같은 바코드 두 번
+  EXPECT_FALSE(load_text("{\"barcodes\": [{\"sortOrder\": \"ASC\"}]}", t, &err));                      // 바코드 없음
+  EXPECT_FALSE(load_barcode_table("/없는/파일.json", t, &err));
+  EXPECT_TRUE(t.empty());                                                                                 // 실패하면 안 바꿈
+  ASSERT_TRUE(load_text("{\"barcodes\": [{\"barcode\": \"X1\", \"sortOrder\": \"DESC\", \"sortLabel\": \"내림차순\"}]}", t, &err)) << err;
+  EXPECT_EQ(t.at("X1"), DiceOrder::Descending);
+}
+
+// ============================================================================ signal_recorder (발제 신호등 12 번 점멸)
 namespace
 {
 // perception 출력 흉내: dt 간격으로 같은 관측을 dur 동안 넣음
@@ -143,6 +189,10 @@ TEST(SignalRecorder, LongGapMakesResultIncomplete)
   }
   f.run(SignalObs::Off, 2.6);
   // 7 · 8 번째 (G, G) 사이 소등을 못 봤으니 둘을 구별할 근거가 없음 → 하나로 합쳐짐 (추정해 나누지 않음)
+  // 11 개 뒤 끝 소등 → 끝내지 않고 다음 시퀀스 기다림. 시간 초과면 그 11 개를 불완전으로 남김
+  EXPECT_EQ(f.r.status(), SignalStatus::Waiting);
+  EXPECT_EQ(f.r.last_partial(), "RGRRGRGYGYG");
+  f.r.give_up(f.t, "시간 초과");
   EXPECT_EQ(f.r.sequence(), "RGRRGRGYGYG");
   EXPECT_EQ(f.r.status(), SignalStatus::Incomplete);
   ASSERT_GE(f.r.issues().size(), 2u);   // 관측 끊김 + 개수 11
@@ -174,12 +224,18 @@ TEST(SignalRecorder, EndsOnlyAfterLongOff)
   EXPECT_EQ(f.r.status(), SignalStatus::Done);
 }
 
-TEST(SignalRecorder, TooFewBlinksIsIncomplete)
+TEST(SignalRecorder, TooFewBlinksKeepsWaitingThenIncompleteOnTimeout)
 {
   SignalFeed f;
-  f.play("RGRRGRGGYGY");   // 11 개
+  f.play("RGRRGRGGYGY");   // 11 개 뒤 끝 소등 → 끝내지 않음
+  EXPECT_FALSE(f.r.finished());
+  EXPECT_EQ(f.r.status(), SignalStatus::Waiting);
+  EXPECT_EQ(f.r.partials(), 1);
+  f.run(SignalObs::Off, 30.0);   // 다음 시퀀스 안 옴
+  EXPECT_FALSE(f.r.finished());
+  f.r.give_up(f.t, "signal_wait_s 안에 기록이 안 끝남");
   EXPECT_EQ(f.r.status(), SignalStatus::Incomplete);
-  EXPECT_EQ(f.r.sequence().size(), 11u);
+  EXPECT_EQ(f.r.sequence(), "RGRRGRGGYGY");   // 본 그대로 남김 (추정 안 함)
 }
 
 TEST(SignalRecorder, CountRuleViolationIsIncomplete)
@@ -188,6 +244,103 @@ TEST(SignalRecorder, CountRuleViolationIsIncomplete)
   f.play("RRRRRRRGGGGY");   // R 7 회 (규칙 1-6)
   EXPECT_EQ(f.r.status(), SignalStatus::Incomplete);
   EXPECT_EQ(f.r.sequence(), "RRRRRRRGGGGY");
+}
+
+// ---- 실물 가짜 점멸 재생 (signal.json · launch.log 시각, planning 시작 기준 s)
+//   광각 엔진이 막 뜰 때 UNKNOWN + visible (= 애매) 이 몇 장, 그 뒤 소등. 켜짐을 소등 도착까지 재면 '?' 점멸로 세어 INCOMPLETE
+namespace
+{
+void feed_at(SignalRecorder & r, std::initializer_list<double> ts, SignalObs o)
+{
+  for (double t : ts) {r.observe(t, o);}
+}
+void off_until(SignalRecorder & r, double t0, double t1, double dt = 0.1)
+{
+  for (double t = t0; t < t1 - 1e-9; t += dt) {r.observe(t, SignalObs::Off);}
+}
+// 발제 규칙 12 점멸을 t0 부터 dt 간격으로 (1 s 켜짐 + 1 s 소등, 끝 소등 3.2 s). 끝 시각을 돌려 줌
+double play_at(SignalRecorder & r, double t0, const std::string & seq, double dt = 0.1)
+{
+  double t = t0;
+  for (char c : seq) {
+    const SignalObs o = c == 'R' ? SignalObs::Red : c == 'Y' ? SignalObs::Yellow : SignalObs::Green;
+    for (double e = 0.0; e < 1.0 - 1e-9; e += dt) {r.observe(t, o); t += dt;}
+    for (double e = 0.0; e < 1.0 - 1e-9; e += dt) {r.observe(t, SignalObs::Off); t += dt;}
+  }
+  for (double e = 0.0; e < 2.2 - 1e-9; e += dt) {r.observe(t, SignalObs::Off); t += dt;}
+  return t;
+}
+}  // namespace
+
+TEST(SignalRecorder, Real2237FakeBlinkWhileWideStartsIsIgnored)
+{
+  SignalRecorder r;
+  feed_at(r, {3.50, 3.63, 3.75, 3.88}, SignalObs::Ambiguous);   // 애매 4 장 0.38 s
+  off_until(r, 3.97, 12.0);                                       // 소등 도착까지 재면 6.5 s 에 INCOMPLETE '?'
+  EXPECT_EQ(r.status(), SignalStatus::Waiting);
+  EXPECT_TRUE(r.blinks().empty());
+  EXPECT_TRUE(r.issues().empty());
+  const double t = play_at(r, 20.0, "RGRRGRGGYGYG");   // 운영자가 나중에 튼 실제 신호
+  EXPECT_EQ(r.status(), SignalStatus::Done) << t;
+  EXPECT_EQ(r.sequence(), "RGRRGRGGYGYG");
+}
+
+TEST(SignalRecorder, Real2241ShortBlinksWithMessageGapAreIgnored)
+{
+  SignalRecorder r;
+  // 애매 2 장 (0.22 s) → 관측 0.32 s 끊김 → 소등. 켜짐을 첫 소등 도착 2.36 까지로 재면 0.54 s 로 셈
+  feed_at(r, {1.82, 2.04}, SignalObs::Ambiguous);
+  off_until(r, 2.36, 2.70);   // 2.66 소등 0.3 s → 점멸 닫힘 (실물 914.61 = 2.63 s)
+  feed_at(r, {2.71, 2.85}, SignalObs::Ambiguous);   // 0.14 s
+  off_until(r, 3.15, 12.0);                          // 소등 도착까지 재면 5.6 s 에 INCOMPLETE '??'
+  EXPECT_EQ(r.status(), SignalStatus::Waiting);
+  EXPECT_TRUE(r.blinks().empty());
+  EXPECT_EQ(r.notes().size(), 2u);
+  play_at(r, 15.0, "RRYYGGRYGRYG", 0.12);
+  EXPECT_EQ(r.status(), SignalStatus::Done);
+  EXPECT_EQ(r.sequence(), "RRYYGGRYGRYG");
+}
+
+TEST(SignalRecorder, OnTimeUsesObservationsNotMessageGap)
+{
+  SignalRecorder r;
+  off_until(r, 0.0, 1.0);
+  feed_at(r, {1.0, 1.15}, SignalObs::Red);   // 색은 확실하지만 0.15 s
+  off_until(r, 1.6, 6.0);                     // 0.45 s 끊김 뒤 소등 → 소등 도착까지 재면 0.6 s 켜짐 R 로 셈
+  EXPECT_TRUE(r.blinks().empty());
+  EXPECT_EQ(r.status(), SignalStatus::Waiting);
+}
+
+TEST(SignalRecorder, DarknessBeforeAnyValidBlinkNeverEnds)
+{
+  SignalRecorder r;
+  off_until(r, 0.0, 120.0);
+  EXPECT_EQ(r.status(), SignalStatus::Waiting);
+  EXPECT_FALSE(r.finished());
+}
+
+TEST(SignalRecorder, MidwayStartWaitsForNextFullSequence)
+{
+  SignalRecorder r;
+  // 기록 시작 때 이미 6 번째 점멸 중 → 6-12 번째 (7 개) 만 봄, 끝 소등
+  double t = play_at(r, 0.0, "RGGYGYG");
+  EXPECT_FALSE(r.finished());
+  EXPECT_EQ(r.status(), SignalStatus::Waiting);
+  EXPECT_EQ(r.last_partial(), "RGGYGYG");
+  t = play_at(r, t + 1.0, "RGRRGRGGYGYG");   // 운영자가 다시 틀어 줌
+  EXPECT_EQ(r.status(), SignalStatus::Done);
+  EXPECT_EQ(r.sequence(), "RGRRGRGGYGYG");
+}
+
+TEST(SignalRecorder, MidwayStartWithoutReplayIsIncompleteOnTimeout)
+{
+  SignalRecorder r;
+  const double t = play_at(r, 0.0, "RGGYGYG");
+  off_until(r, t, t + 60.0);
+  EXPECT_FALSE(r.finished());
+  r.give_up(t + 60.0, "signal_wait_s 안에 기록이 안 끝남");
+  EXPECT_EQ(r.status(), SignalStatus::Incomplete);
+  EXPECT_EQ(r.sequence(), "RGGYGYG");
 }
 
 TEST(SignalRecorder, ColorChangeWithoutOffSplitsAndFlags)
@@ -210,14 +363,14 @@ std::string groups_str(const std::array<char, 3> & g) {return std::string(g.begi
 
 TEST(Dice, ParsesBarcodeOrder)
 {
-  EXPECT_EQ(parse_dice_barcode("P2-01"), DiceOrder::Ascending);
-  EXPECT_EQ(parse_dice_barcode(" P2-03\n"), DiceOrder::Ascending);
-  EXPECT_EQ(parse_dice_barcode("P2-02"), DiceOrder::Descending);
-  EXPECT_EQ(parse_dice_barcode("P2-04"), DiceOrder::Descending);
+  EXPECT_EQ(parse_dice_barcode("P2-01", barcodes()), DiceOrder::Ascending);
+  EXPECT_EQ(parse_dice_barcode(" P2-03\n", barcodes()), DiceOrder::Ascending);
+  EXPECT_EQ(parse_dice_barcode("P2-02", barcodes()), DiceOrder::Descending);
+  EXPECT_EQ(parse_dice_barcode("P2-04", barcodes()), DiceOrder::Descending);
   std::string err;
-  EXPECT_FALSE(parse_dice_barcode("P2-05", &err).has_value());   // 미등록 = 오류 정지
+  EXPECT_FALSE(parse_dice_barcode("P2-05", barcodes(), &err).has_value());   // 미등록 = 오류 정지
   EXPECT_NE(err.find("미등록"), std::string::npos);
-  EXPECT_FALSE(parse_dice_barcode("", &err).has_value());
+  EXPECT_FALSE(parse_dice_barcode("", barcodes(), &err).has_value());
 }
 
 TEST(Dice, SortsGroupsWithRygTieOrder)
@@ -342,6 +495,45 @@ TEST(Dice, ApplyViewDirectionsOrdersFarFromViewer)
   }
 }
 
+// 발제 p.4: 지도 +Y 기준 세 곳 같은 방향 (회전 대체 불가). 놓는 순서는 장소마다 보는 사람에서 먼 칸부터
+TEST(Dice, PlaceDirectionsSameOrientationEverywhere)
+{
+  const double p = 0.06;
+  for (const double ay : {0.0, -3.2446}) {   // map_from_arena yaw (arena5 맞춤 값 포함)
+    auto plan = mission::dice_layout(mission::SignalCounts{2, 4, 6}, mission::DiceOrder::Ascending);   // L1 2 · L2 4 · L3 6
+    ASSERT_TRUE(plan.has_value());
+    const std::array<double, 2> up{{-std::sin(ay), std::cos(ay)}}, rx{{std::cos(ay), std::sin(ay)}};
+    auto rot = [&](double x, double y) {return std::array<double, 2>{{x * rx[0] + y * up[0], x * rx[1] + y * up[1]}};};
+    // 보는 방향 (map): L1 서 → 동 · L2 북 → 남 · L3 남 → 북 (경기장 기준을 map 으로)
+    const std::array<std::array<double, 2>, 3> view{{rot(1, 0), rot(0, -1), rot(0, 1)}};
+    mission::apply_place_directions(*plan, {{up, up, up}}, view);
+    auto has = [&](const mission::DicePlace & pl, double x, double y) {
+        const auto q = rot(x, y);
+        for (const auto & o : pl.pip_offsets) {
+          if (std::hypot(o[0] - q[0], o[1] - q[1]) < 1e-9) {return true;}
+        }
+        return false;
+      };
+    for (const auto & pl : plan->places) {
+      if (pl.pips == 2) {   // 그림: 왼쪽 위 · 오른쪽 아래 (경기장 좌표, L1 이라도 안 돌림)
+        EXPECT_TRUE(has(pl, -p, p));
+        EXPECT_TRUE(has(pl, p, -p));
+      }
+      if (pl.pips == 6) {   // 두 열 = 경기장 x 로 나뉨
+        for (double y : {-p, 0.0, p}) {
+          EXPECT_TRUE(has(pl, -p, y));
+          EXPECT_TRUE(has(pl, p, y));
+        }
+      }
+    }
+    for (int i = 0; i < 3; ++i) {   // 첫 칸 = 보는 방향 투영 최대 (먼 칸)
+      const auto & o = plan->places[i].pip_offsets;
+      for (const auto & q : o) {
+        EXPECT_LE(q[0] * view[i][0] + q[1] * view[i][1], o[0][0] * view[i][0] + o[0][1] * view[i][1] + 1e-12);
+      }
+    }
+  }
+}
 
 // ============================================================================ dice_steps (바코드 읽기 · 복귀)
 TEST(DiceSteps, ReadStepsWithLook)
@@ -358,4 +550,41 @@ TEST(DiceSteps, ReadStepsWithLook)
   const auto ret = build_return_steps({1.0, 2.0, 0.0});
   ASSERT_EQ(ret.size(), 1u);
   EXPECT_EQ(ret[0].name, "nav:start");
+}
+
+// ============================================================================ 박스 LOOK 뒤 박스 중심 다시 잡기
+// 실물 박스가 지도에서 10 cm 어긋남: 퍽 두 개 (박스 중심 ±4 cm) 가 지도 중심 15 cm 밖 → 평균으로 옮겨 둘 다 들어옴
+TEST(BoxRecenter, ShiftedBoxBringsPucksBack)
+{
+  const std::array<double, 2> map_c{1.0, 2.0};
+  const std::array<double, 2> real_c{1.10, 2.08};   // 12.8 cm 어긋남
+  const std::vector<std::array<double, 2>> pts{{real_c[0] - 0.04, real_c[1]}, {real_c[0] + 0.04, real_c[1]}, {3.0, 3.0}};
+  const auto r = recenter_box_on_pucks(map_c, pts, 0.15, 0.25, 0.25);
+  ASSERT_TRUE(r.has_value());
+  EXPECT_EQ(r->before, 1);   // 1.06, 2.08 는 10 cm → 안, 1.14 는 16.6 cm → 밖
+  EXPECT_EQ(r->after, 2);
+  EXPECT_EQ(r->used, 2);     // 멀리 (3, 3) 퍽은 안 씀
+  EXPECT_NEAR(r->center[0], real_c[0], 1e-9);
+  EXPECT_NEAR(r->center[1], real_c[1], 1e-9);
+  EXPECT_NEAR(r->shift, std::hypot(0.10, 0.08), 1e-9);
+}
+
+TEST(BoxRecenter, ZeroPucksInsideButNearby)
+{
+  const std::vector<std::array<double, 2>> pts{{0.16, 0.0}, {0.20, 0.05}};
+  const auto r = recenter_box_on_pucks({0.0, 0.0}, pts, 0.15, 0.25, 0.25);
+  ASSERT_TRUE(r.has_value());
+  EXPECT_EQ(r->before, 0);
+  EXPECT_EQ(r->after, 2);
+}
+
+TEST(BoxRecenter, KeepsCenterWhenNothingGained)
+{
+  // 다 안: 그대로
+  EXPECT_FALSE(recenter_box_on_pucks({0.0, 0.0}, {{0.04, 0.0}, {-0.04, 0.0}}, 0.15, 0.25, 0.25).has_value());
+  // 퍽 없음 · 둘레 밖만
+  EXPECT_FALSE(recenter_box_on_pucks({0.0, 0.0}, {}, 0.15, 0.25, 0.25).has_value());
+  EXPECT_FALSE(recenter_box_on_pucks({0.0, 0.0}, {{0.30, 0.0}}, 0.15, 0.25, 0.25).has_value());
+  // 옮김 한계 넘음
+  EXPECT_FALSE(recenter_box_on_pucks({0.0, 0.0}, {{0.20, 0.0}, {0.24, 0.0}}, 0.15, 0.25, 0.10).has_value());
 }

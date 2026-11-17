@@ -1,4 +1,4 @@
-// dice_map.hpp — 발제 v5 경기장 좌표 maps/dice_map.yaml 읽기 → map 프레임
+// dice_map.hpp — 발제 경기장 좌표 maps/dice_map.yaml 읽기 → map 프레임
 //
 // 역할
 //   - 경기장 좌표 → map 프레임 변환
@@ -14,6 +14,7 @@
 //   - places: L1 … L3: {center: [x, y], stop: [x, y, yaw], top_z: 0.07}
 //       center = 주사위 격자 중심, 보는 방향 = stop yaw
 //   - box_radius: 0.15            박스 LOOK 때 이 반경 안 퍽 = 그 박스 퍽, m
+//   - box_size: 0.205             박스 한 변, m
 // 출력
 //   - DiceMap: 정차 자세 · 장소 중심 · 박스 중심, map 프레임
 // 실행
@@ -26,7 +27,9 @@
 #pragma once
 
 #include <array>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "mission/common.hpp"
 
@@ -55,6 +58,7 @@ struct DiceMap
   std::array<ArenaBox, 6> boxes;    // B1–B6
   std::array<ArenaPlace, 3> places; // L1–L3
   double box_radius = 0.15;
+  double box_size = 0.205;          // 박스 한 변 [m]
 };
 
 // 실패하면 false + error. out 은 map 프레임으로 바꾼 값
@@ -69,5 +73,20 @@ Pose2D inverse_pose(const Pose2D & a);
 
 // 노드 번호 (0 = S, 1–6 = B, 7–9 = L) → 정차 자세. 범위 밖이면 start
 Pose2D node_stop(const DiceMap & a, int node);
+
+// 박스 LOOK 뒤 박스 중심 다시 잡기 (실물 박스가 지도에서 6–11 cm 어긋나 퍽이 box_radius 밖으로 빠질 때)
+//   pts = 이번 LOOK 뒤 본 퍽 위치 (map). center 에서 search_radius 안 퍽 평균 = 새 중심
+//   새 중심 box_radius 안 퍽 수가 지금보다 많고 옮김이 max_shift 안일 때만 값, 아니면 nullopt (그대로)
+struct BoxRecenter
+{
+  std::array<double, 2> center{};
+  int before = 0;   // 지금 중심 box_radius 안 퍽 수
+  int after = 0;    // 새 중심 box_radius 안 퍽 수
+  int used = 0;     // 평균에 쓴 퍽 수 (search_radius 안)
+  double shift = 0.0;
+};
+std::optional<BoxRecenter> recenter_box_on_pucks(
+  const std::array<double, 2> & center, const std::vector<std::array<double, 2>> & pts,
+  double box_radius, double search_radius, double max_shift);
 
 }  // namespace mission

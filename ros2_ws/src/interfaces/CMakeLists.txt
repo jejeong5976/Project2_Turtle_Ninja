@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.10)
 project(interfaces)
 
 find_package(ament_cmake REQUIRED)
@@ -19,6 +19,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/CargoState.msg"
   "msg/MissionStatus.msg"
   "msg/MotionMode.msg"
+  "msg/WristTag.msg"
+  "msg/WristTagArray.msg"
   "action/ArmTask.action"
   DEPENDENCIES std_msgs geometry_msgs
 )

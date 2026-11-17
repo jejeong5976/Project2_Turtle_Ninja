@@ -28,5 +28,5 @@ uint8 tasks_done              # 끝낸 task 수
 uint8 tasks_failed            # 포기한 task 수, 해석 불가 포함
 uint8 tasks_total             # 시도한 task 수 = done + failed + 진행 중
 float32 elapsed_s             # 첫 /mission/start 뒤 경과 시간. FAULT 중에도 흐르고 DONE 에서 멈춤, 시작 전 0
-float32 time_left_s           # 제한 시간까지 남은 시간, 제한 없으면 -1. 발제 v5 는 제한 없음
+float32 time_left_s           # 제한 시간까지 남은 시간, 제한 없으면 -1. 발제 는 제한 없음
 bool hold                     # /mission/hold 와 같은 값
