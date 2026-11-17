@@ -3,17 +3,21 @@
 
   # 지도 만들기 (실물): tools/jetson/run_robot.sh slam opencr  (이 launch 를 부름)
   ros2 launch navigation slam.launch.py hardware:=opencr opencr_ports:=bus_drive=<주행 보드> lidar_front_port:=<앞> lidar_rear_port:=<뒤>
-  # 위치 찾기 (저장한 지도): slam_mode:=localization map:=$HOME/maps/arena  (확장자 빼고 — arena.posegraph · arena.data)
+  # 저장한 지도 이어 그리기 (시연 기본): slam_mode:=mapping map:=$HOME/maps/arena  (확장자 빼고 — arena.posegraph · arena.data)
+  # 위치 찾기만 (지도 고정): slam_mode:=localization map:=$HOME/maps/arena
   # 라이다 없이 (bag 재생 · 시뮬): robot:=false lidar:=false use_sim_time:=true — 스캔은 밖에서 /lidar_front/scan · /lidar_rear/scan
   # 뒤 라이다 없이: lidar_rear_port:='' (앞만으로 합침)
+  # slam_toolbox 없이 (AMCL 로 위치 찾기 — map → odom 은 nav2.launch.py localization:=amcl): slam:=false
 
 띄우는 것
   bringup/robot.launch.py: 모델 · ros2_control · swerve_controller (/odom · odom→base_footprint TF). 기본은 바퀴만 (arm:=false).
   coin_d4_driver/multi_coin_d4_node: 앞 → /lidar_front/scan (lidar_front_link), 뒤 → /lidar_rear/scan (lidar_rear_link)
   scan_merger: 둘을 몸 중심 360° /scan (base_footprint) 하나로. 한쪽이 끊기면 /scan 을 내지 않음
-  slam_toolbox: mapping (online_async) 또는 localization — config/slam_toolbox.yaml
+  slam_toolbox: mapping (online_async, map:= 주면 저장 지도 불러와 이어 그림) 또는 localization (map:= 필수) — config/slam_toolbox.yaml
+                slam:=false 면 안 띄움 (slam_mode · map 안 봄). 로봇 · 라이다 · scan_merger · pose_guard 는 그대로
   pose_guard: /localization_health (정상 · 경고 · 정지) · /imu_motion_bias (guard:=false 면 안 띄움)
-TF 주인은 하나씩: odom→base_footprint = swerve_controller, base_footprint→lidar_*_link = robot_state_publisher, map→odom = slam_toolbox.
+TF 주인은 하나씩: odom→base_footprint = swerve_controller, base_footprint→lidar_*_link = robot_state_publisher, map→odom = slam_toolbox
+  (slam:=false 면 이 launch 는 map→odom 을 안 냄 → AMCL 등 밖에서).
 """
 import os
 import tempfile
@@ -29,7 +33,7 @@ from launch_ros.substitutions import FindPackageShare
 
 LIDAR_POSE = ["lidar_front_x", "lidar_front_y", "lidar_front_z", "lidar_front_yaw",
               "lidar_rear_x", "lidar_rear_y", "lidar_rear_z", "lidar_rear_yaw"]
-ROBOT_ARGS = ["hardware", "hardware_map", "opencr_port", "opencr_ports", "arm", "use_rviz"] + LIDAR_POSE
+ROBOT_ARGS = ["hardware", "hardware_map", "opencr_port", "opencr_ports", "arm", "use_rviz", "enforce_command_limits"] + LIDAR_POSE
 LIDAR_DEFAULTS = {"lidar_front_x": "0.1145", "lidar_front_y": "0.0", "lidar_front_z": "0.060", "lidar_front_yaw": "3.141592653589793",
                   "lidar_rear_x": "-0.1145", "lidar_rear_y": "0.0", "lidar_rear_z": "0.060", "lidar_rear_yaw": "0.0"}
 
@@ -73,6 +77,8 @@ def _lidars(context):
 
 
 def _slam(context):
+    if LaunchConfiguration("slam").perform(context) != "true":
+        return [LogInfo(msg="slam_toolbox 안 띄움 (slam:=false) — map → odom 은 다른 노드 (AMCL)")]
     mode = LaunchConfiguration("slam_mode").perform(context)
     if mode not in ("mapping", "localization"):
         raise RuntimeError(f"slam_mode 는 mapping | localization (지금 {mode})")
@@ -81,12 +87,15 @@ def _slam(context):
     p = d["slam_toolbox"]["ros__parameters"]
     p["mode"] = mode
     out = []
-    if mode == "localization":
-        m = os.path.expanduser(LaunchConfiguration("map").perform(context))
+    m = os.path.expanduser(LaunchConfiguration("map").perform(context))
+    if mode == "localization" and not m:
+        raise RuntimeError("localization 은 map:= 필수 (tools/jetson/save_map.sh 로 저장한 경로, 확장자 빼고)")
+    if m:
+        # 저장 지도 불러오기 = mapping · localization 공통. 시작 자세 = 지도 첫 노드 (지도 딸 때 출발 자세와 같게 놓아야 함)
         if not (os.path.exists(m + ".posegraph") and os.path.exists(m + ".data")):
             raise RuntimeError(f"지도 {m}.posegraph · .data 가 없음 — tools/jetson/save_map.sh 로 저장한 경로(확장자 빼고)를 map:= 로")
         p["map_file_name"], p["map_start_at_dock"] = m, True
-        out.append(LogInfo(msg=f"위치 찾기: 지도 {m}"))
+        out.append(LogInfo(msg=f"{'이어 그리기' if mode == 'mapping' else '위치 찾기'}: 지도 {m}"))
     f = tempfile.NamedTemporaryFile("w", prefix="slam_toolbox_", suffix=".yaml", delete=False)
     yaml.safe_dump(d, f)
     f.close()
@@ -124,6 +133,8 @@ def generate_launch_description():
         DeclareLaunchArgument("opencr_port", default_value="auto"),
         DeclareLaunchArgument("opencr_ports", default_value="auto"),
         DeclareLaunchArgument("use_rviz", default_value="false", choices=["true", "false"], description="로봇 모델 rviz (bringup)"),
+        DeclareLaunchArgument("enforce_command_limits", default_value="true", choices=["true", "false"],
+                              description="false = 관절 명령 한계 끔 (bringup robot.launch.py, arm:=false 일 때만)"),
         DeclareLaunchArgument("slam_rviz", default_value="false", choices=["true", "false"], description="지도 · 스캔 rviz (rviz/slam_view.rviz)"),
         *[DeclareLaunchArgument(k, default_value=v) for k, v in LIDAR_DEFAULTS.items()],
         DeclareLaunchArgument("robot", default_value="true", choices=["true", "false"], description="false = 로봇 bringup 안 띄움 (bag 재생 · 시뮬 · 이미 떠 있을 때)"),
@@ -131,8 +142,10 @@ def generate_launch_description():
         DeclareLaunchArgument("rear_scan", default_value="true", choices=["true", "false"], description="lidar:=false 일 때 /lidar_rear/scan 도 받나 (앞 라이다 하나뿐인 bag 이면 false)"),
         DeclareLaunchArgument("lidar_front_port", default_value="", description="앞 라이다 시리얼 (/dev/serial/by-path/…), 비우면 안 씀"),
         DeclareLaunchArgument("lidar_rear_port", default_value="", description="뒤 라이다 시리얼, 비우면 안 씀"),
+        DeclareLaunchArgument("slam", default_value="true", choices=["true", "false"],
+                              description="false = slam_toolbox 안 띄움 (AMCL 이 map → odom, slam_mode · map 안 봄)"),
         DeclareLaunchArgument("slam_mode", default_value="mapping", description="mapping | localization"),
-        DeclareLaunchArgument("map", default_value="", description="localization 때 저장한 지도 (확장자 빼고)"),
+        DeclareLaunchArgument("map", default_value="", description="저장한 지도 (확장자 빼고). mapping 이면 이어 그리기 (비우면 새로), localization 이면 필수"),
         DeclareLaunchArgument("guard", default_value="true", choices=["true", "false"], description="위치 감시 pose_guard 띄움"),
         DeclareLaunchArgument("use_sim_time", default_value="false", choices=["true", "false"], description="bag 재생 · 시뮬 때만 true (robot:=false 와 같이)"),
         OpaqueFunction(function=_check),

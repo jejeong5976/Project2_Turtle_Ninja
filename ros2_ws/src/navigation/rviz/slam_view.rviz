@@ -1,94 +1,687 @@
-# 지도 · 스캔 보기 (Fixed Frame map) — ros2 launch navigation slam.launch.py slam_rviz:=true, 또는 rviz2 -d $(ros2 pkg prefix navigation)/share/navigation/rviz/slam_view.rviz
 Panels:
   - Class: rviz_common/Displays
+    Help Height: 70
     Name: Displays
+    Property Tree Widget:
+      Expanded: ~
+      Splitter Ratio: 0.5
+    Tree Height: 310
 Visualization Manager:
   Class: ""
   Displays:
-    - Class: rviz_default_plugins/Grid
-      Name: Grid
-      Enabled: true
+    - Alpha: 0.5
       Cell Size: 0.5
+      Class: rviz_default_plugins/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
+      Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
       Plane Cell Count: 20
       Reference Frame: <Fixed Frame>
       Value: true
-    - Class: rviz_default_plugins/Map
-      Name: Map
-      Enabled: true
-      Alpha: 0.7
+    - Alpha: 0.699999988079071
+      Binary representation: false
+      Binary threshold: 100
+      Class: rviz_default_plugins/Map
       Color Scheme: map
+      Draw Behind: false
+      Enabled: true
+      Name: Map
       Topic:
-        Value: /map
         Depth: 1
         Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
         Reliability Policy: Reliable
-        History Policy: Keep Last
+        Value: /map
       Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
         Value: /map_updates
+      Use Timestamp: false
       Value: true
-    - Class: rviz_default_plugins/LaserScan
-      Name: ScanFront
-      Enabled: true
-      Size (m): 0.02
-      Style: Points
-      Color Transformer: FlatColor
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/LaserScan
       Color: 255; 60; 60
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: ScanFront
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.019999999552965164
+      Style: Points
       Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
         Value: /lidar_front/scan
-        Depth: 5
-        Durability Policy: Volatile
-        Reliability Policy: Best Effort
-        History Policy: Keep Last
+      Use Fixed Frame: true
+      Use rainbow: true
       Value: true
-    - Class: rviz_default_plugins/LaserScan
-      Name: ScanRear
-      Enabled: true
-      Size (m): 0.02
-      Style: Points
-      Color Transformer: FlatColor
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/LaserScan
       Color: 60; 120; 255
-      Topic:
-        Value: /lidar_rear/scan
-        Depth: 5
-        Durability Policy: Volatile
-        Reliability Policy: Best Effort
-        History Policy: Keep Last
-      Value: true
-    - Class: rviz_default_plugins/LaserScan
-      Name: ScanMerged
-      Enabled: true
-      Size (m): 0.03
-      Style: Points
       Color Transformer: FlatColor
-      Color: 40; 200; 40
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: ScanRear
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.019999999552965164
+      Style: Points
       Topic:
-        Value: /scan
         Depth: 5
         Durability Policy: Volatile
-        Reliability Policy: Best Effort
+        Filter size: 10
         History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /lidar_rear/scan
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/LaserScan
+      Color: 40; 200; 40
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: ScanMerged
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.029999999329447746
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /scan
+      Use Fixed Frame: true
+      Use rainbow: true
       Value: true
     - Class: rviz_default_plugins/TF
+      Enabled: true
+      Filter (blacklist): ""
+      Filter (whitelist): ""
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+        base_footprint:
+          Value: true
+        base_link:
+          Value: true
+        base_scan:
+          Value: true
+        base_scan_front:
+          Value: true
+        base_scan_rear:
+          Value: true
+        battery_link:
+          Value: true
+        birdeye_camera_link:
+          Value: true
+        birdeye_camera_optical_frame:
+          Value: true
+        bottom_plate_link:
+          Value: true
+        camera_link:
+          Value: true
+        camera_optical_frame:
+          Value: true
+        d435_color_optical_frame:
+          Value: true
+        end_effector_link:
+          Value: true
+        gripper_park_stand_link:
+          Value: true
+        imu_link:
+          Value: true
+        jetson_link:
+          Value: true
+        lidar_board_center_link:
+          Value: true
+        lidar_board_front_right_link:
+          Value: true
+        lidar_front_link:
+          Value: true
+        lidar_rear_link:
+          Value: true
+        link1:
+          Value: true
+        map:
+          Value: true
+        odom:
+          Value: true
+        opencr_arm_link:
+          Value: true
+        opencr_drive_link:
+          Value: true
+        profile_camera_bracket_link:
+          Value: true
+        profile_fixing_plate_link:
+          Value: true
+        profile_link:
+          Value: true
+        rack_cell_S10_link:
+          Value: true
+        rack_cell_S11_link:
+          Value: true
+        rack_cell_S12_link:
+          Value: true
+        rack_cell_S1_link:
+          Value: true
+        rack_cell_S2_link:
+          Value: true
+        rack_cell_S3_link:
+          Value: true
+        rack_cell_S4_link:
+          Value: true
+        rack_cell_S5_link:
+          Value: true
+        rack_cell_S6_link:
+          Value: true
+        rack_cell_S7_link:
+          Value: true
+        rack_cell_S8_link:
+          Value: true
+        rack_cell_S9_link:
+          Value: true
+        rack_link:
+          Value: true
+        steer_fl_link:
+          Value: true
+        steer_fr_link:
+          Value: true
+        steer_rl_link:
+          Value: true
+        steer_rr_link:
+          Value: true
+        wheel_fl_link:
+          Value: true
+        wheel_fr_link:
+          Value: true
+        wheel_rl_link:
+          Value: true
+        wheel_rr_link:
+          Value: true
+        wrist_cam_color_optical_frame:
+          Value: true
+        wrist_cam_depth_optical_frame:
+          Value: true
+        wrist_link:
+          Value: true
+      Marker Scale: 0.30000001192092896
       Name: TF
-      Enabled: true
+      Show Arrows: true
+      Show Axes: true
       Show Names: true
-      Marker Scale: 0.3
+      Tree:
+        map:
+          odom:
+            base_footprint:
+              base_link:
+                battery_link:
+                  {}
+                bottom_plate_link:
+                  {}
+                gripper_park_stand_link:
+                  {}
+                imu_link:
+                  {}
+                jetson_link:
+                  {}
+                lidar_board_center_link:
+                  {}
+                lidar_board_front_right_link:
+                  {}
+                link1:
+                  {}
+                opencr_arm_link:
+                  {}
+                opencr_drive_link:
+                  {}
+                profile_fixing_plate_link:
+                  profile_link:
+                    profile_camera_bracket_link:
+                      birdeye_camera_link:
+                        birdeye_camera_optical_frame:
+                          {}
+                rack_link:
+                  rack_cell_S10_link:
+                    {}
+                  rack_cell_S11_link:
+                    {}
+                  rack_cell_S12_link:
+                    {}
+                  rack_cell_S1_link:
+                    {}
+                  rack_cell_S2_link:
+                    {}
+                  rack_cell_S3_link:
+                    {}
+                  rack_cell_S4_link:
+                    {}
+                  rack_cell_S5_link:
+                    {}
+                  rack_cell_S6_link:
+                    {}
+                  rack_cell_S7_link:
+                    {}
+                  rack_cell_S8_link:
+                    {}
+                  rack_cell_S9_link:
+                    {}
+                steer_fl_link:
+                  wheel_fl_link:
+                    {}
+                steer_fr_link:
+                  wheel_fr_link:
+                    {}
+                steer_rl_link:
+                  wheel_rl_link:
+                    {}
+                steer_rr_link:
+                  wheel_rr_link:
+                    {}
+              lidar_front_link:
+                base_scan:
+                  {}
+                base_scan_front:
+                  {}
+              lidar_rear_link:
+                base_scan_rear:
+                  {}
+      Update Interval: 0
       Value: true
-    - Class: rviz_default_plugins/RobotModel
-      Name: RobotModel
-      Enabled: true
+    - Alpha: 1
+      Class: rviz_default_plugins/RobotModel
+      Collision Enabled: false
+      Description File: ""
       Description Source: Topic
       Description Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
         Value: /robot_description
-        Durability Policy: Transient Local
-      Value: true
-    - Class: rviz_default_plugins/Path
-      Name: FollowPath
       Enabled: true
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        Link Tree Style: Links in Alphabetic Order
+        base_footprint:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        base_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        base_scan:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        base_scan_front:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        base_scan_rear:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        battery_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        birdeye_camera_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        birdeye_camera_optical_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        bottom_plate_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        camera_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        camera_optical_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        d435_color_optical_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        end_effector_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        gripper_crank_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        gripper_left_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        gripper_left_rod_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        gripper_park_stand_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        gripper_right_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        gripper_right_rod_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        imu_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        jetson_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        lidar_board_center_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        lidar_board_front_right_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        lidar_front_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        lidar_rear_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        link1:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        link2:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        link3:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        link4:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        link5:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        opencr_arm_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        opencr_drive_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        profile_camera_bracket_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        profile_fixing_plate_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        profile_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        rack_cell_S10_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        rack_cell_S11_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        rack_cell_S12_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        rack_cell_S1_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        rack_cell_S2_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        rack_cell_S3_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        rack_cell_S4_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        rack_cell_S5_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        rack_cell_S6_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        rack_cell_S7_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        rack_cell_S8_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        rack_cell_S9_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        rack_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        steer_fl_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        steer_fr_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        steer_rl_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        steer_rr_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        wheel_fl_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        wheel_fr_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        wheel_rl_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        wheel_rr_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        wrist_cam_color_optical_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        wrist_cam_depth_optical_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        wrist_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+      Mass Properties:
+        Inertia: false
+        Mass: false
+      Name: RobotModel
+      TF Prefix: ""
+      Update Interval: 0
+      Value: true
+      Visual Enabled: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
       Color: 25; 255; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Lines
+      Line Width: 0.029999999329447746
+      Name: FollowPath
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
       Topic:
-        Value: /path_follow/path
+        Depth: 5
         Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /path_follow/path
       Value: true
   Enabled: true
   Global Options:
@@ -98,17 +691,49 @@ Visualization Manager:
   Name: root
   Tools:
     - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
     - Class: rviz_default_plugins/MoveCamera
     - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
     - Class: rviz_default_plugins/SetInitialPose
+      Covariance x: 0.25
+      Covariance y: 0.25
+      Covariance yaw: 0.06853891909122467
       Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
         Value: /initialpose
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
   Value: true
   Views:
     Current:
+      Angle: -1.9700000286102295
       Class: rviz_default_plugins/TopDownOrtho
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Invert Z Axis: false
       Name: Current View
+      Near Clip Distance: 0.009999999776482582
       Scale: 80
+      Target Frame: <Fixed Frame>
+      Value: TopDownOrtho (rviz_default_plugins)
       X: 0
       Y: 0
     Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 1131
+  Hide Left Dock: false
+  Hide Right Dock: false
+  QMainWindow State: 000000ff00000000fd000000010000000000000156000001b9fc0200000001fb000000100044006900730070006c006100790073000000003d000001b9000000c900ffffff0000039f0000041100000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Width: 927
+  X: 993
+  Y: 32

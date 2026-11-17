@@ -8,6 +8,8 @@ set(REPOSITORY_CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../config")
 install(DIRECTORY "${REPOSITORY_CONFIG_DIR}/"
   DESTINATION share/${PROJECT_NAME}/config
   FILES_MATCHING PATTERN "*.yaml"
+  PATTERN "*.npz"   # RL 주행 정책 (config/rl, nav2.launch.py local_planner:=rl)
+  PATTERN "*.json"
 )
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
 
