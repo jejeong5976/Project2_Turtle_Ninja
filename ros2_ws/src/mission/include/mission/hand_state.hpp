@@ -151,4 +151,11 @@ inline std::optional<planning::DoubtFix> choose_doubt_fix(uint8_t arm_task, Hand
   }
 }
 
+// 이 정합이 PLACE 성공 확인인가 → 노드가 놓은 수 · 칸 기록 (on_place_confirmed) 을 갱신해야 함
+//   사람 정합 · 실행 중 자동 정합 · FAULT 중 그리퍼 실측 정합 모두 같은 조건
+inline bool place_confirmed_by(planning::DoubtFix fix, uint8_t arm_task)
+{
+  return fix == planning::DoubtFix::Done && arm_task == planning::kArmPlace;
+}
+
 }  // namespace mission

@@ -665,7 +665,7 @@ public:
           } else {
             planning::CargoDoubt d;
             res->success = exec_->resolve_inventory(fix, res->message, &d);
-            if (res->success && fix == planning::DoubtFix::Done && d.arm_task == kArmPlace) {on_place_confirmed(d);}
+            if (res->success && place_confirmed_by(fix, d.arm_task)) {on_place_confirmed(d);}
             if (res->success) {res->message += gripper_hint();}
           }
           RCLCPP_INFO(get_logger(), "%s: %s", name.c_str(), res->message.c_str());
@@ -1194,7 +1194,8 @@ private:
     }
     const std::string id = d->item.puck_id.empty() ? d->puck_id : d->item.puck_id;
     std::string msg;
-    if (!exec_->resolve_inventory(*fix, msg)) {
+    planning::CargoDoubt rd;
+    if (!exec_->resolve_inventory(*fix, msg, &rd)) {
       if (now < inv_auto_until_) {
         inv_auto_from_ = now + 0.5;
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 3000, "재고 불확실 스스로 정합 기다림 (%s): %s", msg.c_str(), evidence.c_str());
@@ -1206,6 +1207,7 @@ private:
     }
     inv_auto_from_ = -1.0;
     RCLCPP_WARN(get_logger(), "재고 불확실 스스로 정합 (%s): %s", planning::doubt_fix_name(*fix), evidence.c_str());
+    if (place_confirmed_by(*fix, rd.arm_task)) {on_place_confirmed(rd);}   // 놓은 수 · 칸 기록 (안 하면 재계획이 같은 칸에 또 놓음)
     if (*fix == planning::DoubtFix::Removed && !id.empty()) {exec_->mark_puck(id, "on_field");}   // 자리 모름: 다음 LOOK 이 박스에서 보면 다시 집음
     hand_first_once_ = exec_->cargo().holding();
     std::string rw;
@@ -1861,7 +1863,7 @@ private:
           return StepResult::Running;
         }
         exec_->end_reconcile();
-        if (fix == planning::DoubtFix::Done && rd.arm_task == kArmPlace) {on_place_confirmed(rd, &f);}
+        if (place_confirmed_by(fix, rd.arm_task)) {on_place_confirmed(rd, &f);}
         detail_ = "자동 정합 " + std::string(planning::doubt_fix_name(fix)) + ": " + f.name + " — " + why;
         alloc_reason_ = "reconcile: " + f.name + " " + planning::doubt_fix_name(fix);
         RCLCPP_WARN(get_logger(), "%s", detail_.c_str());
@@ -3421,8 +3423,10 @@ private:
   // 20 Hz: 뒤로 가는 중이면 odom → 명령. 단계가 바뀜 (FAULT · 멈춤) 이면 0 · 영역 켬
   void lying_move_tick()
   {
-    if (!lying_.active || lying_.phase != LyingRun::Phase::Move) {return;}
-    if (op_ != Op::RUNNING || exec_->current_step_name() != lying_.name || pending_fault_) {
+    const bool interrupted = op_ != Op::RUNNING || exec_->current_step_name() != lying_.name || pending_fault_;
+    const auto act = lying_tick_action(lying_.active, lying_.phase, interrupted);
+    if (act == LyingTick::None) {return;}
+    if (act == LyingTick::Cleanup) {   // WaitDrive · Disable · Move 어디서 끊겨도 (Disable = 영역 이미 끔)
       lying_publish(0.0, 0.0, 0.0);
       if (lying_polys_off_) {lying_set_polygons(true);}
       RCLCPP_WARN(get_logger(), "누운 퍽 뒤로: 단계가 멈춤 (%s) → 명령 0 · 영역 켬", op_name(op_));
@@ -3485,7 +3489,7 @@ private:
 
   StepResult run_lying_backoff(const Step & s, double now)
   {
-    using Ph = LyingRun::Phase;
+    using Ph = LyingPhase;
     const int box = box_of(s);
     if (!lying_.active) {
       if (lying_.name != s.name) {   // 새 뒤로 빼기 (같은 단계를 FAULT · 멈춤 뒤 다시 하면 시작 자리 그대로 → 남은 만큼만)
@@ -5307,7 +5311,7 @@ private:
   Step lying_look_, lying_plan_;                     // 뒤로 간 뒤 끼울 LOOK · Plan
   struct LyingRun
   {
-    enum class Phase { WaitDrive, Disable, Move };
+    using Phase = LyingPhase;
     bool active = false;
     std::string name;
     int box = 0;

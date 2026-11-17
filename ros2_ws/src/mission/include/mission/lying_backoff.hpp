@@ -76,4 +76,17 @@ struct StraightBackCmd
 StraightBackCmd straight_back_cmd(double x0, double y0, double yaw0, double goal_m, double x, double y, double yaw,
   const StraightBackConfig & cfg);
 
+// ---- 20 Hz 틱에서 할 일
+enum class LyingPhase { WaitDrive, Disable, Move };   // DRIVE 기다림 → 영역 끄기 (답 기다림) → 곧게 뒤로
+enum class LyingTick { None, Cleanup, Move };
+
+// active = 뒤로 빼기 진행 중, interrupted = 미션이 RUNNING 아님 · 지금 단계가 이 뒤로 빼기 아님 · FAULT 대기
+//   진행 중 끊기면 단계 상관없이 Cleanup (명령 0 · 영역 켬). 영역은 WaitDrive 끝에서 끄므로 Disable 에서 끊겨도 켜야 함
+inline LyingTick lying_tick_action(bool active, LyingPhase phase, bool interrupted)
+{
+  if (!active) {return LyingTick::None;}
+  if (interrupted) {return LyingTick::Cleanup;}
+  return phase == LyingPhase::Move ? LyingTick::Move : LyingTick::None;
+}
+
 }  // namespace mission

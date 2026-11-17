@@ -3369,6 +3369,22 @@ TEST(HandReconcile, ReadHandNeedsStableFresh)
   EXPECT_EQ(read_hand({}, 10.0, c).state, HandState::Unknown);
 }
 
+// FAULT 중 그리퍼 실측 정합 (inventory_auto) 이 PLACE 빈손 = Done 으로 정하면 놓은 수 · 칸 기록도 갱신해야 함
+//   예전: 그 경로만 on_place_confirmed 를 안 불러 재계획이 같은 칸 (0) 에 또 놓음. 세 정합 경로가 이 조건 하나를 씀
+TEST(HandReconcile, AutoPlaceDoneUpdatesPlacement)
+{
+  using planning::DoubtFix;
+  std::string why;
+  const auto fix = choose_doubt_fix(kArmPlace, HandState::Empty, false, &why);
+  ASSERT_TRUE(fix.has_value());
+  EXPECT_TRUE(place_confirmed_by(*fix, kArmPlace));
+  EXPECT_FALSE(place_confirmed_by(DoubtFix::Before, kArmPlace));
+  EXPECT_FALSE(place_confirmed_by(DoubtFix::Removed, kArmPlace));
+  for (uint8_t t : {kArmPick, kArmStore, kArmRetrieve, kArmLookRack}) {
+    EXPECT_FALSE(place_confirmed_by(DoubtFix::Done, t));
+  }
+}
+
 TEST(HandReconcile, DoubtFixPerTaskAndHand)
 {
   using planning::DoubtFix;

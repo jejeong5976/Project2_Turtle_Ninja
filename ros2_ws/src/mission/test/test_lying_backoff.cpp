@@ -133,3 +133,19 @@ TEST(LyingBackoff, BadUprightUsesLyingLimit)
   ASSERT_TRUE(l.has_value());
   EXPECT_FALSE(l->bad);
 }
+
+// 뒤로 빼기 중 끊김 (FAULT · 멈춤 · 단계 바뀜): 영역을 끈 뒤인 Disable 에서 끊겨도 정리 (명령 0 · 영역 켬)
+//   예전: Move 에서만 정리 → Disable 중 FAULT 면 PolygonStop 꺼진 채 남음
+TEST(LyingBackoff, InterruptCleansUpInEveryPhase)
+{
+  using mission::LyingPhase;
+  using mission::LyingTick;
+  using mission::lying_tick_action;
+  for (auto ph : {LyingPhase::WaitDrive, LyingPhase::Disable, LyingPhase::Move}) {
+    EXPECT_EQ(lying_tick_action(true, ph, true), LyingTick::Cleanup);
+    EXPECT_EQ(lying_tick_action(false, ph, true), LyingTick::None);   // 이미 끝남 → 다시 정리 안 함
+  }
+  EXPECT_EQ(lying_tick_action(true, LyingPhase::WaitDrive, false), LyingTick::None);
+  EXPECT_EQ(lying_tick_action(true, LyingPhase::Disable, false), LyingTick::None);
+  EXPECT_EQ(lying_tick_action(true, LyingPhase::Move, false), LyingTick::Move);
+}
