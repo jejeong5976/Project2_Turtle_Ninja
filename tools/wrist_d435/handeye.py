@@ -1,21 +1,37 @@
 #!/usr/bin/env python3
-"""손목 D435 핸드-아이 실측 (eye-in-hand): 카메라가 손목 링크(arm_link5_wrist_roll)에 어떻게 붙어 있나.
+"""handeye.py — 손목 D435 핸드-아이 실측 eye-in-hand: 손목 링크 arm_link5_wrist_roll 기준 카메라 자세
 
-준비: 정답 종이(make_gt_sheet.py 로 만든 gt_sheet.pdf, 100 % 인쇄)를 로봇 앞 바닥 · 책상에 테이프로 고정. 로봇 차체는 끝까지 안 움직임 (팔만 움직임)
-1) capture : 팔을 자세마다 멈추고 D435 영상 + 관절값 저장 (s 키). 10–20 자세, 회전을 크게 다양하게 (J1 좌우 · J4 숙임 · J5 비틀기)
-   관절값 받는 법 (--joints)
-     ros   : /joint_states 구독 (실물 이름 joint1..5 -> URDF arm_joint1..5, --ros_offsets 로 0 점 · 부호 보정). 먼저 source /opt/ros/lyrical/setup.bash
-     ticks : 화면에서 s 누르면 터미널에 Dynamixel Present Position 5 개 입력 (ID 11 12 13 14 16) -> 배포판 config/joint_map.json 식으로 변환
-     urdf  : 터미널에 URDF 관절값 5 개 (rad) 직접 입력
-2) solve   : 저장한 자세들 -> 재투영 오차 최소화 (카메라 X = 손목->카메라, 종이 Y = base->종이 함께, 출발점 = URDF × 경첩 여러 각)
-   결과: 손목 기준 카메라 자세, URDF(경첩 −12° 반영) 와 차이 (경첩 각도 = 영상 x 축 둘레 회전, 그 밖 회전, 위치), 광축 ↔ 손가락 방향 각,
-         URDF 에 넣을 d435_cad_front_fixed origin, 자세별 재투영 오차
-3) selftest: 가짜 자세 · 잡음으로 solve 가 정답을 되찾는지 확인 (카메라 없이)
-
-예) cd tools/wrist_calib
-    python3 handeye.py capture --joints ticks
-    python3 handeye.py solve datasets/<세션>
-    python3 handeye.py selftest
+역할
+  - capture: 팔을 자세마다 멈추고 D435 영상 + 관절값 저장
+  - solve: 저장한 자세들로 재투영 오차를 최소화해 손목 → 카메라 X 와 base → 종이 Y 를 같이 구함
+      출발점 = URDF 값 × 경첩 여러 각
+  - selftest: 가짜 자세 · 잡음으로 solve 가 정답을 되찾는지 확인, 카메라 없이
+받는 것
+  - 실물 D435 컬러 640×480, gt_sheet.json, 배포판 URDF sim/robot_sim/robot_description/robot.urdf
+  - 관절값 --joints
+      ticks 기본: s 키 뒤 터미널에 팔 모터 Present Position 5 개, ID 11 12 13 14 16 순서 → config/joint_map.json 으로 변환
+      ros: /joint_states 구독, 실물 joint1..5 → URDF arm_joint1..5, 0 점 · 부호는 --ros_offsets '0점:부호,…'
+      urdf: 터미널에 URDF 관절각 5 개 rad
+내보내는 것
+  - capture: datasets/<시각>/<번호>/ color.png · depth_m.npy · intrinsics.json · joints.json
+  - solve: 터미널 + datasets/<세션>/handeye_result.json
+      손목 기준 카메라 자세, URDF 와 차이 = 경첩 각 · 그 밖 회전 · 위치, 광축 ↔ 손가락 방향 각,
+      URDF d435_cad_front_fixed 에 넣을 origin, 자세별 재투영 오차
+실행
+  cd tools/wrist_d435
+  python3 handeye.py capture --joints ticks
+  python3 handeye.py solve datasets/<세션>
+  python3 handeye.py selftest
+note
+  - 정답 종이 gt_sheet.pdf 를 100 % 로 인쇄해 로봇 앞 바닥 · 책상에 고정, 차체는 끝까지 안 움직이고 팔만 움직임
+  - 자세 10–20 개, 회전을 크게 다양하게: J1 좌우 · J4 숙임 · J5 비틀기
+  - 팔이 멈춘 상태에서 저장해야 영상과 관절값이 같은 순간이 됨
+  - 마커가 6 개 미만 보이거나 관절값이 없으면 그 장은 저장 안 함
+  - D435 와 팔 OpenCR 이 같은 컴퓨터에 붙어 있어야 함, 화면 필요 = 모니터 또는 ssh -X
+  - --joints ros 는 먼저 source /opt/ros/lyrical/setup.bash
+  - 순기구학은 sim/robot_sim/sim_core/arm_poses.py, 화면 창은 d435_puck_viewer.py Viewer
+  - 지금 URDF 경첩 −12° 는 사진으로 추정한 값. 브래킷을 다시 조이면 다시 잴 것
+  - 촬영 폴더 datasets/ 는 커밋 안 함
 """
 import argparse
 import json
@@ -144,7 +160,6 @@ class JointSource:
 
 
 def capture(a):
-    sys.path.insert(0, str(REPO / 'tools' / 'd435_viewer'))
     from d435_puck_viewer import Viewer       # Tk 창 (YOLO venv OpenCV 는 창 기능 없음)
     import pyrealsense2 as rs
     markers = load_sheet()

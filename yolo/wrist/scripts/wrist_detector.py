@@ -1,6 +1,6 @@
 """손목 D435 퍽 검출 파이프라인: 손목 YOLO-seg → 자세(wrist_pose) → 거르기 → 여러 프레임 확인 → planning Detection 형식.
 
-ROS 없음 (numpy · OpenCV · ultralytics). d435_puck_viewer.py · eval_detector.py 가 씀. 로봇 노드는 따로 관리하는 C++ 구현 (ros2_ws/src/perception wrist_puck_node)
+ROS 없음 (numpy · OpenCV · ultralytics). d435_puck_viewer.py · eval_detector.py 가 씀. 로봇 노드는 따로 관리하는 C++ 구현 (ros2_ws/src/perception perception 노드의 손목 파이프라인)
 
 한 장 처리 순서 (WristPuckDetector.process)
   1) YOLO-seg 마스크 (conf ≥ SEG_CONF, 기본 0.5 — experiments/train_seg8.ipynb 7절 기준값표 참고)
