@@ -7,12 +7,13 @@
 
   hardware 인자로 하드웨어 플러그인(= 모터와 실제로 말하는 부품)을 고른다
     mock    : 가짜. 받은 명령을 그대로 상태로 돌려줌 → 로봇 없이 노트북에서 전체 실행 (기본값)
-    gazebo  : Gazebo(gz_ros2_control) 용 자리만 (시뮬레이션 월드 · 실행 설정은 아직 없음)
-    opencr  : 플러그인 hardware/OpenCRHardware + OpenCR 펌웨어 firmware/nt_opencr
-              모터 14개 + OpenCR 내장 IMU 를 USB 한 줄로. 패킷 정의 = firmware/nt_opencr/nt_packet.h
+    gazebo  : Gazebo(gz_ros2_control) 용 자리만 (시뮬레이션 월드 · 실행 설정은 없음)
+    opencr  : 플러그인 hardware/OpenCRHardware + OpenCR 펌웨어 firmware/opencr
+              모터 14개 + OpenCR 내장 IMU 를 USB 한 줄로. 패킷 정의 = firmware/opencr/opencr_packet.h
   ★ 이 한 줄만 바뀌고, 컨트롤러 · 스워브 노드 · MoveIt · Nav2 는 전부 그대로다.
 
-  맨 아래 관성 · 충돌 상자 매크로 ⚠ 질량 · 관성은 추정. 실측 물성이 아님
+  맨 아래 관성 · 충돌 상자 매크로 (조향 모듈이 씀). 총질량 3.81 kg 실측. 질량 출처는 robot.urdf.xacro:
+  팔 = OpenManipulator-X(ROBOTIS) · CAD, 몸체 = 공개 부품 무게 합 + 나머지, 바퀴 = TurtleBot3
 
   xacro 에는 for 문이 없어서 "자기 자신을 부르면서 목록을 한 칸씩 줄이는" 방식(재귀)으로 반복한다.
 -->
@@ -20,7 +21,7 @@
 
   <!-- ===== 관절 1개: 컨트롤러가 보는 면 (ROS 단위 rad, rad/s) ===== -->
   <!-- mode 가 velocity 면 속도 명령, 나머지(position · gripper)는 위치 명령 -->
-  <xacro:macro name="nt_joint_ifaces" params="names hardware">
+  <xacro:macro name="joint_ifaces" params="names hardware">
     <xacro:if value="${len(names) > 0}">
       <xacro:property name="jn" value="${names[0]}"/>
       <xacro:property name="m" value="${hw['motors'][jn]}"/>
@@ -34,7 +35,7 @@
         </state_interface>
         <state_interface name="velocity"/>
         <state_interface name="effort"/>   <!-- opencr: 모터 전류 [A] (토크 아님) -->
-        <!-- OpenCR STATE board time + position, 60 ms fit; no synthetic mock value. -->
+        <!-- OpenCR STATE 보드 시각 + 위치를 60 ms 맞춤으로 계산, mock 은 만든 값을 넣지 않음 -->
         <xacro:if value="${hardware == 'opencr' and jn.startswith('steer_')}">
           <state_interface name="position_velocity"/>
         </xacro:if>
@@ -45,7 +46,7 @@
         </xacro:if>
         <!-- 플러그인(hardware)이 읽는 모터 정보. 펌웨어가 켤 때 CONFIG 로 받아 모터에 씀 -->
         <xacro:if value="${hardware == 'opencr'}">
-          <!-- zero_tick: null = 실물에서 아직 안 잰 영점 (hardware_map_drive_only.yaml) → 기본 2048 로 돌지 않게 멈춤 -->
+          <!-- zero_tick: null = 실제 로봇에서 재지 않은 영점 (hardware_map_drive_only.yaml) → 기본 2048 로 돌지 않게 멈춤 -->
           <xacro:if value="${'zero_tick' in m and m['zero_tick'] is None}">${xacro.fatal(jn + ': zero_tick 미확정 (null) — 실물 직진 정렬 후 읽은 눈금을 hardware_map 에 넣을 것')}</xacro:if>
           <param name="id">${m['id']}</param>
           <param name="mode">${m['mode']}</param>
@@ -56,12 +57,12 @@
           <param name="zero_tick">${m.get('zero_tick', 2048)}</param>   <!-- 관절 0 일 때 모터 눈금 (기본 2048) -->
         </xacro:if>
       </joint>
-      <xacro:nt_joint_ifaces names="${names[1:]}" hardware="${hardware}"/>
+      <xacro:joint_ifaces names="${names[1:]}" hardware="${hardware}"/>
     </xacro:if>
   </xacro:macro>
 
   <!-- ===== 보드 1장 = <ros2_control> 블록 1개 ===== -->
-  <xacro:macro name="nt_bus" params="bus hardware">
+  <xacro:macro name="opencr_bus" params="bus hardware">
     <ros2_control name="${bus['name']}" type="system">
       <hardware>
         <!-- mock_dynamics:=true: 조향 · 바퀴에 속도 · 가속 한계가 있는 가짜 모터 (hardware/src/mock_dynamics.cpp) -->
@@ -77,14 +78,14 @@
         <xacro:if value="${hardware == 'opencr'}">
           <!-- ros2_ws/src/hardware (설명은 opencr_hardware.hpp) -->
           <plugin>hardware/OpenCRHardware</plugin>
-          <!-- 포트: opencr_ports:=bus_drive=/tmp/a,bus_arm=/tmp/b 로 보드마다 바꿈 (사용자가 명시한 보드별 포트)
-               opencr_port:=… (예전 인자) 는 보드가 1장일 때만. 둘 다 auto 면 hardware_map.yaml 의 port -->
+          <!-- 포트: opencr_ports:=bus_drive=/tmp/a,bus_arm=/tmp/b 로 보드마다 바꿈 (보드별 포트)
+               opencr_port:=… 는 보드가 1장일 때만. 둘 다 auto 면 hardware_map.yaml 의 port -->
           <param name="port_name">${opencr_ports.get(bus['name'], bus['port'] if ('$(arg opencr_port)' == 'auto' or len(hw['buses']) != 1) else '$(arg opencr_port)')}</param>
           <param name="baud_rate">${bus['baud']}</param>
           <param name="bus_watchdog">${hw['watchdog']}</param>   <!-- 모터 경비견 (20 ms 단위) -->
           <param name="state_timeout_s">0.5</param>             <!-- OpenCR 상태가 이만큼 끊기면 ERROR → 멈춤 -->
           <param name="motor_fail_timeout_s">0.2</param>        <!-- 모터 하나라도 이만큼 못 읽으면 ERROR → 전체 멈춤 (D20) -->
-          <param name="measure_max_age_s">0.05</param>          <!-- 못 읽은 모터 · 이보다 오래된 STATE 는 NaN 으로 (옛 값에 새 시각 금지, R3) -->
+          <param name="measure_max_age_s">0.05</param>          <!-- 못 읽은 모터 · 이보다 오래된 STATE 는 NaN 으로 (옛 값에 새 시각 금지) -->
           <param name="config_timeout_s">8.0</param>            <!-- 켤 때 악수 기다리기 (IMU 영점 5 s 포함) -->
           <param name="require_all_motors">${'true' if hw.get('require_all_motors', True) else 'false'}</param>
           <param name="torque_off_on_deactivate">false</param>  <!-- 끌 때 팔이 떨어지지 않게 토크 유지 -->
@@ -93,7 +94,7 @@
         </xacro:if>
       </hardware>
 
-      <xacro:nt_joint_ifaces names="${bus['joints']}" hardware="${hardware}"/>
+      <xacro:joint_ifaces names="${bus['joints']}" hardware="${hardware}"/>
       <!-- Gazebo 전용: 오른쪽 손가락은 URDF <mimic> 으로 왼쪽을 따라감. ros2_control 은 "따라가는 관절" 을
            명령 칸 없이 같은 블록에 적어야 함 (component_parser: mimic 관절 = 명령 칸 금지, 따라갈 관절이 같은 블록에)
            → 보드를 2장으로 나눠도 gripper_left_joint 가 있는 블록에만 들어가게 -->
@@ -122,14 +123,14 @@
   </xacro:macro>
 
   <!-- ===== 보드 목록 전체 ===== -->
-  <xacro:macro name="nt_buses" params="buses hardware">
+  <xacro:macro name="opencr_buses" params="buses hardware">
     <xacro:if value="${len(buses) > 0}">
-      <xacro:nt_bus bus="${buses[0]}" hardware="${hardware}"/>
-      <xacro:nt_buses buses="${buses[1:]}" hardware="${hardware}"/>
+      <xacro:opencr_bus bus="${buses[0]}" hardware="${hardware}"/>
+      <xacro:opencr_buses buses="${buses[1:]}" hardware="${hardware}"/>
     </xacro:if>
   </xacro:macro>
 
-  <!-- ===================== 관성 · 충돌 상자 매크로 (robot.urdf.xacro 가 씀). 질량 · 관성은 추정값 ===================== -->
+  <!-- ===================== 관성 · 충돌 상자 매크로 (조향 모듈). 관성 = 상자 모양 ===================== -->
   <xacro:macro name="box_inertia" params="mass sx sy sz xyz:='0 0 0'">
     <inertial>
       <origin xyz="${xyz}"/><mass value="${mass}"/>

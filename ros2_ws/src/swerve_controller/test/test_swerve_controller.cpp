@@ -31,9 +31,11 @@ protected:
     ASSERT_EQ(controller->init(params), controller_interface::return_type::OK);
   }
 
-  void configure(const std::string & source)
+  // hold: 저속 조향 유지 (기본 0 = 끔 → 아래 시험들은 "조향 먼저" 게이트를 0.009 m/s 명령으로 봄)
+  void configure(const std::string & source, double hold = 0.0)
   {
     controller->get_node()->set_parameters({
+      rclcpp::Parameter("steer_hold_speed", hold),
       rclcpp::Parameter("steer_rate_source", source),
       rclcpp::Parameter("require_motion_mode", false),
       rclcpp::Parameter("use_imu", false),
@@ -81,7 +83,7 @@ protected:
       cmd.header.stamp = controller->get_node()->now() - rclcpp::Duration::from_seconds(stamp_age_s);
     }
     cmd.twist.linear.x = vx;
-    cmd.twist.linear.y = vy;  // default ~5 degrees: force the steering-before-drive branch
+    cmd.twist.linear.y = vy;  // 기본 약 5°: 조향 먼저 (구동 전) 분기를 타게 함
     for (int i = 0; i < 10; ++i) {
       pub->publish(cmd);
       executor.spin_some();
@@ -96,7 +98,7 @@ protected:
       controller_interface::return_type::OK);
   }
 
-  // Destroy the controller (and its loans) before handles and plugin loader.
+  // 컨트롤러 (와 빌린 인터페이스) 를 핸들 · 플러그인 로더보다 먼저 없앰
   std::unique_ptr<pluginlib::ClassLoader<controller_interface::ControllerInterface>> loader;
   std::vector<hardware_interface::StateInterface::SharedPtr> states;
   std::vector<hardware_interface::CommandInterface::SharedPtr> commands;
@@ -120,7 +122,7 @@ TEST_F(SwerveControllerTest, PositionInterfaceCompensationAndInvalidEstimateStop
   ASSERT_TRUE(states[1]->set_value<double>(NAN));
   update();
   for (int i = 4; i < 8; ++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(), 0.0);}
-  // Recovery without a fresh cmd_vel must not revive the old motion command.
+  // 새 cmd_vel 없이 복구되면 직전 이동 명령을 되살리지 않아야 함
   ASSERT_TRUE(states[1]->set_value(0.16));
   update();
   for (int i = 4; i < 8; ++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(), 0.0);}
@@ -229,7 +231,7 @@ TEST_F(SwerveControllerTest, CoherentMixedPoseAndDeactivationHoldMeasuredPositio
   ASSERT_EQ(controller->on_activate(rclcpp_lifecycle::State()),CallbackReturn::SUCCESS);
   publish_command(.05,0); update();
   for (int i=0;i<8;++i) {EXPECT_NEAR(commands[i]->get_optional<double>().value(),0,1e-9);}
-  // Deactivation in the middle of steering must hold feedback, not the 0-degree target.
+  // 조향 도중 비활성화: 0° 목표가 아니라 실측 (feedback) 을 유지해야 함
   ASSERT_TRUE(states[2]->set_value(-2.5));
   ASSERT_EQ(controller->on_deactivate(rclcpp_lifecycle::State()),CallbackReturn::SUCCESS);
   EXPECT_DOUBLE_EQ(commands[1]->get_optional<double>().value(),-2.5);
@@ -244,4 +246,45 @@ TEST_F(SwerveControllerTest, ReadFaultHoldsLastMeasuredInsteadOfUnfinishedTarget
   ASSERT_GT(std::fabs(commands[0]->get_optional<double>().value()),1);
   ASSERT_TRUE(states[8]->set_value<double>(NAN)); update();
   for (int i=0;i<8;++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(),0);}
+}
+
+// 켤 때 조향 곧게 (home_steer_on_start, 기본 켬): 켤 때 57° 로 돌아가 있으면 옆 명령이 와도 먼저 0° 로 · 구동 0.
+//   다 곧게 되면 그때부터 명령 (옆 = 90°) 따름
+TEST_F(SwerveControllerTest, HomeSteerOnStartStraightensBeforeFollowingCommand)
+{
+  configure("reported");
+  for (int i = 0; i < 4; ++i) {ASSERT_TRUE(states[2 * i]->set_value(1.0));}
+  ASSERT_EQ(controller->on_activate(rclcpp_lifecycle::State()), CallbackReturn::SUCCESS);
+  publish_command(0.0, 0.05);
+  update();
+  for (int i = 0; i < 4; ++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(), 0.0) << i;}
+  for (int i = 4; i < 8; ++i) {EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(), 0.0) << i;}
+  for (int i = 0; i < 4; ++i) {ASSERT_TRUE(states[2 * i]->set_value(0.01));}   // 다 돎 (0.05 rad 안)
+  publish_command(0.0, 0.05);
+  update();
+  for (int i = 0; i < 4; ++i) {EXPECT_NEAR(std::fabs(commands[i]->get_optional<double>().value()), M_PI / 2, 1e-8) << i;}
+}
+
+// 끄면 (home_steer_on_start: false) 곧게 하지 않음: 켜자마자 지금 57° 에서 가까운 90° 로
+TEST_F(SwerveControllerTest, HomeSteerOffKeepsOldBehaviour)
+{
+  controller->get_node()->set_parameters({rclcpp::Parameter("home_steer_on_start", false)});
+  configure("reported");
+  for (int i = 0; i < 4; ++i) {ASSERT_TRUE(states[2 * i]->set_value(1.0));}
+  ASSERT_EQ(controller->on_activate(rclcpp_lifecycle::State()), CallbackReturn::SUCCESS);
+  publish_command(0.0, 0.05);
+  update();
+  for (int i = 0; i < 4; ++i) {EXPECT_NEAR(commands[i]->get_optional<double>().value(), M_PI / 2, 1e-8) << i;}
+}
+
+TEST_F(SwerveControllerTest, LowSpeedSteerHoldKeepsSteerAndDrives)
+{
+  configure("reported", 0.015);   // 0.009 m/s · 5° 명령: 조향 0° 유지 · 바퀴는 투영 속도로 구름 (게이트 안 걸림)
+  ASSERT_EQ(controller->on_activate(rclcpp_lifecycle::State()), CallbackReturn::SUCCESS);
+  publish_command();
+  update();
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_DOUBLE_EQ(commands[i]->get_optional<double>().value(), 0.0);
+    EXPECT_GT(std::fabs(commands[4+i]->get_optional<double>().value()), 0.05);
+  }
 }

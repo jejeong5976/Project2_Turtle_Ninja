@@ -1,7 +1,11 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.10)
 project(hardware)
+# realtime_tools 가 부르는 find_package(Boost): CMake 3.30+ 의 CMP0167 경고 → 지금 동작 (FindBoost) 그대로
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 OLD)
+endif()
 
-# 빌드 유형을 안 주면 최적화(Release) — 측정: 100 Hz 주기 계산이 -O0 대비 3~4 배 빠름 (최적화 없음이 기본이었음)
+# 빌드 유형을 안 주면 Release — 100 Hz 주기 계산이 -O0 대비 3~4 배 빠름
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release)
 endif()
@@ -11,26 +15,27 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(std_msgs REQUIRED)   # 쉬는 팔 요청 · 토크 알림 (std_msgs/Bool)
 
-# ★ 편지 규칙 nt_packet.h 는 펌웨어 폴더에 원본이 하나만 있음 (펌웨어와 같은 파일을 씀 → 어긋날 수 없음)
-#   저장소 구조: <repo>/firmware/nt_opencr/nt_packet.h,  <repo>/ros2_ws/src/hardware (여기)
-#   ros2_ws 만 따로 복사했다면: colcon build --cmake-args -DNT_FIRMWARE_DIR=/경로/firmware/nt_opencr
-set(NT_FIRMWARE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../firmware/nt_opencr"
-  CACHE PATH "nt_packet.h 가 있는 폴더 (firmware/nt_opencr)")
-if(NOT EXISTS "${NT_FIRMWARE_DIR}/nt_packet.h")
-  message(FATAL_ERROR "nt_packet.h 를 못 찾음: ${NT_FIRMWARE_DIR}\n"
-    "저장소 전체(firmware 폴더 포함)를 받았는지, 아니면 -DNT_FIRMWARE_DIR=... 로 알려 줄 것")
+# opencr_packet.h 는 펌웨어와 같은 원본 하나 (<repo>/firmware/opencr) → 어긋날 수 없음
+#   ros2_ws 만 따로 복사했다면: colcon build --cmake-args -DOPENCR_FIRMWARE_DIR=/경로/firmware/opencr
+set(OPENCR_FIRMWARE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../firmware/opencr"
+  CACHE PATH "opencr_packet.h 가 있는 폴더 (firmware/opencr)")
+if(NOT EXISTS "${OPENCR_FIRMWARE_DIR}/opencr_packet.h")
+  message(FATAL_ERROR "opencr_packet.h 를 못 찾음: ${OPENCR_FIRMWARE_DIR}\n"
+    "저장소 전체(firmware 폴더 포함)를 받았는지, 아니면 -DOPENCR_FIRMWARE_DIR=... 로 알려 줄 것")
 endif()
 
 # ① 편지 주고받기 (ROS 없음) — 플러그인과 테스트가 같이 씀
 add_library(opencr_link STATIC src/opencr_link.cpp)
 target_include_directories(opencr_link PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<BUILD_INTERFACE:${NT_FIRMWARE_DIR}>)
+  $<BUILD_INTERFACE:${OPENCR_FIRMWARE_DIR}>)
 target_compile_features(opencr_link PUBLIC cxx_std_17)
 set_target_properties(opencr_link PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
@@ -38,10 +43,12 @@ set_target_properties(opencr_link PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_library(hardware SHARED src/opencr_hardware.cpp src/mock_dynamics.cpp)   # mock_dynamics: 속도 · 가속 한계 가짜 모터
 target_link_libraries(hardware PUBLIC
   opencr_link
+  ${diagnostic_msgs_TARGETS}
   hardware_interface::hardware_interface
   pluginlib::pluginlib
   rclcpp::rclcpp
-  rclcpp_lifecycle::rclcpp_lifecycle)
+  rclcpp_lifecycle::rclcpp_lifecycle
+  ${std_msgs_TARGETS})
 pluginlib_export_plugin_description_file(hardware_interface hardware_plugins.xml)
 
 install(TARGETS hardware opencr_link
@@ -57,7 +64,13 @@ if(BUILD_TESTING)
   target_link_libraries(test_opencr opencr_link util)
   ament_add_gtest(test_position_rate test/test_position_rate.cpp)
   target_link_libraries(test_position_rate opencr_link)
+  #    test_rest_torque : 쉬는 팔 — 요청 신선도 · 끄기/켜기 바꿈 · 다시 켠 뒤 옛 명령 막기 (rest_torque.hpp)
+  ament_add_gtest(test_rest_torque test/test_rest_torque.cpp)
+  target_link_libraries(test_rest_torque opencr_link)
+  #    test_steer_recover : 조향 카운터 자동 복구 — 판단 (한계 밖 · 다시 센 값) + 가짜 펌웨어로 CONFIG 두 번 순서 (steer_recover.hpp)
+  ament_add_gtest(test_steer_recover test/test_steer_recover.cpp)
+  target_link_libraries(test_steer_recover opencr_link util)
 endif()
 
-ament_export_dependencies(hardware_interface pluginlib rclcpp rclcpp_lifecycle)
+ament_export_dependencies(diagnostic_msgs hardware_interface pluginlib rclcpp rclcpp_lifecycle std_msgs)
 ament_package()

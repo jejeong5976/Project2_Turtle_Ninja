@@ -11,7 +11,7 @@
   # 팔 OpenCR 을 안 붙이고 바퀴만 (arm:=false, 하드웨어는 다 장착해도 됨) — 팔 컨트롤러 · control_master 를 띄우지 않음
   ros2 launch bringup robot.launch.py arm:=false hardware_map:=$(ros2 pkg prefix bringup)/share/bringup/config/hardware_map_drive_only.yaml
     거부: 하드웨어 지도에 팔 관절이 있음. swerve_controller 는 차례(require_motion_mode) 를 보지 않음
-    바퀴만 시험한 기능은 arm:=false 에서만: park_on_idle · blend_steer_drive · drive_test_params · enforce_command_limits:=false
+    바퀴만 시험한 기능은 arm:=false 에서만: park_on_idle · drive_test_params · enforce_command_limits:=false (동시 조향 blend 는 controllers.yaml 값을 따름, 지금 끔)
     hardware:=mock mock_dynamics:=true : 조향 · 바퀴에 속도 · 가속 한계가 있는 가짜 모터
 """
 
@@ -21,6 +21,7 @@ import os
 import tempfile
 
 import yaml
+from ament_index_python.packages import get_package_share_directory
 from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import (Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution,
@@ -68,7 +69,7 @@ def steer_ranges(hw, margin_ticks=STEER_MARGIN_TICKS):
 
 
 def spawner_node(name, files, **kw):
-    args_ = [name]
+    args_ = [name, "--service-call-timeout", "60", "--switch-timeout", "30"]   # 켤 때 젯슨이 바빠 load_controller 답이 10 s 넘을 수 있음 (기본값이면 다시 보내 "이미 있음" 으로 죽음)
     for f in files:
         args_ += ["--param-file", f]
     return Node(package="controller_manager", executable="spawner", arguments=args_, output="both", **kw)
@@ -78,23 +79,23 @@ def swerve_setup(context):
     """swerve_controller 를 띄우기 전 검사 + 설정 — 안 되면 노드를 띄우기 전에 멈춤 (예외 → launch 실패).
     arm:=true(시연 · 전체)도 같은 길로 (모듈별 조향 범위를 모르면 범위 끝을 넘어 선을 당길 수 있음).
       공통      : 조향 zero_tick 미확정이면 실물 거부 · 모듈별 범위(눈금 창 ∩ 선 한계) · 조향 정책 · 여러 바퀴 모드 실물 거부
-      arm:=false: 팔 관절이 지도에 있으면 거부 · 차례 안 봄 · 정지 복귀 · 동시 조향 · 시험 파라미터 허용
+      arm:=false: 팔 관절이 지도에 있으면 거부 · 차례 안 봄 · 정지 복귀 · 시험 파라미터 허용
     통과하면 swerve_controller spawner (controllers.yaml + 모듈별 범위 · 정책) 를 돌려줌"""
     arm_off = context.perform_substitution(LaunchConfiguration("arm")) == "false"
     park = context.perform_substitution(LaunchConfiguration("park_on_idle"))
     if park not in ("true", "false"):
         raise RuntimeError(f"park_on_idle 은 true | false (받은 값 {park!r})")
     blend = context.perform_substitution(LaunchConfiguration("blend_steer_drive"))
-    if blend not in ("true", "false"):
-        raise RuntimeError(f"blend_steer_drive 은 true | false (받은 값 {blend!r})")
+    if blend not in ("", "true", "false"):
+        raise RuntimeError(f"blend_steer_drive 은 비움 | true | false (받은 값 {blend!r})")
     test_path = context.perform_substitution(LaunchConfiguration("drive_test_params"))
     if not arm_off:   # 바퀴만 시험한 기능은 팔이 있는 실행에서 거부
         if context.perform_substitution(LaunchConfiguration("enforce_command_limits")) != "true":
             raise RuntimeError("enforce_command_limits:=false requires arm:=false")
         if park == "true":
             raise RuntimeError("park_on_idle:=true 거부 — arm:=false (바퀴만) 에서만 시험한 기능")
-        if blend == "true" or test_path:
-            raise RuntimeError("blend_steer_drive · drive_test_params 는 arm:=false (바퀴만) 에서만 시험한 기능")
+        if test_path:
+            raise RuntimeError("drive_test_params 는 arm:=false (바퀴만) 에서만 시험한 기능")
     path = context.perform_substitution(LaunchConfiguration("hardware_map"))
     hw = yaml.safe_load(open(path))
     on_bus = {j for b in hw.get("buses", []) for j in b.get("joints", [])}
@@ -116,15 +117,17 @@ def swerve_setup(context):
     ranges = steer_ranges(hw, margin_ticks)
     multi = [j for j in STEER_JOINTS if hw["motors"][j].get("extended")]
     if multi and is_real:
-        raise RuntimeError(f"extended(여러 바퀴) 조향 {multi} 는 아직 모의 전용 — nt_opencr 펌웨어가 확장 위치 모드를 지원하지 않음")
+        raise RuntimeError(f"extended(여러 바퀴) 조향 {multi} 는 아직 모의 전용 — opencr 펌웨어가 확장 위치 모드를 지원하지 않음")
     policy = context.perform_substitution(LaunchConfiguration("steering_policy"))
     if policy not in ("nearest", "coherent"):
         raise RuntimeError("steering_policy must be nearest | coherent")
     # 팔 OpenCR 이 없으면 control_master 도 안 뜸 → 바퀴 차례(DRIVE) 허가를 줄 노드가 없으므로 차례를 보지 않음
     params = {"park_on_idle": park == "true", "steering_policy": policy, "require_motion_mode": not arm_off}
-    if blend == "true":   # 동시 조향·구동 (arm:=false 시험용). 진행 막힘 1.0 s 넘으면 구동 0
+    if blend == "true":   # 동시 조향·구동 덮어쓰기 (기본 = controllers.yaml 값, 지금 끔). 진행 막힘 blend_stall_s 넘으면 구동 0
         params.update(blend_steer_drive=True, blend_stall_s=float(context.perform_substitution(LaunchConfiguration("blend_stall_s"))),
                       blend_margin=float(context.perform_substitution(LaunchConfiguration("blend_margin"))))
+    elif blend == "false":   # 끄고 비교할 때 (바퀴마다 cos)
+        params.update(blend_steer_drive=False)
     if test_path:
         test_params = yaml.safe_load(open(test_path))
         allowed = {"max_linear", "max_angular", "max_linear_accel", "max_angular_accel",
@@ -144,7 +147,7 @@ def swerve_setup(context):
             params.update(steer_multi_turn=True)
         note = "모듈별 조향 범위 [deg] " + " · ".join(
             f"{j.split('_')[1]} {math.degrees(a):+.1f}~{math.degrees(b):+.1f}" for j, a, b in zip(STEER_JOINTS, lo, hi))
-    fd, path_r = tempfile.mkstemp(prefix="nt_steer_ranges_", suffix=".yaml")
+    fd, path_r = tempfile.mkstemp(prefix="steer_ranges_", suffix=".yaml")
     with os.fdopen(fd, "w") as f:
         yaml.safe_dump({"swerve_controller": {"ros__parameters": params}}, f)
     files.append(path_r)
@@ -154,6 +157,29 @@ def swerve_setup(context):
 
 def cfg(name):
     return PathJoinSubstitution([FindPackageShare("bringup"), "config", name])
+
+
+def rack_cell_params():
+    """control_master: 칸 중심 · 넣는 점 보정 표 · 칸 바닥 태그 ID (config/rack_cells.yaml) — 적재함 태그 스캔 · STORE 넣는 점 맞추기에 씀, 세우기 경로 표 위치"""
+    path = os.path.join(get_package_share_directory("bringup"), "config", "rack_cells.yaml")
+    with open(path, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    cells, tags = data["rack_cells"]["cells"], data["rack_tags"]
+    names = list(cells)
+    missing = [n for n in names if n not in tags["ids"]]
+    if missing:
+        raise RuntimeError(f"rack_cells.yaml rack_tags.ids 에 칸이 빠짐: {missing}")
+    return {"rack_cell_names": names,
+            "rack_cell_x": [float(cells[n]["xy"][0]) for n in names],
+            "rack_cell_y": [float(cells[n]["xy"][1]) for n in names],
+            "rack_cell_place_x": [float(cells[n].get("place_offset", [0.0, 0.0])[0]) for n in names],
+            "rack_cell_place_y": [float(cells[n].get("place_offset", [0.0, 0.0])[1]) for n in names],
+            # 칸 바닥 태그 (rack_tag_stage, control_master 안): 칸 순서 = rack_cell_names
+            "rack_tags.cell_ids": [int(tags["ids"][n]) for n in names],
+            "rack_tags.tag_size_m": float(tags["size_m"]),
+            "rack_tags.floor_z": float(data["rack_cells"]["floor_z"]),
+            # 누운 네모 퍽 세우기 경로 표 (config/standup_paths.txt, 없으면 누운 채 PICK)
+            "standup_paths_file": os.path.join(get_package_share_directory("bringup"), "config", "standup_paths.txt")}
 
 
 def generate_launch_description():
@@ -172,12 +198,14 @@ def generate_launch_description():
         DeclareLaunchArgument("use_rviz", default_value="false"),
         DeclareLaunchArgument("arm", default_value="true",
                               description="false = 팔 OpenCR 을 안 붙이고 바퀴만 (팔 관절이 없는 hardware_map 필요, 위 설명)"),
+        DeclareLaunchArgument("sag_correction", default_value="true",
+                              description="false = TF 에 팔 처짐 보정을 안 넣음 (엔코더 그대로, 실물 A/B 비교용)"),
         DeclareLaunchArgument("steering_policy", default_value="coherent",
-                              description="coherent = 평행 이동은 공통 자세 우선 (기본) | nearest = 예전 최소 이동"),
+                              description="coherent = 평행 이동은 공통 자세 우선 (기본) | nearest = 바퀴마다 지금 조향에서 가장 적게 도는 각도"),
         DeclareLaunchArgument("park_on_idle", default_value="false",
                               description="true = 정지 1 s 뒤 조향 0° (바퀴 바깥쪽) 로 복귀. arm:=false 에서만"),
-        DeclareLaunchArgument("blend_steer_drive", default_value="false",
-                              description="true = 움직이는 중 방향 전환 때 조향하면서 계속 주행 (동시 조향·구동). 기본 끔. arm:=false 에서만"),
+        DeclareLaunchArgument("blend_steer_drive", default_value="",
+                              description="비움 = controllers.yaml 값 (지금 끔) | true · false = 덮어쓰기 (false = 동시 모드 끔, 바퀴마다 조향 오차 cos 만큼 감속)"),
         DeclareLaunchArgument("blend_stall_s", default_value="1.0",
                               description="동시 모드에서 조향이 못 따라와 진행이 막힌 시간이 이보다 길면 구동 0 [s]"),
         DeclareLaunchArgument("blend_margin", default_value="0.7",
@@ -200,7 +228,6 @@ def generate_launch_description():
         DeclareLaunchArgument("lidar_rear_z", default_value="0.060"),
         DeclareLaunchArgument("lidar_rear_yaw", default_value="0.0"),
     ]
-    is_opencr = PythonExpression(["'", arg("hardware"), "' == 'opencr'"])
     with_arm = PythonExpression(["'", arg("arm"), "' != 'false'"])
 
     robot_description = ParameterValue(
@@ -224,30 +251,46 @@ def generate_launch_description():
     ctrl_yaml = cfg("controllers.yaml")
 
     nodes = [
+        # TF 는 실제 팔 자세로: arm_state_publisher 가 엔코더 /joint_states 에 처짐 보정 · 그리퍼 연결 막대를 더해 /joint_states_corrected
+        #   (손목 카메라 보정이 처짐 보정한 손목 기준). control_master · MoveIt 은 엔코더 /joint_states 그대로
+        Node(package="manipulation", executable="arm_state_publisher",
+             parameters=[cfg("arm_kinematics.yaml"), cfg("gripper_linkage.yaml"),
+                         {"sag_correction": ParameterValue(arg("sag_correction"), value_type=bool)}],
+             respawn=True, respawn_delay=1.0, output="both"),
         Node(package="robot_state_publisher", executable="robot_state_publisher",
-             parameters=[{"robot_description": robot_description}], output="both"),
+             parameters=[{"robot_description": robot_description}], remappings=[("joint_states", "joint_states_corrected")],
+             output="both"),
 
         # Lyrical 의 ros2_control_node 는 URDF 를 /robot_description 토픽으로 받음 (robot_state_publisher 가 방송)
         Node(package="controller_manager", executable="ros2_control_node",
              parameters=[ctrl_yaml, {"enforce_command_limits": ParameterValue(arg("enforce_command_limits"), value_type=bool)}], remappings=[("~/robot_description", "/robot_description")], output="both"),
 
         Node(package="manipulation", executable="control_master",
-             parameters=[cfg("control.yaml")], condition=IfCondition(with_arm), output="both"),
+             parameters=[cfg("control.yaml"), cfg("arm_paths.yaml"), cfg("rack_look_paths.yaml"), cfg("arm_kinematics.yaml"), rack_cell_params()],
+             condition=IfCondition(with_arm), output="both"),
+        # 홈 자세마다 손목 사진으로 카메라가 돈 만큼 → /wrist_cam/drift (control_master 가 손목 검출을 되돌림)
+        Node(package="manipulation", executable="camera_drift_node",
+             parameters=[cfg("control.yaml"), {"reference_image": cfg("camera_home_ref.png")}],
+             condition=IfCondition(with_arm), output="both"),
 
         Node(package="rviz2", executable="rviz2", condition=IfCondition(arg("use_rviz")),
              arguments=["-d", PathJoinSubstitution([desc, "rviz", "navigation.rviz"]), "-f", "odom"]),
     ]
 
-    # 컨트롤러마다 spawner 하나. --param-file: Jazzy 부터 컨트롤러가 controller_manager 설정을 안 물려받음
-    def spawner(name, **kw):
-        return spawner_node(name, [ctrl_yaml], **kw)
-
-    for c in CONTROLLERS:
-        if c in ARM_CONTROLLERS:
-            nodes.append(spawner(c, condition=IfCondition(with_arm)))
-        else:
-            nodes.append(spawner(c))
-    nodes.append(spawner("imu_sensor_broadcaster", condition=IfCondition(is_opencr)))   # IMU 는 hardware 플러그인만 채움
+    # 컨트롤러 spawner 하나로 (swerve 는 swerve_setup 이 따로). --param-file: Jazzy 부터 컨트롤러가 controller_manager 설정을 안 물려받음
+    #   컨트롤러마다 spawner 를 띄우면 spawner 잠금을 두고 줄 서다 바쁜 젯슨에서 45 s 안에 못 켬 → 한 프로세스가 차례로
+    def spawner_setup(context):
+        arm_on = context.launch_configurations.get("arm", "true") != "false"
+        opencr = context.launch_configurations.get("hardware", "mock") == "opencr"
+        yaml_path = ctrl_yaml if isinstance(ctrl_yaml, str) else ctrl_yaml.perform(context)
+        names = [c for c in CONTROLLERS if arm_on or c not in ARM_CONTROLLERS]
+        if opencr:
+            names.append("imu_sensor_broadcaster")   # IMU 는 hardware 플러그인만 채움
+        a = ["--service-call-timeout", "60", "--switch-timeout", "30"]
+        for n in names:
+            a += ["--controller", n, "--param-file", yaml_path]
+        return [Node(package="controller_manager", executable="spawner", arguments=a, output="both")]
+    nodes.append(OpaqueFunction(function=spawner_setup))
 
     # 검사가 노드보다 먼저 (거부되면 아무 노드도 안 뜸)
     return LaunchDescription(args + [OpaqueFunction(function=swerve_setup)] + nodes)

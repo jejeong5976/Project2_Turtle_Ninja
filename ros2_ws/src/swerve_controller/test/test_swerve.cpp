@@ -215,7 +215,7 @@ TEST(SwerveRanges, DriveRejectsBeforeRampAndNeverReplacesStopWithRollCompensatio
   for (auto & m:now) {m.steer_rate=.2;}
   d.set_turn(true,1,0);
   d.set_command({.05,0,0},0);
-  d.update(0,.01,now);  // prior feasible moving command
+  d.update(0,.01,now);  // 직전: 가능한 이동 명령
   d.set_command({.03,.03,0},.01);
   auto out=d.update(.01,.01,now);
   EXPECT_FALSE(d.command_feasible());
@@ -226,7 +226,7 @@ TEST(SwerveRanges, DriveRejectsBeforeRampAndNeverReplacesStopWithRollCompensatio
   out=d.update(.02,.01,now);
   EXPECT_TRUE(d.command_feasible());
   EXPECT_LT(out[0].steer_angle,0);
-  EXPECT_LT(out[0].wheel_speed,0);  // compensation allowed again only for feasible steering
+  EXPECT_LT(out[0].wheel_speed,0);  // 조향이 가능할 때만 보상을 다시 허용
 }
 
 // ---------- 바퀴가 조향축 옆에 있는 경우 (CAD: 바깥쪽 26.9 mm) ----------
@@ -614,7 +614,7 @@ TEST(GyroYaw, DropsSpikes)
   EXPECT_FALSE(g.ready(1.5));
 }
 
-// 7) 검토 재현: 튐 샘플과 함께 온 '움직임' 은 버리지 않음
+// 7) 튐 샘플과 함께 온 '움직임' 은 버리지 않음
 TEST(GyroYaw, InvalidSampleStillCountsMotion)
 {
   GyroYaw g(1.0, 0.2, 0.002, 1.0, 0.0087);
@@ -625,7 +625,7 @@ TEST(GyroYaw, InvalidSampleStillCountsMotion)
   EXPECT_NEAR(g.bias(), 0.0, 1e-12);
 }
 
-// 8) 검토 재현: 켤 때 재는 중 움직임(튐 값) · 긴 공백이 끼면 처음부터
+// 8) 켤 때 재는 중 움직임(튐 값) · 긴 공백이 끼면 처음부터
 TEST(GyroYaw, CalibrationRestartsOnInvalidMotionOrGap)
 {
   GyroYaw g(5.0, 0.2);
@@ -639,7 +639,7 @@ TEST(GyroYaw, CalibrationRestartsOnInvalidMotionOrGap)
   EXPECT_FALSE(h.calibrated());
 }
 
-// ---------- 영점으로 만든 모듈별 범위 (회귀 시험 고정값 — Homing Offset 을 쓰기 전 영점, 범위 끝이 몰린 어려운 경우) ----------
+// ---------- 영점으로 만든 모듈별 범위 (회귀 시험 고정값 — Homing Offset 없는 영점, 범위 끝이 몰린 어려운 경우) ----------
 // 범위 = robot.launch.py steer_ranges() 와 같은 식: 관절 = scale × (눈금 − zero) × 2π/4096, 눈금 20 ~ 4075, 조향 scale −1.
 // 영점 11 · 12 · 13 · 14 = 3066 · 1552 · 2577 · 3589 → 범위 [deg] fl −88.7~+267.7 · fr −221.7~+134.6 ·
 //   rl −131.7~+224.7 · rr −42.7~+313.7. 14 번(rr)은 시계 쪽이 약 −43° 까지만.
@@ -702,7 +702,7 @@ TEST(SwerveRanges, RealZeroAllMotionsFeasibleInsideRange)
 }
 
 // 11) 오른쪽(−y) 이동: −90° 가 범위 밖인 14 번(rr, −42.7° 까지) · 11 번(fl, −88.7° 까지) → +90° + 바퀴 역회전.
-//     12 · 13 은 −90° 그대로. 범위 없는 예전 계산은 넷 다 −90° 를 줌
+//     12 · 13 은 −90° 그대로. 범위 없는 계산은 넷 다 −90° 를 줌
 TEST(SwerveRanges, RightwardMotionUsesReverseWheelWhereMinus90IsOutOfRange)
 {
   bool ok = false;
@@ -940,14 +940,14 @@ TEST(CoherentPose, CardinalAndFeasibleDiagonalSharePhysicalAngle) {
   auto mixed=facing(0); mixed[1].steer_angle=-kPi; mixed[3].steer_angle=4;
   for (double deg : {0.,45.,90.,180.,225.,270.}) {
     const auto out=coherent_geometry().inverse(heading(deg),mixed,false);
-    // Same physical line for every module: equal angles or exactly pi apart (outboard branch).
+    // 모든 모듈이 같은 물리 직선: 각도가 같거나 정확히 π 차이 (바깥쪽 가지)
     for (const auto & m:out) {
       const double d=std::fabs(std::remainder(m.steer_angle-out[0].steer_angle, kPi));
       EXPECT_NEAR(d,0,1e-9);
     }
     expect_realizes(coherent_geometry(),heading(deg),out,ranges_from_zero(kRealZero));
   }
-  // -45 cannot be shared: rr cannot reach -45, fr cannot reach +135.
+  // -45 는 공통 불가: rr 은 -45 못 감, fr 은 +135 못 감
   const auto out=coherent_geometry().inverse(heading(-45),mixed,false);
   EXPECT_GT(std::fabs(out[1].steer_angle-out[3].steer_angle),3.0);
   expect_realizes(coherent_geometry(),heading(-45),out,ranges_from_zero(kRealZero));
@@ -974,7 +974,7 @@ TEST(CoherentPose, FullCircleAndCompoundSweepAlwaysRealizeTwistWithinRealLimits)
 TEST(CoherentPose, LimitNoiseDoesNotFlipBackAndForth) {
   auto k=coherent_geometry(); auto m=facing(0);
   auto prev=k.inverse(heading(-41),m,false);
-  // Enter common pose from the interior, then leave at the hard limit once.
+  // 안쪽에서 공통 자세로 들어간 뒤 실제 한계에서 한 번 벗어남
   prev=k.inverse(heading(-38),m,false,nullptr,prev);
   prev=k.inverse(heading(-43),m,false,nullptr,prev);
   const double branch=prev[3].steer_angle;
@@ -1001,10 +1001,10 @@ TEST(CoherentPose, DriveGatesUntilAllAlignedKeepsOffsetAndHandlesNewCommand) {
   }
   drive.set_command({0,.05,0},.01); drive.set_turn(true,1,.01);
   out=drive.update(.01,.01,m);
-  // Sideways: parallel wheels, fr/rl on the -90 branch so every wheel stays outboard
+  // 옆 주행: 바퀴 평행, fr/rl 은 -90 가지 → 모든 바퀴가 바깥쪽
   const double side[4]={kPi/2,-kPi/2,-kPi/2,kPi/2};
   for (int i=0;i<4;++i) {EXPECT_NEAR(out[i].steer_angle,side[i],1e-9);}
-  // A timeout during alignment holds measured pose, without starting park or rolling compensation.
+  // 정렬 중 명령 끊김: 실측 자세 유지, park · 굴림 보상은 시작 안 함
   out=drive.update(1,.01,m);
   for (int i=0;i<4;++i) {
     EXPECT_NEAR(out[i].steer_angle,m[i].steer_angle,1e-9); EXPECT_DOUBLE_EQ(out[i].wheel_speed,0);
@@ -1089,7 +1089,7 @@ TEST(CoherentPose, EveryPhysicalBoundaryRejectsRepeatedBranchChatter) {
 }
 
 
-// sideways driving keeps every wheel outboard (no wheel tucked under the deck)
+// 옆 주행에서 모든 바퀴가 바깥쪽 (판 밑으로 들어간 바퀴 없음)
 TEST(CoherentPose, SidewaysKeepsEveryWheelOutboard) {
   auto k=coherent_geometry(); const auto mods=real_modules();
   for (double deg : {90., -90., 0., 180., 45., -135.}) {
@@ -1102,7 +1102,7 @@ TEST(CoherentPose, SidewaysKeepsEveryWheelOutboard) {
       EXPECT_GT(o,-band-1e-12) << "deg " << deg << " module " << i << " angle " << a;   // near-tie keeps the old choice
     }
   }
-  // -45 / 135 line: rr cannot reach -45, so its +135 pose is the only feasible one (old documented exception)
+  // -45 / 135 직선: rr 은 -45 를 못 가서 +135 자세만 가능 (문서에 적어 둔 예외)
   for (double deg : {-45., 135.}) {
     const auto out=k.inverse(heading(deg),facing(0),false);
     expect_realizes(k,heading(deg),out,ranges_from_zero(kRealZero));
@@ -1110,7 +1110,7 @@ TEST(CoherentPose, SidewaysKeepsEveryWheelOutboard) {
   }
 }
 
-// 실물 floor_max_050: 범위 끝 여유 0(최대 시험)에서 rr 이 끝에 붙은 바깥쪽 315° 를 골라 200° 넘게 돌았음
+// 범위 끝 여유 0 (최대 시험): rr 이 끝에 붙은 바깥쪽 315° (200° 넘게 돌아야 함) 를 고르지 않음
 TEST(CoherentPose, OutwardIgnoredWhenItsBranchHugsRangeEnd) {
   const SwerveKinematics k(real_modules(), kR, kPi, ranges_from_zero(kRealZero), true, 0.0);
   for (double deg : {135., -45.}) {
@@ -1120,7 +1120,7 @@ TEST(CoherentPose, OutwardIgnoredWhenItsBranchHugsRangeEnd) {
   }
 }
 
-// 멈춤(바깥쪽 선호)↔이동(분기 유지) 경계에서 분기가 오락가락해 출발 못 하던 것 (모의 실행에서 발견).
+// 멈춤(바깥쪽 선호)↔이동(분기 유지) 경계에서 분기가 오락가락해 출발 못 하는 일이 없어야 함.
 // 조향이 2.4 rad/s 로 목표를 따라가는 간단한 폐루프: 정지에서 어느 방향이든 1.5 s 안에 출발하고, 이어지는 전환도 멈추지 않음.
 TEST(CoherentPose, ClosedLoopStartsAndChainsWithoutBranchChatter) {
   const SwerveKinematics k(real_modules(), kR, kPi, ranges_from_zero(kRealZero), true, 0.0);
@@ -1158,7 +1158,7 @@ TEST(CoherentPose, ClosedLoopStartsAndChainsWithoutBranchChatter) {
   }
 }
 
-// 실물(최대 시험, 끝 여유 0): rr 범위 −44.5° 라 −45° 대각에서 135° 로 177° 를 돌며 전체 정지.
+// 최대 시험 (끝 여유 0): rr 범위 −44.5° 라 −45° 대각에서 135° 로 177° 를 돌며 전체 정지.
 // steer_end_slack(기본 0)을 1° 로 켜면 끝 각도로 보내고 바퀴 속도 × cos(0.5°). 범위 밖 각도는 절대 안 보냄.
 TEST(CoherentPose, EndSlackSendsNearlyReachableHeadingToRangeEnd) {
   const double d = kPi / 180;
@@ -1180,7 +1180,7 @@ TEST(CoherentPose, EndSlackSendsNearlyReachableHeadingToRangeEnd) {
 }
 
 // 돌아야 할 각도 비용 (steer_travel_weight): 정면 유지 전방향 "오른쪽 → 앞오른쪽" 에서
-//   실물 · 조향 속도 모의 모두 fl 이 269.5° → −45° (314°) 를 돌아 그 구간을 거의 못 감 (진행률 0.0~0.07)
+//   가중치가 없으면 fl 이 269.5° → −45° (314°) 를 돌아 그 구간을 거의 못 감
 TEST(CoherentPose, TravelWeightAvoidsWrapAroundSwingAtRangeEnd) {
   const double d = kPi / 180;
   const std::vector<swerve_controller::SteeringRange> r = {{-90.439*d, 269.473*d}, {-223.506*d, 136.406*d}, {-133.418*d, 170.0*d}, {-44.473*d, 315.439*d}};
@@ -1192,7 +1192,7 @@ TEST(CoherentPose, TravelWeightAvoidsWrapAroundSwingAtRangeEnd) {
     };
   SwerveKinematics old_rule(real_modules(), kR, kPi, r, true, 0.0, 1.0 * d);
   const auto a = old_rule.inverse(heading(-45), now, false, nullptr, now, false);
-  EXPECT_NEAR(a[0].steer_angle, -45 * d, 1e-9);            // 예전: fl 314° 회전
+  EXPECT_NEAR(a[0].steer_angle, -45 * d, 1e-9);            // 가중치 없음: fl 314° 회전
   EXPECT_GT(swing(a), 300 * d);
   SwerveKinematics travel(real_modules(), kR, kPi, r, true, 0.0, 1.0 * d);
   travel.set_travel_weight(1.0);
@@ -1201,7 +1201,7 @@ TEST(CoherentPose, TravelWeightAvoidsWrapAroundSwingAtRangeEnd) {
   expect_realizes(travel, heading(-45), b, r);              // 그래도 명령한 몸 속도는 그대로
   EXPECT_THROW(travel.set_travel_weight(-1.0), std::invalid_argument);
   EXPECT_THROW(travel.set_travel_weight(11.0), std::invalid_argument);
-  // 가중치 0 = 예전과 모든 출력이 같음 (전방향 · 여러 시작 자세)
+  // 가중치 0 = 안 준 것과 모든 출력이 같음 (전방향 · 여러 시작 자세)
   SwerveKinematics zero(real_modules(), kR, kPi, r, true, 0.0, 1.0 * d);
   zero.set_travel_weight(0.0);
   for (int deg = -180; deg < 180; deg += 15) {
@@ -1252,7 +1252,7 @@ TEST(HeadingHold, HoldsYawAgainstDisturbanceOnlyWhileTranslatingWithoutTurnComma
 }
 
 // 정면 유지가 범위 끝 바퀴를 갈아타게 만들면 그 주기는 보정 안 함
-//   (모의: 대각 왕복 뒤왼쪽 귀환에서 rr −44.5° 끝 + 보정 회전 → rr 이 반대 분기로 돌기 시작해 구동이 멈춤)
+//   (예: 대각 왕복 뒤왼쪽 귀환에서 rr −44.5° 끝 + 보정 회전 → rr 이 반대 분기로 돌기 시작해 구동이 멈춤)
 TEST(HeadingHold, NeverFlipsModuleSittingAtRangeEnd) {
   const double d = kPi / 180;
   const std::vector<swerve_controller::SteeringRange> r = {{-90.439*d, 269.473*d}, {-223.506*d, 136.406*d}, {-133.418*d, 170.0*d}, {-44.473*d, 315.439*d}};
@@ -1298,7 +1298,7 @@ TEST(HeadingHold, CorrectionScalesWithTranslationSpeed) {
   EXPECT_LE(max_wz_at(0.1, 0.4), 0.04 + 1e-9);           // 0.10 m/s → 0.04 rad/s
 }
 
-// 가지 고르기 보강 — 실물 36 방향 왕복의 뒤집힘 (실측 범위, 끝 여유 1°)
+// 가지 고르기 보강 — 36 방향 왕복의 뒤집힘 (실측 범위, 끝 여유 1°)
 namespace {
 const double kDeg = kPi / 180;
 const std::vector<swerve_controller::SteeringRange> kMeasured = {
@@ -1316,7 +1316,7 @@ TEST(BranchGuard, CoherentMaxTravelAvoidsLongCommonSwing) {
   SwerveKinematics old_rule(real_modules(), kR, kPi, kMeasured, true, 0.0, 1.0 * kDeg);
   old_rule.set_travel_weight(2.0);
   const auto a = old_rule.inverse(heading(120), now, false, nullptr, now, true);
-  EXPECT_GT(max_turn(a, now), 140 * kDeg);                   // 예전: 공통 120° 로 150° 돎
+  EXPECT_GT(max_turn(a, now), 140 * kDeg);                   // 한도 없음: 공통 120° 로 150° 돎
   SwerveKinematics guard(real_modules(), kR, kPi, kMeasured, true, 0.0, 1.0 * kDeg);
   guard.set_travel_weight(2.0);
   guard.set_branch_options(100 * kDeg, 0.0);
@@ -1347,7 +1347,7 @@ TEST(BranchGuard, EndGuardPicksRoomyBranchOnlyWhenStarting) {
   for (int i = 0; i < 4; ++i) {EXPECT_EQ(c[i].steer_angle, e[i].steer_angle);}
 }
 
-// 두 값 모두 0 이면 예전과 모든 출력이 같음 (전방향 · 여러 시작 자세 · 출발/이동)
+// 두 값 모두 0 이면 안 준 것과 모든 출력이 같음 (전방향 · 여러 시작 자세 · 출발/이동)
 TEST(BranchGuard, ZeroOptionsKeepOldOutputs) {
   SwerveKinematics old_rule(real_modules(), kR, kPi, kMeasured, true, 0.0, 1.0 * kDeg);
   SwerveKinematics zero(real_modules(), kR, kPi, kMeasured, true, 0.0, 1.0 * kDeg);
@@ -1365,7 +1365,7 @@ TEST(BranchGuard, ZeroOptionsKeepOldOutputs) {
   }
 }
 
-// 실물 140° 왕복 귀환: 0.02 m/s · −40.5° 로 가는데 추종기 방향 보정 wz −0.015 → rr 목표 −45.6° (끝 + 여유 넘음)
+// 140° 왕복 귀환: 0.02 m/s · −40.5° 로 가는데 추종기 방향 보정 wz −0.015 → rr 목표 −45.6° (끝 + 여유 넘음)
 //   끔: rr 이 반대 가지로 돌기 시작 / 켬(keep_branch_max_wz): 회전을 줄여 rr 이 −40° 근처 그대로
 TEST(BranchGuard, KeepBranchTrimsSmallTurnInsteadOfFlipping) {
   auto run_case = [](double keep) {
@@ -1394,8 +1394,8 @@ TEST(BranchGuard, KeepBranchTrimsSmallTurnInsteadOfFlipping) {
   EXPECT_LT(on.second, 1.0);                                 // 회전을 줄였음
 }
 
-// 모의 12 동작 회귀 (곡선 정렬 시간 초과): 일부러 준 느린 곡선(0.02 m/s + 0.15 rad/s)은 바퀴가 기하학적으로
-//   30° 넘게 꺾여도 같은 가지 → 회전을 깎지 않고 명령 그대로 (예전 판정은 회전을 0 근처로 깎아 곡선이 안 됨)
+// 느린 곡선 회귀: 일부러 준 느린 곡선(0.02 m/s + 0.15 rad/s)은 바퀴가 기하학적으로
+//   30° 넘게 꺾여도 같은 가지 → 회전을 깎지 않고 명령 그대로 (기하학적 변화까지 막으면 회전을 0 근처로 깎아 곡선이 안 됨)
 TEST(BranchGuard, KeepBranchDoesNotTrimIntendedSlowArc) {
   SwerveDriveConfig cfg;
   cfg.keep_branch_max_wz = 0.2;
@@ -1419,10 +1419,10 @@ TEST(BranchGuard, KeepBranchDoesNotTrimIntendedSlowArc) {
     EXPECT_NEAR(std::remainder(meas[i].steer_angle - want, kPi), 0.0, 1 * kDeg) << i << " 각 " << meas[i].steer_angle / kDeg << " 기대 " << want / kDeg;
     max_turn = std::max(max_turn, std::fabs(want));
   }
-  EXPECT_GT(max_turn, 30 * kDeg);   // 예전 판정이면 깎였을 크기
+  EXPECT_GT(max_turn, 30 * kDeg);   // 기하학적 변화까지 막는 판정이면 깎였을 크기
 }
 
-// 검토: 범위 끝 벌점은 nearest 정책에도 (예전 비용식은 ?: 우선순위로 coherent 에만 붙었음)
+// 범위 끝 벌점은 nearest 정책에도 붙음 (coherent 만이 아님)
 TEST(BranchGuard, EndGuardAlsoAppliesToNearestPolicy) {
   const auto now = facing(-30 * kDeg);
   SwerveKinematics plain(real_modules(), kR, kPi, kMeasured, false, 0.0, 1.0 * kDeg);
@@ -1435,7 +1435,7 @@ TEST(BranchGuard, EndGuardAlsoAppliesToNearestPolicy) {
   expect_realizes(guard, heading(-40), b, kMeasured);
 }
 
-// 검토: 생성자가 NaN · 범위 밖 값을 거름 (예전엔 루프 안 예외 또는 조용히 통과)
+// 생성자가 NaN · 범위 밖 값을 거름
 TEST(BranchGuard, ConstructorRejectsNonFiniteGeometry) {
   EXPECT_THROW(SwerveKinematics(real_modules(), NAN, kPi), std::invalid_argument);
   EXPECT_THROW(SwerveKinematics(real_modules(), kR, NAN), std::invalid_argument);
@@ -1444,4 +1444,257 @@ TEST(BranchGuard, ConstructorRejectsNonFiniteGeometry) {
   bad[0].x = NAN;
   EXPECT_THROW(SwerveKinematics(bad, kR, kPi), std::invalid_argument);
   EXPECT_NO_THROW(SwerveKinematics(real_modules(), kR, 3.14159));
+}
+
+// 조향 중 굴림 보상: 연속 조향 (steer_then_drive 끔 · 동시 모드 끔) 에서도 주행 차례면 보상, 잠금 (DRIVE 아님) 이면 안 함
+//   보상 없이 조향이 돌면 바퀴가 바닥을 끌어 몸이 돎 (정밀 접근 때 명령과 반대로 도는 회전)
+TEST(RollWhileSteering, ContinuousSteeringCompensatesOnlyWhenDriveAllowed)
+{
+  auto make = [](bool roll) {
+    SwerveDriveConfig c;
+    c.steer_then_drive = false;
+    c.cosine_scale = true;
+    c.roll_while_steering = roll;
+    return SwerveDrive(SwerveKinematics(real_modules(), kR, kPi, ranges_from_zero(kRealZero)), c);
+  };
+  const auto k = real_geometry(kRealZero);
+  const BodyTwist fwd{0.15, 0.0, 0.0}, side{0.0, 0.15, 0.0};
+  for (int turn : {1, 0}) {
+    auto a = make(true), b = make(false);
+    auto ma = facing(0.0), mb = facing(0.0);
+    double t = 0.0;
+    for (; t < 1.0; t += kDt) {step(a, ma, t, &fwd); step(b, mb, t, &fwd);}
+    int steering = 0;
+    for (int n = 0; n < 30; ++n, t += kDt) {
+      std::vector<double> rate(4);
+      for (int i = 0; i < 4; ++i) {rate[i] = ma[i].steer_rate;}
+      const auto oa = step(a, ma, t, &side, turn);
+      const auto ob = step(b, mb, t, &side, turn);
+      for (int i = 0; i < 4; ++i) {
+        ASSERT_NEAR(ma[i].steer_angle, mb[i].steer_angle, 1e-12) << i;   // 보상은 바퀴만 바꿈
+        const double expect = turn == 1 ? k.roll_while_steering(i, rate[i]) : 0.0;
+        EXPECT_NEAR(oa[i].wheel_speed - ob[i].wheel_speed, expect, 1e-9) << "turn " << turn << " 바퀴 " << i;
+        if (std::fabs(rate[i]) > 0.1) {++steering;}
+      }
+    }
+    if (turn == 1) {EXPECT_GT(steering, 0);}   // 실제로 조향이 돈 주기가 있어야 시험 의미가 있음
+  }
+}
+
+// ---------- 켤 때 조향 곧게 (home_steer_on_start → begin_home) — 실물 영점 범위 · 기하 ----------
+namespace
+{
+SwerveDrive home_drive(std::vector<swerve_controller::SteeringRange> r = ranges_from_zero(kRealZero))
+{
+  SwerveDriveConfig cfg;   // 시간 8 s · 맞음 0.05 rad (기본값)
+  return SwerveDrive(SwerveKinematics(real_modules(), kR, kPi, r), cfg);
+}
+std::vector<ModuleState> turned()   // 켤 때 제각각: fl +140° · fr −100° · rl +30° · rr +200° (모두 범위 안)
+{
+  auto m = facing(0.0);
+  const double deg[4] = {140.0, -100.0, 30.0, 200.0};
+  for (int i = 0; i < 4; ++i) {m[i].steer_angle = deg[i] * kPi / 180.0;}
+  return m;
+}
+}  // namespace
+
+// 20) 부르지 않으면 (home_steer_on_start:=false) 곧게 하지 않음: 첫 명령부터 지금 각도에서 고름
+TEST(HomeSteer, NothingUnlessBegun)
+{
+  auto d = home_drive();
+  EXPECT_FALSE(d.homing());
+  auto meas = turned();
+  const BodyTwist fwd{0.05, 0.0, 0.0};
+  auto out = step(d, meas, 0.0, &fwd);
+  EXPECT_FALSE(d.homing());
+  EXPECT_EQ(d.home_result(), SwerveDrive::HomeResult::kNone);
+}
+
+// 21) 켜면: 네 조향 목표 0°, 범위 안에서 0° 쪽으로만 (선 풀리는 쪽) · 그동안 주행 명령 안 따름 (바퀴는 offset 보상만, 몸 그 자리)
+//     다 맞으면 끝 → 그 주기부터 명령 따름
+TEST(HomeSteer, TurnsEveryModuleToZeroInsideRangeThenDrives)
+{
+  auto d = home_drive();
+  ASSERT_TRUE(d.begin_home());
+  auto meas = turned();
+  const auto start = meas;
+  const auto r = ranges_from_zero(kRealZero);
+  const auto k = real_geometry(kRealZero);
+  const BodyTwist fwd{0.05, 0.0, 0.0};
+  std::vector<ModuleState> out;
+  double t = 0.0;
+  for (; t < 10.0 && d.homing(); t += kDt) {
+    std::vector<double> rate(4);
+    for (int i = 0; i < 4; ++i) {rate[i] = meas[i].steer_rate;}
+    out = step(d, meas, t, &fwd);
+    if (!d.homing()) {break;}
+    for (int i = 0; i < 4; ++i) {
+      EXPECT_EQ(out[i].steer_angle, 0.0) << i;
+      EXPECT_NEAR(out[i].wheel_speed, k.roll_while_steering(i, rate[i]), 1e-12) << i;   // 구동 없음 (보상만)
+      EXPECT_GE(meas[i].steer_angle, r[i].min) << i;
+      EXPECT_LE(meas[i].steer_angle, r[i].max) << i;
+      // 0° 쪽으로만: 부호가 안 바뀌고 크기가 줄기만 함 (범위 끝을 넘어 돌아가지 않음)
+      EXPECT_GE(meas[i].steer_angle * start[i].steer_angle, 0.0) << i;
+      EXPECT_LE(std::fabs(meas[i].steer_angle), std::fabs(start[i].steer_angle) + 1e-12) << i;
+    }
+    EXPECT_TRUE(d.applied_drive());
+    d.integrate_odom(meas, kDt, false, 0.0);
+  }
+  ASSERT_FALSE(d.homing());
+  EXPECT_EQ(d.home_result(), SwerveDrive::HomeResult::kDone);
+  EXPECT_NEAR(d.home_active_s(), 200.0 * kPi / 180.0 / kSlew, 0.1);   // 가장 먼 rr 200° / 0.96 rad/s ≈ 3.6 s
+  EXPECT_LT(std::hypot(d.pose().x, d.pose().y), 2e-3);                 // 몸 그 자리
+  for (int i = 0; i < 4; ++i) {EXPECT_LE(std::fabs(meas[i].steer_angle), 0.05 + 1e-9) << i;}
+  // 끝난 주기부터 명령 따름: 곧은 자세라 바로 전진 (네 바퀴 +)
+  for (t += kDt; t < 11.0; t += kDt) {out = step(d, meas, t, &fwd);}
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_NEAR(out[i].steer_angle, 0.0, 0.06) << i;
+    EXPECT_GT(out[i].wheel_speed, 0.0) << i;
+  }
+}
+
+// 22) 바퀴 차례가 아니면 (팔 차례 · 차례 모름) 조향 그 자리 · 바퀴 0 · 시간 안 셈 · "잠갔음" 답. 차례 오면 시작
+TEST(HomeSteer, WaitsForDriveTurnWithoutMoving)
+{
+  auto d = home_drive();
+  ASSERT_TRUE(d.begin_home());
+  auto meas = turned();
+  const auto start = meas;
+  std::vector<ModuleState> out;
+  double t = 0.0;
+  for (; t < 3.0; t += kDt) {out = step(d, meas, t, nullptr, 0);}
+  EXPECT_TRUE(d.homing());
+  EXPECT_TRUE(d.home_waiting_turn());
+  EXPECT_FALSE(d.applied_drive());
+  EXPECT_EQ(d.home_active_s(), 0.0);
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_NEAR(meas[i].steer_angle, start[i].steer_angle, 1e-12) << i;
+    EXPECT_EQ(out[i].wheel_speed, 0.0) << i;
+  }
+  for (; t < 9.0 && d.homing(); t += kDt) {step(d, meas, t, nullptr, 1);}   // 명령 없이도 차례만 오면 곧게
+  EXPECT_FALSE(d.homing());
+  EXPECT_EQ(d.home_result(), SwerveDrive::HomeResult::kDone);
+}
+
+// 23) 한 모듈이 안 돎 (모터 거부 · 걸림): 차례인 시간 8 s 넘으면 평소 동작 (명령 따름) 으로
+TEST(HomeSteer, TimeoutFallsBackToNormalDriving)
+{
+  auto d = home_drive();
+  ASSERT_TRUE(d.begin_home());
+  auto meas = turned();
+  const double stuck = meas[3].steer_angle;
+  const BodyTwist fwd{0.05, 0.0, 0.0};
+  double t = 0.0;
+  for (; t < 7.9; t += kDt) {
+    step(d, meas, t, &fwd);
+    meas[3].steer_angle = stuck;
+    meas[3].steer_rate = 0.0;
+  }
+  EXPECT_TRUE(d.homing());
+  for (; t < 8.3; t += kDt) {
+    step(d, meas, t, &fwd);
+    meas[3].steer_angle = stuck;
+    meas[3].steer_rate = 0.0;
+  }
+  EXPECT_FALSE(d.homing());
+  EXPECT_EQ(d.home_result(), SwerveDrive::HomeResult::kTimedOut);
+  auto out = step(d, meas, t, &fwd);
+  EXPECT_TRUE(d.command_feasible());
+  EXPECT_NE(out[3].steer_angle, 0.0);   // 평소 계산 (rr 200° 자리에서 가까운 가지)
+}
+
+// 24) 0° 가 어느 모듈 범위 밖이면 안 함 (자르지 않음) · cancel_home 은 그 자리에서 멈춤
+TEST(HomeSteer, NotStartedWhenZeroOutsideRangeAndCancelStops)
+{
+  auto r = ranges_from_zero(kRealZero);
+  r[3] = {0.2, 3.0};
+  auto d = home_drive(r);
+  EXPECT_FALSE(d.begin_home());
+  EXPECT_FALSE(d.homing());
+  auto e = home_drive();
+  ASSERT_TRUE(e.begin_home());
+  auto meas = turned();
+  for (double t = 0.0; t < 0.5; t += kDt) {step(e, meas, t, nullptr);}
+  EXPECT_TRUE(e.homing());
+  e.cancel_home();
+  EXPECT_FALSE(e.homing());
+  const auto held = e.stop_hold({meas[0].steer_angle, meas[1].steer_angle, meas[2].steer_angle, meas[3].steer_angle});
+  for (int i = 0; i < 4; ++i) {EXPECT_NEAR(held[i].steer_angle, meas[i].steer_angle, 1e-12) << i;}
+}
+
+// 25) RL 학습 규칙 설정 (blend 켬 0.7π · 가지 규칙 끔 · end_slack 1°) 에서도
+//     켤 때 조향 곧게가 먼저 끝나고 (그동안 구동 없음 · 정체 판정 없음), 끝난 뒤 옆 명령을 따라 바퀴가 실제로 굴러감
+TEST(HomeSteer, WorksWithRlPlantBlendRules)
+{
+  SwerveDriveConfig cfg;
+  cfg.steer_then_drive = false;
+  cfg.blend_steer_drive = true;
+  cfg.blend_margin = 0.7;
+  cfg.blend_tolerance = 0.7 * kPi;
+  cfg.blend_stall_s = 1.0;
+  cfg.heading_hold_kp = 0.0;
+  cfg.keep_branch_max_wz = 0.0;
+  SwerveDrive d(SwerveKinematics(real_modules(), kR, kPi, ranges_from_zero(kRealZero)), cfg);
+  ASSERT_TRUE(d.begin_home());
+  auto meas = turned();
+  const auto k = real_geometry(kRealZero);
+  const BodyTwist side{0.0, 0.05, 0.0};
+  double t = 0.0;
+  for (; t < 10.0 && d.homing(); t += kDt) {
+    std::vector<double> rate(4);
+    for (int i = 0; i < 4; ++i) {rate[i] = meas[i].steer_rate;}
+    auto out = step(d, meas, t, &side);
+    if (!d.homing()) {break;}
+    EXPECT_FALSE(d.blend_stalled());
+    for (int i = 0; i < 4; ++i) {
+      EXPECT_EQ(out[i].steer_angle, 0.0) << i;
+      EXPECT_NEAR(out[i].wheel_speed, k.roll_while_steering(i, rate[i]), 1e-12) << i;
+    }
+    d.integrate_odom(meas, kDt, false, 0.0);
+  }
+  ASSERT_FALSE(d.homing());
+  EXPECT_EQ(d.home_result(), SwerveDrive::HomeResult::kDone);
+  EXPECT_LT(std::hypot(d.pose().x, d.pose().y), 2e-3);
+  for (t += kDt; t < 16.0; t += kDt) {
+    step(d, meas, t, &side);
+    d.integrate_odom(meas, kDt, false, 0.0);
+  }
+  EXPECT_TRUE(d.command_feasible());
+  EXPECT_FALSE(d.blend_stalled());
+  EXPECT_GT(d.pose().y, 0.1);                      // 옆으로 실제 이동 (≈ 0.05 m/s × 수 s)
+  EXPECT_LT(std::fabs(d.pose().x), 0.2 * d.pose().y);   // 거의 옆으로 (출발 때 바깥쪽 자세 · offset 만큼 조금 틀어짐)
+}
+
+// 26) 큰 돌림 게이트 (blend_swing_gate, 학습 플랜트 steer_tolerance π 와 같음): 범위 끝 때문에 반 바퀴 넘게 돌아야 하는 조향이 있으면
+//     다 돌 때까지 구동 0 (조향 보상 굴림만). 끄면 (0) 접은 cos (≈ 0.86) 로 다른 바퀴가 밈
+TEST(BlendSwingGate, LongSwingHoldsDriveLikeTrainingPlant)
+{
+  std::vector<swerve_controller::SteeringRange> r = {{-kPi, kPi}, {-kPi, kPi}, {-kPi, kPi}, {0.3, 6.2}};
+  for (const double gate : {kPi, 0.0}) {
+    SwerveDriveConfig cfg;
+    cfg.steer_then_drive = false;
+    cfg.blend_steer_drive = true;
+    cfg.blend_margin = 0.7;
+    cfg.blend_tolerance = 0.7 * kPi;
+    cfg.blend_stall_s = 1.0;
+    cfg.blend_swing_gate = gate;
+    SwerveDrive d(SwerveKinematics(real_modules(), kR, kPi, r, true, 0.0, 0.017453), cfg);
+    auto meas = facing(0.35);
+    meas[3].steer_angle = 6.1;                     // rr: 목표 0.35 까지 5.75 rad (반대쪽으로 돌아야 함)
+    const BodyTwist cmd{0.1 * std::cos(0.35), 0.1 * std::sin(0.35), 0.0};
+    std::vector<ModuleState> out;
+    for (double t = 0.0; t < 0.2; t += kDt) {
+      d.set_turn(true, 1, t);
+      d.set_command(cmd, t);
+      out = d.update(t, kDt, meas);
+    }
+    EXPECT_NEAR(out[3].steer_angle, 0.35, 1e-9);
+    if (gate > 0.0) {
+      EXPECT_TRUE(d.gate_blocked());
+      for (int i = 0; i < 4; ++i) {EXPECT_EQ(out[i].wheel_speed, 0.0) << i;}   // 조향 실측 속도 0 → 보상도 0
+    } else {
+      EXPECT_FALSE(d.gate_blocked());
+      EXPECT_GT(std::fabs(out[0].wheel_speed), 0.5);
+    }
+  }
 }

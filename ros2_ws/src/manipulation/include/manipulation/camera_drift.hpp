@@ -1,0 +1,42 @@
+// camera_drift.hpp — 홈 자세 손목 사진 (로봇 몸통) 을 기준 사진과 비교해 손목 카메라가 손목에서 얼마나 돌았나 (순수 C++ · Eigen, test/test_camera_drift.cpp)
+// =====================================================================
+// 손이 박스를 누르면 카메라 경첩이 돌 수 있음 (팔 관절값은 그대로) → 퍽을 앞 · 옆으로 잘못 봄.
+// 홈 자세는 늘 같은 관절이라 몸통 화소가 움직였으면 카메라가 돈 것. 맞은 화소 쌍의 광선을 Kabsch 로 맞춰 회전을 구함
+//   (몸통은 5 ~ 20 cm 라 카메라가 옮겨진 만큼은 회전으로 섞여 들어감 — 경첩 축이 렌즈 가까이라 작음)
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+#include <Eigen/Dense>
+
+namespace manipulation
+{
+
+struct CameraDrift
+{
+  Eigen::Matrix3d R{Eigen::Matrix3d::Identity()};   // 실제 카메라 = 명목 카메라 · R (카메라 좌표). 검출점 p (카메라) → R · p 가 맞는 점
+  double deg{0.0};        // 회전 크기 [°]
+  double resid_px{0.0};   // 회전으로 맞춘 뒤 남는 화소 차 평균
+  int n{0};
+};
+
+// u_ref · u_now: 같은 몸통 점의 기준 · 지금 화소 (같은 순서), fx fy cx cy: 카메라 내부값. 점이 3 개 미만이면 false
+bool camera_drift(const std::vector<Eigen::Vector2d> & u_ref, const std::vector<Eigen::Vector2d> & u_now,
+  double fx, double fy, double cx, double cy, CameraDrift & out);
+
+// 기준 사진을 새로 찍어도 보정이 끊기지 않게 잇기 (옛 기준과 점이 적게 맞으면 측정이 멈추기 때문).
+//   base = 새 기준을 찍을 때 쓰던 보정 (새 기준 카메라 = 명목 · base), meas = 새 기준 대비 측정 (지금 = 새 기준 · meas)
+//   → 명목 대비 = base · meas. 집기 · 놓기 보정값들은 명목 (손눈 보정 URDF) 기준으로 맞춰 둔 것이라 그대로 씀
+Eigen::Quaterniond chain_drift(const Eigen::Quaterniond & base, const Eigen::Quaterniond & meas);
+
+// 보정 사원수의 크기 [°] (로그용 — 이어 쓴 총 각 = drift_deg(chain_drift(base, meas)))
+double drift_deg(const Eigen::Quaterniond & q);
+
+// ref_base.txt 둘째 줄 = 기준 사진 (ref.png) 과의 짝 "ref <크기 B> <수정 시각 s>" (사진만 바뀌면 옛 보정을 이어 쓰면 안 됨)
+std::string ref_base_tag(std::uintmax_t size, long long mtime_s);
+// 저장된 짝 줄이 지금 ref.png 의 짝과 같은가. 저장된 줄이 비었으면 (사원수만 있는 형식) true
+bool ref_base_tag_matches(const std::string & stored, const std::string & now);
+
+}  // namespace manipulation

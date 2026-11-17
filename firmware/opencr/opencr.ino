@@ -1,8 +1,8 @@
-// nt_opencr.ino — 닌자터틀 OpenCR 펌웨어: 모터 14개 + IMU
+// opencr.ino — 닌자터틀 OpenCR 펌웨어: 모터 14개 + IMU
 // =====================================================================
 // OpenCR 1장 + 펌웨어 (D3 A안 · D12): 모터 14개와 내장 IMU 를 USB 한 줄로
 //
-//   Jetson (nt_hardware 플러그인) ──USB──▶ [이 펌웨어] ──TTL──▶ 다이나믹셀 14개 (전원은 따로 분배)
+//   Jetson (hardware 플러그인) ──USB──▶ [이 펌웨어] ──TTL──▶ 다이나믹셀 14개 (전원은 따로 분배)
 //                                 ◀──────          ◀── IMU (보드 안)
 //
 // 한 바퀴 (100 Hz, 10 ms 마다)
@@ -12,6 +12,7 @@
 //   ④ 목표 쓰기 (Sync Write) → 상태 읽기 (Sync Read)
 //   ⑤ 상태 상자 보내기 (시간 · IMU · 모터 14개 위치/속도/전류)
 //   ⑥ 1 초마다 보드 안 시간 측정 상자(DIAG) — 한 바퀴 · Sync Read/Write · 개별 읽기/쓰기 · 고장 정지 시간
+//      + 바로 뒤에 모터 온도 상자(TEMP) — 되읽기(④ 뒤, 1 모터씩)가 전압과 같이 읽은 온도
 //
 // 안전장치 3겹 (위에서부터)
 //   1. swerve_controller (ros2_control 안) : cmd_vel 끊김 · 차례 아님 → 바퀴 0
@@ -19,13 +20,13 @@
 //   3. 모터 Bus Watchdog: 이 펌웨어가 멈춰 명령이 끊김 → 모터 스스로 정지
 //
 // 올리는 법: Arduino IDE + OpenCR 보드 패키지, 라이브러리 Dynamixel2Arduino. 보드 = OpenCR, 포트 = /dev/ttyACM0
-//   OpenCR 코어 1.5.3 으로 컴파일됨. ⚠ 실제 보드 시험 절차는 별도 검토 필요
-// 파일: 이 .ino (한 바퀴 + IMU) · motor_bus.h/.cpp (모터 14개 Sync 읽기/쓰기) · nt_packet.h (편지 규칙, 플러그인과 공용)
+//   OpenCR 코어 1.5.3 으로 컴파일됨.
+// 파일: 이 .ino (한 바퀴 + IMU) · motor_bus.h/.cpp (모터 14개 Sync 읽기/쓰기) · opencr_packet.h (편지 규칙, 플러그인과 공용)
 
 #include <IMU.h>
 
 #include "motor_bus.h"
-#include "nt_packet.h"
+#include "opencr_packet.h"
 
 // 파일 안에서만 쓰는 값 · 함수는 static (Arduino IDE 가 .ino 에 함수 원형을 자동으로 끼워 넣는데,
 // namespace { } 안에 끼워 넣으면 꼬일 수 있어서 static 으로)
@@ -34,10 +35,10 @@ static const uint32_t DXL_BAUD = 1000000;         // 다이나믹셀 버스 (har
 static const uint32_t PERIOD_US = 10000;          // 100 Hz
 static const uint32_t HOST_TIMEOUT_MS = 300;      // Jetson 명령이 이만큼 끊기면 바퀴 0 (경비견)
 
-static ntp::Parser parser;
-static ntp::Cmd cmd;
-static ntp::State state;
-static uint8_t tx[ntp::MAX_FRAME];
+static pkt::Parser parser;
+static pkt::Cmd cmd;
+static pkt::State state;
+static uint8_t tx[pkt::MAX_FRAME];
 static bool configured = false;
 static bool have_cmd = false;
 static bool imu_ok = false;
@@ -54,7 +55,7 @@ static uint16_t config_ms_pending = 0;   // 다음 DIAG 에 실을 CONFIG 처리
 // ------------------------------------------------------------------ USB 보내기 (기다리지 않음)
 // 왜: OpenCR 코어의 Serial.write(vcp_write)는 송신 버퍼(2 KB)가 모자라면 **최대 100 ms 바쁘게 기다림**.
 //     PC 가 포트를 한 번 열었다 닫으면(측정 도구를 끝낸 뒤 등) 펌웨어는 계속 쌓다가 버퍼가 차고, 그때부터 상자마다
-//     100 ms 씩 제어 루프가 멈춤 → 첫 DIAG 구간에 "10 ms 초과 3~4 회 · 최대 65535(포화)" 로 보였음.
+//     100 ms 씩 제어 루프가 멈춤 (DIAG 의 한 바퀴 시간이 10 ms 초과 · 최대 65535 포화로 나옴).
 //     코어의 CDC_Itf_Write 는 자리가 있으면 상자 전체를 쓰고, 없으면 0 · 포트가 안 열렸으면 -1 을 바로 돌려줌 (부분 쓰기 없음)
 //     → 자리가 없으면 이번 상자는 버리고 셈. 아무도 안 읽는 상태 상자를 기다리느라 모터 제어를 멈추지 않으려고
 extern "C" int32_t CDC_Itf_Write(uint8_t *p_buf, uint32_t length);   // variants/OpenCR/hw/usb_cdc/usbd_cdc_interface.h
@@ -86,7 +87,7 @@ static bool imu_begin()
   return true;
 }
 
-static void imu_fill(ntp::Imu &out)
+static void imu_fill(pkt::Imu &out)
 {
   for (int i = 0; i < 4; ++i) {out.quat[i] = imu.quat[i];}
   for (int i = 0; i < 3; ++i) {
@@ -99,7 +100,7 @@ static void imu_fill(ntp::Imu &out)
 // ------------------------------------------------------------------ 보드 안 시간 (DIAG) 보내기 · 새 구간
 static void send_diag(uint8_t extra_flags)
 {
-  ntp::Diag g;
+  pkt::Diag g;
   memset(&g, 0, sizeof(g));
   g.ms = millis();
   g.window_ms = static_cast<uint16_t>(g.ms - diag_since_ms);
@@ -112,14 +113,36 @@ static void send_diag(uint8_t extra_flags)
   g.config_ms = config_ms_pending;
   config_ms_pending = 0;
   diag_since_ms = g.ms;
-  const uint16_t dlen = ntp::encode_diag(g, tx, sizeof(tx));
+  const uint16_t dlen = pkt::encode_diag(g, tx, sizeof(tx));
   if (dlen) {usb_send(tx, dlen);}   // 이 보내기는 다음 구간의 usb_tx 에 들어감
+}
+
+// 모터 온도 (TEMP) — CONFIG 뒤에만 (그 전에는 모터 목록이 없음)
+static void send_temp()
+{
+  pkt::Temp t;
+  bus_temp_take(t);
+  const uint16_t tlen = pkt::encode_temp(t, tx, sizeof(tx));
+  if (tlen) {usb_send(tx, tlen);}
+}
+
+// 토크 켜기 실패 이유 (TORQUE_FAIL) — 실패가 이어지는 동안 0.5 s 마다 하나 (매 바퀴 다시 시도하므로 그대로 보내면 100 Hz)
+static uint32_t tf_sent_ms = 0;
+static void send_torque_fail()
+{
+  pkt::TorqueFail f;
+  if (!bus_torque_fail_peek(f)) {return;}
+  // 0.5 s 안의 새 실패는 꺼내지 않고 둠 (다음에 가장 최근 것을 보냄). 켜 둔 토크가 꺼짐 (TF_LOST) 은 바로 — 같은 바퀴 STATE 가 HW_ERROR
+  if (f.step != pkt::TF_LOST && millis() - tf_sent_ms < 500) {return;}
+  bus_torque_fail_take(f);
+  const uint16_t len = pkt::encode_torque_fail(f, tx, sizeof(tx));
+  if (len && usb_send(tx, len)) {tf_sent_ms = millis();}   // 못 보냈으면 다음 실패 (10 ms 뒤 다시 시도) 를 바로 보냄
 }
 
 // CONFIG 직후: 모은 숫자를 버리고 새 구간 시작 (CONFIG 전 구간은 바로 앞에서 send_diag 로 따로 보냄)
 static void diag_restart()
 {
-  ntp::Diag g;
+  pkt::Diag g;
   t_loop.take(g.loop);
   t_usb.take(g.usb_tx);
   bus_timing_take(g);
@@ -130,28 +153,32 @@ static void diag_restart()
 // ------------------------------------------------------------------ 패킷 처리
 static void handle_packet()
 {
-  if (parser.type() == ntp::TYPE_CONFIG) {
-    ntp::Config c;
-    if (!ntp::decode_config(parser.data(), parser.len(), c)) {return;}
+  if (parser.type() == pkt::TYPE_CONFIG) {
+    pkt::Config c;
+    if (!pkt::decode_config(parser.data(), parser.len(), c)) {return;}
     // CONFIG 전 구간을 여기서 끊어 따로 보냄 (DIAG_FLAG_BEFORE_CONFIG) — PC 가 포트를 열기 전 · 설정 전 숫자를
     // 설정 뒤 측정과 섞지 않으려고. 숨기지 않고 표시를 달아 보냄
-    send_diag(ntp::DIAG_FLAG_BEFORE_CONFIG);
-    ntp::ConfigAck ack;
+    send_diag(pkt::DIAG_FLAG_BEFORE_CONFIG);
+    pkt::ConfigAck ack;
     ack.n = c.n;
     const uint32_t t_cfg = millis();
     ack.ok_mask = bus_configure(c);   // 몇 초 걸릴 수 있음 (모터마다 ping · 설정)
     configured = true;
     have_cmd = false;
-    const uint16_t len = ntp::encode_ack(ack, tx, sizeof(tx));
+    const uint16_t len = pkt::encode_ack(ack, tx, sizeof(tx));
     Serial.write(tx, len);   // ACK 는 PC 가 방금 CONFIG 를 보낸 뒤라 읽는 중 — 꼭 가야 해서 코어 쓰기(최대 100 ms 대기) 그대로
+    pkt::PosLimits lim;   // 위치 한계 (켤 때 플러그인이 찍고 지금 위치가 밖이면 경고). 모르는 옛 플러그인은 버림
+    bus_pos_limits(lim);
+    const uint16_t llen = pkt::encode_pos_limits(lim, tx, sizeof(tx));
+    if (llen) {Serial.write(tx, llen);}
     // CONFIG 뒤 새 구간. bus_configure 시간은 어느 구간의 한 바퀴에도 안 넣고 config_ms 로 따로 알림
     const uint32_t cfg_ms = millis() - t_cfg;
     config_ms_pending = static_cast<uint16_t>(cfg_ms > 65535 ? 65535 : cfg_ms);
     diag_restart();
     last_tick_us = micros();   // CONFIG 로 밀린 시간을 "주기 다시 잡기" 로 세지 않음 (CONFIG 때문인 게 분명하니까)
-  } else if (parser.type() == ntp::TYPE_CMD) {
-    ntp::Cmd c;
-    if (!ntp::decode_cmd(parser.data(), parser.len(), c)) {return;}
+  } else if (parser.type() == pkt::TYPE_CMD) {
+    pkt::Cmd c;
+    if (!pkt::decode_cmd(parser.data(), parser.len(), c)) {return;}
     cmd = c;
     have_cmd = true;
     last_cmd_ms = millis();   // 경비견 밥 주기
@@ -192,10 +219,11 @@ void loop()
   bool write_ok = true;
   if (configured) {
     // 토크는 Jetson 이 켜라고 할 때만. 끊겨도 끄지는 않음 (팔이 떨어지지 않게) — 바퀴만 0
-    if (have_cmd) {bus_set_torque((cmd.flags & ntp::FLAG_TORQUE) != 0);}
+    if (have_cmd) {bus_set_torque((cmd.flags & pkt::FLAG_TORQUE) != 0);}
     write_ok = bus_write_targets(cmd, host_ok);
     state.comm_err = bus_read_states(state);
-    bus_health_step();   // 1 모터씩 돌아가며 Hardware Error · Torque Enable 되읽기 (R5)
+    bus_health_step();   // 1 모터씩 돌아가며 Hardware Error · Torque Enable 되읽기
+    send_torque_fail();  // 이 바퀴 STATE 보다 먼저 (과부하로 토크가 꺼지면 HW_ERROR STATE 를 받는 순간 플러그인이 어느 모터 · 왜를 앎)
     // 고장 잠금(쓰기 실패 → 바퀴 정지) 중에는 bus_write_targets 가 계속 false → ST_WRITE_FAIL 도 계속 켜짐
   }
 
@@ -203,21 +231,24 @@ void loop()
   state.ms = millis();
   state.seq_echo = cmd.seq;
   state.status = 0;
-  if (configured) {state.status |= ntp::ST_CONFIGURED;}
-  if (configured && bus_torque_is_on()) {state.status |= ntp::ST_TORQUE;}   // 명령이 아니라 실제 결과 (되읽기 포함)
-  if (configured && !write_ok) {state.status |= ntp::ST_WRITE_FAIL;}
-  if (configured && bus_hw_error_mask()) {state.status |= ntp::ST_HW_ERROR;}
-  if (configured && bus_fault_latched()) {state.status |= ntp::ST_FAULT_LATCHED;}   // CONFIG 를 다시 받을 때까지 유지
-  if (have_cmd && !host_ok) {state.status |= ntp::ST_HOST_TIMEOUT;}
+  if (configured) {state.status |= pkt::ST_CONFIGURED;}
+  if (configured && bus_torque_is_on()) {state.status |= pkt::ST_TORQUE;}   // 명령이 아니라 실제 결과 (되읽기 포함)
+  if (configured && !write_ok) {state.status |= pkt::ST_WRITE_FAIL;}
+  if (configured && bus_hw_error_mask()) {state.status |= pkt::ST_HW_ERROR;}
+  if (configured && bus_fault_latched()) {state.status |= pkt::ST_FAULT_LATCHED;}   // CONFIG 를 다시 받을 때까지 유지
+  if (have_cmd && !host_ok) {state.status |= pkt::ST_HOST_TIMEOUT;}
   if (imu_ok) {
-    state.status |= ntp::ST_IMU_OK;
+    state.status |= pkt::ST_IMU_OK;
     imu_fill(state.imu);
   }
-  const uint16_t len = ntp::encode_state(state, tx, sizeof(tx));
+  const uint16_t len = pkt::encode_state(state, tx, sizeof(tx));
   if (len) {usb_send(tx, len);}   // 기다리지 않음 — PC 가 안 읽어 버퍼가 차면 이번 상자는 버림 (usb_tx.fail)
 
   // ⑥ 보드 안 시간 (DIAG). 한 바퀴 = ③~⑤ (모터 쓰기 · 읽기 · 되읽기 + 상태 보내기). 10 ms 넘으면 실패로 셈
   const uint32_t exec_us = micros() - now_us;
   t_loop.add(exec_us, exec_us <= PERIOD_US);
-  if (millis() - diag_since_ms >= DIAG_PERIOD_MS) {send_diag(0);}
+  if (millis() - diag_since_ms >= DIAG_PERIOD_MS) {
+    send_diag(0);
+    if (configured) {send_temp();}
+  }
 }
