@@ -7,19 +7,23 @@ planning · perception 이 붙을 때 보는 표. 이름은 팀 시뮬 브리지
 
 | 이름 | 타입 | 보내는 곳 | 프레임 · 주기 | 비고 |
 |---|---|---|---|---|
-| `/cmd_vel` | `geometry_msgs/TwistStamped` | Nav2 · planning → swerve_controller | base_footprint 기준 몸 속도 | 0.3 s 끊기면 정지. 최고 0.10 m/s · 0.5 rad/s. header.stamp 가 젯슨 시각과 0.3 s 넘게 다르면 버림 (젯슨 안에서 보내거나 시각 동기화 필요, stamp 0 은 받은 시각 기준) |
+| `/cmd_vel` | `geometry_msgs/TwistStamped` | Nav2 · planning → swerve_controller | base_footprint 기준 몸 속도 | 0.3 s 끊기면 정지. 최고 0.255 m/s · 0.5 rad/s (`config/controllers.yaml` max_linear · max_angular). header.stamp 가 젯슨 시각과 0.3 s 넘게 다르면 버림 (젯슨 안에서 보내거나 시각 동기화 필요, stamp 0 은 받은 시각 기준) |
 | `/odom` | `nav_msgs/Odometry` | swerve_controller | `odom` → `base_footprint`, 50 Hz | 회전은 OpenCR 자이로 (`/imu_sensor_broadcaster/imu`) |
 | TF `odom → base_footprint` | | swerve_controller | 50 Hz | `base_footprint → base_link` 는 URDF 고정 TF (z=0.033 m) |
 | `/lidar_front/scan` | `sensor_msgs/LaserScan` | `coin_d4_driver/multi_coin_d4_node` | `lidar_front_link` (= `base_scan_front` = `base_scan`) | `slam.launch.py` 기본 입력. SensorDataQoS |
-| `/lidar_rear/scan` | `sensor_msgs/LaserScan` | `coin_d4_driver/multi_coin_d4_node` | `lidar_rear_link` (= `base_scan_rear`) | 실물 운용 = 앞뒤 둘 다 (`run_robot.sh` 기본). 앞만 쓰려면 `NT_LIDAR_REAR=none` |
+| `/lidar_rear/scan` | `sensor_msgs/LaserScan` | `coin_d4_driver/multi_coin_d4_node` | `lidar_rear_link` (= `base_scan_rear`) | 실물 운용 = 앞뒤 둘 다 (`run_robot.sh` 기본). 앞만 쓰려면 `LIDAR_REAR=none` |
 | `/scan` | `sensor_msgs/LaserScan` | `navigation/scan_merger` | `base_footprint`, 10 Hz | 앞 · 뒤 스캔을 고정 TF 로 합침 (0.5° 칸, 몸 상자 안 점 버림). 한쪽 라이다가 0.15 s 넘게 끊기면 안 냄. slam_toolbox · 앞 물체 정지 입력 |
 | `/map` · TF `map → odom` | | slam_toolbox (`navigation/slam.launch.py`) | | 지도 만들기 = online_async, 위치 찾기 = localization (저장한 posegraph) |
 | `/localization_health` | `diagnostic_msgs/DiagnosticStatus` | `navigation/pose_guard` | 5 Hz | level 0 정상 · 1 경고(느리게) · 2 정지. 지도 맞음 · SLAM 보정 · 라이다 · IMU · TF 끊김을 봄 |
 | `/imu_motion_bias` | `geometry_msgs/Vector3Stamped` | `navigation/pose_guard` → swerve_controller | 1 Hz | z = 움직일 때 자이로에 더할 회전 [rad/s]. 정상 판정일 때만 보냄, 5 s 안 오면 컨트롤러는 0 |
 | `/imu_sensor_broadcaster/imu` | `sensor_msgs/Imu` | imu_sensor_broadcaster (실물만) | `imu_link` | 주행 OpenCR 의 MPU-9250 칩 기준. 장착 yaw=+90° |
 | `/joint_states` | `sensor_msgs/JointState` | joint_state_broadcaster | | 바퀴 · 조향 `drive_*_joint` · `steer_*_joint`, 팔 `joint1~5` · `gripper_left_joint` (오른손은 URDF mimic) |
-| `/arm_task` | `interfaces/action/ArmTask` | control_master (서버) | target `PoseStamped` (보통 base_link) | HOME 은 동작. PICK · PLACE 는 아래 '아직' 참고 |
+| `/joint_states_corrected` | `sensor_msgs/JointState` | `manipulation/arm_state_publisher` → robot_state_publisher | `/joint_states` 와 같은 시각 | TF 용. 팔 `joint2~4` 에 처짐 보정을 더하고 그리퍼 연결 막대 3 관절을 붙임. 팔 관절이 하나라도 빠진 순간은 팔 관절을 안 보냄 (TF 가 멈춘 걸로 드러남). control_master 는 `/joint_states` 그대로 |
+| `/joint_states_moveit` | `sensor_msgs/JointState` | `manipulation/arm_state_publisher` → move_group | 같은 시각 | MoveIt 용. 엔코더 값 그대로 + 그리퍼 연결 막대 3 관절 |
+| `/arm_task` | `interfaces/action/ArmTask` | control_master (서버) | target `PoseStamped` (보통 base_link) | 7 가지 작업 모두 동작 (아래 '팔 작업') |
 | `/control/motion_mode` | `interfaces/msg/MotionMode` | control_master → swerve_controller | 10 Hz | 바퀴 · 팔 차례 (팔 움직이는 동안 바퀴 잠금) |
+| `/rack_tags/detections` | `interfaces/msg/DetectionArray` | control_master (`rack_tag_stage`, perception `/perception/wrist/tags` 받음) | `base_link`, 팔 작업 · 퍽 쥔 동안 손목 영상마다 최대 5 Hz | 적재함 칸 바닥 AprilTag (`config/rack_cells.yaml` `rack_tags`) 를 칸 바닥 평면에 내려 잰 칸 위치. kind `rack_tag` · label 칸 이름 · id 태그 ID. `/control_master/rack_tags/report` (Trigger) = 칸별 차 · 적재함 전체 이동 · 칸별 옮길 양 |
+| `/held_puck/tag` | `interfaces/msg/DetectionArray` | control_master (`rack_tag_stage`) | `wrist_link`, 팔 작업 · 퍽 쥔 동안 손목 영상마다 최대 5 Hz | 손목 카메라에서 `held_max_dist_m` (0.15 m) 안에 보이는 퍽 태그 = 쥔 퍽. kind `held_tag` · id 태그 ID · pose = 태그 중심 · 면 방향 (z). control_master 가 PICK 뒤 기준점에서 모아 STORE 때 손 안 위치를 로그로 남기고, `held_correct` 면 칸 근처 경로를 옮김. 기준 = `/control_master/save_held_reference` (Trigger) |
 
 손목 RealSense 는 기본 이름으로 띄운다: `ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true publish_tf:=false` → `/camera/camera/*`.
 인지 노드(`config/perception.yaml`)와 팔 적재 코드가 이 토픽을 받는다. 광학 TF 는 URDF 가 보내므로 드라이버 TF 는 끈다(`publish_tf:=false`).
@@ -46,8 +50,8 @@ planning · perception 이 붙을 때 보는 표. 이름은 팀 시뮬 브리지
 | `base_footprint → lidar_rear_link` | `(-0.1145, 0, 0.060)` | `(0, 0, 0)` · 뒤 스캔면 |
 | `base_link → imu_link` | `(0.035, 0.069, 0.0948)` | `(0, 0, +π/2)` · 주행 OpenCR 보드 중심, 위에서 찍은 사진으로 맞춤 (약 ±5 mm) |
 | `base_link → link1` | `(0.0225499941511, 0, 0.166512411)` | `(0, 0, -1.208484306590865)` · 팔 받침 |
-| `wrist_link → wrist_cam_color_optical_frame` | `(0.086934, -0.004296, -0.013517)` | `(-2.82003587790852, -0.00491770751513343, -2.01872902587038)` · T_5c |
-| `wrist_link → wrist_cam_depth_optical_frame` | `(0.080595, -0.017995, -0.013696)` | `(-2.81348510600011, -0.016591029457623, -2.01201857941374)` · T_5d |
+| `wrist_link → wrist_cam_color_optical_frame` | `(0.086934, -0.004296, -0.013517)` | `(-2.918301384027565, -0.00491770751513343, -2.01872902587038)` · T_5c + 경첩 −5.63° |
+| `wrist_link → wrist_cam_depth_optical_frame` | `(0.080572, -0.017984, -0.013716)` | `(-2.9117597857548048, -0.015876381393371775, -2.0109056306333914)` · T_5d + 경첩 −5.63° |
 
 라이다 높이 0.060 m 는 **바닥 기준**이므로 `base_link` 기준으로는 0.027 m 이다. IMU 의 0.0948 m 는 **base_link 기준**이므로 바닥 높이는 0.1278 m 이다.
 `robot.launch.py` · `slam.launch.py` 의 라이다 기본값은 위 xacro 값과 같다. 사용자가 launch 인자로 덮으면 그 값이 적용된다.
@@ -58,16 +62,71 @@ T_5c · T_5d 는 광학축 회전까지 포함하므로 optical 회전을 다시
 `camera_link` 는 CAD 전면 프레임이고, `camera_optical_frame` · `d435_color_optical_frame` (인지 노드 · 시뮬 이름) 은 `wrist_cam_color_optical_frame` 과 같은 위치·방향의 별칭이다.
 손목 · 광각 카메라와 프로파일은 `with_accessories:=true` 일 때 들어간다.
 
-적재함 시각 프레임은 `rack_cell_S1_link` ~ `rack_cell_S12_link` 이다. 번호는 팔 J1 축에서 먼 칸부터이고, planning 은 S1 부터 채운다.
+적재함 시각 프레임은 `rack_cell_S1_link` ~ `rack_cell_S12_link` 이다. 번호는 팔 J1 축에서 먼 칸부터이다. 채우는 순서는 `config/planning.yaml` `cargo_slots` (뒷줄부터 S1, S2, S3, S8, …), 칸끼리 제약은 `config/rack_cells.yaml` `rack_constraints`.
 옛 이름 (`arm_tests/rack_cells.json`) 대응: S1 = L8, S2 = L7, S3 = L6, S4 = B, S5 = L2, S6 = L4, S7 = D, S8 = L5, S9 = A, S10 = L1, S11 = L3, S12 = C.
-`base_link → rack_cell_<칸>_link` 고정 관절은 `rack_cell_<칸>_fixed` 이며, 원점은 각 칸 바닥 중심이다.
-`arm_tests/rack_cells.json` 의 `cells.*.xy` 를 그대로 쓰고, z 는 `floor_z + 0.039 = 0.1325` m, yaw 는 칸별 `yaw_deg` (없으면 전체값 1°) 를 쓴다.
-컵 테두리 윗면은 팀 base_link 기준 `rim_z + 0.039 = 0.1605` m (칸 원점에서 +0.028 m) 이다.
-적재함도 `with_accessories:=true` 조건의 시각 링크이며 충돌·관성은 없다. 집기 보정용 `place_offset` 은 컵 프레임 위치에 더하지 않는다.
+적재함 (새 적재함) 은 `rack_link` 에 팀 Onshape CAD 메시 두 개 (`meshes/rack/rack_8cell.obj` · `rack_4cell.obj`, 판 · 나사 구멍 · 옆 홈 포함) 를 그대로 붙인다.
+`base_link → rack_link` 고정 관절 `rack_fixed` 는 (−0.102, 0.0671, 0.1385) m, 회전 없음: CAD 칸 중심 12 개를 실측 칸 표에 평행 이동으로 맞춘 자리. 판 밑면이 상판 (z 0.1305) 위.
+`rack_link → rack_cell_<칸>_link` 고정 관절은 `rack_cell_<칸>_fixed` 이며, 원점은 CAD 칸 바닥 중심 (z 0.1335, yaw 0, 칸 간격 60 × 45 mm) 이다. 컵 테두리는 z 0.1605 (칸 원점에서 +0.027 m).
+CAD 칸 중심은 칸 표 (팔이 가는 자리, 칸 간격 약 65 mm) 와 칸마다 최대 약 10 mm 다르다. 팔 · 제어는 칸 표를 쓰고 URDF 칸 위치는 안 쓴다.
+적재함도 `with_accessories:=true` 조건의 링크이다. 충돌은 판 상자 2 개 + 칸마다 컵 벽 8 장 (안쪽 32 mm, 바닥 위 12.5 mm 부터 14° 벌어져 테두리 39.3 mm) 이라 MoveIt 이 팔과의 충돌을 본다 (관성은 없음). 집기 보정용 `place_offset` 은 컵 프레임 위치에 더하지 않는다.
+칸 위치 그림: `config/rack_cells.yaml` (S1~S12 의 xy · yaw · 옛 이름).
 
 스워브 관절 이름의 fl · fr · rl · rr 은 옛 이름을 유지한다. 새 좌표계에서 같은 순서의 조향축 `(x,y)` 는
 `(-0.070,+0.112)` · `(+0.060,+0.112)` · `(-0.070,-0.112)` · `(+0.060,-0.112)` m (실측: 앞뒤 조향축 130 mm, 중심이 몸체 가운데보다 5 mm 뒤),
 바퀴 offset 은 `(+0.0269,+0.0269,-0.0269,-0.0269)` m 로 `config/controllers.yaml` 과 같다.
+
+## 팔 작업 (`/arm_task`, control_master)
+
+팔은 늘 한 작업씩. 받으면 바퀴를 세우고 정지를 확인한 뒤 움직인다. **주행은 받침에 접혀 끝나는 작업 뒤에만** 허용된다 (`/control/motion_mode`).
+STORE · RETRIEVE 경로는 실물 적재함 12 칸 시험에서 성공한 실행 기록을 그대로 재생한 것 (`config/arm_paths.yaml`, 칸 근처 15 °/s · 빈 공간 40 °/s).
+
+| 작업 | 시작 자세 | 하는 일 | 끝 자세 | 다음 | 가짜 로봇 시간 |
+|---|---|---|---|---|---|
+| HOME | 아무 자세 | 접기 (LOOK 자세면 정해진 복귀 경로, P0 면 fold 경로) | 받침 (주행 가능) | | 5 s |
+| PICK | 받침 · P0 · LOOK 자세 (P0 면 펼치기 생략, LOOK 이면 그 자세에서 바로 퍽 위로, LOOK_BARCODE 면 복귀 경로로 P0 를 거쳐 감) | target 퍽 위 40 mm → 10 → −40 mm 에서 쥠 (실물 넣기 때 깊이, 칸 경로 기준) → 들기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | STORE 또는 PLACE | 16 s (P0 에서 11 s, LOOK 에서 14 s) |
+| STORE | 박스 위 기준점 (PICK 뒤) | slot 칸에 놓기 | 받침 (주행 가능). `lazy_fold` 면 **P0** (받침 바로 위, 바퀴 잠금 유지) | `lazy_fold` 면 PICK · RETRIEVE · LOOK 또는 HOME | 19~31 s (`lazy_fold` 14~26 s) |
+| RETRIEVE | 받침 · P0 · LOOK 자세 (P0 면 펼치기 생략, LOOK 이면 복귀 경로로 P0 를 거쳐 감) | slot 칸에서 꺼내기 | **박스 위 기준점** (퍽 쥠, 바퀴 잠금 유지) | PLACE | 19~32 s (P0 에서 14~27 s) |
+| PLACE | 박스 위 기준점 (PICK · RETRIEVE 뒤) | target 위 40 → 10 → 놓기 (퍽 바닥이 면 위 2 mm: RETRIEVE 뒤 −23 · PICK 뒤 −38 mm) → 들기 | 받침 (주행 가능). `lazy_fold` 면 **P0** (바퀴 잠금 유지) | `lazy_fold` 면 PICK · RETRIEVE · LOOK 또는 HOME | 17 s (`lazy_fold` 12 s) |
+| LOOK · LOOK_BARCODE | 받침 · P0 | 손목 카메라 관찰 자세 | 그 자세 유지 | HOME · PICK · RETRIEVE | |
+| LOOK `slot: rack` | 받침 (빈 손. 칸에 퍽이 있으면 그 칸은 못 잼) | 적재함 스캔: 칸 두 개씩 손목 카메라를 칸 바닥 위 170 mm 에서 수직으로, 자세마다 2 s (경로 `rack_scan`, lazy_fold 여도 받침까지). 칸 위치를 잼 (control_master 가 perception 손목 태그를 켬) → `/control_master/rack_tags/report` | 받침 (주행 가능) | | 46 s |
+
+- **target** (PICK · PLACE): `docs/planning/planning_interfaces.md` 6 절 약속 그대로 — `base_link` 기준 **그리퍼 중심이 갈 점** = 퍽 중심 + 쥘 끝(위) 방향 × `grasp_offset_m` (0.015) — control 은 이 값으로 퍽 윗면을 알아내고, 실제로는 윗면 40 mm 아래 (`pick_heights_mm`) 를 쥠, 방향 z 축 = 쥘 끝 · x 축 = 네모 퍽 면. **누운 네모 퍽** (z 축 = 로봇 쪽 긴축 끝, 수평 · x 축 = 위): 수직 손으로 긴 옆면 두 개를 쥠 (닫힘축 = 긴축에 수직), 누운 윗면 (34.8 mm) 위 40 → 10 → 쥐기 −20 mm (손끝이 놓인 면 위 약 15 mm). 손목 검출로 누운 네모 (윗면이 위) 를 확인해야 하고, 누운 원기둥 · 수직 손이 안 닿는 자리는 거절. 쥔 뒤 STORE 는 거절 (세우기 필요), PLACE 는 누운 채로 (퍽 바닥이 면 위 2 mm = −18 mm). `base_link` 가 아닌 프레임 · NaN 은 거절. `z = 0` 이면 박스 위 기본 높이 (손 시험용). 팔이 닿지 않는 자리면 거절(이유가 result.message).
+- **puck_id** (PICK): planning 이 고른 퍽 AprilTag ID. control_master 는 최근 손목 검출에 그 ID 가 있으면 그 검출을 목표로 잡음 (target 에서 `pick_id_max_offset_m` 0.06 m 넘게 떨어져 있으면 거절).
+  그 ID 가 안 보이면 target 25 mm 안 검출로 맞추되, 그 검출이 다른 ID 로 읽혔으면 거절 (옆 퍽 집기 방지). ID 못 읽은 검출 · `puck_id` 빈 값은 예전처럼 위치로만.
+- **slot** (STORE · RETRIEVE): `S1` ~ `S12`. 시작 자세가 맞지 않으면 거절 (예: PICK 없이 STORE).
+- 실패 · 취소 · 시간 초과 뒤에는 STOP 잠금, HOME 이 성공해야 다시 주행.
+- HOME 이 검사된 복귀 경로 없이 받침으로 곧장 가는 건 받침 근처이거나 (켤 때 등) 팔이 경로 중간이 아닐 때만. **퍽을 쥔 채 · 경로 작업이 도중에 멈춘 뒤에는 HOME 거절** (칸 · 박스 안에서 직선으로 쓸고 나올 수 있음) → STORE · PLACE 로 끝내거나 사람이 팔을 받침 근처로 옮긴 뒤 HOME.
+- 퍽을 쥔 채 주행은 없음 (PICK 뒤에는 STORE 또는 PLACE).
+- **나중에 접기** (`config/control.yaml` `lazy_fold`, 지금은 `false`: P0 에서 오래 기다리면 팔 모터 과열. 켜면): STORE · PLACE 는 P0 (받침 바로 위) 에서 끝나고 바퀴 잠금 유지. 같은 자리 다음 팔 작업은 P0 에서 바로 시작 (접기 · 펼치기 약 10 s 절약).
+  **주행 전에는 HOME** (fold 경로로 접은 뒤 DRIVE) — planning 실행기가 끼움. 모든 구간이 검사된 경로의 일부라 새 움직임은 없음. `false` 면 예전처럼 받침에서 끝남.
+- 사람이 팔 주변을 보고 안전하다고 판단했을 때만 `{task: 0, slot: force}` 로 위 HOME 거절을 건너뜀 (시험 중 도중 정지 복구용).
+- **닿는 거리**: 수직 손은 박스 위 퍽을 차체 앞 약 24 cm 까지. 더 멀면 손을 10° 씩 바깥으로 기울임 (`pick_max_tilt_deg`, 기본 30° → 약 34~36 cm, 실물 34 cm 집기와 같은 범위).
+  5 축 팔이라 기울이는 방향은 J1 → 퍽 방향뿐 → 네모 퍽은 면이 그 방향에서 10° 안일 때만 기울임 (손가락이 닫히며 맞춤). 기울인 손은 실물 확인 전.
+- **이웃 퍽 피해 집기 · 놓기**: control_master 가 `/perception/wrist/detections` 를 받아 (odom 기준 저장, 최근 10 s) 목표 둘레 12 cm 안 · 같은 높이의 퍽을 이웃으로 봄.
+  손가락 끝 실측 치수 (안쪽 면 9.1 mm + 손가락 위치, 두께 18 mm, 폭 ±16.4 mm) 로 닫힘 방향 (네모 = 면 방향 2 개, 원기둥 = 15° 간격) 과 벌림 (다 열기 → 넣기 폭) 을 고름.
+  이웃과 2 mm · 목표 퍽과 3 mm 여유가 안 되면 거절 (이유가 result.message). 놓을 자리 25 mm 안에 이미 퍽이 보이면 PLACE 거절. 이웃이 없으면 예전과 같은 동작.
+- 박스 위 기준점 = 실물 빼기 시험 때 내려놓던 자리 (base_link 기준 x 210.2, y 38.0 mm, −4°) 위 40 mm.
+- **PICK 쥐는 점 보정**: 손목 카메라로 잡은 퍽을 늘 한쪽으로 비껴 쥐면 `pick_offset_x_mm` · `pick_offset_y_mm` (base_link, ±15 mm) 만큼 옮김. 실행 중 `ros2 param set /control_master pick_offset_x_mm -5.0` 으로 바로 바꿈 (기본 0).
+- **적재함이 움직였을 때**: LOOK `slot: rack` 동안 `/rack_tags/detections` (control_master rack_tag_stage) 의 칸 태그를 모아 칸마다 중앙값.
+  적재함이 제자리일 때 한 번 `ros2 service call /control_master/save_rack_reference std_srvs/srv/Trigger` → 기준 (`~/.ros/rack_reference.txt`).
+  그 뒤 스캔마다 기준과 비교한 적재함 움직임 (dx · dy · 회전) 만큼 STORE · RETRIEVE 경로의 칸 근처만 옮김 (`shift_cell_paths.py` 와 같은 규칙).
+  1.5 mm 보다 작으면 그대로, 8 mm 넘으면 거절 (`rack_shift_min_m` · `rack_shift_max_m`). 같은 스캔 자세끼리 빼서 카메라 치우침이 빠짐. 실물 확인 전.
+
+## 시연 전체 실행 (`bringup/mission_system.launch.py`)
+
+`bash tools/jetson/run_robot.sh mission opencr ~/maps/<이름>` 하나로 띄움 (포트 · 지도 · 사람 확인은 스크립트, 조합 검사는 launch).
+
+| 포함 launch | 띄우는 것 | 비고 |
+|---|---|---|
+| `navigation/slam.launch.py` (arm:=true, 전체 `hardware_map.yaml`) | `robot.launch.py` (ros2_control · swerve · control_master · camera_drift · RSP) + 라이다 · scan_merger · slam_toolbox · pose_guard | robot.launch 는 여기서만 포함 (RSP · ros2_control 하나) |
+| `bringup/bringup.launch.py` (nav · mission false) | 손목 D435 (`publish_tf:=false`) · 광각 usb_cam · perception_node | |
+| `navigation/nav2.launch.py` (localization slam) | planner_server · collision_monitor · cmd_vel_hold · rl_nav · dock_to_pose (simple 기본) | `/cmd_vel` 주인 = cmd_vel_hold 하나 |
+| `mission/mission.launch.py` | mission_manager | STANDBY 에서 `/mission/start` 기다림 |
+
+- 준비: 스크립트가 swerve 활성 뒤 mission_manager 의 `STANDBY 준비 완료` 줄을 기다림 (`READY_WAIT_S`, 기본 120 s). 그 뒤 신호등 점멸 시작 → `ros2 service call /mission/start std_srvs/srv/Trigger '{}'`
+- 지도 고정은 `SLAM_MODE=localization`. 덧붙임 예 `dice_map:=$HOME/maps/dice_map_arena5.yaml` · `publish_debug:=true` · `dock:=simple`
+- 로봇 없이 조립 확인: `ros2 launch bringup mission_system.launch.py` (mock, 라이다 · 카메라 · 인지 끔) → 노드 · 액션 이름 확인용, 준비 완료는 안 됨 (SLAM TF · 손목 검출 없음)
+- 실물 거부 조건: 라이다 둘 중 하나 없음 · pose_guard 끔 · perception 끔 · drive_only 지도 · 지도 `.posegraph`/`.data` 없음 · 엔진 / `.names.txt` 없음 · perception_node 미설치
 
 ## 지도 파일
 
@@ -75,6 +134,6 @@ T_5c · T_5d 는 광학축 회전까지 포함하므로 optical 회전을 다시
 
 ## 아직 안 맞는 것
 
-- **팔 PICK · PLACE**: 실물 집기 · 적재는 지금 손목 카메라로 퍽을 다시 찾아 자세를 계산하는 별도 도구(실물 시험 중). `/arm_task` 로 묶는 것은 시험이 끝난 뒤.
-- **팔 적재함 넣기 · 꺼내기 (`ArmTask` STORE · RETRIEVE)**: 실물 12 칸 동작은 확인했지만 control_master 에는 아직 없음 (지금은 거절).
+- **팔 작업 실물 확인**: `/arm_task` 7 작업은 가짜 로봇에서 12 칸 전부 (49 동작) 통과. C++ control_master 로 실물 팔을 돌리는 확인은 남아 있다 (PICK 1 회, 칸 몇 개 저속).
+- **손목 카메라 TF 처짐 보정**: 실물 비교 전. 이상하면 `robot.launch.py sag_correction:=false` 로 끄고 비교.
 - **실물 카메라 연결**: 위 frame_id · `publish_tf:=false` 를 실제 RealSense 실행 설정과 대조하는 시험은 남아 있다.
