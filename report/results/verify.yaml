@@ -1,0 +1,75 @@
+# 재검증 기록 (planning dice_verify). 관측 = VERIFY 단계 LOOK 뒤 새 검출, map 프레임 [m]
+barcode: "P2-02"
+signal: "RGGYYGGYRRRY"
+status: PASS
+places:
+  - place: L1
+    group: R
+    pips: 4
+    seen: 4
+    ok: true
+    stamp_s: 883.91
+    center: [-3.320, 0.009]     # 판정에 쓴 중심 (박스 측정 · 모양 맞춤 반영)
+    map_center: [-3.305, -0.004]     # 지도 원래 중심 (참고)
+    frame_source: placed   # 칸 기준: remeasured (재검증 측정) · placed (놓을 때 박스 측정) · map
+    ref_center: [-3.320, 0.009]
+    fit: {used: false, dx_mm: 0.0, dy_mm: 0.0, dyaw_deg: 0.00}   # 기준 칸 → 관측에 맞춘 눈 모양
+    box: {source: placed, center: [-3.320, 0.009], yaw_deg: 182.4, half: 0.1025}   # 박스 위 확인에 쓴 윗면
+    cells:     # 판정에 쓴 칸 (맞춤 뒤, 먼 칸부터, cell_error_mm 의 기준), 뒤 = 놓은 퍽 ID · 로봇이 볼 때 자리
+      - [-3.258, -0.048]   # ID 5 · 먼 줄 왼쪽
+      - [-3.378, -0.053]   # ID 3 · 먼 줄 오른쪽
+      - [-3.263, 0.072]   # ID 10 · 가까운 줄 왼쪽
+      - [-3.383, 0.067]   # ID 4 · 가까운 줄 오른쪽
+    observed:
+      - {id: "10", color: red, shape: cylinder, x: -3.268, y: 0.067, cell: 2, spot: near-left, cell_error_mm: 7, on_box: true, ok: true, depth_bad_frames: 1}
+      - {id: "3", color: red, shape: box, x: -3.376, y: -0.051, cell: 1, spot: far-right, cell_error_mm: 2, on_box: true, ok: true}
+      - {id: "4", color: red, shape: box, x: -3.381, y: 0.055, cell: 3, spot: near-right, cell_error_mm: 11, on_box: true, ok: true}
+      - {id: "5", color: red, shape: box, x: -3.267, y: -0.050, cell: 0, spot: far-left, cell_error_mm: 9, on_box: true, ok: true}
+  - place: L2
+    group: Y
+    pips: 4
+    seen: 4
+    ok: true
+    stamp_s: 919.61
+    center: [-1.951, -2.693]     # 판정에 쓴 중심 (박스 측정 · 모양 맞춤 반영)
+    map_center: [-1.951, -2.684]     # 지도 원래 중심 (참고)
+    y_shape: cylinder   # Y 기준 모양 (다시 본 모양 최다, "" = 섞임 · 모름)
+    frame_source: remeasured   # 칸 기준: remeasured (재검증 측정) · placed (놓을 때 박스 측정) · map
+    ref_center: [-1.951, -2.693]
+    fit: {used: false, dx_mm: 0.0, dy_mm: 0.0, dyaw_deg: 0.00}   # 기준 칸 → 관측에 맞춘 눈 모양
+    box: {source: remeasured, center: [-1.951, -2.693], yaw_deg: 180.4, half: 0.1025}   # 박스 위 확인에 쓴 윗면
+    cells:     # 판정에 쓴 칸 (맞춤 뒤, 먼 칸부터, cell_error_mm 의 기준), 뒤 = 놓은 퍽 ID · 로봇이 볼 때 자리
+      - [-1.891, -2.753]   # ID 6 · 먼 줄 왼쪽
+      - [-2.011, -2.754]   # ID 11 · 먼 줄 오른쪽
+      - [-1.891, -2.633]   # ID 7 · 가까운 줄 왼쪽
+      - [-2.011, -2.634]   # ID 9 · 가까운 줄 오른쪽
+    observed:
+      - {id: "11", color: red, shape: cylinder, x: -2.009, y: -2.765, cell: 1, spot: far-right, cell_error_mm: 11, on_box: true, ok: true}
+      - {id: "6", color: green, shape: cylinder, x: -1.891, y: -2.761, cell: 0, spot: far-left, cell_error_mm: 8, on_box: true, ok: true}
+      - {id: "7", color: green, shape: cylinder, x: -1.901, y: -2.638, cell: 2, spot: near-left, cell_error_mm: 11, on_box: true, ok: true, depth_bad_frames: 3}
+      - {id: "9", color: red, shape: cylinder, x: -2.005, y: -2.636, cell: 3, spot: near-right, cell_error_mm: 6, on_box: true, ok: true}
+  - place: L3
+    group: G
+    pips: 4
+    seen: 4
+    ok: true
+    stamp_s: 988.11
+    center: [-3.411, -4.329]     # 판정에 쓴 중심 (박스 측정 · 모양 맞춤 반영)
+    map_center: [-3.401, -4.315]     # 지도 원래 중심 (참고)
+    frame_source: remeasured   # 칸 기준: remeasured (재검증 측정) · placed (놓을 때 박스 측정) · map
+    ref_center: [-3.411, -4.329]
+    fit: {used: false, dx_mm: 0.0, dy_mm: 0.0, dyaw_deg: 0.00}   # 기준 칸 → 관측에 맞춘 눈 모양
+    box: {source: remeasured, center: [-3.411, -4.329], yaw_deg: 179.9, half: 0.1025}   # 박스 위 확인에 쓴 윗면
+    cells:     # 판정에 쓴 칸 (맞춤 뒤, 먼 칸부터, cell_error_mm 의 기준), 뒤 = 놓은 퍽 ID · 로봇이 볼 때 자리
+      - [-3.351, -4.389]   # ID 8 · 먼 줄 왼쪽
+      - [-3.471, -4.389]   # ID 2 · 먼 줄 오른쪽
+      - [-3.351, -4.269]   # ID 0 · 가까운 줄 왼쪽
+      - [-3.471, -4.269]   # ID 1 · 가까운 줄 오른쪽
+    observed:
+      - {id: "0", color: green, shape: box, x: -3.359, y: -4.268, cell: 2, spot: near-left, cell_error_mm: 8, on_box: true, ok: true, depth_bad_frames: 1}
+      - {id: "1", color: green, shape: box, x: -3.470, y: -4.276, cell: 3, spot: near-right, cell_error_mm: 7, on_box: true, ok: true, depth_bad_frames: 1}
+      - {id: "2", color: green, shape: box, x: -3.466, y: -4.393, cell: 1, spot: far-right, cell_error_mm: 7, on_box: true, ok: true}
+      - {id: "8", color: green, shape: cylinder, x: -3.343, y: -4.403, cell: 0, spot: far-left, cell_error_mm: 16, on_box: true, ok: true}
+duplicate_ids: []
+missing_ids: []
+issues:

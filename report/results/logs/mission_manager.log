@@ -1,0 +1,313 @@
+[mission_manager-23] [INFO] [1794811693.992100006] [mission_manager]: 옆 보기 (side_look_missing): 켬, 박스 퍽 < 2 개면 left, near
+[mission_manager-23] [INFO] [1794811693.992827757] [mission_manager]: 가까운 퍽 뒤로 빼기: 누운 x < 0.200 · 선 x < 0.100 m → 뒤로 (0.250 − x, 최대 0.120 m, 0.10 m/s, /cmd_vel_nav, 끄는 영역 1 개)
+[mission_manager-23] [INFO] [1794811693.992882030] [mission_manager]: PICK 앞 다시 보기 (relook_before_pick): 켬, 새 검출 최대 0.5 s
+[mission_manager-23] [INFO] [1794811694.009536895] [mission_manager]: dice_map: /home/turtle/maps/dice_map_arena7b.yaml, 이동 시간표: /home/turtle/p2_integ/maps/dice_travel_times.yaml, 바코드 표: /home/turtle/p2_integ/maps/dice_barcodes.json (4 개)
+[mission_manager-23] [INFO] [1794811694.071494609] [mission_manager]: 바코드 벽 판: 경기장 (0.050, 0.930, 높이 0.20) → map (0.327, 0.002) · 폭 0.36 높이 0.39 (+0.08) · 법선 178.9° · 판 밖 광각 상자 버림 · 돌기 없음 · 판 훑기 3 자리
+[mission_manager-23] [INFO] [1794811694.082037985] [mission_manager]: 바코드 찾기 켬: 광각 /perception/wide/objects · 손목 /perception/barcode/detections · 거리 0.15 [0.15, 0.18] m · 광각 숙임 +8.0° · 신호등 여유 8° · 최대 75 s · 못 찾으면 옛 고정 경로
+[mission_manager-23] [INFO] [1794811694.483812555] [mission_manager]: STANDBY: 준비 확인 중, /mission/start 기다림
+[mission_manager-23] [INFO] [1794811694.483912716] [mission_manager]: 신호등: 점멸 기록 켬
+[mission_manager-23] [INFO] [1794811694.591950664] [mission_manager]: STANDBY 준비 안 됨: NAV2_SERVER, NAV2_LIFECYCLE:/lifecycle_manager_navigation/is_active, NAV2_LIFECYCLE:/lifecycle_manager_localization/is_active, LOCALIZATION_TF, LOCALIZATION_COV, DETECTIONS:d435_color_optical_frame, WIDE_SERVICE:/perception/wide/enable, BARCODE_SERVICE:/perception/barcode/enable
+[mission_manager-23] [INFO] [1794811696.684976471] [mission_manager]: STANDBY 준비 안 됨: NAV2_LIFECYCLE:/lifecycle_manager_navigation/is_active, NAV2_LIFECYCLE:/lifecycle_manager_localization/is_active, LOCALIZATION_TF, LOCALIZATION_COV, DETECTIONS:d435_color_optical_frame, WIDE_SERVICE:/perception/wide/enable, BARCODE_SERVICE:/perception/barcode/enable
+[mission_manager-23] [INFO] [1794811698.784891145] [mission_manager]: STANDBY 준비 안 됨: NAV2_LIFECYCLE:/lifecycle_manager_navigation/is_active, DETECTIONS:d435_color_optical_frame, WIDE_SERVICE:/perception/wide/enable, BARCODE_SERVICE:/perception/barcode/enable
+[mission_manager-23] [INFO] [1794811700.784833138] [mission_manager]: STANDBY 준비 안 됨: DETECTIONS:d435_color_optical_frame, WIDE_SERVICE:/perception/wide/enable, BARCODE_SERVICE:/perception/barcode/enable
+[mission_manager-23] [INFO] [1794811704.289175660] [mission_manager]: STANDBY 준비 안 됨: DETECTIONS:d435_color_optical_frame, BARCODE_SERVICE:/perception/barcode/enable
+[mission_manager-23] [INFO] [1794811704.333540739] [mission_manager]: perception 세션: pid=6874 start_ns=1794811704325972755 restored=0
+[mission_manager-23] [INFO] [1794811704.333705349] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794811704.419332689] [mission_manager]: 광각 usb_cam 캡처 끔 (바코드 먼저 — 신호 기록은 바코드 읽은 뒤, 아직 안 함)
+[mission_manager-23] [INFO] [1794811704.586117242] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794811705.086208754] [mission_manager]: perception 바코드 판독 끔
+[mission_manager-23] [INFO] [1794811705.093084027] [mission_manager]: perception 광각 끔 (바코드 먼저 — 신호 기록은 바코드 읽은 뒤, 아직 안 함)
+[mission_manager-23] [INFO] [1794811705.285227409] [mission_manager]: STANDBY 준비 완료 — /mission/start 받을 수 있음
+[mission_manager-23] [INFO] [1794811726.176676709] [mission_manager]: 미션 시작 (start 승인)
+[mission_manager-23] [INFO] [1794811726.177230219] [mission_manager]: 순서 (barcode_first): ① 바코드 찾기 (신호 기록 전, 몸 · 팔 움직임) → ② 출발 자리로 가서 신호 12 점멸 기록 → ③ '신호등 기록 DONE' 뒤에만 수집 출발 (안 끝나면 수집 안 하고 복귀)
+[mission_manager-23] [INFO] [1794811726.177371820] [mission_manager]: /mission/start: 시작함
+[mission_manager-23] [INFO] [1794811727.084437455] [mission_manager]: READ_BARCODE: 바코드 찾기 시작 (광각 · 라이다 · 손목 · 벽 판만 · 돌기 없음, 신호 기록은 바코드 읽은 뒤 (아직 안 함))
+[mission_manager-23] [INFO] [1794811727.185026232] [mission_manager]: 바코드 찾기 (0.1 s): 벽 판 훑기 +0.00 m 높이 0.20 → (0.36, 0.00, 높이 0.20) d 0.28 · slot 'd=0.280,vyaw=-1.4,vpitch=20.0'
+[mission_manager-23] [INFO] [1794811727.196114509] [mission_manager]: perception 바코드 판독 켬
+[mission_manager-23] [INFO] [1794811727.284217010] [mission_manager]: arm:LOOK_AT 훑기: map (0.355, 0.002, 0.200) → base (0.344, -0.006, 0.167)
+[mission_manager-23] [INFO] [1794811734.292107591] [mission_manager]: 기록 폴더: /home/turtle/planning_logs/run_20261116_154854
+[mission_manager-23] [INFO] [1794811734.384632730] [mission_manager]: 바코드 찾기 (7.3 s): 손목 상자 (가운데에서 72 px, 0.4 px/모듈) → 다시 겨눔 → (0.36, 0.02, 높이 0.23) d 0.15 · slot 'd=0.150,vyaw=-1.5,vpitch=43.0'
+[mission_manager-23] [INFO] [1794811734.484309017] [mission_manager]: arm:LOOK_AT 바코드: map (0.359, 0.022, 0.234) → base (0.348, 0.014, 0.201)
+[mission_manager-23] [INFO] [1794811736.585157739] [mission_manager]: 바코드 찾기: 읽음 P2-02 (9.5 s, LOOK_AT 2 번) → HOME
+[mission_manager-23] [INFO] [1794811736.686517979] [mission_manager]: perception 광각 켬
+[mission_manager-23] [INFO] [1794811736.784092036] [mission_manager]: 신호등: 광각 켜짐 확인 → 관측 기록 시작 (첫 확실한 색 점멸부터 셈)
+[mission_manager-23] [INFO] [1794811737.292670824] [mission_manager]: 광각 usb_cam 캡처 켬
+[mission_manager-23] [INFO] [1794811737.292897994] [mission_manager]: 광각 캡처 다시 켬 → 밝기 다시 넣음: v4l2-ctl -d /dev/video6 -c brightness=-20
+[mission_manager-23] [INFO] [1794811741.184331123] [mission_manager]: OBSERVE_SIGNAL: 신호등 점멸 기록 (지금 WAITING, 점멸 0 개)
+[mission_manager-23] [INFO] [1794811741.184580182] [mission_manager]: OBSERVE_SIGNAL: 바코드 읽은 자리 → 출발 자리에서 0.05 m 뒤 (-0.407, -0.004, -1.1°) 로 가서 신호 기록 (신호 보러 가는 이동, 수집 출발 아님)
+[mission_manager-23] [INFO] [1794811741.295407146] [mission_manager]: perception 바코드 판독 끔
+[mission_manager-23] [INFO] [1794811741.386603406] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811741.387486072] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811744.881702671] [mission_manager]: 신호등 점멸 1: R
+[mission_manager-23] [INFO] [1794811745.385215035] [mission_manager]: OBSERVE_SIGNAL: 신호 보는 자리 도착 → 신호 기록 기다림 (지금 RECORDING)
+[mission_manager-23] [INFO] [1794811745.385863105] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794811745.393647316] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794811746.948363498] [mission_manager]: 신호등 점멸 2: G
+[mission_manager-23] [INFO] [1794811748.952378124] [mission_manager]: 신호등 점멸 3: G
+[mission_manager-23] [INFO] [1794811750.915655966] [mission_manager]: 신호등 점멸 4: Y
+[mission_manager-23] [INFO] [1794811752.891576595] [mission_manager]: 신호등 점멸 5: Y
+[mission_manager-23] [INFO] [1794811754.918460097] [mission_manager]: 신호등 점멸 6: G
+[mission_manager-23] [INFO] [1794811756.923320644] [mission_manager]: 신호등 점멸 7: G
+[mission_manager-23] [INFO] [1794811758.925001028] [mission_manager]: 신호등 점멸 8: Y
+[mission_manager-23] [INFO] [1794811760.881175777] [mission_manager]: 신호등 점멸 9: R
+[mission_manager-23] [INFO] [1794811762.950992268] [mission_manager]: 신호등 점멸 10: R
+[mission_manager-23] [INFO] [1794811764.904796045] [mission_manager]: 신호등 점멸 11: R
+[mission_manager-23] [INFO] [1794811766.929270646] [mission_manager]: 신호등 점멸 12: Y
+[mission_manager-23] [INFO] [1794811769.208470399] [mission_manager]: 신호등 기록 DONE: RGGYYGGYRRRY (R 4 · Y 4 · G 4 · ? 0)
+[mission_manager-23] [INFO] [1794811769.209161447] [mission_manager]: 신호 기록 → /home/turtle/planning_logs/run_20261116_154854/signal.json
+[mission_manager-23] [INFO] [1794811769.284499170] [mission_manager]: 신호등 기록 완료 (DONE, RGGYYGGYRRRY) + 바코드 P2-02 → 수집 출발
+[mission_manager-23] [INFO] [1794811769.284615524] [mission_manager]: task 시작: P2-02 (descending, R 4 · Y 4 · G 4)
+[mission_manager-23] [INFO] [1794811769.284654660] [mission_manager]: 배치: L1 R4 · L2 Y4 · L3 G4 (descending)
+[mission_manager-23] [INFO] [1794811769.386865980] [mission_manager]: perception 광각 끔 (신호 기록 · 바코드 찾기 끝)
+[mission_manager-23] [INFO] [1794811769.431207280] [mission_manager]: 광각 usb_cam 캡처 끔 (신호 기록 · 바코드 찾기 끝)
+[mission_manager-23] [INFO] [1794811769.486907228] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811769.487061438] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811777.685908308] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794811777.694413997] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794811778.788846225] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811778.794617742] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811782.285066977] [mission_manager]: 정차점 보정표: (-1.051, 0.193, -92.1°) → 잰 정차점 (-1.083, 0.275, -94.0°), 8.8 cm · -1.9° (측정 15 번)
+[mission_manager-23] [INFO] [1794811782.287215896] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794811782.294157249] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [WARN] [1794811788.084022560] [mission_manager]: B1 LOOK: 지도 박스 중심 15 cm 안 퍽 1 개 → 둘레 35 cm 안 퍽 2 개 평균으로 박스 중심 다시 잡음 (-1.059, -0.064) → (-1.129, 0.059), 14.1 cm 옮김 → 퍽 2 개
+[mission_manager-23] [INFO] [1794811788.084218627] [mission_manager]: B1 LOOK: 퍽 2 개 (4:red/box, 10:red/cylinder)
+[mission_manager-23] [INFO] [1794811788.184139041] [mission_manager]: 퍽 4 집기: 중심 (0.222, -0.045, 0.075) θ -18° 선 → 그리퍼 중심 (0.222, -0.044, 0.090)
+[mission_manager-23] [INFO] [1794811809.284253956] [mission_manager]: B1 퍽 10 다시 보기: 새 검출 0.10 s 뒤 → PICK
+[mission_manager-23] [INFO] [1794811809.384120610] [mission_manager]: 퍽 10 집기: 중심 (0.273, 0.020, 0.074) θ 모름 선 → 그리퍼 중심 (0.273, 0.021, 0.089)
+[mission_manager-23] [WARN] [1794811820.284595693] [mission_manager]: arm:LOOK_RACK:S2 거절 () → 그대로 STORE
+[mission_manager-23] [WARN] [1794811830.784155295] [mission_manager]: HOME 먼저: 팔 작업 뒤 이동 전 접기
+[mission_manager-23] [INFO] [1794811833.689050858] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811833.698315340] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811852.986170942] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794811852.993243497] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794811853.985997643] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811853.994032736] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811858.784878605] [mission_manager]: 정차점 보정표: (-3.405, -1.938, -90.1°) → 잰 정차점 (-3.379, -1.872, -97.8°), 7.0 cm · -7.7° (측정 10 번)
+[mission_manager-23] [INFO] [1794811858.785964121] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794811858.793441416] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794811864.485280301] [mission_manager]: B2 LOOK: 퍽 2 개 (9:red/cylinder, 1:green/box)
+[mission_manager-23] [INFO] [1794811864.584528163] [mission_manager]: 퍽 9 집기: 중심 (0.213, 0.017, 0.075) θ 모름 선 → 그리퍼 중심 (0.213, 0.018, 0.090)
+[mission_manager-23] [INFO] [1794811881.984521055] [mission_manager]: B2 퍽 1 다시 보기: 새 검출 0.10 s 뒤 → PICK
+[mission_manager-23] [INFO] [1794811882.084109081] [mission_manager]: 퍽 1 집기: 중심 (0.262, -0.029, 0.075) θ 1° 선 → 그리퍼 중심 (0.262, -0.028, 0.090)
+[mission_manager-23] [WARN] [1794811912.584213267] [mission_manager]: HOME 먼저: 팔 작업 뒤 이동 전 접기
+[mission_manager-23] [INFO] [1794811915.486773809] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811915.493789275] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811942.185769576] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794811942.193296343] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794811943.286385110] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811943.286971420] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811943.985010968] [mission_manager]: 정차점 보정표: (-0.513, -4.148, -96.1°) → 잰 정차점 (-0.612, -4.196, -87.9°), 10.9 cm · +8.2° (측정 17 번)
+[mission_manager-23] [WARN] [1794811943.985130202] [mission_manager]: 단계 재시도 1/1: nav:B4 (정밀 접근: Nav2 이동 실패)
+[mission_manager-23] [INFO] [1794811943.986232389] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794811943.993552370] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794811944.084047884] [mission_manager]: nav:B4: 정차점 보정표 씀 → (-0.612, -4.196, -87.9°), 단계 정차점과 10.9 cm
+[mission_manager-23] [INFO] [1794811944.684106943] [mission_manager]: 정차점 보정표: (-0.513, -4.148, -96.1°) → 잰 정차점 (-0.616, -4.189, -89.0°), 11.0 cm · +7.1° (측정 3 번)
+[mission_manager-23] [WARN] [1794811944.684303906] [mission_manager]: 단계 실패: nav:B4 (정밀 접근: Nav2 이동 실패)
+[mission_manager-23] [WARN] [1794811944.684368194] [mission_manager]: B4 정밀 접근 실패 (정밀 접근: Nav2 이동 실패) → 정차점 0.12 m 뒤에서 LOOK 으로 박스 자리 다시 재기
+[mission_manager-23] [INFO] [1794811945.087195543] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811945.093380216] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811953.185618772] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794811953.193829770] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [WARN] [1794811959.384343676] [mission_manager]: B4 박스 다시 찾기: 박스 측정 못 씀 (측정 0 개 (필요 3)), 퍽 못 봄 → 옆 LOOK left 뒤 다시
+[mission_manager-23] [WARN] [1794811961.784906061] [mission_manager]: B4 박스 다시 찾기: 퍽 1 개 (0), 박스 측정 못 씀 (측정 0 개 (��요 3)) → 박스 중심 (-0.541, -4.404) → (-0.562, -4.411), 2.3 cm 옮김 → 새 정차점 (-0.535, -4.155, -96.1°) 으로 다시
+[mission_manager-23] [WARN] [1794811961.884096130] [mission_manager]: HOME 먼저: 팔 작업 뒤 이동 전 접기
+[mission_manager-23] [INFO] [1794811966.584186489] [mission_manager]: nav:B4: 정차점 보정표 씀 → (-0.616, -4.189, -89.0°), 단계 정차점과 8.8 cm
+[mission_manager-23] [INFO] [1794811966.686016714] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811966.693606074] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794811972.184980804] [mission_manager]: 정차점 보정표: (-0.535, -4.155, -96.1°) → 잰 정차점 (-0.555, -4.196, -91.7°), 4.5 cm · +4.4° (측정 13 번)
+[mission_manager-23] [INFO] [1794811972.185899885] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794811972.194519880] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794811977.884229243] [mission_manager]: B4 LOOK: 퍽 2 개 (0:green/box, 2:green/box)
+[mission_manager-23] [INFO] [1794811977.984250137] [mission_manager]: 퍽 0 집기: 중심 (0.223, -0.024, 0.074) θ -11° 선 → 그리퍼 중심 (0.223, -0.023, 0.089)
+[mission_manager-23] [INFO] [1794811994.684060123] [mission_manager]: B4 퍽 2 다시 보기: 새 검출 0.10 s 뒤 → PICK
+[mission_manager-23] [INFO] [1794811994.784145498] [mission_manager]: 퍽 2 집기: 중심 (0.277, 0.025, 0.071) θ -20° 선 → 그리퍼 중심 (0.277, 0.026, 0.086)
+[mission_manager-23] [WARN] [1794812026.684064122] [mission_manager]: arm:LOOK_RACK:S6 거절 () → 그대로 STORE
+[mission_manager-23] [WARN] [1794812033.284200003] [mission_manager]: HOME 먼저: 팔 작업 뒤 이동 전 접기
+[mission_manager-23] [INFO] [1794812036.185781872] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812036.193626819] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [WARN] [1794812048.484863368] [mission_manager]: 단계 재시도 1/1: nav:B5 (Nav2 이동 실패)
+[mission_manager-23] [INFO] [1794812048.486139606] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812048.494548623] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812049.487429452] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812049.494794394] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812062.886564971] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812062.887210065] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812063.886866839] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812063.893846688] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812068.985082701] [mission_manager]: 정차점 보정표: (-1.696, -4.271, -177.1°) → 잰 정차점 (-1.730, -4.307, -176.8°), 5.0 cm · +0.2° (측정 22 번)
+[mission_manager-23] [INFO] [1794812068.986642429] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812068.993953130] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812074.784068730] [mission_manager]: B5 LOOK: 퍽 2 개 (3:red/box, 7:green/cylinder)
+[mission_manager-23] [INFO] [1794812074.884147001] [mission_manager]: 퍽 3 집기: 중심 (0.236, 0.021, 0.074) θ 2° 선 → 그리퍼 중심 (0.236, 0.022, 0.089)
+[mission_manager-23] [INFO] [1794812105.684120763] [mission_manager]: B5 퍽 7 다시 보기: 새 검출 0.10 s 뒤 → PICK
+[mission_manager-23] [INFO] [1794812105.784569414] [mission_manager]: 퍽 7 집기: 중심 (0.283, -0.048, 0.075) θ 모름 선 → 그리퍼 중심 (0.283, -0.048, 0.090)
+[mission_manager-23] [WARN] [1794812117.184023812] [mission_manager]: arm:LOOK_RACK:S7 거절 () → 그대로 STORE
+[mission_manager-23] [WARN] [1794812124.484605736] [mission_manager]: HOME 먼저: 팔 작업 뒤 이동 전 접기
+[mission_manager-23] [INFO] [1794812127.386048613] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812127.389557592] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812141.586268675] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812141.594290206] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812142.685709352] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812142.694169442] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812145.285410156] [mission_manager]: 정차점 보정표: (-3.146, -2.839, 175.0°) → 잰 정차점 (-3.004, -2.827, 179.6°), 14.2 cm · +4.6° (측정 10 번)
+[mission_manager-23] [INFO] [1794812145.287680468] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812145.295937466] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [WARN] [1794812151.084056999] [mission_manager]: B6 LOOK: 지도 박스 중심 15 cm 안 퍽 0 개 → 둘레 35 cm 안 퍽 2 개 평균으로 박스 중심 다시 잡음 (-3.403, -2.816) → (-3.236, -2.814), 16.7 cm 옮김 → 퍽 2 개
+[mission_manager-23] [INFO] [1794812151.084306713] [mission_manager]: B6 LOOK: 퍽 2 개 (11:red/cylinder, 6:green/cylinder)
+[mission_manager-23] [INFO] [1794812151.184800802] [mission_manager]: 퍽 11 집기: 중심 (0.262, 0.015, 0.075) θ 모름 선 → 그리퍼 중심 (0.262, 0.016, 0.090)
+[mission_manager-23] [WARN] [1794812164.284660834] [mission_manager]: arm:LOOK_RACK:S10 거절 () → 그대로 STORE
+[mission_manager-23] [INFO] [1794812172.384099718] [mission_manager]: B6 퍽 6 다시 보기: 새 검출 0.20 s 뒤 → PICK
+[mission_manager-23] [INFO] [1794812172.485172750] [mission_manager]: 퍽 6 집기: 중심 (0.270, -0.054, 0.076) θ 모름 선 → 그리퍼 중심 (0.270, -0.053, 0.091)
+[mission_manager-23] [WARN] [1794812183.484969967] [mission_manager]: arm:LOOK_RACK:S5 거절 () → 그대로 STORE
+[mission_manager-23] [WARN] [1794812189.384551290] [mission_manager]: HOME 먼저: 팔 작업 뒤 이동 전 접기
+[mission_manager-23] [INFO] [1794812192.186926360] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812192.194026790] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812199.585959568] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812199.593330086] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812200.687907960] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812200.690149159] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812204.384710685] [mission_manager]: 정차점 보정표: (-2.730, -4.004, -89.1°) → 잰 정차점 (-2.676, -4.124, -96.2°), 13.2 cm · -7.1° (측정 23 번)
+[mission_manager-23] [INFO] [1794812204.385691803] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812204.393175826] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812210.184759352] [mission_manager]: B3 LOOK: 퍽 2 개 (8:green/cylinder, 5:red/box)
+[mission_manager-23] [INFO] [1794812210.231163987] [mission_manager]: 배달 계획: L1 · L2 · L3 (3 곳), 놓을 퍽 12, 남은 퍽 12, Y 모양 cylinder, 예상 911 s, 정차 4
+[mission_manager-23] [INFO] [1794812210.231947812] [mission_manager]: 할당 기록 rev 1 → /home/turtle/planning_logs/run_20261116_154854/allocation.json
+[mission_manager-23] [INFO] [1794812210.232058571] [mission_manager]:   L1 R4: 놓음 0, 채움
+[mission_manager-23] [INFO] [1794812210.232124815] [mission_manager]:   L2 Y4: 놓음 0, 채움
+[mission_manager-23] [INFO] [1794812210.232160273] [mission_manager]:   L3 G4: 놓음 0, 채움
+[mission_manager-23] [INFO] [1794812210.232208660] [mission_manager]: DELIVER: 단계 41 개
+[mission_manager-23] [INFO] [1794812210.284648261] [mission_manager]: 퍽 8 집기: 중심 (0.221, -0.038, 0.076) θ 모름 선 → 그리퍼 중심 (0.221, -0.037, 0.091)
+[mission_manager-23] [INFO] [1794812226.385422099] [mission_manager]: B3 퍽 5 다시 보기: 새 검출 0.10 s 뒤 → PICK
+[mission_manager-23] [INFO] [1794812226.484275808] [mission_manager]: 퍽 5 집기: 중심 (0.254, 0.032, 0.075) θ -18° 선 → 그리퍼 중심 (0.254, 0.033, 0.090)
+[mission_manager-23] [WARN] [1794812254.384625260] [mission_manager]: HOME 먼저: 팔 작업 뒤 이동 전 접기
+[mission_manager-23] [INFO] [1794812257.286277196] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812257.293556571] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812262.386495893] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812262.393109467] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812263.486359419] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812263.493519838] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812266.784794789] [mission_manager]: 정차점 보정표: (-3.398, -4.057, -90.8°) → 잰 정차점 (-3.411, -4.097, -92.2°), 4.2 cm · -1.3° (측정 17 번)
+[mission_manager-23] [INFO] [1794812266.785794235] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812266.793224553] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812272.084191064] [mission_manager]: L3 박스 측정 3 개: 지도 중심 대비 (-3.3, -26.9) mm · +2.0° → 이 기준으로 놓음
+[mission_manager-23] [INFO] [1794812272.084371137] [mission_manager]: L3 박스: 이 정차 기대 자리와 27.1 mm · +2.0° (기준 40 mm · 8°) → 그대로 놓음
+[mission_manager-23] [INFO] [1794812281.785662874] [mission_manager]: arm:RETRIEVE:S9>8 성공 결과: 그리퍼 실측 쥠 (그리퍼 0.0037 m → 손가락 사이 33.1 mm = 쥠 (같은 판단 301 장 3.00 s / 필요 0.50, 마지막 0.00 s 전 / 한도 0.30))
+[mission_manager-23] [INFO] [1794812281.884082452] [mission_manager]: L3 #0: 박스 측정 기준 (지도 대비 24.8 mm 이동 · 2.0° 회전) → 칸 (-3.343, -4.401)
+[mission_manager-23] [INFO] [1794812281.884315008] [mission_manager]: arm:PLACE:8>L3#0: map (-3.343, -4.401, 0.115) → base (0.306, 0.072, 0.082)
+[mission_manager-23] [INFO] [1794812306.684470740] [mission_manager]: arm:RETRIEVE:S6>2 성공 결과: 그리퍼 실측 쥠 (그리퍼 0.0047 m → 손가락 사이 34.9 mm = 쥠 (같은 판단 300 장 3.00 s / 필요 0.50, 마지막 0.00 s 전 / 한도 0.30))
+[mission_manager-23] [INFO] [1794812306.784100161] [mission_manager]: L3 #1: 박스 측정 기준 (지도 대비 28.9 mm 이동 · 2.0° 회전) → 칸 (-3.463, -4.402)
+[mission_manager-23] [INFO] [1794812306.784339181] [mission_manager]: arm:PLACE:2>L3#1: map (-3.463, -4.402, 0.115) → base (0.310, -0.046, 0.082)
+[mission_manager-23] [INFO] [1794812335.484648375] [mission_manager]: arm:RETRIEVE:S11>0 성공 결과: 그리퍼 실측 쥠 (그리퍼 0.0045 m → 손가락 사이 34.5 mm = 쥠 (같은 판단 300 장 2.99 s / 필요 0.50, 마지막 0.00 s 전 / 한도 0.30))
+[mission_manager-23] [INFO] [1794812335.584279628] [mission_manager]: L3 #2: 박스 측정 기준 (지도 대비 25.4 mm 이동 · 2.0° 회전) → 칸 (-3.345, -4.281)
+[mission_manager-23] [INFO] [1794812335.584708928] [mission_manager]: arm:PLACE:0>L3#2: map (-3.345, -4.281, 0.115) → base (0.186, 0.071, 0.082)
+[mission_manager-23] [INFO] [1794812353.184641936] [mission_manager]: arm:RETRIEVE:S8>1 성공 결과: 그리퍼 실측 쥠 (그리퍼 0.0046 m → 손가락 사이 34.8 mm = 쥠 (같은 판단 300 장 2.99 s / 필요 0.50, 마지막 0.00 s 전 / 한도 0.30))
+[mission_manager-23] [INFO] [1794812353.284301398] [mission_manager]: L3 #3: 박스 측정 기준 (지도 대비 29.4 mm 이동 · 2.0° 회전) → 칸 (-3.465, -4.282)
+[mission_manager-23] [INFO] [1794812353.286616475] [mission_manager]: arm:PLACE:1>L3#3: map (-3.465, -4.282, 0.115) → base (0.191, -0.048, 0.082)
+[mission_manager-23] [WARN] [1794812360.584214886] [mission_manager]: HOME 먼저: 팔 작업 뒤 이동 전 접기
+[mission_manager-23] [INFO] [1794812363.488477696] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812363.496047780] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812377.486490709] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812377.495205087] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812378.487134671] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812378.493588890] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812382.284829103] [mission_manager]: 정차점 보정표: (-1.949, -2.426, -90.5°) → 잰 정차점 (-1.968, -2.410, -92.6°), 2.5 cm · -2.2° (측정 20 번)
+[mission_manager-23] [INFO] [1794812382.286169382] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812382.293319852] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812387.584085992] [mission_manager]: L2 박스 측정 3 개: 지도 중심 대비 (+12.4, +1.1) mm · +2.4° → 이 기준으로 놓음
+[mission_manager-23] [INFO] [1794812387.584301201] [mission_manager]: L2 박스: 이 정차 기대 자리와 12.4 mm · +2.4° (기준 40 mm · 8°) → 그대로 놓음
+[mission_manager-23] [INFO] [1794812397.184179763] [mission_manager]: arm:RETRIEVE:S5>6 성공 결과: 그리퍼 실측 쥠 (그리퍼 0.0042 m → 손가락 사이 33.9 mm = 쥠 (같은 판단 300 장 2.99 s / 필요 0.50, 마지막 0.00 s 전 / 한도 0.30))
+[mission_manager-23] [INFO] [1794812397.284038049] [mission_manager]: L2 #0: 박스 측정 기준 (지도 대비 15.3 mm 이동 · 2.4° 회전) → 칸 (-1.877, -2.741)
+[mission_manager-23] [INFO] [1794812397.284247273] [mission_manager]: arm:PLACE:6>L2#0: map (-1.877, -2.741, 0.115) → base (0.304, 0.079, 0.082)
+[mission_manager-23] [INFO] [1794812422.684135730] [mission_manager]: arm:RETRIEVE:S10>11 성공 결과: 그리퍼 실측 쥠 (그리퍼 0.0042 m → 손가락 사이 34.1 mm = 쥠 (같은 판단 301 장 3.00 s / 필요 0.50, 마지막 0.00 s 전 / 한도 0.30))
+[mission_manager-23] [INFO] [1794812422.784175369] [mission_manager]: L2 #1: 박스 측정 기준 (지도 대비 15.0 mm 이동 · 2.4° 회전) → 칸 (-1.997, -2.744)
+[mission_manager-23] [INFO] [1794812422.784519350] [mission_manager]: arm:PLACE:11>L2#1: map (-1.997, -2.744, 0.115) → base (0.309, -0.039, 0.082)
+[mission_manager-23] [INFO] [1794812450.684770817] [mission_manager]: arm:RETRIEVE:S7>7 성공 결과: 그리퍼 실측 쥠 (그리퍼 0.0044 m → 손가락 사이 34.4 mm = 쥠 (같은 판단 302 장 3.00 s / 필요 0.50, 마지막 0.00 s 전 / 한도 0.30))
+[mission_manager-23] [INFO] [1794812450.784050524] [mission_manager]: L2 #2: 박스 측정 기준 (지도 대비 10.5 mm 이동 · 2.4° 회전) → 칸 (-1.880, -2.621)
+[mission_manager-23] [INFO] [1794812450.784279012] [mission_manager]: arm:PLACE:7>L2#2: map (-1.880, -2.621, 0.115) → base (0.184, 0.077, 0.082)
+[mission_manager-23] [INFO] [1794812467.084406921] [mission_manager]: arm:RETRIEVE:S3>9 성공 결과: 그리퍼 실측 쥠 (그리퍼 0.0044 m → 손가락 사이 34.5 mm = 쥠 (같은 판단 300 장 2.99 s / 필요 0.50, 마지막 0.01 s 전 / 한도 0.30))
+[mission_manager-23] [INFO] [1794812467.184114184] [mission_manager]: L2 #3: 박스 측정 기준 (지도 대비 10.0 mm 이동 · 2.4° 회전) → 칸 (-2.000, -2.624)
+[mission_manager-23] [INFO] [1794812467.184378865] [mission_manager]: arm:PLACE:9>L2#3: map (-2.000, -2.624, 0.115) → base (0.189, -0.042, 0.082)
+[mission_manager-23] [WARN] [1794812474.484647118] [mission_manager]: HOME 먼저: 팔 작업 뒤 이동 전 접기
+[mission_manager-23] [INFO] [1794812477.387502122] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812477.394175791] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812494.686594063] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812494.693254990] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812495.785605399] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812495.785943426] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812498.184743385] [mission_manager]: 정차점 보정표: (-3.305, 0.253, -90.0°) → 잰 정차점 (-3.346, 0.278, -89.6°), 4.8 cm · +0.4° (측정 9 번)
+[mission_manager-23] [INFO] [1794812498.185494130] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812498.192973258] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812503.584611233] [mission_manager]: L1 박스 측정 3 개: 지도 중심 대비 (-15.7, +13.0) mm · +3.4° → 이 기준으로 놓음
+[mission_manager-23] [INFO] [1794812503.584812967] [mission_manager]: L1 박스: 이 정차 기대 자리와 20.3 mm · +3.4° (기준 40 mm · 8°) → 그대로 놓음
+[mission_manager-23] [INFO] [1794812513.284071755] [mission_manager]: arm:RETRIEVE:S4>5 성공 결과: 그리퍼 실측 쥠 (그리퍼 0.0046 m → 손가락 사이 34.9 mm = 쥠 (같은 판단 301 장 3.00 s / 필요 0.50, 마지막 0.00 s 전 / 한도 0.30))
+[mission_manager-23] [INFO] [1794812513.384127574] [mission_manager]: L1 #0: 박스 측정 기준 (지도 대비 20.5 mm 이동 · 3.4° 회전) → 칸 (-3.258, -0.048)
+[mission_manager-23] [INFO] [1794812513.384472193] [mission_manager]: arm:PLACE:5>L1#0: map (-3.258, -0.048, 0.115) → base (0.312, 0.082, 0.082)
+[mission_manager-23] [INFO] [1794812540.384071168] [mission_manager]: arm:RETRIEVE:S12>3 성공 결과: 그리퍼 실측 쥠 (그리퍼 0.0046 m → 손가락 사이 34.8 mm = 쥠 (같은 판단 300 장 2.99 s / 필요 0.50, 마지막 0.00 s 전 / 한도 0.30))
+[mission_manager-23] [INFO] [1794812540.484322287] [mission_manager]: L1 #1: 박스 측정 기준 (지도 대비 15.3 mm 이동 · 3.4° 회전) → 칸 (-3.378, -0.053)
+[mission_manager-23] [INFO] [1794812540.484511605] [mission_manager]: arm:PLACE:3>L1#1: map (-3.378, -0.053, 0.115) → base (0.316, -0.036, 0.082)
+[mission_manager-23] [INFO] [1794812573.484610291] [mission_manager]: arm:RETRIEVE:S2>10 성공 결과: 그리퍼 실측 쥠 (그리퍼 0.0036 m → 손가락 사이 32.9 mm = 쥠 (같은 판단 301 장 3.00 s / 필요 0.50, 마지막 0.00 s 전 / 한도 0.30))
+[mission_manager-23] [INFO] [1794812573.584226049] [mission_manager]: L1 #2: 박스 측정 기준 (지도 대비 25.4 mm 이동 · 3.4° 회전) → 칸 (-3.263, 0.072)
+[mission_manager-23] [INFO] [1794812573.584537514] [mission_manager]: arm:PLACE:10>L1#2: map (-3.263, 0.072, 0.115) → base (0.191, 0.080, 0.082)
+[mission_manager-23] [INFO] [1794812590.984169988] [mission_manager]: arm:RETRIEVE:S1>4 성공 결과: 그리퍼 실측 쥠 (그리퍼 0.0040 m → 손가락 사이 33.6 mm = 쥠 (같은 판단 300 장 2.99 s / 필요 0.50, 마지막 0.00 s 전 / 한도 0.30))
+[mission_manager-23] [INFO] [1794812591.084019987] [mission_manager]: L1 #3: 박스 측정 기준 (지도 대비 21.4 mm 이동 · 3.4° 회전) → 칸 (-3.383, 0.067)
+[mission_manager-23] [INFO] [1794812591.084240346] [mission_manager]: arm:PLACE:4>L1#3: map (-3.383, 0.067, 0.115) → base (0.197, -0.039, 0.082)
+[mission_manager-23] [INFO] [1794812598.284359250] [mission_manager]: VERIFY: 세 장소 재검증
+[mission_manager-23] [WARN] [1794812598.384534384] [mission_manager]: HOME 먼저: 팔 작업 뒤 이동 전 접기
+[mission_manager-23] [INFO] [1794812601.184072968] [mission_manager]: nav:verify:L1: 정차점 보정표 씀 → (-3.346, 0.278, -89.6°), 단계 정차점과 4.8 cm
+[mission_manager-23] [INFO] [1794812601.286094832] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812601.293992242] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812602.787810046] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812602.795206450] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812610.084226455] [mission_manager]: 재검증 L1: 칸 기준 = 놓을 때 박스 측정 (지도 중심 대비 (-15.7, +13.0) mm · +3.4°)
+[mission_manager-23] [WARN] [1794812610.085152626] [mission_manager]: 재검증 L1: 퍽 10 깊이 틀린 장 1 개 (윗면 높이에서 30 mm 넘게 벗어남) → 위치는 그 전 맞는 장 (-3.268, 0.067)
+[mission_manager-23] [INFO] [1794812610.104723740] [mission_manager]: 재검증 L1 그림 발행 /planning/verify_image · /home/turtle/planning_logs/run_20261116_154854/verify_L1.jpg · 원본 /home/turtle/planning_logs/run_20261116_154854/verify_L1_raw.jpg
+[mission_manager-23] [INFO] [1794812610.104940450] [mission_manager]: 재검증 L1 (R4): 본 퍽 4 개 → SUCCESS (ID 10 R/cyl, ID 3 R/box, ID 4 R/box, ID 5 R/box)
+[mission_manager-23] [WARN] [1794812610.184299752] [mission_manager]: HOME 먼저: 팔 작업 뒤 이동 전 접기
+[mission_manager-23] [INFO] [1794812614.684031140] [mission_manager]: nav:verify:L2: 정차점 보정표 씀 → (-1.968, -2.410, -92.6°), 단계 정차점과 2.5 cm
+[mission_manager-23] [INFO] [1794812614.788362303] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812614.793553329] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812635.286205031] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812635.295712589] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812636.385975590] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812636.393490260] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812639.485188864] [mission_manager]: 정차점 보정표: (-1.949, -2.426, -90.5°) → 잰 정차점 (-1.965, -2.441, -92.5°), 2.1 cm · -2.0° (측정 17 번)
+[mission_manager-23] [INFO] [1794812639.486153723] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812639.494097332] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812645.784861912] [mission_manager]: 재검증 L2: 다시 잰 박스는 놓을 때 측정과 (-12.5, -10.9) mm · -1.0° 다름 (참고, 다시 잰 기준으로 봄)
+[mission_manager-23] [INFO] [1794812645.785028349] [mission_manager]: 재검증 L2: 칸 기준 = 재검증 LOOK 박스 측정 (지도 중심 대비 (-0.2, -9.8) mm · +1.4°)
+[mission_manager-23] [WARN] [1794812645.785598412] [mission_manager]: 재검증 L2: 퍽 7 깊이 틀린 장 3 개 (윗면 높이에서 30 mm 넘게 벗어남) → 위치는 그 전 맞는 장 (-1.901, -2.638)
+[mission_manager-23] [INFO] [1794812645.800802185] [mission_manager]: 재검증 L2 그림 발행 /planning/verify_image · /home/turtle/planning_logs/run_20261116_154854/verify_L2.jpg · 원본 /home/turtle/planning_logs/run_20261116_154854/verify_L2_raw.jpg
+[mission_manager-23] [INFO] [1794812645.800991214] [mission_manager]: 재검증 L2 (Y4): 본 퍽 4 개 → SUCCESS (ID 11 R/cyl, ID 6 G/cyl, ID 7 G/cyl, ID 9 R/cyl)
+[mission_manager-23] [WARN] [1794812645.884792979] [mission_manager]: HOME 먼저: 팔 작업 뒤 이동 전 접기
+[mission_manager-23] [INFO] [1794812650.384189868] [mission_manager]: nav:verify:L3: 정차점 보정표 씀 → (-3.411, -4.097, -92.2°), 단계 정차점과 4.2 cm
+[mission_manager-23] [INFO] [1794812650.497311356] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812650.497952686] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [WARN] [1794812702.584767785] [mission_manager]: 단계 재시도 1/1: nav:verify:L3 (Nav2 이동 실패)
+[mission_manager-23] [INFO] [1794812702.586289744] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812702.593444232] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812702.684314944] [mission_manager]: nav:verify:L3: 정차점 보정표 씀 → (-3.411, -4.097, -92.2°), 단계 정차점과 4.2 cm
+[mission_manager-23] [INFO] [1794812703.587681272] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812703.593919672] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812704.385851291] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812704.394335892] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812705.386268542] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812705.393178511] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812707.984748579] [mission_manager]: 정차점 보정표: (-3.398, -4.057, -90.8°) → 잰 정차점 (-3.413, -4.099, -91.7°), 4.5 cm · -0.9° (측정 9 번)
+[mission_manager-23] [INFO] [1794812707.985627737] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812707.993055927] [mission_manager]: perception 손목 검출 켬
+[mission_manager-23] [INFO] [1794812714.284071728] [mission_manager]: 재검증 L3: 다시 잰 박스는 놓을 때 측정과 (-7.2, +12.4) mm · -0.9° 다름 (참고, 다시 잰 기준으로 봄)
+[mission_manager-23] [INFO] [1794812714.284271381] [mission_manager]: 재검증 L3: 칸 기준 = 재검증 LOOK 박스 측정 (지도 중심 대비 (-10.5, -14.4) mm · +1.0°)
+[mission_manager-23] [WARN] [1794812714.285637048] [mission_manager]: 재검증 L3: 로봇 몸 안 검출 9 장 뺌 (차체 앞 끝 0.141 + 0.030 m, 가장 안쪽 x 0.167)
+[mission_manager-23] [WARN] [1794812714.285801116] [mission_manager]: 재검증 L3: 퍽 0 깊이 틀린 장 1 개 (윗면 높이에서 30 mm 넘게 벗어남) → 위치는 그 전 맞는 장 (-3.359, -4.268)
+[mission_manager-23] [WARN] [1794812714.285861822] [mission_manager]: 재검증 L3: 퍽 1 깊이 틀린 장 1 개 (윗면 높이에서 30 mm 넘게 벗어남) → 위치는 그 전 맞는 장 (-3.470, -4.276)
+[mission_manager-23] [INFO] [1794812714.305924890] [mission_manager]: 재검증 L3 그림 발행 /planning/verify_image · /home/turtle/planning_logs/run_20261116_154854/verify_L3.jpg · 원본 /home/turtle/planning_logs/run_20261116_154854/verify_L3_raw.jpg
+[mission_manager-23] [INFO] [1794812714.306140736] [mission_manager]: 재검증 L3 (G4): 본 퍽 4 개 → SUCCESS (ID 0 G/box, ID 1 G/box, ID 2 G/box, ID 8 G/cyl)
+[mission_manager-23] [INFO] [1794812714.306942100] [mission_manager]: 재검증 SUCCESS → /home/turtle/planning_logs/run_20261116_154854/verify.yaml
+[mission_manager-23] [INFO] [1794812714.307005269] [mission_manager]: dice 완료: P2-02 (퍽 12 / 12)
+[mission_manager-23] [INFO] [1794812714.307038294] [mission_manager]: 출발점 복귀: 바코드 처리 끝
+[mission_manager-23] [WARN] [1794812714.384273787] [mission_manager]: HOME 먼저: 팔 작업 뒤 이동 전 접기
+[mission_manager-23] [INFO] [1794812718.988872993] [mission_manager]: perception 손목 박스 측정 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812718.997413624] [mission_manager]: perception 손목 검출 끔 (주행 중)
+[mission_manager-23] [INFO] [1794812750.985019622] [mission_manager]: 미션 종료 (COMPLETED): task 완료 1 / 실패 0 / 시도 1, 퍽 12 / 12
+[mission_manager-23] [INFO] [1794812750.989092170] [mission_manager]: perception 손목 박스 측정 켬
+[mission_manager-23] [INFO] [1794812750.990727602] [mission_manager]: perception 손목 검출 켬
