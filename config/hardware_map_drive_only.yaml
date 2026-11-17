@@ -1,9 +1,9 @@
-# hardware_map_drive_only.yaml — 젯슨 ROS 가 주행 OpenCR 1 장만 쓸 때의 하드웨어 지도 (하드웨어는 다 장착, 팔 OpenCR 만 안 붙임 — SLAM · 주행 실물 구성)
+# hardware_map_drive_only.yaml — 젯슨 ROS 가 주행 OpenCR 1 장만 쓸 때의 하드웨어 지도 (하드웨어는 다 장착, 팔 OpenCR 만 안 붙임 — SLAM · 주행 구성)
 # =============================================================================
 #   ros2 launch bringup robot.launch.py arm:=false hardware_map:=<이 파일>
 # 지도에 팔 관절 · 팔 보드가 없어야 arm:=false 가 실행된다 (robot.launch.py 가 확인). 팔 OpenCR 까지 붙인 실행은 hardware_map.yaml.
 #
-# ID · 방향은 주행 보드 실물 측정값
+# ID · 방향은 주행 보드에서 잰 값
 #   위치 (로봇 뒤에서 앞을 보는 기준)   구동 XM430-W210 (속도)   조향 XM430-W350 (위치)
 #   왼쪽 앞                              1                         11
 #   오른쪽 앞                            2                         12
@@ -30,8 +30,8 @@ buses:
     joints: [drive_fl_joint, drive_fr_joint, drive_rl_joint, drive_rr_joint,
              steer_fl_joint, steer_fr_joint, steer_rl_joint, steer_rr_joint]
 
-# 프로파일 (실물 비교로 바꿈): 조향 profile_vel 40 → 200 (55 → 실측 약 260°/s, 135° 뒤집기 1.05 → 0.61 s) ·
-#   profile_acc 10 → 60 (확 돌지 않게) · 구동 profile_acc 20 → 40 (20 은 바퀴에서 ≈0.25 m/s² 로 몸 가속 0.5 를 다시 막음)
+# 프로파일: 조향 profile_vel 200 (실측 약 260°/s, 135° 뒤집기 0.61 s — 40 이면 55°/s · 1.05 s) ·
+#   profile_acc 60 (확 돌지 않게) · 구동 profile_acc 40 (20 은 바퀴에서 ≈0.25 m/s² 라 몸 가속 0.5 를 다시 막음)
 #   조향 최고 속도에서 선 · 전류 이상 없음 (공중 · 바닥 시험: 조향 전류 최대 약 210~280 mA)
 motors:
   drive_fl_joint: {id: 1,  model: XM430-W210, mode: velocity, profile_acc: 40, scale: 1.0}

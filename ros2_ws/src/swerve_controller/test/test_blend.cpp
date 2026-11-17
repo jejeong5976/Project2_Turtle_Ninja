@@ -1,4 +1,4 @@
-// 동시 조향·구동(blend) 시험본 단위 시험. 기존 test_swerve.cpp 57 개는 그대로 통과해야 함.
+// 동시 조향·구동 (blend) 단위 시험.
 #include <gtest/gtest.h>
 #include <cmath>
 #include "swerve_controller/swerve.hpp"
@@ -20,7 +20,7 @@ SwerveDrive running(SwerveDriveConfig c, double & t) {
 }
 }  // namespace
 
-TEST(Blend, StallUnsetKeepsLegacyGate) {   // blend 를 켜도 정체 시간이 없으면 매 주기 기존과 같아야 함
+TEST(Blend, StallUnsetKeepsLegacyGate) {   // blend 를 켜도 정체 시간이 없으면 매 주기 끔과 같아야 함
   SwerveDriveConfig a, b; b.blend_steer_drive = true; b.blend_stall_s = 0.0;
   double ta, tb; auto da = running(a, ta); auto db = running(b, tb);
   bool gated = false;
@@ -32,7 +32,7 @@ TEST(Blend, StallUnsetKeepsLegacyGate) {   // blend 를 켜도 정체 시간이 
     EXPECT_EQ(da.gate_blocked(), db.gate_blocked());
     gated = gated || da.gate_blocked();
   }
-  EXPECT_TRUE(gated);   // 조향이 안 따라오면 기존 게이트가 걸림
+  EXPECT_TRUE(gated);   // 조향이 안 따라오면 "조향 먼저" 게이트가 걸림
 }
 
 TEST(Blend, WheelsFollowMeasuredWhileSteerGoesToFinalAngle) {   // 바퀴는 진행 비율 명령, 조향은 최종 각도로 바로
@@ -103,7 +103,7 @@ TEST(Blend, StallStopsDrive) {   // 실측 조향이 안 움직이면 blend_stal
   EXPECT_GE(t, 2.0 + 0.3 - 0.02);
 }
 
-TEST(Blend, StaleCommandDoesNotBlend) {   // 명령이 끊기면 blend 하지 않고 기존 감속·조향 유지
+TEST(Blend, StaleCommandDoesNotBlend) {   // 명령이 끊기면 blend 하지 않고 감속 · 조향 유지
   SwerveDriveConfig c; c.blend_steer_drive = true; c.blend_stall_s = 0.5;
   double t; auto d = running(c, t);
   d.set_command({0, 0.05, 0}, t);
@@ -122,7 +122,7 @@ TEST(Blend, NanMeasurementSkipsBlend) {
   EXPECT_DOUBLE_EQ(d.blend_ratio(), 1.0);
 }
 
-TEST(Blend, PureRotationToTranslationKeepsLegacyGate) {   // 실물: 회전→전진은 기존 "조향 먼저"
+TEST(Blend, PureRotationToTranslationKeepsLegacyGate) {   // 회전→전진은 "조향 먼저"
   SwerveDriveConfig c; c.blend_steer_drive = true; c.blend_stall_s = 1.0;
   SwerveDrive d(kin(), c);
   double t = 0.0;

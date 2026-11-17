@@ -84,7 +84,7 @@ TEST(MotionArbiter, NeedsLockAckAndSettle)
   EXPECT_EQ(a.turn(), Turn::STOPPING);
   EXPECT_FALSE(a.wheels_may_move());
 
-  a.update(10.0, true, id - 1);   // 멈춰 있지만 답이 없음(예전 번호) → 안 셈
+  a.update(10.0, true, id - 1);   // 멈춰 있지만 답이 없음(앞 번호) → 안 셈
   a.update(11.0, true, id - 1);
   EXPECT_EQ(a.turn(), Turn::STOPPING);
 
@@ -180,7 +180,7 @@ struct FakeMaster
   ArmRunner runner{2.0, 4.0 + 3.0, 2.0, 2.0};   // accept 2 s, move 4 + 여유 3 s, cancel 2 s, 접힘 확인 2 s
   // 접힘 실측 확인 (control.yaml 기본값과 같게: 허용 0.05 rad, 0.3 s 유지, 측정 0.2 s 안)
   FoldCheck fold{kHome, {0.05}, 0.3, 0.2};
-  HardwareWatch hw{0.3, 0.1, 1.0};          // control.yaml 기본값과 같게 (재검증 R6 · 보드 2장)
+  HardwareWatch hw{0.3, 0.1, 1.0};          // control.yaml 기본값과 같게 (보드 2장)
   bool boards_ok{true};                     // controller_manager 가 알려 주는 보드 상태 (false = 어느 보드가 active 아님)
   bool hw_ok_before{false};
   bool goal_active{false};
@@ -360,6 +360,38 @@ TEST(ArmRunner, SuccessEndingFoldedReturnsToDrive)
   EXPECT_EQ(m.arbiter.turn(), Turn::DRIVE);
 }
 
+// 구분 동작: 첫 동작 뒤로는 step_go() 마다 하나씩, 끝나면 꺼짐
+TEST(ArmRunner, StepModeWaitsBeforeEachNextAction)
+{
+  FakeMaster m;
+  double t = 0.0;
+  m.accept(manipulation::kArmPick);
+  m.runner.set_step(true);
+  for (int k = 0; k < 40 && m.sent.empty(); ++k) {m.step(t); t += 0.02;}
+  ASSERT_EQ(m.sent.size(), 1u);   // 첫 동작은 바로
+  m.complete_last(t);
+  for (int k = 0; k < 50; ++k) {m.step(t); t += 0.02;}
+  EXPECT_EQ(m.sent.size(), 1u);   // 다음은 기다림
+  EXPECT_TRUE(m.runner.waiting_step());
+  EXPECT_FALSE(m.runner.next_name().empty());
+  m.runner.step_go();
+  m.step(t);
+  EXPECT_EQ(m.sent.size(), 2u);
+  EXPECT_FALSE(m.runner.waiting_step());
+  m.complete_last(t);
+  for (int k = 0; k < 2000 && m.goal_active; ++k) {   // 나머지는 매번 step_go
+    const std::size_t n = m.sent.size();
+    if (m.runner.waiting_step()) {m.runner.step_go();}
+    m.step(t);
+    if (m.sent.size() > n) {m.complete_last(t);}
+    t += 0.02;
+  }
+  ASSERT_EQ(m.finished.size(), 1u);
+  EXPECT_EQ(m.finished[0].end, ArmEnd::SUCCEEDED);
+  EXPECT_EQ(m.sent.size(), 6u);
+  EXPECT_FALSE(m.runner.waiting_step());
+}
+
 // 팔이 움직이는 중 취소 → 재생기에 취소 → "멈췄음"(결과) 을 받아야 canceled → STOP
 TEST(ArmRunner, CancelDuringMotionWaitsForStop)
 {
@@ -405,7 +437,7 @@ TEST(ArmRunner, CancelTimeoutStillLocks)
   EXPECT_NE(m.finished[0].message.find("정지 답 없음"), std::string::npos);
   EXPECT_EQ(m.arbiter.turn(), Turn::STOP);
 
-  // 다음 작업이 시작된 뒤 예전 궤적의 결과가 늦게 와도 새 작업을 건드리지 않음
+  // 다음 작업이 시작된 뒤 앞 궤적의 결과가 늦게 와도 새 작업을 건드리지 않음
   m.accept(manipulation::kArmHome);
   m.runner.on_result(g, false);
   EXPECT_FALSE(m.runner.busy());
@@ -487,7 +519,7 @@ TEST(ArmRunner, RejectOrFailAbortsAndLocks)
   EXPECT_EQ(m.arbiter.turn(), Turn::STOP);
 }
 
-// 마지막 동작이 접기가 아닌 계획은 성공해도 DRIVE 로 못 감 (안전장치 — 지금 계획들은 모두 home 으로 끝남)
+// 마지막 동작이 접기가 아닌 계획은 성공해도 DRIVE 로 못 감 (PICK · RETRIEVE · LOOK, lazy_fold 의 STORE · PLACE)
 TEST(ArmRunner, SuccessNotFoldedStaysLocked)
 {
   ArmRunner r(2.0, 7.0, 2.0);
@@ -504,8 +536,8 @@ TEST(ArmRunner, SuccessNotFoldedStaysLocked)
 }
 
 // ============================================================================
-// 2026-10-16 R1 — "JTC 가 성공이라고 해도 팔이 실제로 안 접혔으면 바퀴를 풀지 않는다"
-// (Codex 재현: 가짜 보드에서 어깨(ID 12)를 고정 → joint2 = 0, home = −1.45 인데 HOME 성공 + DRIVE)
+// "JTC 가 성공이라고 해도 팔이 실제로 안 접혔으면 바퀴를 풀지 않는다"
+// (재현: 가짜 보드에서 어깨(ID 12)를 고정 → joint2 = 0, home = −1.45 인데 HOME 성공 + DRIVE)
 // ============================================================================
 
 // 어깨가 고정돼 HOME 에 못 감 → JTC 는 성공을 돌려줘도 실측 확인 실패 → ABORTED, STOP 유지
@@ -656,8 +688,8 @@ TEST(ArmFoldCheck, FoldCheckRules)
   EXPECT_FALSE(f.confirmed(2.3));
 }
 
-// (Codex 10/16 재검증) 측정이 끊겼다가 다시 오면 끊긴 시간을 유지 시간으로 세지 않음
-//   예전: 1.0 s 에 범위 안 → 측정 끊김 → 1.5 s 에 다시 범위 안 한 번 = "0.5 s 유지" 로 바로 확인됨
+// 측정이 끊겼다가 다시 오면 끊긴 시간을 유지 시간으로 세지 않음
+//   끊김을 안 보면: 1.0 s 에 범위 안 → 측정 끊김 → 1.5 s 에 다시 범위 안 한 번 = "0.5 s 유지" 로 바로 확인됨
 TEST(ArmFoldCheck, GapDoesNotCountAsHold)
 {
   FoldCheck f(kHome, {0.05}, 0.3, 0.2);
@@ -693,7 +725,7 @@ TEST(ArmFoldCheck, MeasurementGapDuringVerifyRestartsHold)
   EXPECT_EQ(m.finished.back().end, ArmEnd::SUCCEEDED);   // 다시 0.3 s 머문 뒤에는 정상 성공
 }
 
-// ───────────── 2026-10-16 재검증 R6: 하드웨어 이상 → HOME 확인 무효, 복구 뒤 HOME 이 다시 성공해야 DRIVE
+// ───────────── 하드웨어 이상 → HOME 확인 무효, 복구 뒤 HOME 이 다시 성공해야 DRIVE
 namespace
 {
 // HOME 을 끝까지 돌려 DRIVE 로 만든 FakeMaster
@@ -804,7 +836,7 @@ TEST(HardwareWatch, FaultDuringVerifyFails)
   EXPECT_EQ(m.arbiter.turn(), Turn::STOP);
 }
 
-// ───────────── 2026-10-16 보드 2장: 보드 상태를 직접 봄 — "주행 보드만 죽고 팔 측정은 멀쩡" 도 STOP
+// ───────────── 보드 2장: 보드 상태를 직접 봄 — "주행 보드만 죽고 팔 측정은 멀쩡" 도 STOP
 TEST(HardwareWatch, ComponentRules)
 {
   HardwareWatch w(0.3, 0.1, 1.0);
@@ -901,4 +933,415 @@ TEST(DriveFoldGuard, FutureAndNonfiniteTimestampsCannotPermitDrive)
   EXPECT_FALSE(h.healthy(1.));
   h.observe(std::nan(""),true);EXPECT_FALSE(h.healthy(10.));
   EXPECT_FALSE(f.confirmed(std::nan("")));
+}
+
+// ============================================================================ ⑥ 쥐기 뒤 빈손 판단
+// 문턱 = gripper_close (−0.0016) 와 퍽에 닿은 자리 (약 0.0046) 사이 (control.yaml grasp_empty_m 0.0015). 실측 · 문턱이 NaN 이면 판단 안 함
+TEST(GraspEmpty, Rules)
+{
+  using manipulation::grasp_empty;
+  EXPECT_TRUE(grasp_empty(-0.0016, 0.0015));           // 끝까지 닫힘 = 빈손
+  EXPECT_TRUE(grasp_empty(0.0010, 0.0015));
+  EXPECT_FALSE(grasp_empty(0.0046, 0.0015));           // 퍽을 쥠
+  EXPECT_FALSE(grasp_empty(0.0015, 0.0015));           // 문턱 자체는 쥔 쪽
+  EXPECT_FALSE(grasp_empty(std::nan(""), 0.0015));     // 실측 없음 → 안 봄
+  EXPECT_FALSE(grasp_empty(-0.0016, std::nan("")));    // 문턱 없음 → 안 봄
+  EXPECT_FALSE(grasp_empty(-0.0016, -1.0));            // −1 = 끔 (standup_grip_min_m 과 같은 규칙)
+}
+
+// ============================================================================ ⑦ 보드 상태 없이 (hw_status_optional)
+// list_hardware_components 를 DDS 로 끝내 못 찾아 컨트롤러 · 관절 측정이 멀쩡한데 "보드 상태를 아직 못 받음" 으로 팔 작업을 거절하지 않게
+TEST(HardwareWatch, ComponentsOptionalOnlyWhenNeverReceivedOrUnreachable)
+{
+  HardwareWatch w(0.3, 0.1, 1.0);
+  w.observe(1.0, true);
+  EXPECT_FALSE(w.healthy(1.1)) << "기본 (optional 꺼짐) = 지금처럼 보드 상태 필요";
+  EXPECT_NE(w.status(1.1).find("아직 못 받음"), std::string::npos);
+  w.set_components_optional(true);
+  EXPECT_FALSE(w.healthy(1.1)) << "재생기 (JTC) 준비 전에는 안 봐 줌";
+  w.set_controllers_ready(true);
+  EXPECT_TRUE(w.healthy(1.1)) << "못 받음 + 관절 측정 신선 + 재생기 준비 → 정상";
+  EXPECT_TRUE(w.components_waived(1.1));
+  EXPECT_FALSE(w.healthy(1.5)) << "관절 측정이 끊기면 그대로 이상";
+  w.observe(1.6, true);
+  w.observe(1.65, false);
+  w.observe(1.8, false);
+  EXPECT_FALSE(w.healthy(1.8)) << "NaN 지속도 그대로 이상";
+  w.observe(1.9, true);
+  EXPECT_TRUE(w.healthy(1.9));
+  // 받은 보드 상태가 이상이면 지금처럼 이상 (서비스가 보이든 안 보이든 · 오래됐든)
+  w.observe_components(2.0, false, "bus_arm=inactive");
+  w.observe(2.0, true);
+  EXPECT_FALSE(w.healthy(2.0));
+  EXPECT_NE(w.status(2.0).find("bus_arm"), std::string::npos);
+  w.set_components_reachable(false);
+  w.observe(3.5, true);
+  EXPECT_FALSE(w.healthy(3.5)) << "마지막 답이 이상 → 안 보여도 이상";
+  // 정상 답을 받은 뒤: 서비스가 보이는데 답이 끊기면 지금처럼 이상, 안 보이면 관절 측정으로
+  w.set_components_reachable(true);
+  w.observe_components(4.0, true, "");
+  w.observe(4.0, true);
+  EXPECT_TRUE(w.healthy(4.0));
+  EXPECT_FALSE(w.components_waived(4.0)) << "보드 상태가 신선하면 원래대로";
+  w.observe(5.5, true);
+  EXPECT_FALSE(w.healthy(5.5)) << "보이는 서비스의 답이 1 s 넘게 없음 = 지금처럼 이상";
+  w.set_components_reachable(false);
+  EXPECT_TRUE(w.healthy(5.5)) << "서비스가 안 보임 + 마지막 답 정상 → 관절 측정으로";
+  w.set_controllers_ready(false);
+  EXPECT_FALSE(w.healthy(5.5)) << "재생기가 없어지면 이상";
+}
+
+TEST(HardwareWatch, ComponentsOptionalIgnoredWhenTimeoutOff)
+{
+  HardwareWatch w(0.3, 0.1, 0.0);   // 보드 상태 안 봄 (단위 시험 · 보드 상태를 못 묻는 환경) — 그대로
+  w.set_components_optional(true);
+  w.observe(1.0, true);
+  EXPECT_TRUE(w.healthy(1.1));
+  EXPECT_FALSE(w.components_waived(1.1));
+}
+
+// ============================================================================ ⑧ 실패 뒤 자동 접기 (fail_fold_s)
+TEST(FailFold, ArmOnlyAfterAbortNotHomeHwOk)
+{
+  using manipulation::fail_fold_arm;
+  EXPECT_TRUE(fail_fold_arm(ArmEnd::ABORTED, false, 3.0, true));
+  EXPECT_FALSE(fail_fold_arm(ArmEnd::CANCELED, false, 3.0, true)) << "취소는 planning 이 정함";
+  EXPECT_FALSE(fail_fold_arm(ArmEnd::SUCCEEDED, false, 3.0, true));
+  EXPECT_FALSE(fail_fold_arm(ArmEnd::ABORTED, true, 3.0, true)) << "HOME 실패 뒤 같은 HOME 반복 안 함";
+  EXPECT_FALSE(fail_fold_arm(ArmEnd::ABORTED, false, 0.0, true)) << "0 이하 = 끔";
+  EXPECT_FALSE(fail_fold_arm(ArmEnd::ABORTED, false, -1.0, true));
+  EXPECT_FALSE(fail_fold_arm(ArmEnd::ABORTED, false, std::nan(""), true));
+  EXPECT_FALSE(fail_fold_arm(ArmEnd::ABORTED, false, 3.0, false)) << "하드웨어 이상으로 끝남 → 사람이 복구 뒤 HOME";
+}
+
+TEST(FailFold, BlockReasons)
+{
+  using manipulation::fail_fold_block;
+  using manipulation::FailFoldState;
+  FailFoldState s;
+  EXPECT_TRUE(fail_fold_block(s).empty()) << "빈손 · 펴진 채 → 접음";
+  s.empty_grasp = true;
+  s.half_closed = true;
+  EXPECT_TRUE(fail_fold_block(s).empty()) << "빈손 확인이 걸렸으면 그리퍼 실측과 상관없이 빈손";
+  s.empty_grasp = false;
+  EXPECT_FALSE(fail_fold_block(s).empty()) << "반쯤 닫힘 = 퍽을 쥐었을 수 있음";
+  s = FailFoldState{};
+  s.carrying = true;
+  EXPECT_FALSE(fail_fold_block(s).empty()) << "퍽을 쥔 채 안 접음";
+  s = FailFoldState{};
+  s.folded = true;
+  EXPECT_FALSE(fail_fold_block(s).empty()) << "이미 접힘";
+  s = FailFoldState{};
+  s.step_mode = true;
+  EXPECT_FALSE(fail_fold_block(s).empty()) << "구분 동작 작업 (사람이 보는 중)";
+  s = FailFoldState{};
+  s.park_left = true;
+  EXPECT_FALSE(fail_fold_block(s).empty()) << "받침 안 다시 쥐기 빈손 — 퍽이 받침에 남음 (접으면 그 위로 내려감)";
+}
+
+// ============================================================================ ⑦ 하드웨어 이상 늦추기 (HealthHold, hw_unhealthy_hold_s)
+// 실제 로봇에서 "하드웨어 이상: 정상 → STOP" 으로 PLACE 끝 팔 작업이 끊긴 경우: 측정은 sense_group_ (다른 스레드) 이 받아
+//   step 이 시각을 잰 뒤 들어온 측정이 "지금" 보다 앞서면 healthy 가 false (상태 글은 "정상"). 끊김 · 늦음은 hold 동안 넘기고 진짜 고장은 바로
+namespace
+{
+// control_master step 의 하드웨어 부분 + 팔 진행 (hw_check → force_stop · fail_now → runner.tick)
+struct HoldMaster
+{
+  HardwareWatch w{1.0, 0.1, 4.0};   // control.yaml: hw_state_timeout_s 1.0 · hw_bad_hold_s 0.1 · hw_component_timeout_s 4.0
+  manipulation::HealthHold h;
+  MotionArbiter arb{0.5};
+  ArmRunner run{2.0, 7.0, 2.0, 2.0};
+  double hold_s{0.5};
+  bool stopped{false};
+  std::vector<ArmCommand> finished;
+  bool step(double t)
+  {
+    const bool ok = h.update(t, w.healthy(t), w.fault(), hold_s);
+    if (!ok) {
+      if (arb.turn() != Turn::STOP) {arb.force_stop(); stopped = true;}
+      run.fail_now("하드웨어 이상");
+    }
+    arb.update(t, true, arb.request_id());
+    for (const ArmCommand & c : run.tick(t, arb.arm_may_move())) {
+      if (c.kind == ArmCommand::Kind::SEND) {run.on_goal_response(c.gen, true, t);}
+      if (c.kind == ArmCommand::Kind::FINISH) {finished.push_back(c);}
+    }
+    return ok;
+  }
+  // 정상으로 켜고 PICK 을 ARM 에서 진행 중으로
+  void start_job(double & t)
+  {
+    for (; t < 0.2; t += 0.01) {w.observe(t, true); w.observe_components(t, true, ""); step(t);}
+    run.start(manipulation::make_arm_plan(manipulation::kArmPick, 0.019, -0.005));
+    arb.request_arm();
+    for (int k = 0; k < 100 && !run.busy(); ++k) {t += 0.01; w.observe(t, true); w.observe_components(t, true, ""); step(t);}
+  }
+};
+}  // namespace
+
+TEST(HealthHold, TransientStaleDoesNotAbortJobRealFaultStopsImmediately)
+{
+  HoldMaster m;
+  double t = 0.0;
+  m.start_job(t);
+  ASSERT_EQ(m.arb.turn(), Turn::ARM);
+  ASSERT_TRUE(m.run.busy());
+  // ① 실물 그대로: 측정 시각이 step 시각보다 3 ms 앞섬 → healthy false · 상태 글 "정상" · 진짜 고장 아님 → 넘김
+  t += 0.01;
+  m.w.observe(t + 0.003, true);
+  ASSERT_FALSE(m.w.healthy(t));
+  EXPECT_NE(m.w.status(t).find("앞섬"), std::string::npos);   // 상태 글에 무엇이 이상인지 (시각 앞섬)
+  EXPECT_FALSE(m.w.fault());
+  EXPECT_TRUE(m.step(t));
+  EXPECT_TRUE(m.h.holding());
+  t += 0.01;
+  m.w.observe(t, true);
+  EXPECT_TRUE(m.step(t));
+  EXPECT_FALSE(m.h.holding());
+  // ② /joint_states 가 1.3 s 끊김 (state_timeout 1.0 + 0.3 < hold 0.5) → 넘김
+  for (double end = t + 1.3; t < end; t += 0.02) {m.w.observe_components(t, true, ""); m.step(t);}
+  m.w.observe(t, true);
+  EXPECT_TRUE(m.step(t));
+  EXPECT_FALSE(m.stopped);
+  EXPECT_TRUE(m.run.active()) << "잠깐 이상으로 팔 작업이 끊기지 않음";
+  EXPECT_EQ(m.arb.turn(), Turn::ARM);
+  // ③ 진짜 고장: 보드가 active 아님 (ERROR → unconfigured) → 같은 주기에 STOP + 작업 실패 (늦추지 않음)
+  t += 0.01;
+  m.w.observe(t, true);
+  m.w.observe_components(t, false, "bus_arm=unconfigured");
+  EXPECT_TRUE(m.w.fault());
+  EXPECT_FALSE(m.step(t));
+  EXPECT_TRUE(m.stopped);
+  EXPECT_EQ(m.arb.turn(), Turn::STOP);
+  ASSERT_EQ(m.finished.size(), 1u);
+  EXPECT_EQ(m.finished[0].end, ArmEnd::ABORTED);
+  EXPECT_FALSE(m.finished[0].drive_ok);
+}
+
+TEST(HealthHold, LongStaleStopsAfterHoldAndNanStopsWithoutHold)
+{
+  // 끊김이 hold 넘게 이어지면 STOP (state_timeout 1.0 + hold 0.5)
+  HoldMaster m;
+  double t = 0.0;
+  m.start_job(t);
+  const double cut = t;
+  double stop_at = -1.0;
+  for (; t < cut + 3.0 && stop_at < 0.0; t += 0.01) {
+    m.w.observe_components(t, true, "");
+    if (!m.step(t)) {stop_at = t;}
+  }
+  ASSERT_GT(stop_at, 0.0);
+  EXPECT_NEAR(stop_at - cut, 1.0 + 0.5, 0.05);
+  EXPECT_EQ(m.arb.turn(), Turn::STOP);
+  EXPECT_FALSE(m.run.active());
+
+  // NaN (플러그인: 못 읽은 모터 · ERROR 뒤 모든 칸) 이 hw_bad_hold_s 0.1 넘게 → 진짜 고장 → hold 0.5 를 기다리지 않음
+  HoldMaster n;
+  t = 0.0;
+  n.start_job(t);
+  const double nan_from = t;
+  stop_at = -1.0;
+  for (; t < nan_from + 1.0 && stop_at < 0.0; t += 0.01) {
+    n.w.observe(t, false);
+    n.w.observe_components(t, true, "");
+    if (!n.step(t)) {stop_at = t;}
+  }
+  ASSERT_GT(stop_at, 0.0);
+  EXPECT_LT(stop_at - nan_from, 0.15);
+  EXPECT_EQ(n.finished.back().end, ArmEnd::ABORTED);
+}
+
+TEST(HealthHold, ZeroHoldAndStartupKeepOldBehaviour)
+{
+  // hw_unhealthy_hold_s 0 = 늦추기 없음: 순간 이상에 바로 STOP
+  HoldMaster m;
+  m.hold_s = 0.0;
+  double t = 0.0;
+  m.start_job(t);
+  t += 0.01;
+  m.w.observe(t + 0.003, true);
+  EXPECT_FALSE(m.step(t));
+  EXPECT_EQ(m.arb.turn(), Turn::STOP);
+  // 켤 때 (정상이었던 적 없음) 는 늦추지 않음
+  manipulation::HealthHold h;
+  EXPECT_FALSE(h.update(0.0, false, false, 0.5));
+  EXPECT_FALSE(h.update(0.1, false, false, 0.5));
+  EXPECT_TRUE(h.update(0.2, true, false, 0.5));
+  EXPECT_TRUE(h.update(0.3, false, false, 0.5)) << "정상이었던 뒤의 잠깐 이상은 넘김";
+  EXPECT_FALSE(h.update(0.81, false, false, 0.5));
+  EXPECT_FALSE(h.update(0.9, false, true, 0.5));
+  EXPECT_TRUE(h.update(1.0, true, false, 0.5)) << "측정이 돌아오면 정상 (잠금 해제는 HOME 이 따로)";
+  EXPECT_FALSE(h.update(1.1, false, false, std::nan(""))) << "NaN hold = 늦추지 않음";
+}
+
+// 보기 자세 자동 접기 시계 (look_at_idle_fold_s). LOOK_AT + 빈손 LOOK · LOOK_BARCODE. 쥔 퍽 · P0 끝 · 스캔 · 넣은 뒤 보기는 안 켬
+TEST(LookIdleFold, ArmsOnlyEmptyHandLookPoses)
+{
+  using manipulation::IdleLookTask;
+  using manipulation::look_idle_fold_arm;
+  EXPECT_TRUE(look_idle_fold_arm(IdleLookTask::kLookAt, "", false, false));
+  EXPECT_TRUE(look_idle_fold_arm(IdleLookTask::kLookBarcode, "", false, false));
+  EXPECT_TRUE(look_idle_fold_arm(IdleLookTask::kLook, "", false, false));
+  for (const char * v : {"left", "right", "far", "near"}) {EXPECT_TRUE(look_idle_fold_arm(IdleLookTask::kLook, v, false, false)) << v;}
+  EXPECT_FALSE(look_idle_fold_arm(IdleLookTask::kLook, "", true, false));         // 퍽 쥠 → 재고 · 자세 그대로
+  EXPECT_FALSE(look_idle_fold_arm(IdleLookTask::kLookBarcode, "", true, false));
+  EXPECT_FALSE(look_idle_fold_arm(IdleLookTask::kLook, "", false, true));         // P0 에서 끝남 → P0 시계
+  EXPECT_FALSE(look_idle_fold_arm(IdleLookTask::kLook, "rack", false, false));    // 스캔은 받침까지 감
+  EXPECT_FALSE(look_idle_fold_arm(IdleLookTask::kLook, "seat_S3", false, false));
+  EXPECT_FALSE(look_idle_fold_arm(IdleLookTask::kNone, "", false, false));        // PICK · STORE · HOME 등
+}
+
+// 보기 자세 접기 시계 — 못 접으면 1 s 뒤 다시, 보기 요청이 잇달아 와도 펴진 채 상한 넘으면 바로
+TEST(LookIdleFold, ClockRetriesAndCapsContinuousOut)
+{
+  manipulation::LookIdleClock c;
+  const double idle = 20.0, cap = 60.0;
+  EXPECT_FALSE(c.due(100.0, idle));
+  c.on_task_end(true, 100.0, idle, cap);   // LOOK_BARCODE 성공
+  EXPECT_FALSE(c.due(119.9, idle));
+  EXPECT_TRUE(c.due(120.0, idle));
+  c.retry(120.0, idle);                    // 준비 안 됨 · 자세 → 1 s 뒤 다시 (시계를 지우면 영영 안 접음)
+  EXPECT_FALSE(c.due(120.5, idle));
+  EXPECT_TRUE(c.due(121.0, idle));
+  c.retry(121.0, idle);
+  EXPECT_TRUE(c.due(122.0, idle));
+  c.folded();
+  EXPECT_FALSE(c.due(500.0, idle));
+  EXPECT_LT(c.out_since, 0.0);
+  // 보기 요청이 15 s 마다 계속 옴 (쉬는 틈 < 20 s): 펴진 채 60 s 넘은 뒤 끝난 작업 다음 틈에 바로 접음
+  double t = 1000.0;
+  int n = 0;
+  for (; n < 20; ++n) {
+    c.on_task_start();
+    t += 3.0;                               // 보기 작업 3 s
+    c.on_task_end(true, t, idle, cap);
+    if (c.due(t + 0.05, idle)) {break;}
+    EXPECT_FALSE(c.due(t + 12.0, idle));
+    t += 12.0;                              // 12 s 뒤 다음 요청
+  }
+  EXPECT_LT(n, 20);
+  EXPECT_GE(t - 1003.0, cap);
+  EXPECT_LE(t - 1003.0, cap + 15.0);
+  // 다른 작업 (PICK 등) · 실패가 끼면 펴진 채 시각도 새로
+  c.folded();
+  c.on_task_end(true, 2000.0, idle, cap);
+  c.on_task_start();
+  c.on_task_end(false, 2005.0, idle, cap);
+  EXPECT_LT(c.since, 0.0);
+  EXPECT_LT(c.out_since, 0.0);
+  // 상한 끔 (≤ 0): 쉼 20 s 만
+  c.on_task_end(true, 3000.0, idle, 0.0);
+  c.on_task_end(true, 3100.0, idle, 0.0);
+  EXPECT_FALSE(c.due(3110.0, idle));
+  // 접기 끔 (look_at_idle_fold_s ≤ 0): 상한이 넘어도 안 접음
+  manipulation::LookIdleClock d;
+  d.on_task_end(true, 0.0, 0.0, cap);
+  d.on_task_end(true, 100.0, 0.0, cap);
+  EXPECT_FALSE(d.due(100.0, 0.0));
+}
+
+// 받침 안 다시 쥐기 빈손: 받침에 놓기 직전 (pk_down 열기 앞) 그리퍼 실측으로 퍽이 받침에 갔는지 가름
+//   놓기 전 이미 빈손 → 퍽은 받침에 안 감 → 받침 위에서 접음 (EMPTY_GRASP). 쥔 채 놓음 · 모름 → 퍽이 받침에 남았을 수 있음 → 안 접음
+TEST(ParkRelease, StateAndFoldDecision)
+{
+  using manipulation::ParkRelease;
+  using manipulation::park_release_state;
+  using manipulation::park_empty_fold_ok;
+  const double empty_m = 0.0003;   // 로봇 grasp_empty_m
+  EXPECT_EQ(park_release_state(0.0040, empty_m), ParkRelease::kHeld) << "원기둥 쥠 (03:43 far_grasp 33.6 mm)";
+  EXPECT_EQ(park_release_state(0.0020, empty_m), ParkRelease::kHeld) << "더 닫힌 원기둥";
+  EXPECT_EQ(park_release_state(-0.0012, empty_m), ParkRelease::kEmpty) << "03:43 빈손 실측";
+  EXPECT_EQ(park_release_state(-0.0016, empty_m), ParkRelease::kEmpty);
+  EXPECT_EQ(park_release_state(std::nan(""), empty_m), ParkRelease::kUnknown) << "실측 없음";
+  EXPECT_EQ(park_release_state(0.0040, std::nan("")), ParkRelease::kUnknown);
+  EXPECT_EQ(park_release_state(-0.0016, -1.0), ParkRelease::kHeld) << "grasp_empty_m −1 (빈손 판단 끔) → 퍽이 받침에 갔다고 봄 (안 접음)";
+  EXPECT_TRUE(park_empty_fold_ok(ParkRelease::kEmpty));
+  EXPECT_FALSE(park_empty_fold_ok(ParkRelease::kHeld));
+  EXPECT_FALSE(park_empty_fold_ok(ParkRelease::kUnknown)) << "누운 퍽 세우기 (pk_down 없음) · 실측 없음 = 예전 그대로";
+  // 받침에 퍽이 남았을 수 있으면 실패 뒤 자동 접기도 막힘 (park_left), 받침에 퍽 없음 확실 + 빈손 확인이면 접음
+  manipulation::FailFoldState s;
+  s.park_left = !park_empty_fold_ok(ParkRelease::kHeld);
+  EXPECT_FALSE(manipulation::fail_fold_block(s).empty());
+  s = manipulation::FailFoldState{};
+  s.park_left = !park_empty_fold_ok(ParkRelease::kEmpty);
+  s.empty_grasp = true;
+  EXPECT_TRUE(manipulation::fail_fold_block(s).empty());
+}
+
+// 동작 잇기: 잠근 채 서 있던 (STOP · 잠금 답 · 멈춤) 시간은 다음 팔 작업의 settle 로 이어 셈. 새 번호의 잠금 답은 그대로 기다림
+TEST(MotionArbiter, ConsecutiveArmTasksCarrySettle)
+{
+  MotionArbiter a(0.5, false);
+  a.request_arm();
+  a.update(0.0, true, a.request_id());
+  a.update(0.6, true, a.request_id());
+  ASSERT_EQ(a.turn(), Turn::ARM);
+  a.arm_ended(false);                        // 접기로 안 끝남 → STOP (잠금 유지)
+  const uint32_t stop_id = a.request_id();
+  a.update(1.0, true, stop_id);              // 바퀴가 STOP 번호로 잠갔다고 답 · 멈춤
+  a.update(1.8, true, stop_id);
+  a.request_arm();                           // 다음 팔 작업
+  const uint32_t id = a.request_id();
+  EXPECT_NE(id, stop_id);
+  a.update(1.85, true, stop_id);             // 새 번호 답 아직 → 기다림
+  EXPECT_EQ(a.turn(), Turn::STOPPING);
+  a.update(1.9, true, id);                   // 새 번호 답 → 1.0 s 부터 멈춰 있었으니 바로
+  EXPECT_EQ(a.turn(), Turn::ARM);
+}
+
+TEST(MotionArbiter, CarryNeedsAckStillAndNoMovement)
+{
+  {   // STOP 에서 잠금 답이 없었으면 처음부터
+    MotionArbiter a(0.5);
+    a.update(0.0, true, a.request_id() - 1);
+    a.update(2.0, true, a.request_id() - 1);
+    a.request_arm();
+    a.update(2.1, true, a.request_id());
+    EXPECT_EQ(a.turn(), Turn::STOPPING);
+    a.update(2.7, true, a.request_id());
+    EXPECT_EQ(a.turn(), Turn::ARM);
+  }
+  {   // STOP 에서 멈춘 지 settle 이 안 됐으면 남은 만큼
+    MotionArbiter a(0.5);
+    a.update(0.0, true, a.request_id());
+    a.request_arm();
+    a.update(0.2, true, a.request_id());
+    EXPECT_EQ(a.turn(), Turn::STOPPING);
+    a.update(0.5, true, a.request_id());
+    EXPECT_EQ(a.turn(), Turn::ARM);
+  }
+  {   // STOP 중 움직였으면 그때부터 다시
+    MotionArbiter a(0.5);
+    a.update(0.0, true, a.request_id());
+    a.update(1.0, false, a.request_id());
+    a.update(1.2, true, a.request_id());
+    a.request_arm();
+    a.update(1.3, true, a.request_id());
+    EXPECT_EQ(a.turn(), Turn::STOPPING);
+    a.update(1.7, true, a.request_id());
+    EXPECT_EQ(a.turn(), Turn::ARM);
+  }
+  {   // 새 번호 답을 기다리는 사이 움직였으면 이어 받은 시각을 버림
+    MotionArbiter a(0.5);
+    a.update(0.0, true, a.request_id());
+    a.update(1.0, true, a.request_id());
+    a.request_arm();
+    a.update(1.05, false, a.request_id() - 1);
+    a.update(1.1, true, a.request_id());
+    EXPECT_EQ(a.turn(), Turn::STOPPING);
+    a.update(1.5, true, a.request_id());
+    EXPECT_EQ(a.turn(), Turn::STOPPING);
+    a.update(1.6, true, a.request_id());
+    EXPECT_EQ(a.turn(), Turn::ARM);
+  }
+  {   // DRIVE 에서 온 팔 작업은 이어 받을 것 없음
+    MotionArbiter a(0.5, false);
+    a.update(0.0, true, a.request_id());
+    a.update(5.0, true, a.request_id());
+    a.request_arm();
+    a.update(5.1, true, a.request_id());
+    EXPECT_EQ(a.turn(), Turn::STOPPING);
+    a.update(5.6, true, a.request_id());
+    EXPECT_EQ(a.turn(), Turn::ARM);
+  }
 }

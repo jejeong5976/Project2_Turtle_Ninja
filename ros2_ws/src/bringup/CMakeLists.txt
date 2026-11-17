@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.10)
 project(bringup)
 
 find_package(ament_cmake REQUIRED)
@@ -8,7 +8,22 @@ set(REPOSITORY_CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../config")
 install(DIRECTORY "${REPOSITORY_CONFIG_DIR}/"
   DESTINATION share/${PROJECT_NAME}/config
   FILES_MATCHING PATTERN "*.yaml"
+  PATTERN "standup_paths.txt"   # 누운 퍽 세우기 경로 표 (control_master stand_lying)
+  PATTERN "farpick_paths_*.txt"   # 먼 퍽 강화학습 표 (control_master farpick_dir = config/farpick)
+  PATTERN "lyingpick_paths_*.txt"   # 먼 누운 퍽 가운데 쥐기 표 (control_master lyingpick_table = config/lyingpick/lyingpick_paths_ok75.txt)
+  PATTERN "camera_home_ref.png"   # 손목 카메라 기준 홈 사진 (camera_drift_node)
+  PATTERN "*.npz"   # RL 주행 정책 (config/rl, navigation nav2.launch.py local_planner:=rl)
+  PATTERN "*.json"
 )
 install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
+install(PROGRAMS scripts/run_all.sh DESTINATION share/${PROJECT_NAME}/scripts)
+
+if(BUILD_TESTING)
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_wrist_camera_launch test/test_wrist_camera_launch.py TIMEOUT 45)
+  ament_add_pytest_test(test_run_all test/test_run_all.py TIMEOUT 30)
+  # 켜는 순서: Nav2 · mission (stage2) → 카메라 · 인지 (+camera_delay_s)
+  ament_add_pytest_test(test_mission_stagger test/test_mission_stagger.py TIMEOUT 30)
+endif()
 
 ament_package()

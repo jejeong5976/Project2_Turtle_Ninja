@@ -1,0 +1,39 @@
+# 적재함 12 칸 — 칸 ID S1~S12 (팔 J1 축에서 먼 칸부터). 채우는 순서는 config/planning.yaml cargo_slots (뒷줄부터)
+#   같은 ID: URDF rack_cell_<ID>_link · config/planning.yaml cargo_slots · config/arm_paths.yaml store_<ID> · retrieve_<ID> · ArmTask.slot
+# xy: URDF rack_cell_<ID>_link (CAD 칸 바닥 중심) + 가운데 통로 2 mm (자로 잼: S5↔S6 60 · S6↔S11 45 · S11↔S12 · S10↔S9 140 mm,
+#   URDF 는 138 → 왼쪽 8 칸 y +1 · 오른쪽 4 칸 y −1 mm). 손목 카메라 스캔은 칸 간격을 66–72 · 47 mm 로 재서 (자와 6–12 mm 차) 안 씀
+#   yaw · place_offset 은 12 칸 넣기 · 빼기가 모두 된 값
+# base_link 기준 [m], 칸 방향 yaw [°]
+#   measured_name: 실제 로봇 시험 때 이름 (기록 · runs 를 찾을 때)
+#   place_offset: 칸에 넣을 때 팔을 옮긴 보정 [m] (실제 로봇에서 맞춘 값)
+rack_cells:
+  floor_z: 0.1325   # 칸 바닥
+  rim_z: 0.1605     # 컵 테두리
+  cells:
+    S1: {measured_name: L8, xy: [-0.102000, 0.113100], yaw_deg: -2.443, place_offset: [0.0050, 0.0080]}
+    S2: {measured_name: L7, xy: [-0.102000, 0.068100], yaw_deg: -1.503, place_offset: [0.0010, 0.0040]}
+    S3: {measured_name: L6, xy: [-0.042000, 0.113100], yaw_deg: 0.548, place_offset: [0.0045, -0.0055]}
+    S4: {measured_name: B, xy: [0.078000, -0.116900], yaw_deg: -3.280, place_offset: [0.0000, 0.0050]}
+    S5: {measured_name: L2, xy: [0.078000, 0.113100], yaw_deg: -0.771, place_offset: [-0.0060, -0.0020]}
+    S6: {measured_name: L4, xy: [0.018000, 0.113100], yaw_deg: -0.721, place_offset: [-0.0030, -0.0040]}
+    S7: {measured_name: D, xy: [0.018000, -0.116900], yaw_deg: -5.710, place_offset: [0.0060, -0.0062]}
+    S8: {measured_name: L5, xy: [-0.042000, 0.068100], yaw_deg: 2.243, place_offset: [0.0056, -0.0085]}
+    S9: {measured_name: A, xy: [0.078000, -0.071900], yaw_deg: 1.000, place_offset: [0.0010, 0.0010]}
+    S10: {measured_name: L1, xy: [0.078000, 0.068100], yaw_deg: -0.817, place_offset: [-0.0020, -0.0020]}
+    S11: {measured_name: L3, xy: [0.018000, 0.068100], yaw_deg: 0.545, place_offset: [-0.0060, -0.0030]}
+    S12: {measured_name: C, xy: [0.018000, -0.071900], yaw_deg: -5.080, place_offset: [0.0030, -0.0017]}
+
+# 칸 바닥 AprilTag (tag36h11, 검은 사각 한 변 size_m) — 손목 카메라로 칸 위치 재기 (control_master rack_tag_stage, robot.launch 가 넘김)
+#   ids: 칸 → 그 칸 바닥에 붙인 태그 ID (붙인 그대로, 위치 순서라 S 번호와 다름)
+#   실제로 붙인 것과 다르면 노드가 '태그 ID n: S? 자리가 아니라 S? 자리' 경고 → 여기를 고침
+rack_tags:
+  size_m: 0.0246   # 자로 2.4 cm · 스캔 맞춤 24.56 mm
+  ids: {S1: 20, S2: 21, S3: 22, S4: 31, S5: 26, S6: 24, S7: 29, S8: 23, S9: 30, S10: 27, S11: 25, S12: 28}
+
+# 칸 제약 — 그 동작 때 비어 있어야 하는 칸 (pose_safety 최악 검사: 대상 칸 말고 11 칸이 다 찬 상태로 기록 재생 경로 검사)
+#   실제로 닿음: 빼기 S7 ← S12 퍽 (−13 mm), 넣기 · 빼기 S10 ← S5 퍽 (−8 · −9 mm)
+#   경계값 (관절 ±2° 오차를 넣었을 때 −1 ~ 2 mm, 실제 로봇으로 확인하기 전까지 지킴): S1 ← S2 (넣기 · 빼기), 넣기 S9 ← S4 · S11 ← S6 · S12 ← S7
+#   config/planning.yaml cargo_slots 채우는 순서는 넣기 제약을 모두 만족. 빼기는 S12 → S7, S5 → S10, S2 → S1 순서로
+rack_constraints:
+  store_needs_empty: {S1: [S2], S9: [S4], S10: [S5], S11: [S6], S12: [S7]}
+  retrieve_needs_empty: {S1: [S2], S7: [S12], S10: [S5]}

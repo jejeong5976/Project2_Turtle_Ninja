@@ -33,7 +33,7 @@ BodyTwist limit_accel(
   if (dt <= 0.0) {return current;}
   // 선속도 · 회전을 **같은 비율로** 바꿈: 둘 중 오래 걸리는 쪽에 맞춰 이번 주기에 갈 비율 f 를 정함.
   //   따로 자르면 출발 중 vx:vy:ω 비율이 바뀌어 모듈 조향각이 계속 변하고, 느린 조향(≈ 55°/s)이 못 따라가
-  //   "조향 먼저" 가 속도를 0 으로 되돌리기를 반복함 (가짜 보드 전진+회전에서 확인). 각 한계는 그대로 지킴
+  //   "조향 먼저" 가 속도를 0 으로 되돌리기를 반복함. 각 한계는 그대로 지킴
   const double dvx = target.vx - current.vx;
   const double dvy = target.vy - current.vy;
   const double dw = target.wz - current.wz;
@@ -207,7 +207,7 @@ std::vector<ModuleState> SwerveKinematics::inverse(
       // 바깥쪽 선호는 (a) 몸이 병진 중이 아닐 때만 (prefer_outward), (b) 바깥쪽 후보가 범위 끝에서 10° 넘게 안쪽일 때만.
       //   병진 중에는 그 자리에 "직전 목표와 같은 분기" 를 같은 무게로 → 멈춤↔이동 경계에서 분기가 오락가락하지 않음.
       //   (b): rr 은 −45° 를 못 가서 바깥쪽 = 315° 가 되는데, 그쪽은 끝(315.4°)에 붙어 있고 가는 데 200° 넘게 돌아감
-      //   (실물 floor_max_050: 이동 0 mm 구간의 원인). 자세와 무관한 규칙이라 같은 명령 = 같은 자세는 유지.
+      //   (그대로 고르면 그동안 몸이 못 움직임). 자세와 무관한 규칙이라 같은 명령 = 같은 자세는 유지.
       constexpr double out_guard = 10.0 * kPi / 180.0;
       const bool outward_alt = prefer_outward && std::any_of(cand_buf.begin(), cand_buf.begin() + n_cand,
         [&](const Candidate & d) {
@@ -434,9 +434,75 @@ bool SwerveDrive::command_fresh(double now_s) const
 std::vector<ModuleState> SwerveDrive::update(
   double now_s, double dt, const std::vector<ModuleState> & measured)
 {
+  auto out = update_core(now_s, dt, measured);
+  last_steer_.resize(out.size());
+  for (std::size_t i = 0; i < out.size(); ++i) {last_steer_[i] = out[i].steer_angle;}
+  return out;
+}
+
+void SwerveDrive::update_steer_hold(bool active, const BodyTwist & wanted, const std::vector<ModuleState> & measured)
+{
+  const std::size_t n = kin_.size();
+  steer_held_.resize(n, 0);
+  held_angle_.resize(n, 0.0);
+  if (!active || !(cfg_.steer_hold_speed > 0.0)) {clear_steer_hold(); return;}
+  const double release = std::max(cfg_.steer_hold_release, cfg_.steer_hold_speed);
+  const double max_angle = cfg_.steer_hold_max_angle;
+  const bool angle_release = max_angle > 0.0 && max_angle < kPi / 2.0;
+  for (std::size_t i = 0; i < n; ++i) {
+    const auto & g = kin_.modules()[i];
+    const double wx = wanted.vx - wanted.wz * g.y, wy = wanted.vy + wanted.wz * g.x;
+    const double ox = out_.vx - out_.wz * g.y, oy = out_.vy + out_.wz * g.x;
+    const double sw = std::hypot(wx, wy), so = std::hypot(ox, oy);
+    const double s = std::max(sw, so);
+    if (s < kStopEps) {steer_held_[i] = 0; continue;}   // 완전 정지 = 지금 각도 유지
+    if (steer_held_[i]) {
+      if (s > release) {steer_held_[i] = 0; continue;}
+      if (angle_release) {
+        // 원하는 방향 (명령이 있으면 명령, 없으면 감속 중 출력) 과 묶은 각도의 차이. 같은 축 반대 방향 = 0° (바퀴 거꾸로)
+        const double heading = sw >= kStopEps ? std::atan2(wy, wx) : std::atan2(oy, ox);
+        const double dev = std::fabs(wrap_angle(2.0 * (heading - held_angle_[i]))) / 2.0;
+        if (dev > max_angle) {steer_held_[i] = 0;}
+      }
+    } else if (s < cfg_.steer_hold_speed) {
+      const bool have_last = i < last_steer_.size() && std::isfinite(last_steer_[i]);
+      held_angle_[i] = have_last ? last_steer_[i] : measured[i].steer_angle;
+      steer_held_[i] = std::isfinite(held_angle_[i]) ? 1 : 0;
+    }
+  }
+}
+
+void SwerveDrive::apply_steer_hold(
+  std::vector<ModuleState> & m, const BodyTwist & t, const std::vector<ModuleState> & measured, bool cosine) const
+{
+  for (std::size_t i = 0; i < m.size() && i < steer_held_.size(); ++i) {
+    if (!steer_held_[i]) {continue;}
+    const auto & g = kin_.modules()[i];
+    const double vx = t.vx - t.wz * g.y, vy = t.vy + t.wz * g.x;
+    const double h = held_angle_[i];
+    // 원하는 조향축 속도를 묶은 방향에 투영 (옆 성분만 잃음, 반대 방향이면 음수 = 바퀴 거꾸로) − ω·offset (inverse 와 같은 식)
+    double lin = vx * std::cos(h) + vy * std::sin(h) - t.wz * g.offset;
+    if (cosine && i < measured.size() && std::isfinite(measured[i].steer_angle)) {
+      lin *= std::max(0.0, std::cos(h - measured[i].steer_angle));
+    }
+    m[i].steer_angle = h;
+    m[i].wheel_speed = lin / kin_.wheel_radius();
+  }
+}
+
+std::vector<ModuleState> SwerveDrive::update_core(
+  double now_s, double dt, const std::vector<ModuleState> & measured)
+{
   // ① 신선한 명령 + 신선한 바퀴 차례일 때만 따라감. 아니면 목표 0 (가속 제한으로 서서히)
   const bool allowed = drive_allowed(now_s);
   const bool fresh = command_fresh(now_s) && allowed;
+  // ①-0 켤 때 조향 곧게 (begin_home 을 불렀을 때만): 끝날 때까지 구동 명령은 안 따름
+  if (homing_) {
+    applied_id_ = have_turn_ ? turn_id_ : 0;
+    applied_drive_ = allowed;
+    std::vector<ModuleState> home;
+    if (update_home(now_s, allowed, measured, home)) {return home;}
+  }
   BodyTwist wanted = fresh ? cmd_ : BodyTwist{0.0, 0.0, 0.0};
   // ①-1 정면 유지 되먹임 (heading_hold_kp > 0 일 때만): 이동 + 회전 명령 0 → 시작 때 방향으로 작은 회전 보정
   if (cfg_.heading_hold_kp > 0.0 && fresh && std::fabs(cmd_.wz) < kStopEps && std::hypot(cmd_.vx, cmd_.vy) >= kStopEps) {
@@ -449,11 +515,11 @@ std::vector<ModuleState> SwerveDrive::update(
         lim = std::min(lim, cfg_.heading_hold_wz_per_speed * std::hypot(cmd_.vx, cmd_.vy));   // 느리면 약하게
       }
       corrected.wz = std::clamp(cfg_.heading_hold_kp * err, -lim, lim);
-      // 보정 회전 때문에 어느 바퀴든 자세를 갈아타면(범위 끝에 붙은 바퀴 — 모의: rr −44.5° 에서 반대 분기로 돌기 시작)
+      // 보정 회전 때문에 어느 바퀴든 자세를 갈아타면(범위 끝에 붙은 바퀴 — 예: rr −44.5° 에서 반대 분기로 돌기 시작)
       //   이번 주기는 보정 안 함. 같은 분기 안의 작은 각도 변화(< 30°)만 허용
       //   이동 중 가지 유지(keep_branch_max_wz)가 켜져 있으면 이 검사 대신 아래 ①-1b 가 갈아타지 않는 데까지만 줄임
       const bool keep_branch = cfg_.keep_branch_max_wz > 0.0 && translating_ &&
-        std::fabs(corrected.wz) <= cfg_.keep_branch_max_wz;   // ①-1b 가 맡는 경우만 (아니면 예전 검사)
+        std::fabs(corrected.wz) <= cfg_.keep_branch_max_wz;   // ①-1b 가 맡는 경우만 (아니면 기본 검사)
       bool same_branch = measured.size() == kin_.size();
       if (!keep_branch && same_branch && kin_.has_module_ranges()) {
         bool fa = true, fb = true;
@@ -527,6 +593,7 @@ std::vector<ModuleState> SwerveDrive::update(
   // ①-2 정지 후 바깥쪽 자세 복귀 (park_on_idle). 조향만 0° 로, 바퀴는 offset 보상만 → 몸은 그 자리
   const bool fresh_zero = fresh && std::hypot(cmd_.vx, cmd_.vy) < kStopEps && std::fabs(cmd_.wz) < kStopEps;
   if (update_park(now_s, fresh_zero, measured)) {
+    clear_steer_hold();
     out_ = {0.0, 0.0, 0.0};
     previous_targets_.clear();
     std::vector<ModuleState> park(kin_.size(), ModuleState{0.0, 0.0});
@@ -543,17 +610,20 @@ std::vector<ModuleState> SwerveDrive::update(
   // ②-2 동시 조향·구동 (기본 끔): 움직이는 중에만. 조향이 따라온 만큼만 새 방향으로 진행
   blend_ratio_ = 1.0;
   gate_blocked_ = false;
-  // 이동(병진) 중일 때만. 제자리 회전에서 넘어갈 때는 기존 "조향 먼저" (실물: 회전→전진에서 더 돌고 덜 감)
-  // 회전이 주인 명령(모듈 자리 회전 속도 > 병진 속도, 반경 0.13 m 기준)도 제외 → 가속 램프 중 섞이는 것도 기존대로
+  // 이동(병진) 중일 때만. 제자리 회전에서 넘어갈 때는 "조향 먼저" (섞으면 회전→전진에서 더 돌고 덜 감)
+  // 회전이 주인 명령(모듈 자리 회전 속도 > 병진 속도, 반경 0.13 m 기준)도 제외 → 가속 램프 중 섞이는 것도 "조향 먼저"
   const double trans = std::hypot(before.vx, before.vy);
   const bool moving = trans >= kStopEps && trans >= std::fabs(before.wz) * 0.13;
   bool measured_ok = measured.size() == kin_.size();
   for (const auto & m : measured) {if (!std::isfinite(m.steer_angle)) {measured_ok = false;}}
+  // ②-1 저속 조향 유지 (steer_hold_speed > 0 일 때만): 느린 모듈은 조향을 묶고 바퀴는 투영 속도
+  update_steer_hold(fresh && measured_ok, wanted, measured);
   const bool blend_on = cfg_.blend_steer_drive && cfg_.blend_stall_s > 0.0;
   blend_stalled_ = false;
   std::vector<ModuleState> final_targets;   // 동시 모드에서 조향 모터에 보낼 최종 각도 (비어 있으면 평소대로)
   if (blend_on && fresh && moving && measured_ok) {
-    const double tol = cfg_.steer_tolerance * std::clamp(cfg_.blend_margin, 0.0, 1.0);
+    const double tol = cfg_.blend_tolerance > 0.0 ? cfg_.blend_tolerance :
+      cfg_.steer_tolerance * std::clamp(cfg_.blend_margin, 0.0, 1.0);
     const BodyTwist target = out_;
     auto lerp = [&](double a) {
       return BodyTwist{before.vx + a * (target.vx - before.vx), before.vy + a * (target.vy - before.vy),
@@ -561,7 +631,8 @@ std::vector<ModuleState> SwerveDrive::update(
     };
     auto fits = [&](double a) {
       bool feas = true;
-      const auto m = kin_.inverse(lerp(a), measured, cfg_.cosine_scale, &feas, previous_targets_, prefer_outward);
+      auto m = kin_.inverse(lerp(a), measured, cfg_.cosine_scale, &feas, previous_targets_, prefer_outward);
+      if (feas) {apply_steer_hold(m, lerp(a), measured, cfg_.cosine_scale);}
       return feas && steering_aligned(m, measured, tol);
     };
     if (!fits(1.0) && fits(0.0)) {
@@ -573,7 +644,7 @@ std::vector<ModuleState> SwerveDrive::update(
       //   (가속 제한 뒤 값을 쓰면 진행 비율 근처에 묶여 다시 몇 도만 앞서감)
       bool final_ok = true;
       final_targets = kin_.inverse(wanted, measured, false, &final_ok, previous_targets_, prefer_outward);
-      if (!final_ok) {final_targets.clear();}
+      if (!final_ok) {final_targets.clear();} else {apply_steer_hold(final_targets, wanted, measured, false);}
     }
     // 조향 정체 감시: 진행 비율 < 1 인데 조향이 안 도는 상태가 blend_stall_s 넘게 이어지면 구동을 세움 (아래 ④ 처럼 out_ = 0)
     if (blend_ratio_ < 1.0) {
@@ -592,6 +663,31 @@ std::vector<ModuleState> SwerveDrive::update(
   const bool uniform = blend_on && cfg_.cosine_scale && measured_ok;
   auto modules = kin_.inverse(out_, measured, uniform ? false : cfg_.cosine_scale, &command_feasible_, previous_targets_,
     prefer_outward);
+  if (command_feasible_) {apply_steer_hold(modules, out_, measured, uniform ? false : cfg_.cosine_scale);}
+  // ③-1 방향 전환 중 조향은 최종 명령 각도로 (steer_final_target): 가속 램프 중간 방향을 쫓지 않음 → 범위 끝으로 갔다가
+  //   뒤집히는 것 막음. 바퀴는 램프 뒤 속도를 그 각도에 투영 (반대면 거꾸로) × cos(목표 − 실측). blend 진행 비율 < 1 이면 blend 가 맡음
+  //   steer_then_drive 켬 (조향 먼저) 은 게이트가 막을 때 램프를 0 부터 다시 시작해 이미 새 방향으로 조향 → 손대지 않음
+  if (cfg_.steer_final_target && !cfg_.steer_then_drive && final_targets.empty() && fresh && measured_ok && command_feasible_) {
+    bool fin_ok = true;
+    auto fin = kin_.inverse(wanted, measured, false, &fin_ok, previous_targets_, prefer_outward);
+    if (fin_ok) {
+      apply_steer_hold(fin, wanted, measured, false);
+      const bool cosine = uniform ? false : cfg_.cosine_scale;
+      for (std::size_t i = 0; i < modules.size() && i < fin.size(); ++i) {
+        const auto & g = kin_.modules()[i];
+        const double wx = wanted.vx - wanted.wz * g.y, wy = wanted.vy + wanted.wz * g.x;
+        // 멈추라는 명령 · 저속 조향 유지가 맡는 느린 명령 → 손대지 않음 (느린 잡음 방향을 바로 쫓지 않게)
+        if (std::hypot(wx, wy) < std::max(kStopEps, cfg_.steer_hold_speed)) {continue;}
+        const double h = fin[i].steer_angle;
+        if (h == modules[i].steer_angle) {continue;}                           // 같은 각도 = 바꿀 것 없음
+        const double vx = out_.vx - out_.wz * g.y, vy = out_.vy + out_.wz * g.x;
+        double lin = vx * std::cos(h) + vy * std::sin(h) - out_.wz * g.offset;
+        if (cosine) {lin *= std::max(0.0, std::cos(h - measured[i].steer_angle));}
+        modules[i].steer_angle = h;
+        modules[i].wheel_speed = lin / kin_.wheel_radius();
+      }
+    }
+  }
   if (uniform && command_feasible_) {
     double s_min = 1.0;
     for (std::size_t i = 0; i < modules.size(); ++i) {
@@ -616,15 +712,19 @@ std::vector<ModuleState> SwerveDrive::update(
     previous_targets_ = final_targets.empty() ? modules : final_targets;
   }
 
-  // ③-2 동시 모드: 조향이 도는 만큼 바퀴 offset 이 굴리는 양을 보상 (roll_while_steering 과 같은 식)
-  if (blend_on && fresh && cfg_.roll_while_steering) {
+  // ③-2 조향이 도는 만큼 바퀴 offset 이 굴리는 양을 보상 (roll_while_steering 과 같은 식).
+  //   동시 모드가 아니어도 주행 차례 (DRIVE) 면 함: 보상 없이 조향이 돌면 바퀴가 바닥을 끌어 몸이 돎
+  //   (정밀 접근에서 큰 방향 전환 때 명령과 반대로 0.3–0.6 rad/s, 멈출 때 다시 조향하며 0.4 rad/s 더 돎)
+  if (fresh && cfg_.roll_while_steering && (blend_on || applied_drive_)) {
     for (std::size_t i = 0; i < modules.size() && i < measured.size(); ++i) {
       if (std::isfinite(measured[i].steer_rate)) {modules[i].wheel_speed += kin_.roll_while_steering(i, measured[i].steer_rate);}
     }
   }
 
   // ④ 조향 먼저 (동시 모드의 조향 정체도 여기서 같은 방식으로 구동을 세움)
-  if (blend_stalled_ || (cfg_.steer_then_drive && !steering_aligned(modules, measured, cfg_.steer_tolerance))) {
+  // 동시 모드: 학습 플랜트처럼 반 바퀴 넘게 돌아야 하는 조향이 있으면 다 돌 때까지 구동을 세움 (blend_swing_gate)
+  const bool long_swing = blend_on && cfg_.blend_swing_gate > 0.0 && !steering_aligned(modules, measured, cfg_.blend_swing_gate);
+  if (blend_stalled_ || long_swing || (cfg_.steer_then_drive && !steering_aligned(modules, measured, cfg_.steer_tolerance))) {
     gate_blocked_ = true;
     for (std::size_t i = 0; i < modules.size(); ++i) {
       const double rate = i < measured.size() ? measured[i].steer_rate : 0.0;
@@ -665,11 +765,63 @@ bool SwerveDrive::update_park(double now_s, bool fresh_zero, const std::vector<M
   return parking_;
 }
 
+bool SwerveDrive::begin_home()
+{
+  if (!kin_.park_reachable()) {homing_ = false; return false;}   // 0° 가 범위 밖인 모듈 → 자르지 않고 안 함
+  homing_ = true;
+  home_waiting_ = false;
+  home_result_ = HomeResult::kNone;
+  home_active_s_ = 0.0;
+  home_last_t_ = -1.0;
+  return true;
+}
+
+bool SwerveDrive::update_home(
+  double now_s, bool allowed, const std::vector<ModuleState> & measured, std::vector<ModuleState> & out)
+{
+  out_ = {0.0, 0.0, 0.0};
+  previous_targets_.clear();
+  clear_steer_hold();
+  translating_ = false;
+  holding_heading_ = false;
+  parking_ = false;
+  idle_since_ = -1.0;
+  out.assign(kin_.size(), ModuleState{0.0, 0.0});
+  bool valid = measured.size() == kin_.size();
+  for (const auto & m : measured) {if (!std::isfinite(m.steer_angle)) {valid = false;}}
+  // 차례가 아니거나 (팔 차례 · 차례 모름) 상태를 모르면: 조향 그 자리 · 바퀴 0, 시간 안 셈
+  //   (컨트롤러는 상태를 못 읽으면 update 전에 stop_hold 로 막음 — 여기 invalid 는 순수 계산 시험용)
+  if (!allowed || !valid) {
+    home_waiting_ = !allowed;
+    home_last_t_ = -1.0;
+    for (std::size_t i = 0; i < out.size(); ++i) {
+      out[i].steer_angle = i < measured.size() && std::isfinite(measured[i].steer_angle) ? measured[i].steer_angle : 0.0;
+    }
+    return true;
+  }
+  home_waiting_ = false;
+  if (home_last_t_ >= 0.0) {home_active_s_ += std::clamp(now_s - home_last_t_, 0.0, 0.1);}
+  home_last_t_ = now_s;
+  bool aligned = true;
+  for (const auto & m : measured) {if (std::fabs(m.steer_angle) > cfg_.home_tolerance) {aligned = false;}}
+  if (aligned || home_active_s_ > cfg_.home_timeout_s) {
+    homing_ = false;
+    home_result_ = aligned ? HomeResult::kDone : HomeResult::kTimedOut;
+    return false;   // 이번 주기부터 평소 계산 (그동안 온 /cmd_vel 이 신선하면 바로 따름)
+  }
+  // 목표 0° (모듈 범위 [min, max] 가 한 구간이고 0° 와 지금 각도가 다 그 안 → 모터가 가는 직선 경로도 그 안)
+  for (std::size_t i = 0; i < out.size(); ++i) {
+    out[i].wheel_speed = cfg_.roll_while_steering ? kin_.roll_while_steering(i, measured[i].steer_rate) : 0.0;
+  }
+  return true;
+}
+
 std::vector<ModuleState> SwerveDrive::stop_hold(const std::vector<double> & last_steer)
 {
   parking_ = false;
   idle_since_ = -1.0;
   previous_targets_.clear();
+  clear_steer_hold();
   out_ = {0.0, 0.0, 0.0};
   translating_ = false;
   applied_drive_ = false;   // 바퀴 0 을 썼으니 "잠김" 으로 답해도 됨
@@ -701,6 +853,7 @@ void SwerveDrive::reset()
   translating_ = false;
   have_cmd_ = false;
   holding_heading_ = false;
+  clear_steer_hold();
 }
 
 }  // namespace swerve_controller

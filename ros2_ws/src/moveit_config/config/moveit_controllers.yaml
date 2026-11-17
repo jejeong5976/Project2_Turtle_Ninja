@@ -1,0 +1,16 @@
+# MoveIt → ros2_control 궤적 컨트롤러 (config/controllers.yaml 의 arm_controller · gripper_controller)
+#   ⚠ 실행은 기본으로 막아 둠 (move_group.launch.py execute:=false). 바퀴 · 팔 차례는 control_master 가 관리하므로
+#     MoveIt 이 직접 실행하면 바퀴가 움직이는 중에 팔이 움직일 수 있음 → 실행은 control_master 를 거치게 연결할 것
+moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
+moveit_simple_controller_manager:
+  controller_names: [arm_controller, gripper_controller]
+  arm_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: true
+    joints: [joint1, joint2, joint3, joint4, joint5]
+  gripper_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: true
+    joints: [gripper_left_joint]

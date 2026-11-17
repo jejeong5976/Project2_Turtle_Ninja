@@ -2,6 +2,7 @@
 
 #include "manipulation/arm.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <utility>
@@ -34,6 +35,23 @@ std::vector<ArmAction> make_arm_plan(uint8_t task, double o, double c)
   }
 }
 
+// 빈손: 그리퍼가 문턱보다 더 닫힘 (퍽이 있으면 그 전에 멈춤). 실측 · 문턱이 NaN 이면 안 봄
+bool grasp_empty(double grip_now_m, double empty_m)
+{
+  return std::isfinite(grip_now_m) && std::isfinite(empty_m) && grip_now_m < empty_m;
+}
+
+ParkRelease park_release_state(double grip_now_m, double empty_m)
+{
+  if (!std::isfinite(grip_now_m) || !std::isfinite(empty_m)) {return ParkRelease::kUnknown;}
+  return grip_now_m < empty_m ? ParkRelease::kEmpty : ParkRelease::kHeld;
+}
+
+bool park_empty_fold_ok(ParkRelease r)
+{
+  return r == ParkRelease::kEmpty;
+}
+
 // ============================================================================ ② 차례
 const char * turn_name(Turn t)
 {
@@ -51,12 +69,16 @@ void MotionArbiter::set(Turn t)
   if (t != turn_) {++request_id_;}   // 차례가 바뀌면 새 번호 → 예전 번호의 "잠갔음" 답은 쓸모없어짐
   turn_ = t;
   still_since_ = -1.0;
+  carry_since_ = -1.0;
 }
 
 void MotionArbiter::request_arm()
 {
   if (turn_ == Turn::ARM || turn_ == Turn::STOPPING) {return;}   // 이미 팔 쪽이면 그대로
+  // STOP 에서 이미 잠금 답 + 멈춤이 이어지고 있었으면 그 시각을 이어 받음 (새 번호의 잠금 답은 여전히 기다림)
+  const double carry = turn_ == Turn::STOP ? still_since_ : -1.0;
   set(Turn::STOPPING);
+  carry_since_ = carry;
 }
 
 void MotionArbiter::arm_ended(bool drive_ok)
@@ -73,18 +95,29 @@ bool MotionArbiter::enforce_drive_guard(bool folded_fresh, bool hardware_healthy
 
 void MotionArbiter::update(double now_s, bool base_still, uint32_t acked_id)
 {
-  if (turn_ != Turn::STOPPING) {return;}
-  if (!base_still || acked_id != request_id_) {
-    still_since_ = -1.0;   // 잠금 답이 없거나 다시 움직이면 처음부터 다시 셈
+  if (turn_ == Turn::STOP) {   // 잠근 채 서 있는 동안 (팔 작업 사이): 이 번호의 잠금 답 + 멈춤이 이어진 시각 (request_arm 이 이어 받음)
+    if (!base_still || acked_id != request_id_) {still_since_ = -1.0;} else if (still_since_ < 0.0) {still_since_ = now_s;}
     return;
   }
-  if (still_since_ < 0.0) {still_since_ = now_s;}
+  if (turn_ != Turn::STOPPING) {return;}
+  if (!base_still) {
+    still_since_ = -1.0;   // 다시 움직이면 처음부터 다시 셈 (이어 받은 시각도 버림)
+    carry_since_ = -1.0;
+    return;
+  }
+  if (acked_id != request_id_) {
+    still_since_ = -1.0;   // 새 번호의 잠금 답이 아직 없음 (멈춤은 이어지는 중 → 이어 받은 시각은 둠)
+    return;
+  }
+  if (still_since_ < 0.0) {still_since_ = carry_since_ >= 0.0 ? carry_since_ : now_s;}
   if (now_s - still_since_ >= settle_s_) {set(Turn::ARM);}
 }
 
 // ============================================================================ ③ 팔 작업 진행
 void ArmRunner::start(std::vector<ArmAction> plan)
 {
+  last_tick_s_ = -1.0;   // 쉬던 동안은 멈춤이 아님
+  stall_total_ = 0.0;
   plan_ = std::move(plan);
   idx_ = 0;
   active_ = true;
@@ -97,6 +130,22 @@ void ArmRunner::start(std::vector<ArmAction> plan)
   cancel_sent_ = false;
   verifying_ = false;
   forced_ = false;
+}
+
+bool StallGrace::on_step(double now_s, double thr, double grace, double max_s)
+{
+  if (!std::isfinite(now_s)) {return false;}
+  const double last = last_;
+  last_ = now_s;
+  if (last < 0.0 || !(thr > 0.0) || now_s - last <= thr) {   // 보통 주기: 유예가 끝났으면 이어진 멈춤도 끝
+    if (!active(now_s)) {start_ = -1.0;}
+    return false;
+  }
+  if (!(grace > 0.0)) {return true;}
+  if (start_ < 0.0) {start_ = now_s;}                              // 새 멈춤 이어짐의 시작
+  if (max_s > 0.0 && now_s - start_ > max_s) {return true;}        // 계속 멈춤 (보통 주기 없이): 더 안 늘림 → 판정이 돌아옴
+  until_ = std::max(until_, now_s + grace);
+  return true;
 }
 
 LateGoal ArmRunner::on_goal_response(unsigned gen, bool accepted, double now_s)
@@ -112,7 +161,9 @@ LateGoal ArmRunner::on_goal_response(unsigned gen, bool accepted, double now_s)
     return LateGoal::IGNORE;
   }
   accepted_ = true;
-  motion_deadline_ = now_s + motion_timeout_s_;
+  stall_total_ = 0.0;
+  const double extra = idx_ > 0 && idx_ <= plan_.size() ? plan_[idx_ - 1].duration_s : 0.0;
+  motion_deadline_ = now_s + motion_timeout_s_ + extra;
   return LateGoal::USE;
 }
 
@@ -127,10 +178,64 @@ void ArmRunner::on_result(unsigned gen, bool ok)
   accepted_ = false;
 }
 
+bool ArmRunner::mark_sent(unsigned gen, double now_s)
+{
+  if (!active_ || !busy_ || accepted_ || gen != gen_ || !std::isfinite(now_s)) {return false;}
+  accept_deadline_ = std::max(accept_deadline_, now_s + accept_timeout_s_);
+  if (now_s > last_tick_s_) {last_tick_s_ = now_s;}   // 그 틈은 이미 기한에 들어감 → 다음 tick 에서 또 늘리지 않음
+  stall_total_ = 0.0;
+  return true;
+}
+
+bool ArmRunner::replace_after_wait(unsigned gen, std::vector<ArmAction> tail)
+{
+  if (!active_ || !busy_ || !accepted_ || gen != gen_ || cancel_requested_ || forced_ || failed_ || tail.empty()) {return false;}
+  plan_.resize(idx_);
+  plan_.insert(plan_.end(), tail.begin(), tail.end());
+  busy_ = false;
+  accepted_ = false;
+  ++gen_;   // 끝낸 논리 대기의 늦은 답 무효화
+  return true;
+}
+
+bool ArmRunner::insert_before_sent(std::vector<ArmAction> pre)
+{
+  if (!active_ || !busy_ || accepted_ || pre.empty() || idx_ == 0 || idx_ > plan_.size()) {return false;}
+  ArmAction sent = plan_[idx_ - 1];
+  plan_[idx_ - 1] = pre.front();
+  pre.erase(pre.begin());
+  pre.push_back(sent);
+  plan_.insert(plan_.begin() + static_cast<std::ptrdiff_t>(idx_), pre.begin(), pre.end());
+  return true;
+}
+
+bool ArmRunner::replace_from_sent(std::vector<ArmAction> tail)
+{
+  if (!active_ || !busy_ || accepted_ || tail.empty() || idx_ == 0 || idx_ > plan_.size()) {return false;}
+  plan_.resize(idx_ - 1);
+  plan_.insert(plan_.end(), tail.begin(), tail.end());
+  return true;
+}
+
 std::vector<ArmCommand> ArmRunner::tick(double now_s, bool arm_may_move, bool fold_confirmed)
 {
   std::vector<ArmCommand> out;
   if (!active_) {return out;}
+  // 제어 주기 멈춤 (set_stall): 그 틈 동안 못 받은 답 · 측정 때문에 기한이 지나지 않게 기한을 틈만큼 뒤로
+  if (stall_s_ > 0.0 && last_tick_s_ >= 0.0 && std::isfinite(now_s) && now_s - last_tick_s_ > stall_s_ &&
+    (!(stall_cap_s_ > 0.0) || stall_total_ < stall_cap_s_))
+  {
+    double gap = now_s - last_tick_s_;
+    if (stall_cap_s_ > 0.0) {gap = std::min(gap, stall_cap_s_ - stall_total_);}
+    stall_total_ += gap;
+    accept_deadline_ += gap;
+    motion_deadline_ += gap;
+    cancel_deadline_ += gap;
+    verify_deadline_ += gap;
+    last_stall_ = gap;
+    ++stalls_;
+  }
+  if (std::isfinite(now_s)) {last_tick_s_ = now_s;}
 
   // ⓪ 하드웨어 이상 등 (fail_now): 진행 중 궤적은 취소 요청만 보내고 바로 실패 (답을 기다리지 않음)
   if (forced_) {
@@ -149,6 +254,7 @@ std::vector<ArmCommand> ArmRunner::tick(double now_s, bool arm_may_move, bool fo
     if (!cancel_sent_) {
       cancel_sent_ = true;
       cancel_deadline_ = now_s + cancel_timeout_s_;
+      stall_total_ = 0.0;
       if (busy_) {
         ArmCommand c;
         c.kind = ArmCommand::Kind::CANCEL_ACTIVE;
@@ -193,6 +299,7 @@ std::vector<ArmCommand> ArmRunner::tick(double now_s, bool arm_may_move, bool fo
       // 이번 tick 에 들어온 fold_confirmed 는 VERIFY 전 측정이라 쓰지 않음 → 다음 tick 부터
       verifying_ = true;
       verify_deadline_ = now_s + verify_timeout_s_;
+      stall_total_ = 0.0;
       ArmCommand c;
       c.kind = ArmCommand::Kind::VERIFY_START;
       out.push_back(c);
@@ -207,6 +314,12 @@ std::vector<ArmCommand> ArmRunner::tick(double now_s, bool arm_may_move, bool fo
     }
     return out;
   }
+  if (step_mode_ && idx_ > 0 && !step_ok_) {   // 구분 동작: 다음으로 가라는 말을 기다림 (취소 · 실패는 위에서 먼저 봄)
+    waiting_step_ = true;
+    return out;
+  }
+  step_ok_ = false;
+  waiting_step_ = false;
   ArmCommand c;
   c.kind = ArmCommand::Kind::SEND;
   c.action = plan_[idx_++];
@@ -214,6 +327,7 @@ std::vector<ArmCommand> ArmRunner::tick(double now_s, bool arm_may_move, bool fo
   busy_ = true;
   accepted_ = false;
   accept_deadline_ = now_s + accept_timeout_s_;
+  stall_total_ = 0.0;
   out.push_back(c);
   return out;
 }
@@ -235,6 +349,9 @@ ArmCommand ArmRunner::finish(ArmEnd end, const std::string & message)
   cancel_sent_ = false;
   verifying_ = false;
   forced_ = false;
+  step_mode_ = false;
+  step_ok_ = false;
+  waiting_step_ = false;
   return c;
 }
 
@@ -254,6 +371,39 @@ void ArmRunner::abandon(std::vector<ArmCommand> & out, const std::string & why)
 std::string ArmRunner::current_phase() const
 {
   return idx_ > 0 && idx_ <= plan_.size() ? plan_[idx_ - 1].phase : std::string("시작");
+}
+
+// ============================================================================ 실패 뒤 자동 접기 (fail_fold_s)
+bool fail_fold_arm(ArmEnd end, bool home_task, double fail_fold_s, bool hw_ok)
+{
+  return end == ArmEnd::ABORTED && !home_task && std::isfinite(fail_fold_s) && fail_fold_s > 0.0 && hw_ok;
+}
+
+std::string fail_fold_block(const FailFoldState & s)
+{
+  if (s.folded) {return "이미 접혀 있음";}
+  if (s.carrying) {return "퍽을 쥔 채 (STORE · PLACE 로 끝내거나 사람이 퍽을 빼고 HOME)";}
+  if (s.half_closed && !s.empty_grasp) {return "그리퍼가 반쯤 닫힘 — 퍽을 쥐었을 수 있음 (사람이 보고 HOME)";}
+  if (s.step_mode) {return "구분 동작 (park_step) 작업이었음 — 사람이 보고 HOME";}
+  if (s.park_left) {return "받침 안 다시 쥐기가 빈손 — 퍽이 받침 (HOME 자리) 에 남았을 수 있음 (사람이 받침을 보고 HOME)";}
+  return "";
+}
+
+bool look_idle_fold_arm(IdleLookTask task, const std::string & slot, bool carrying, bool ends_p0)
+{
+  switch (task) {
+    case IdleLookTask::kLookAt: return true;
+    case IdleLookTask::kLookBarcode: return !carrying && !ends_p0;
+    case IdleLookTask::kLook: return !carrying && !ends_p0 && slot != "rack" && slot.rfind("seat_", 0) != 0;
+    default: return false;
+  }
+}
+
+void LookIdleClock::on_task_end(bool armed, double now, double idle_s, double cap_s)
+{
+  if (!armed) {since = -1.0; out_since = -1.0; return;}
+  if (out_since < 0.0) {out_since = now;}
+  since = cap_s > 0.0 && now - out_since >= cap_s ? now - std::max(idle_s, 0.0) : now;   // 오래 펴져 있었으면 바로 (idle 기다림 없이)
 }
 
 }  // namespace manipulation
@@ -280,8 +430,8 @@ void FoldCheck::observe(double stamp_s, const std::vector<double> & positions)
 {
   if (!std::isfinite(stamp_s)) {reset(); return;}
   if (have_ && stamp_s <= last_stamp_) {return;}   // 시각이 앞으로 안 감 = 같은 옛날 측정
-  // (Codex 10/16 재검증) 측정이 끊겼다가 다시 오면, 끊긴 동안은 "범위 안에 머물렀다" 고 볼 수 없음
-  //   → 앞 측정과 max_age_s 넘게 벌어지면 유지 시간을 처음부터 (예전: 끊긴 시간까지 유지 시간으로 셈)
+  // 측정이 끊겼다가 다시 오면, 끊긴 동안은 "범위 안에 머물렀다" 고 볼 수 없음
+  //   → 앞 측정과 max_age_s 넘게 벌어지면 유지 시간을 처음부터 (끊긴 시간을 유지 시간으로 안 셈)
   const bool gap = have_ && stamp_s - last_stamp_ > max_age_s_;
   if (gap) {inside_since_ = -1.0;}
   have_ = true;
@@ -356,29 +506,63 @@ bool HardwareWatch::components_ok(double now_s) const
 {
   if (component_timeout_s_ <= 0.0) {return true;}   // 보드 상태는 안 봄
   return comp_have_ && comp_ok_ && std::isfinite(now_s) && std::isfinite(comp_stamp_) &&
-         now_s >= comp_stamp_ && now_s - comp_stamp_ <= component_timeout_s_;
+         now_s >= comp_stamp_ - future_tol_s_ && now_s - comp_stamp_ <= component_timeout_s_;
+}
+
+bool HardwareWatch::components_waived(double now_s) const
+{
+  if (!comp_optional_ || !ctrl_ready_ || components_ok(now_s)) {return false;}
+  return !comp_have_ || (!comp_reachable_ && comp_ok_);   // 못 받음 · 안 보임만. 받은 답이 이상이면 그대로 이상
 }
 
 bool HardwareWatch::healthy(double now_s) const
 {
-  if (!components_ok(now_s)) {return false;}
+  if (!components_ok(now_s) && !components_waived(now_s)) {return false;}
   if (!have_ || !std::isfinite(now_s) || !std::isfinite(last_stamp_) ||
-      now_s < last_stamp_ || now_s - last_stamp_ > state_timeout_s_) {return false;}
+      now_s < last_stamp_ - future_tol_s_ || now_s - last_stamp_ > state_timeout_s_) {return false;}
   return bad_since_ < 0.0 || last_stamp_ - bad_since_ < bad_hold_s_;
+}
+
+bool HardwareWatch::fault() const
+{
+  if (component_timeout_s_ > 0.0 && comp_have_ && !comp_ok_) {return true;}   // 받은 답: active 아닌 보드
+  return have_ && bad_since_ >= 0.0 && last_stamp_ - bad_since_ >= bad_hold_s_;   // NaN · 빠짐 지속 (healthy 와 같은 기준)
+}
+
+bool HealthHold::update(double now_s, bool healthy, bool fault, double hold_s)
+{
+  if (healthy) {
+    ever_ok_ = true;
+    bad_since_ = -1.0;
+    ok_ = true;
+    return ok_;
+  }
+  if (bad_since_ < 0.0 || !std::isfinite(bad_since_)) {bad_since_ = now_s;}
+  // 진짜 고장 · 늦추기 끔 · 켤 때 (정상이었던 적 없음) · 시각 이상 → 바로 이상
+  ok_ = !fault && hold_s > 0.0 && ever_ok_ && std::isfinite(now_s) && now_s >= bad_since_ && now_s - bad_since_ < hold_s;
+  return ok_;
 }
 
 std::string HardwareWatch::status(double now_s) const
 {
   char buf[96];
-  if (!components_ok(now_s)) {
+  if (!components_ok(now_s) && !components_waived(now_s)) {
     if (!comp_have_) {return "보드 상태(controller_manager)를 아직 못 받음";}
     if (now_s - comp_stamp_ > component_timeout_s_) {
       std::snprintf(buf, sizeof(buf), "보드 상태 답이 %.1f s 동안 없음", now_s - comp_stamp_);
       return buf;
     }
+    if (comp_ok_ && now_s < comp_stamp_) {
+      std::snprintf(buf, sizeof(buf), "보드 상태 답 시각이 판정 시각보다 %.3f s 앞섬", comp_stamp_ - now_s);
+      return buf;
+    }
     return "보드 이상: " + comp_detail_;
   }
   if (!have_) {return "관절 측정(/joint_states)이 아직 없음";}
+  if (now_s < last_stamp_ - future_tol_s_) {
+    std::snprintf(buf, sizeof(buf), "관절 측정 시각이 판정 시각보다 %.3f s 앞섬", last_stamp_ - now_s);
+    return buf;
+  }
   if (now_s - last_stamp_ > state_timeout_s_) {
     std::snprintf(buf, sizeof(buf), "관절 측정이 %.2f s 동안 안 옴", now_s - last_stamp_);
     return buf;

@@ -21,6 +21,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -101,7 +102,7 @@ private:
   std::mutex imu_mtx_;
   GyroYaw gyro_;
   std::atomic<bool> base_still_{false};
-  // 움직이는 동안 자이로가 덜 느끼는 회전 (실물: 0.09°/s, 5 분에 29° — SLAM 이 고치던 양).
+  // 움직이는 동안 자이로가 덜 느끼는 회전 (약 0.09°/s = 5 분에 29° — 안 더하면 SLAM 이 그만큼 고쳐야 함).
   //   pose_guard 가 map→odom 방향 고침 속도로 재서 imu_motion_bias_topic 으로 보냄 → 바퀴가 움직일 때만 자이로에 더함
   std::atomic<double> motion_bias_{0.0};
   std::atomic<double> motion_bias_t_{-1e9};   // 마지막으로 받은 시각 [s] — motion_bias_timeout_s_ 넘으면 안 씀 (pose_guard 가 꺼져도 남지 않게)
@@ -120,6 +121,12 @@ private:
   std::vector<double> last_steer_;
   double last_time_s_ = -1.0;
   bool was_parking_ = false;
+  // 켤 때 조향 곧게 (home_steer_on_start): configure 뒤 처음 켤 때 한 번. 덜 끝나고 꺼지면 다음 켤 때 이어서
+  bool home_pending_ = false;
+  double home_timeout_s_ = 8.0;
+  bool was_homing_ = false;
+  bool home_wait_logged_ = false;
+  std::string steer_deg(const std::vector<ModuleState> & m) const;
 
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr sub_cmd_;
   rclcpp::Subscription<interfaces::msg::MotionMode>::SharedPtr sub_mode_;
@@ -157,7 +164,7 @@ CallbackReturn SwerveController::on_init()
     auto_declare<std::vector<double>>("wheel_speed_gain", {});   // 바퀴별 속도 배율 [fl, fr, rl, rr], 비우면 모두 1
     auto_declare<double>("steer_branch_margin", 3.0 * M_PI / 180.0);
     auto_declare<double>("steer_end_slack", 0.0);       // [rad] 0 ~ 2°. 범위 끝을 이만큼 넘는 방향은 끝 각도로 (기본 끔)
-    auto_declare<double>("steer_travel_weight", 0.0);   // 자세 고를 때 돌아야 할 각도 비용 가중치 (0 = 예전과 같음, 0~10)
+    auto_declare<double>("steer_travel_weight", 0.0);   // 자세 고를 때 돌아야 할 각도 비용 가중치 (0 = 안 씀, 0~10)
     auto_declare<double>("steer_coherent_max_travel", 0.0);   // [rad] 공통 자세 이동 한도 (0 = 없음)
     auto_declare<double>("steer_end_guard", 0.0);             // [rad] 멈춘 상태에서 고를 때 범위 끝 벌점 구간 (0 = 끔)
     auto_declare<double>("keep_branch_max_wz", 0.0);          // [rad/s] 이동 중 작은 회전으로 가지 바꾸지 않기 (0 = 끔)
@@ -178,9 +185,23 @@ CallbackReturn SwerveController::on_init()
     auto_declare<bool>("park_on_idle", false);
     auto_declare<double>("park_idle_s", 1.0);
     auto_declare<double>("park_still_wheel", 0.05);
+    // 켤 때 조향 곧게 (기본 켬): 처음 켤 때 바퀴 차례 (DRIVE) 가 오면 네 조향을 0° 로,
+    //   다 맞을 때까지 /cmd_vel 안 따름. home_steer_timeout_s (차례인 동안) 넘으면 평소 동작
+    auto_declare<bool>("home_steer_on_start", true);
+    auto_declare<double>("home_steer_timeout_s", 8.0);
+    auto_declare<double>("home_steer_tolerance", 0.05);   // [rad] ≈ 2.9°
     auto_declare<bool>("blend_steer_drive", false);   // 동시 조향·구동 (기본 끔)
     auto_declare<double>("blend_margin", 1.0);
     auto_declare<double>("blend_stall_s", 0.0);
+    auto_declare<double>("blend_tolerance", 0.0);     // [rad] 동시 모드 조향 허용 오차 (0 = steer_tolerance × blend_margin)
+    auto_declare<double>("blend_swing_gate", M_PI);   // [rad] 동시 모드: 목표까지 이보다 멀리 도는 조향이 있으면 구동 0 (학습 = π, 0 = 끔)
+    // 저속 조향 유지 (설명은 swerve.hpp SwerveDriveConfig): 모듈 조향축 속도가 이보다 느리면 조향을 지난 각도에 묶고 바퀴는 투영 속도.
+    //   기본 끔 (0). 켤 때 권장 0.015 / 0.025 m/s · 60°
+    auto_declare<double>("steer_hold_speed", 0.0);         // [m/s] 0 = 끔
+    auto_declare<double>("steer_hold_release", 0.025);     // [m/s] 풀림 (히스테리시스). steer_hold_speed 이하면 그 값
+    auto_declare<double>("steer_hold_max_angle", 1.0471975511965976);   // [rad] 60°. 원하는 방향이 이보다 벗어나면 다시 조향
+    // 방향 전환 때 조향은 최종 명령 각도로 (설명은 swerve.hpp). 기본 켬. false = 가속 램프 중간 방향을 따라 조향
+    auto_declare<bool>("steer_final_target", true);
     auto_declare<std::string>("steer_rate_source", "reported");
     auto_declare<std::string>("cmd_vel_topic", "/cmd_vel");
     auto_declare<std::string>("motion_mode_topic", "/control/motion_mode");
@@ -337,13 +358,40 @@ CallbackReturn SwerveController::on_configure(const rclcpp_lifecycle::State &)
   cfg.blend_steer_drive = node->get_parameter("blend_steer_drive").as_bool();
   cfg.blend_margin = node->get_parameter("blend_margin").as_double();
   cfg.blend_stall_s = node->get_parameter("blend_stall_s").as_double();
-  if (cfg.blend_steer_drive && !(cfg.blend_margin > 0.0 && cfg.blend_margin <= 1.0 && cfg.blend_stall_s > 0.0 && cfg.blend_stall_s <= 5.0)) {
-    RCLCPP_ERROR(node->get_logger(), "blend_steer_drive: blend_margin (0,1] · blend_stall_s (0,5] 이어야 함");
+  cfg.blend_tolerance = node->get_parameter("blend_tolerance").as_double();
+  cfg.blend_swing_gate = node->get_parameter("blend_swing_gate").as_double();
+  if (cfg.blend_steer_drive && !(cfg.blend_margin > 0.0 && cfg.blend_margin <= 1.0 && cfg.blend_stall_s > 0.0 && cfg.blend_stall_s <= 5.0 &&
+                                 cfg.blend_tolerance >= 0.0 && cfg.blend_tolerance <= M_PI)) {
+    RCLCPP_ERROR(node->get_logger(), "blend_steer_drive: blend_margin (0,1] · blend_stall_s (0,5] · blend_tolerance [0,π] 이어야 함");
     return CallbackReturn::ERROR;
   }
   if (cfg.blend_steer_drive) {
-    RCLCPP_INFO(node->get_logger(), "동시 조향·구동 켬: 조향 오차 ≤ %.2f rad 안에서 새 방향으로 진행, 진행 막힘 %.1f s 넘으면 구동 0",
-      cfg.steer_tolerance * cfg.blend_margin, cfg.blend_stall_s);
+    RCLCPP_INFO(node->get_logger(), "동시 조향·구동 켬: 조향 오차 ≤ %.2f rad 안에서 새 방향으로 진행, 진행 막힘 %.1f s 넘으면 구동 0, "
+      "%.2f rad 넘게 도는 조향이 있으면 구동 0 (0 = 끔)",
+      cfg.blend_tolerance > 0.0 ? cfg.blend_tolerance : cfg.steer_tolerance * cfg.blend_margin, cfg.blend_stall_s, cfg.blend_swing_gate);
+  }
+  cfg.steer_final_target = node->get_parameter("steer_final_target").as_bool();
+  RCLCPP_INFO(node->get_logger(), "방향 전환 조향 = 최종 명령 각도 (steer_final_target): %s", cfg.steer_final_target ? "켬" : "끔");
+  cfg.steer_hold_speed = node->get_parameter("steer_hold_speed").as_double();
+  cfg.steer_hold_release = node->get_parameter("steer_hold_release").as_double();
+  cfg.steer_hold_max_angle = node->get_parameter("steer_hold_max_angle").as_double();
+  if (!std::isfinite(cfg.steer_hold_speed) || !std::isfinite(cfg.steer_hold_release) || !std::isfinite(cfg.steer_hold_max_angle)) {
+    RCLCPP_ERROR(node->get_logger(), "steer_hold_speed · steer_hold_release · steer_hold_max_angle 는 유한한 값");
+    return CallbackReturn::ERROR;
+  }
+  if (cfg.steer_hold_speed > 0.0) {
+    RCLCPP_INFO(node->get_logger(), "저속 조향 유지 켬: 모듈 %.3f m/s 아래면 조향 묶음 (바퀴 = 묶은 방향 투영), %.3f m/s 위 · 방향 %.0f° 넘게 벗어나면 풂",
+      cfg.steer_hold_speed, std::max(cfg.steer_hold_release, cfg.steer_hold_speed), cfg.steer_hold_max_angle * 180.0 / M_PI);
+  }
+  cfg.home_timeout_s = node->get_parameter("home_steer_timeout_s").as_double();
+  cfg.home_tolerance = node->get_parameter("home_steer_tolerance").as_double();
+  home_pending_ = node->get_parameter("home_steer_on_start").as_bool();
+  home_timeout_s_ = cfg.home_timeout_s;
+  if (home_pending_ && !(cfg.home_timeout_s > 0.0 && cfg.home_timeout_s <= 60.0 && cfg.home_tolerance > 0.0 &&
+                         cfg.home_tolerance <= 0.5))
+  {
+    RCLCPP_ERROR(node->get_logger(), "home_steer: timeout_s (0, 60] · tolerance (0, 0.5] rad 이어야 함");
+    return CallbackReturn::ERROR;
   }
   if (cfg.park_on_idle && !(cfg.park_idle_s >= 0.5 && cfg.park_still_wheel > 0.0)) {
     RCLCPP_ERROR(node->get_logger(), "park_idle_s >= 0.5 · park_still_wheel > 0 이어야 함");
@@ -374,7 +422,7 @@ CallbackReturn SwerveController::on_configure(const rclcpp_lifecycle::State &)
         kin.coherent_max_travel() * 180.0 / M_PI, kin.end_guard() * 180.0 / M_PI);
     }
     drive_ = std::make_unique<SwerveDrive>(kin, cfg);
-    // 실패면 타이머를 만들기 전에 끝냄 (예전엔 맨 끝에서 검사해 실패해도 ack · odom 타이머가 남았음)
+    // 실패면 타이머를 만들기 전에 끝냄 (실패해도 ack · odom 타이머가 남지 않게)
     if (cfg.park_on_idle && !drive_->kinematics().park_reachable()) {
       RCLCPP_ERROR(node->get_logger(), "park_on_idle: 조향 0° 가 모듈별 범위 밖 → 복귀 기능을 쓸 수 없음");
       return CallbackReturn::ERROR;
@@ -537,7 +585,7 @@ CallbackReturn SwerveController::on_activate(const rclcpp_lifecycle::State &)
   std::vector<ModuleState> now;
   last_steer_.assign(names_.size(), 0.0);
   // 지금 조향 자세를 모르면 켜지 않음 — 모르는 자세 대신 0° 를 "유지" 명령으로 보내면 조향이 0° 로 돎
-  //   (예전엔 position 모드만 거부, reported 모드는 0° 를 썼음). 켜진 뒤 못 읽으면 update() 가 마지막 실측을 유지
+  //   (reported 모드도 0° 를 쓰지 않음). 켜진 뒤 못 읽으면 update() 가 마지막 실측을 유지
   if (!read_modules(now)) {
     RCLCPP_ERROR(get_node()->get_logger(), "모터 상태를 못 읽음 (position_velocity 준비 전 포함) → 켜기 거부");
     return CallbackReturn::ERROR;
@@ -545,7 +593,30 @@ CallbackReturn SwerveController::on_activate(const rclcpp_lifecycle::State &)
   for (std::size_t i = 0; i < now.size(); ++i) {last_steer_[i] = now[i].steer_angle;}
   write_modules(drive_->stop_hold(last_steer_));
   last_time_s_ = -1.0;
+  was_homing_ = false;
+  home_wait_logged_ = false;
+  if (home_pending_) {
+    home_pending_ = false;
+    if (drive_->begin_home()) {
+      was_homing_ = true;
+      RCLCPP_INFO(get_node()->get_logger(), "켤 때 조향 곧게: %s → 0° (바퀴 차례 오면, 범위 안 경로로 · 맞을 때까지 구동 안 함 · 최대 %.1f s)",
+        steer_deg(now).c_str(), home_timeout_s_);
+    } else {
+      RCLCPP_WARN(get_node()->get_logger(), "켤 때 조향 곧게 안 함: 0° 가 어느 모듈 허용 범위 밖 (steer_min · steer_max 확인)");
+    }
+  }
   return CallbackReturn::SUCCESS;
+}
+
+std::string SwerveController::steer_deg(const std::vector<ModuleState> & m) const
+{
+  std::string s;
+  for (std::size_t i = 0; i < m.size() && i < names_.size(); ++i) {
+    char b[48];
+    std::snprintf(b, sizeof(b), "%s%s %+.0f°", i ? " · " : "", names_[i].c_str(), m[i].steer_angle * 180.0 / M_PI);
+    s += b;
+  }
+  return s;
 }
 
 CallbackReturn SwerveController::on_deactivate(const rclcpp_lifecycle::State &)
@@ -555,6 +626,11 @@ CallbackReturn SwerveController::on_deactivate(const rclcpp_lifecycle::State &)
     for (std::size_t i = 0; i < measured.size(); ++i) {last_steer_[i] = measured[i].steer_angle;}
   }
   applied_.store(static_cast<uint64_t>(drive_->applied_turn_id()) << 1);   // 꺼짐 = DRIVE 아님 (번호는 그대로)
+  if (drive_->homing()) {   // 곧게 하던 중 꺼짐 → 그 자리에서 멈추고, 다음 켤 때 이어서
+    drive_->cancel_home();
+    home_pending_ = true;
+    RCLCPP_INFO(get_node()->get_logger(), "켤 때 조향 곧게: 끝나기 전에 꺼짐 → 그 자리 유지, 다음 켤 때 이어서");
+  }
   drive_->reset();
   write_modules(drive_->stop_hold(last_steer_));   // 마지막 실측 자세 (덜 끝난 목표가 아님)
   std::lock_guard<std::mutex> lk(odom_mtx_);
@@ -616,6 +692,21 @@ return_type SwerveController::update(const rclcpp::Time & time, const rclcpp::Du
     RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 1000,
       "조향 범위 안에서 만들 수 없는 명령 → 정지 (cmd_vel 거부)");
   }
+  if (was_homing_) {
+    if (drive_->homing() && drive_->home_waiting_turn() && !home_wait_logged_) {
+      home_wait_logged_ = true;
+      RCLCPP_INFO(get_node()->get_logger(), "켤 때 조향 곧게: 바퀴 차례 (DRIVE) 기다림 — 그동안 조향 그 자리");
+    }
+    if (!drive_->homing()) {
+      was_homing_ = false;
+      if (drive_->home_result() == SwerveDrive::HomeResult::kDone) {
+        RCLCPP_INFO(get_node()->get_logger(), "켤 때 조향 곧게 끝 (%.1f s): %s", drive_->home_active_s(), steer_deg(meas).c_str());
+      } else {
+        RCLCPP_WARN(get_node()->get_logger(), "켤 때 조향 곧게: %.1f s 안에 못 맞춤 (%s) → 원래 동작 (지금 각도에서 주행 명령 따름)",
+          drive_->home_active_s(), steer_deg(meas).c_str());
+      }
+    }
+  }
   if (drive_->parking() != was_parking_) {
     was_parking_ = drive_->parking();
     RCLCPP_INFO(get_node()->get_logger(), was_parking_ ? "정지 확인 → 바깥쪽 자세(조향 0°)로 복귀" : "복귀 해제 (새 명령 · 명령 끊김 · 상태 못 읽음)");
@@ -641,7 +732,8 @@ return_type SwerveController::update(const rclcpp::Time & time, const rclcpp::Du
   last_lin_speed_ = std::hypot(v.vx, v.vy);
   last_time_s_ = now_s;
   const bool out_zero = drive_->output().vx == 0.0 && drive_->output().vy == 0.0 && drive_->output().wz == 0.0;
-  base_still_ = out_zero && std::hypot(v.vx, v.vy) < still_linear_ && std::fabs(v.wz) < still_angular_;
+  // 조향을 곧게 하는 동안은 "멈춤" 아님 (몸이 살짝 흔들림 → 자이로 바이어스를 그때 재지 않게)
+  base_still_ = out_zero && !drive_->homing() && std::hypot(v.vx, v.vy) < still_linear_ && std::fabs(v.wz) < still_angular_;
 
   {
     std::unique_lock<std::mutex> lk(odom_mtx_, std::try_to_lock);

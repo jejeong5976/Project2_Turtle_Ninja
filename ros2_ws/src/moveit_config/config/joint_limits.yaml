@@ -1,0 +1,12 @@
+# MoveIt 궤적 시간 계산용 한계. URDF 의 velocity 4.8 rad/s 는 모터 최고라 그대로 쓰면 너무 빠름
+#   → 팔은 control.yaml move_time_s 4 s 처럼 천천히 (D16). 실제 실행 속도는 아래 기본 배율로 한 번 더 줄임
+default_velocity_scaling_factor: 0.3
+default_acceleration_scaling_factor: 0.3
+joint_limits:
+  joint1: {has_velocity_limits: true, max_velocity: 1.0, has_acceleration_limits: true, max_acceleration: 1.0}
+  joint2: {has_velocity_limits: true, max_velocity: 1.0, has_acceleration_limits: true, max_acceleration: 1.0}
+  joint3: {has_velocity_limits: true, max_velocity: 1.0, has_acceleration_limits: true, max_acceleration: 1.0}
+  joint4: {has_velocity_limits: true, max_velocity: 1.0, has_acceleration_limits: true, max_acceleration: 1.0}
+  joint5: {has_velocity_limits: true, max_velocity: 1.0, has_acceleration_limits: true, max_acceleration: 1.0}
+  gripper_left_joint: {has_velocity_limits: true, max_velocity: 0.02, has_acceleration_limits: true, max_acceleration: 0.05}
+  gripper_right_joint: {has_velocity_limits: true, max_velocity: 0.02, has_acceleration_limits: true, max_acceleration: 0.05}
