@@ -3,7 +3,7 @@
 // 역할
 //   - letterbox: 비율 유지 리사이즈 + 회색 114 여백, RGB, /255, CHW
 //   - postprocess: 엔진 출력 → 인스턴스
-//       one2many: 앵커마다 가장 높은 클래스 점수 > conf → 클래스별 NMS
+//       one2many: 앵커마다 가장 높은 클래스 점수 > conf → 색 · 모양 묶음별 NMS (up · lying 은 한 묶음)
 //       one2one: 점수 > conf 인 앵커 · 클래스 쌍을 점수 순으로
 //       점수 순 max_det 개 → 상자를 원본 좌표로 → 마스크 계수 × 원형 = 로짓 → 원본 크기로 bilinear → > 0 → 상자 밖 0
 //   - SegModel: 엔진 + 위 과정을 묶음
@@ -75,10 +75,22 @@ struct Letterbox
 // BGR → 모델 입력 (RGB, /255, CHW float). ultralytics LetterBox(center=True, 114)
 Letterbox letterbox(const cv::Mat & bgr, cv::Size in, std::vector<float> & chw);
 
+// NMS 묶음 번호: 클래스 이름에서 _up · _lying 을 뺀 이름이 같으면 같은 번호 (이름 없는 클래스는 혼자)
+std::vector<int> nms_groups(const std::vector<std::string> & names, int nc);
+
 // 원시 출력 → 인스턴스
 std::vector<SegInstance> postprocess(
   const SegOutputs & o, const Letterbox & lb, cv::Size orig, const std::vector<std::string> & names,
   float conf, float iou = 0.7f, int max_det = 300);
+
+// SegModel 한 번 부를 때 단계별 시간 [ms] (계측용)
+struct SegTiming
+{
+  double pre = 0;    // letterbox · CHW float 변환 (CPU)
+  double infer = 0;  // TrtEngine::infer 전체 (입력 복사 + GPU + 출력 복사 + 동기화)
+  double gpu = 0;    // 그중 GPU 계산만 (CUDA event)
+  double post = 0;   // 디코딩 · NMS · 마스크 (CPU)
+};
 
 // 엔진 + 전처리 · 후처리. 출력이 검출 (3 차원) · 마스크 원형 (4 차원) 2 개가 아니면 예외
 class SegModel
@@ -88,15 +100,20 @@ public:
   ~SegModel();
 
   std::vector<SegInstance> operator()(const cv::Mat & bgr);
+  const SegTiming & last_timing() const {return timing_;}   // 마지막 호출의 단계별 시간
 
   const std::vector<std::string> & names() const;
   cv::Size input_size() const;   // (w, h)
+  // 신뢰도 문턱 (장마다 바꿈: 쥔 퍽 재기 wrist.held 가 켜지면 held.conf 로 낮춤 — 일반 검출은 부르는 쪽이 wrist.conf 로 다시 거름)
+  void set_conf(float conf) {conf_ = conf;}
+  float conf() const {return conf_;}
 
 private:
   std::unique_ptr<TrtEngine> engine_;
   int idet_{-1}, iproto_{-1};
   float conf_, iou_;
   std::vector<float> chw_;
+  SegTiming timing_;
   std::vector<std::vector<float>> outs_;
   SegOutputs out_;
 };

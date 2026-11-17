@@ -3,6 +3,7 @@
 #include "perception/wrist_seg.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <numeric>
 #include <stdexcept>
@@ -54,6 +55,25 @@ Letterbox letterbox(const cv::Mat & bgr, cv::Size in, std::vector<float> & chw)
   return lb;
 }
 
+std::vector<int> nms_groups(const std::vector<std::string> & names, int nc)
+{
+  std::vector<std::string> keys;
+  std::vector<int> g(static_cast<size_t>(std::max(nc, 0)));
+  for (int c = 0; c < nc; ++c) {
+    std::string k = c < static_cast<int>(names.size()) ? names[c] : "#" + std::to_string(c);
+    for (const std::string suf : {"_up", "_lying"}) {
+      if (k.size() > suf.size() && k.compare(k.size() - suf.size(), suf.size(), suf) == 0) {
+        k.resize(k.size() - suf.size());
+        break;
+      }
+    }
+    const auto it = std::find(keys.begin(), keys.end(), k);
+    g[c] = static_cast<int>(it - keys.begin());
+    if (it == keys.end()) {keys.push_back(k);}
+  }
+  return g;
+}
+
 std::vector<SegInstance> postprocess(
   const SegOutputs & o, const Letterbox & lb, cv::Size orig, const std::vector<std::string> & names,
   float conf, float iou, int max_det)
@@ -67,7 +87,10 @@ std::vector<SegInstance> postprocess(
   struct Cand {float s; int a, c; std::array<float, 4> b;};   // b = 입력 픽셀 xyxy
   std::vector<Cand> cand;
   if (o.channels_first) {
-    // one2many: 앵커마다 최고 클래스 → conf 거르기 → 점수 순 → 클래스별 NMS (상자에 클래스 × 7680 더해 섞이지 않게)
+    // one2many: 앵커마다 최고 클래스 → conf 거르기 → 점수 순 → 묶음별 NMS
+    //   묶음 = 클래스 이름에서 _up · _lying 뺀 것 (색 · 모양). 기운 퍽 하나가 up · lying 두 클래스로 같이 나와
+    //   둘 다 남던 것을 막음. 선/누움은 깊이 점군이 정하므로 seg 클래스는 안 씀
+    const auto group = nms_groups(names, nc);
     for (int a = 0; a < o.n_anchor; ++a) {
       int bc = 0;
       float bs = at(a, 4);
@@ -88,7 +111,7 @@ std::vector<SegInstance> postprocess(
       const auto & A = cand[i];
       const float area_a = (A.b[2] - A.b[0]) * (A.b[3] - A.b[1]);
       for (size_t j = i + 1; j < cand.size(); ++j) {
-        if (gone[j] || cand[j].c != A.c) {continue;}           // 다른 클래스는 offset 때문에 안 겹침
+        if (gone[j] || group[cand[j].c] != group[A.c]) {continue;}   // 다른 색 · 모양은 안 지움
         const auto & B = cand[j];
         const float iw = std::max(0.0f, std::min(A.b[2], B.b[2]) - std::max(A.b[0], B.b[0]));
         const float ih = std::max(0.0f, std::min(A.b[3], B.b[3]) - std::max(A.b[1], B.b[1]));
@@ -188,11 +211,18 @@ cv::Size SegModel::input_size() const {return engine_->input_size();}
 
 std::vector<SegInstance> SegModel::operator()(const cv::Mat & bgr)
 {
+  using clk = std::chrono::steady_clock;
+  const auto ms = [](clk::time_point a, clk::time_point b) {return std::chrono::duration<double, std::milli>(b - a).count();};
+  const auto t0 = clk::now();
   const Letterbox lb = letterbox(bgr, engine_->input_size(), chw_);
+  const auto t1 = clk::now();
   engine_->infer(chw_, outs_);
+  const auto t2 = clk::now();
   out_.det.swap(outs_[idet_]);       // swap = 버퍼 재사용 (move 면 다음 장마다 수 MB 를 다시 할당)
   out_.proto.swap(outs_[iproto_]);
-  return postprocess(out_, lb, bgr.size(), engine_->names(), conf_, iou_);
+  auto res = postprocess(out_, lb, bgr.size(), engine_->names(), conf_, iou_);
+  timing_ = {ms(t0, t1), ms(t1, t2), engine_->last_gpu_ms(), ms(t2, clk::now())};
+  return res;
 }
 #endif  // PERCEPTION_HAVE_TRT
 
