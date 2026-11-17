@@ -1,163 +1,145 @@
-# Project2_Turtle_Ninja
+<h1 align="center">KANT Project 2 : 주사위 기억 자율 주행 로봇</h1>
 
-미로 벽의 바코드로 task를 읽고, AprilTag가 붙은 퍽을 찾아 옮기거나 밀어 넘어뜨리는 로봇 (Physical AI 과제 2)
+<p align="center">
+<b>팀 닌자터틀</b><br>
+</p>
 
-## 미션
+<p align="center"><sub>ROS 2 Lyrical · Jetson Orin Nano · YOLO26 · Isaac Sim</sub></p>
 
-- 주행 중 벽의 1D 바코드를 찾아 판독하고 해당 task 수행
-- task가 지정한 퍽을 AprilTag ID로 찾아 지정 위치로 옮기는 등의 mission을 수행
-- 퍽 색: 빨강 · 초록 · 베이지
-- 신호등 인식 후 정지 · 진행 판단
-- 인식 모델 Yolo 이용
-- SLAM 기반 자율주행. 맵은 시연 1주 전 공개, 출발 지점 고정
+<p align="center">
+<img src="docs/assets/readme/mission-summary.png" alt="과제: 신호등 12번 점멸 기억 → 바코드 순서로 세 장소의 주사위 눈 결정. 수행: 여섯 박스의 퍽 12개 수집·운반 → 색·모양 조건에 맞춰 배치. 완료: 카메라 재검증 → 출발 구역 복귀." width="100%">
+</p>
 
-## 일정
+<p>
+<img src="docs/assets/readme/02_pick_store_B2.gif" alt="집기부터 적재 완료까지 · 21초" width="49%">
+<img src="docs/assets/readme/05_retrieve_place_L2.gif" alt="꺼내기부터 배치 완료까지 · 26초" width="49%">
+</p>
 
-| 날짜 | 내용 |
-|---|---|
-| 11/4 (수) | 맵 공개 |
-| 11/11 (수) | 시연 |
+<sub>왼쪽: 집기·적재 21초 · 오른쪽: 꺼내기·배치 26초</sub>
 
-## 하드웨어
+## 미션 처리 흐름
 
-| 구성 | 사용 부품 |
-|---|---|
-| 구동 | 4륜 swerve drive (조향 XM430-W210 ×4, 구동 XM430-W350 ×4) |
-| 온보드 컴퓨터 | Jetson Orin Nano |
-| 제어 보드 | OpenCR 1.0 ×2 (바퀴용, 팔용) |
-| 라이다 | LDS-03 |
-| 매니퓰레이터 | OpenManipulator-X + 손목 회전축 1개 |
-| 카메라 | RealSense D435 (손목 장착), Arducam UC-684 (상단 광각) |
+<img src="docs/assets/readme/mission-flow.gif" alt="신호 기억 → 바코드 해석 → 수집·적재 → 주사위 배치 → 재검증 → 출발점 복귀" width="100%">
 
-## 개발 환경
+<sub>단계별 설명용 애니메이션으로 실제 수행 시간과 무관함. [정적 이미지](docs/assets/readme/mission-flow.png)</sub>
 
-- ROS 2 Lyrical
-- 시뮬레이션: Isaac Sim 6.2
+## 시스템 구조
 
-## 디렉토리 구조
+<img src="docs/assets/readme/architecture.png" alt="인지 결과로 미션을 판단하고 주행·조작 액션을 실행한 뒤 결과를 반영하는 시스템 구조" width="100%">
 
-```
-Project2_Turtle_Ninja/
-├── config/                  # 노드 파라미터, 카메라 보정값 yaml
-├── firmware/                # OpenCR 펌웨어
-├── ros2_ws/                 # ROS 2 워크스페이스
-│   └── src/
-│       ├── bringup/             # 전체 실행 launch, 실기/시뮬 전환
-│       ├── description/         # URDF/xacro, 메쉬 (RViz·Isaac Sim 공용)
-│       ├── interfaces/          # 공용 메시지·액션 정의
-│       ├── hardware/            # OpenCR 2대(바퀴/팔) Dynamixel 통신
-│       ├── swerve_controller/   # cmd_vel → 바퀴별 조향각/속도, 휠 오도메트리
-│       ├── manipulation/        # 팔 제어, 밀기·집기·적재함 동작
-│       ├── navigation/          # 라이다 2 개 합치기 · slam_toolbox 지도 만들기/위치 찾기 · 위치 감시
-│       ├── perception/          # YOLO 추론, 바코드 판독, 퍽 AprilTag · 색, 신호등
-│       └── mission/             # 바코드 → task 변환, 미션 순서 관리
-├── yolo/
-│   ├── wide/                # 광각 상자 YOLO (퍽·바코드·신호등) 학습·평가·변환
-│   └── wrist/               # 손목 D435 퍽 seg + 깊이 자세 추정
-│                            #   (각 폴더의 datasets/ · runs/ · 가중치는 git 제외)
-├── sim/
-│   └── robot_sim/           # Isaac Sim 로봇 주행 시뮬레이션 (ROS 2 연동)
-├── tools/                   # ROS 밖에서 단독 실행하는 개발 도구
-│   ├── camera_calib/        # 카메라 캘리브레이션 사진 수집 (OpenCV)
-│   ├── d435_viewer/         # 손목 D435 실시간 퍽 자세 보기 · 사진 저장
-│   ├── wrist_calib/         # 손목 D435 장착 자세 (핸드-아이) 캘리브레이션
-│   ├── drive/               # 경로 주행 (path_follow: 모양 · 경유점 · 지도 기준, 앞 물체 정지)
-│   ├── diagnostics/         # 센서 점검 (sensor_check: IMU · odom · 라이다 · SLAM 대조)
-│   └── jetson/              # 젯슨 빌드 · 실행 (run_robot.sh) · 포트 규칙 · 지도 저장
-└── docs/                    # 설치 기록, 설계 문서, 가이드 (코드 X, 문서·이미지만)
-```
+### 인지
 
-## 빌드
+- 광각 카메라로 신호등과 바코드 검출
+- 손목 카메라로 퍽 탐지, 깊이 계산, AprilTag 인식을 수행해 퍽의 색·모양·위치·ID 판독
 
-```bash
-cd ros2_ws
-colcon build --symlink-install
-source install/setup.bash
-```
+### 계획
 
-## 제어 패키지 검증
+- 신호와 바코드로 배치를 결정하고 Dijkstra로 운반 순서 계산
+- 실행 결과에 따라 재고를 갱신하고, 실패 시 재시도 및 재계획
 
-`swerve_controller`는 바퀴 제어 플러그인, `manipulation`은 팔 계산과 `control_master`를 제공합니다.
-이 PR에는 `mission`과 `perception` 구현을 포함하지 않습니다. 두 폴더는 담당자용 자리로 유지합니다.
-공용 타입은 `interfaces/msg/MotionMode`, `interfaces/msg/MissionStatus`, `interfaces/action/ArmTask`입니다.
-패키지 이름이 바뀐 checkout은 이전 설치본을 재사용하지 말고 새 build/install 경로에서 빌드하세요.
-실물 주행·팔 실행은 별도 하드웨어 검증이 필요합니다.
-아래 검증은 6개 패키지 전체 설치 기준입니다.
-`description`만 단독 설치한 환경의 기본 표시 실행은 지원하지 않습니다.
+### 주행
 
-하드웨어 없는 단위시험:
+- SLAM 지도와 AMCL로 위치 추정
+- Nav2 전역 경로를 따르는 강화학습 주행과 라이다 기반 정밀 접근으로 박스 앞 정차
 
-```bash
-source /opt/ros/lyrical/setup.bash
-cd ros2_ws
-CMAKE_BUILD_PARALLEL_LEVEL=1 colcon build --executor sequential \
-  --build-base build/pr2-review --install-base install/pr2-review
-source install/pr2-review/setup.bash
-ROS_DOMAIN_ID=181 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST colcon test --executor sequential \
-  --build-base build/pr2-review --install-base install/pr2-review \
-  --packages-select hardware manipulation swerve_controller
-colcon test-result --test-result-base build/pr2-review --verbose
-```
+### 조작
 
-## Git 규칙
+- IK와 적재함 경유점 경로로 집기·적재·꺼내기·배치 수행
+- 퍽을 적재한 뒤 이동하며, 제어 중재에 따라 바퀴와 팔 동작
 
-### 브랜치
+[노드·토픽·좌표계 상세](report/docs/architecture.md)
 
-| 브랜치 | 용도 | 머지 |
-|---|---|---|
-| `main` | 팀 전체 통합 코드 (기본 브랜치) | 승인 1개 후 관리자만 |
-| `feat/...` 등 | 각자 작업하는 곳 | - |
+## 로봇 설계
 
-- 흐름: `feat/...` → `main`
-- `main`에는 직접 push 불가. PR로만 반영
-- 실기 테스트를 통과한 시점은 `main`에 태그로 표시 (예: `tested-1020`, `v1.0-demo`)
+<p align="center">
+<img src="docs/assets/readme/robot-cad.png" alt="전체 로봇 STEP 렌더링: 스워브 구동부, 12칸 적재함, 매니퓰레이터, 카메라 마스트" width="100%">
+</p>
 
-### 브랜치 이름
+<sub>동일한 3D 모델·재질·조명으로 렌더링한 측면·정면·평면과 앞·뒤 사선뷰. 부품 표면은 무광으로 표현. <a href="mechanical/robot">STEP·부품 도면·설계 기록</a></sub>
 
-`타입/내용` 형식, 소문자와 하이픈만 사용
+## Swerve Drive
 
-| 타입 | 용도 | 예시 |
-|---|---|---|
-| `feat/` | 새 기능 | `feat/swerve-ik` |
-| `fix/` | 버그 수정 | `fix/barcode-decode` |
-| `docs/` | 문서 | `docs/jetson-setup` |
-| `chore/` | 폴더 구조, 설정, 빌드 스크립트 | `chore/init-structure` |
+- 네 바퀴의 **연속 조향**과 독립 구동으로 전후·좌우 이동과 회전을 조합
+- Nav2가 생성한 전역 경로를 따라 **강화학습 정책으로 지역 주행과 정밀 접근** 수행
+- 라이다로 박스 위치를 측정해 정차 목표를 보정하고, 배치대 앞까지 접근
 
-### 커밋 메시지
+<p>
+<img src="docs/assets/readme/08_return_home.gif" alt="Swerve Drive 주행" width="49%">
+<img src="docs/assets/readme/04_dock_L2.gif" alt="배치대 앞 정밀 접근" width="49%">
+</p>
 
-형식: `type: what you did`
+<sub>왼쪽: Swerve Drive 주행 29초 · 오른쪽: 배치대 앞 정밀 접근 26초</sub>
 
-- 영어로 통일, 소문자 이용
-- 동사 원형으로 시작 (`add`, `fix`, `update`, `remove`), 끝에 마침표 없음
+## 실물 시험 결과
 
-| type | 용도 | 예시 |
-|---|---|---|
-| `feat` | 새 기능 | `feat: add swerve inverse kinematics` |
-| `fix` | 버그 수정 | `fix: correct steering zero offset sign` |
-| `docs` | 문서 | `docs: add jetson setup notes` |
-| `chore` | 폴더 구조, 설정, 스크립트 | `chore: add mcap to gitignore` |
-| `build` | 빌드 설정 (CMake, package.xml) | `build: add yaml-cpp dependency` |
+<table>
+<thead><tr>
+<th align="center"><sub>퍽 배치</sub></th>
+<th align="center"><sub>배치 재검증</sub></th>
+<th align="center"><sub>정차 위치 오차</sub></th>
+<th align="center"><sub>전체 시간</sub></th>
+</tr></thead>
+<tbody><tr>
+<td align="center"><sub>12 / 12</sub></td>
+<td align="center"><sub>3 / 3 성공</sub></td>
+<td align="center"><sub>≤ 1.4 cm</sub></td>
+<td align="center"><sub>17분 5초</sub></td>
+</tr></tbody>
+</table>
+
+<sub>실물 1회차 기록. 정차 오차는 박스·장소 정차 12회 기준. 기울어진 퍽 4개와 튕긴 퍽 1개에 사람 개입 5회가 있었음. [시험 결과와 한계](report/report.md)</sub>
+
+### 배치 재검증
+
+- 배치 후 새로 촬영한 영상으로 **칸·ID·색·모양과 중복·누락** 확인
+- 화면에 박스 윗면, 칸 허용 범위(±5 cm), 퍽 검출과 ID 표시
 
 
-### 작업 방법
+<p>
+<img src="docs/assets/readme/verify_L1.jpg" alt="L1 배치 재검증" width="32%">
+<img src="docs/assets/readme/verify_L2.jpg" alt="L2 배치 재검증" width="32%">
+<img src="docs/assets/readme/verify_L3.jpg" alt="L3 배치 재검증" width="32%">
+</p>
 
-```bash
-# 1. main 최신화 후 브랜치 생성
-git checkout main
-git pull
-git checkout -b feat/swerve-ik
+## 실행
 
-# 2. 작업 후 커밋, push
-git status
-git add <파일>
-git commit -m "feat: add swerve inverse kinematics"
-git push -u origin feat/swerve-ik
+Jetson 장치·모델·지도 준비와 실행 설정: [실행 안내](report/README.md)
+
+## 저장소 구성
+
+```text
+.
+├── README.md
+├── ros2_ws/src/             # ROS 2 패키지
+│   ├── perception/          # 인지
+│   ├── mission/             # 미션 판단
+│   ├── planning/            # 액션 실행·재고 관리
+│   ├── navigation/          # 주행·정밀 접근
+│   ├── manipulation/        # 팔 제어
+│   ├── swerve_controller/   # 스워브 구동
+│   └── ...                 # 하드웨어·인터페이스·실행 구성
+├── mechanical/robot/        # 기구 설계
+│   ├── step/               # 조립체·부품 STEP
+│   └── drawings/           # 도면
+├── config/                 # 실행 설정·정책
+├── maps/                   # 지도·경기장 좌표
+├── sim/robot_sim/           # 시뮬레이션·강화학습
+├── yolo/                   # 인지 모델 학습
+│   ├── wide/               # 광각 카메라
+│   └── wrist/              # 손목 카메라
+├── firmware/opencr/        # OpenCR 펌웨어
+├── tools/                  # 실행·보정·진단 도구
+├── report/                 # 보고서·실험 결과
+└── docs/                   # 설치·설계·인터페이스 문서
 ```
 
-3. GitHub에서 PR 생성 (대상: `main`)
-4. 승인 1개 받은 뒤 관리자가 **Create a merge commit**으로 머지
+## 팀 닌자터틀
 
-### 커밋 금지
+| 이름 | 구분 | 담당 |
+| --- | --- | --- |
+| [정조은](https://github.com/jejeong5976) | 팀장 | 계획·미션·통합·인지·주행 최적화 |
+| [김혜민](https://github.com/heffeekim94-web) | 팀원 | 인지·설계 |
+| [조민혁](https://github.com/eiioitsMin) | 팀원 | 설계·라이다·위치 추정 |
+| [권혁무](https://github.com/kwonhyeokmu-hub) | 팀원 | 하드웨어·주행·매니퓰레이터 제어·실물 시험 |
 
-- 빌드 산출물, 데이터셋, 모델 가중치, rosbag
-- 비밀번호, 토큰, SSH 키
+[개인별 기여와 검증 근거](report/docs/contributions.md)
